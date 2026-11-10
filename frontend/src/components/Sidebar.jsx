@@ -12,7 +12,8 @@ import {
   ChevronRight,
   UserCheck,
   LogOut,
-  Layers
+  Layers,
+  X
 } from 'lucide-react';
 
 export default function Sidebar({ activeTab, setActiveTab, mobileOpen, setMobileOpen }) {
@@ -34,86 +35,93 @@ export default function Sidebar({ activeTab, setActiveTab, mobileOpen, setMobile
       {/* Mobile Backdrop */}
       {mobileOpen && (
         <div 
+          className="mobile-backdrop"
           onClick={() => setMobileOpen(false)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(15, 23, 42, 0.4)',
-            backdropFilter: 'blur(4px)',
-            zIndex: 998,
-            display: 'block'
-          }}
+          aria-hidden="true"
         />
       )}
 
-      <aside style={{
-        width: '260px',
-        background: '#FFFFFF',
-        borderRight: '1px solid var(--border-color)',
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        position: 'sticky',
-        top: 0,
-        zIndex: 999,
-        transition: 'transform 0.25s ease',
-        transform: mobileOpen ? 'translateX(0)' : undefined
-      }}>
+      <aside className={`app-sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
         {/* Brand Header */}
         <div style={{
-          padding: '20px 20px 18px 20px',
+          padding: '18px 18px 16px 18px',
           borderBottom: '1px solid var(--border-color)',
           display: 'flex',
           alignItems: 'center',
-          gap: '12px'
+          justifyContent: 'space-between',
+          gap: '10px'
         }}>
-          <div style={{
-            width: '38px',
-            height: '38px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, #128C7E, #0d7064)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#FFFFFF',
-            boxShadow: '0 2px 8px rgba(18, 140, 126, 0.3)',
-            flexShrink: 0
-          }}>
-            <Smartphone size={20} strokeWidth={2.2} />
-          </div>
-          <div style={{ overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
             <div style={{
-              fontWeight: 800,
-              fontSize: '1.05rem',
-              color: '#0F172A',
-              letterSpacing: '-0.02em',
+              width: '38px',
+              height: '38px',
+              borderRadius: '10px',
+              background: 'linear-gradient(135deg, #128C7E, #0d7064)',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px'
+              justifyContent: 'center',
+              color: '#FFFFFF',
+              boxShadow: '0 2px 8px rgba(18, 140, 126, 0.3)',
+              flexShrink: 0
             }}>
-              KonkanTrip
-              <span style={{
-                background: '#DCFCE7',
-                color: '#15803D',
-                fontSize: '0.65rem',
-                fontWeight: 700,
-                padding: '2px 6px',
-                borderRadius: '4px',
-                border: '1px solid #BBF7D0'
-              }}>
-                WABA
-              </span>
+              <Smartphone size={20} strokeWidth={2.2} />
             </div>
-            <div style={{
-              fontSize: '0.72rem',
-              color: '#64748B',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis'
-            }}>
-              Enterprise WhatsApp Engine
+            <div style={{ overflow: 'hidden' }}>
+              <div style={{
+                fontWeight: 800,
+                fontSize: '1.05rem',
+                color: '#0F172A',
+                letterSpacing: '-0.02em',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}>
+                KonkanTrip
+                <span style={{
+                  background: '#DCFCE7',
+                  color: '#15803D',
+                  fontSize: '0.65rem',
+                  fontWeight: 700,
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  border: '1px solid #BBF7D0'
+                }}>
+                  WABA
+                </span>
+              </div>
+              <div style={{
+                fontSize: '0.72rem',
+                color: '#64748B',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis'
+              }}>
+                Enterprise WhatsApp Engine
+              </div>
             </div>
           </div>
+
+          {/* Close Button on Mobile Drawer */}
+          {mobileOpen && (
+            <button
+              onClick={() => setMobileOpen(false)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                background: '#F1F5F9',
+                border: '1px solid var(--border-color)',
+                color: '#64748B',
+                cursor: 'pointer'
+              }}
+              aria-label="Close menu"
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         {/* Navigation Items */}

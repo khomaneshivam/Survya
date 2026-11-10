@@ -9,20 +9,14 @@ import {
   Key, 
   CheckCircle2, 
   AlertCircle, 
-  Clock, 
   ExternalLink, 
   Trash2, 
   Edit3, 
   UploadCloud, 
-  FileText, 
-  Lock, 
   Copy, 
-  Download, 
-  Eye, 
   Check, 
-  HelpCircle,
-  X,
-  Sparkles,
+  X, 
+  Sparkles, 
   Inbox
 } from 'lucide-react';
 
@@ -35,7 +29,6 @@ export default function FlowsPage() {
   // Flows list state
   const [flows, setFlows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -49,8 +42,6 @@ export default function FlowsPage() {
   const [editingFlow, setEditingFlow] = useState(null);
   const [isTestSendOpen, setIsTestSendOpen] = useState(false);
   const [testSendFlow, setTestSendFlow] = useState(null);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [detailFlow, setDetailFlow] = useState(null);
 
   // Form Editor state
   const [formName, setFormName] = useState('');
@@ -888,9 +879,9 @@ export default function FlowsPage() {
                           borderRadius: '6px',
                           fontSize: '0.72rem',
                           fontWeight: 700,
-                          background: isPublished ? '#DCFCE7' : (isDraft ? '#FEF3C7' : '#F1F5F9'),
-                          color: isPublished ? '#15803D' : (isDraft ? '#B45309' : '#64748B'),
-                          border: `1px solid ${isPublished ? '#BBF7D0' : (isDraft ? '#FDE68A' : '#E2E8F0')}`
+                          background: isPublished ? '#DCFCE7' : (isDraft ? '#FEF3C7' : (isDeprecated ? '#FEE2E2' : '#F1F5F9')),
+                          color: isPublished ? '#15803D' : (isDraft ? '#B45309' : (isDeprecated ? '#DC2626' : '#64748B')),
+                          border: `1px solid ${isPublished ? '#BBF7D0' : (isDraft ? '#FDE68A' : (isDeprecated ? '#FECACA' : '#E2E8F0'))}`
                         }}>
                           {flow.status}
                         </span>
@@ -1247,7 +1238,7 @@ export default function FlowsPage() {
 
       {/* TAB 3: ENDPOINT & ENCRYPTION KEYS */}
       {currentTab === 'crypto' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: '20px' }}>
           
           {/* Key Management Card */}
           <div style={{

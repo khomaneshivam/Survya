@@ -13,12 +13,13 @@ if (!fs.existsSync(config.DATA_DIR)) {
 const dbPath = path.join(config.DATA_DIR, "whatsapp_bulk.db");
 const db = new DatabaseSync(dbPath);
 
-// Enable WAL mode and tune SQLite performance for high-throughput production (2000+ msgs)
-db.exec("PRAGMA journal_mode = WAL;");
-db.exec("PRAGMA synchronous = NORMAL;");
-db.exec("PRAGMA busy_timeout = 5000;");
-db.exec("PRAGMA cache_size = -64000;"); // 64MB memory page cache
-db.exec("PRAGMA temp_store = MEMORY;");
+// Enable busy_timeout first so concurrent workers wait up to 5000ms
+try { db.exec("PRAGMA busy_timeout = 5000;"); } catch (e) {}
+try { db.exec("PRAGMA journal_mode = WAL;"); } catch (e) {}
+try { db.exec("PRAGMA synchronous = NORMAL;"); } catch (e) {}
+try { db.exec("PRAGMA foreign_keys = ON;"); } catch (e) {}
+try { db.exec("PRAGMA cache_size = -64000;"); } catch (e) {}
+try { db.exec("PRAGMA temp_store = MEMORY;"); } catch (e) {}
 
 // Initialize tables
 function initializeDatabase() {

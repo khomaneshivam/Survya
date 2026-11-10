@@ -11,8 +11,15 @@ const schedulerService = require("./src/services/schedulerService");
 const tunnelService = require("./src/services/tunnelService");
 const apiRoutes = require("./src/routes/apiRoutes");
 const webhookController = require("./src/controllers/webhookController");
+const securityHeaders = require("./src/middleware/securityHeaders");
 
 const app = express();
+
+// Disable X-Powered-By header to prevent fingerprinting
+app.disable("x-powered-by");
+
+// Apply enterprise HTTP security headers (OWASP compliant)
+app.use(securityHeaders);
 
 // 1. CORS Configuration: In production, enforce trusted origin policy
 const corsOptions = {
@@ -61,8 +68,9 @@ if (!fs.existsSync(inboundUploadsPath)) {
   fs.mkdirSync(inboundUploadsPath, { recursive: true });
 }
 
-// 3. Uploads Path Traversal Guard
+// 3. Uploads Path Traversal Guard & File Execution Defense
 app.use("/uploads", (req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
   let decodedUrl = "";
   try {
     decodedUrl = decodeURIComponent(req.url || "");
@@ -71,6 +79,9 @@ app.use("/uploads", (req, res, next) => {
   }
   if (req.url.includes("..") || decodedUrl.includes("..") || decodedUrl.includes("\\")) {
     return res.status(403).json({ success: false, message: "Forbidden: Path traversal detected." });
+  }
+  if (/\.(svg|html|htm|xhtml|xml|js|exe|bat|cmd|sh|php)$/i.test(decodedUrl)) {
+    return res.status(403).json({ success: false, message: "Forbidden: Insecure file access prohibited." });
   }
   next();
 });

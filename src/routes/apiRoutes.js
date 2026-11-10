@@ -12,9 +12,12 @@ const authController = require("../controllers/authController");
 const adminController = require("../controllers/adminController");
 const reportsController = require("../controllers/reportsController");
 const { authenticateToken, requireAdmin, authenticateStreamToken, optionalAuth } = require("../middleware/authMiddleware");
-const { authLimiter, broadcastLimiter, uploadLimiter } = require("../middleware/rateLimiter");
+const { authLimiter, broadcastLimiter, uploadLimiter, apiLimiter } = require("../middleware/rateLimiter");
 const broadcastEngine = require("../services/broadcastEngine");
 const metaWhatsAppService = require("../services/metaWhatsAppService");
+
+// Protect all API routes with general rate limiter (300 requests / min per client)
+router.use(apiLimiter);
 
 // =========================================================================
 // 1. AUTHENTICATION & PROFILE
@@ -24,7 +27,7 @@ router.post("/auth/login", authLimiter, authController.login);
 router.post("/auth/forgot-password", authLimiter, authController.forgotPassword);
 router.post("/auth/verify-reset-token", authLimiter, authController.verifyResetToken);
 router.post("/auth/reset-password", authLimiter, authController.resetPassword);
-router.post("/auth/change-password", authenticateToken, authController.changePassword);
+router.post("/auth/change-password", authenticateToken, authLimiter, authController.changePassword);
 router.get("/auth/me", authenticateToken, authController.getMe);
 router.post("/auth/profile", authenticateToken, authController.updateProfile);
 
@@ -107,10 +110,31 @@ const mediaUpload = multer({
   storage: mediaStorage,
   limits: { fileSize: 30 * 1024 * 1024 }, // 30MB
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("image/") || file.mimetype === "application/pdf" || file.mimetype.startsWith("video/")) {
+    // Strictly prohibit SVG, HTML, and executable extensions to prevent Stored XSS
+    if (
+      file.mimetype === "image/svg+xml" ||
+      file.originalname.match(/\.(svg|html|htm|xhtml|xml|js|exe|bat|cmd|sh|php)$/i)
+    ) {
+      return cb(new Error("File type not allowed for security reasons. SVGs and executable files are prohibited."));
+    }
+
+    const allowedMimes = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "application/pdf",
+      "video/mp4",
+      "video/3gpp"
+    ];
+    const allowedExts = /\.(jpg|jpeg|png|webp|pdf|mp4|3gp)$/i;
+
+    if (
+      (allowedMimes.includes(file.mimetype) || file.mimetype.startsWith("image/") || file.mimetype.startsWith("video/")) &&
+      file.originalname.match(allowedExts)
+    ) {
       cb(null, true);
     } else {
-      cb(new Error("Only image files (JPG, PNG, WEBP), PDF documents, or MP4 videos are allowed."));
+      cb(new Error("Only standard image files (JPG, PNG, WEBP), PDF documents, or MP4 videos are allowed."));
     }
   }
 });

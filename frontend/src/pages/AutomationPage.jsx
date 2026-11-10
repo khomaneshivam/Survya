@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { 
-  Cpu, 
   Sheet, 
   Play, 
   CheckCircle2, 
@@ -9,18 +8,14 @@ import {
   RefreshCw,
   Tag,
   UploadCloud,
-  FileSpreadsheet,
   AlertCircle,
   Radio,
-  Trash2,
-  Clock,
-  Sparkles
+  Trash2
 } from 'lucide-react';
 import { formatIndianDate, formatIndianTime } from '../utils/indianTime';
 
 export default function AutomationPage() {
   const { token } = useAuth();
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
   const [templates, setTemplates] = useState([]);
@@ -744,7 +739,7 @@ export default function AutomationPage() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(180px, 1fr) auto', gap: '14px', alignItems: 'flex-end' }}>
+          <div className="automation-header-grid">
             <div>
               <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '5px' }}>
                 Google Sheet Live URL (Public or Shared with Link)

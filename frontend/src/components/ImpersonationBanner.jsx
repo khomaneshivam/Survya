@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Eye, ArrowLeftCircle, ShieldAlert } from 'lucide-react';
+import { ArrowLeftCircle, ShieldAlert } from 'lucide-react';
 
 export default function ImpersonationBanner() {
   const { isImpersonating, user, revertImpersonation } = useAuth();

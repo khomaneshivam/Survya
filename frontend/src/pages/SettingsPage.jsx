@@ -11,14 +11,12 @@ import {
   Plus,
   Trash2,
   Star,
-  AlertCircle,
   Sparkles
 } from 'lucide-react';
 import AddPhoneNumberModal from '../components/AddPhoneNumberModal';
 
 export default function SettingsPage() {
   const { user, token, refreshUser } = useAuth();
-  const [loading, setLoading] = useState(true);
   const [savingMeta, setSavingMeta] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -455,10 +453,10 @@ export default function SettingsPage() {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.25fr) minmax(320px, 1fr)', gap: '24px', alignItems: 'start' }}>
+      <div className="settings-main-grid">
         {/* Left Column: Meta Cloud API Settings */}
         <div className="saas-card" style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
             <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Key size={18} color="var(--brand-wa)" /> Meta WhatsApp Cloud API Credentials
             </h2>
@@ -503,7 +501,7 @@ export default function SettingsPage() {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div className="grid-responsive-2col">
               <div>
                 <label style={{ display: 'block', fontSize: '0.775rem', fontWeight: 600, color: '#334155', marginBottom: '5px' }}>
                   Phone Number ID

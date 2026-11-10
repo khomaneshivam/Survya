@@ -201,9 +201,17 @@ function parseExcelBuffer(
       defaultCountryCode
     );
 
-    const rawName = detectedNameCol
+    let rawName = detectedNameCol
       ? String(row[detectedNameCol] || "").trim()
       : "";
+
+    // Sanitize CSV/formula injection and truncate excessive string length
+    if (/^[=+\-@\t\r]/.test(rawName)) {
+      rawName = rawName.replace(/^[=+\-@\t\r]+/, "").trim();
+    }
+    if (rawName.length > 120) {
+      rawName = rawName.substring(0, 120).trim();
+    }
 
     let isValid = false;
     let validationNote = "";

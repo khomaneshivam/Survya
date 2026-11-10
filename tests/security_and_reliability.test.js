@@ -713,4 +713,69 @@ describe("Security, Multi-Tenant Isolation & WhatsApp Broadcast Reliability Test
       assert.strictEqual(remaining.c, 0);
     });
   });
+
+  // =========================================================================
+  // 8. ENTERPRISE HTTP SECURITY HEADERS, UPLOADS & PRODUCTION SAFEGUARDS
+  // =========================================================================
+  describe("8. Enterprise HTTP Security Headers & Upload Defense", () => {
+    test("Enforces OWASP recommended security headers on HTTP responses", async () => {
+      const res = await fetch(`${baseUrl}/api/reports/overview`, {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+      assert.strictEqual(res.status, 200);
+
+      // Verify X-Content-Type-Options: nosniff
+      assert.strictEqual(res.headers.get("x-content-type-options"), "nosniff");
+
+      // Verify X-Frame-Options: SAMEORIGIN
+      assert.strictEqual(res.headers.get("x-frame-options"), "SAMEORIGIN");
+
+      // Verify X-XSS-Protection: 0
+      assert.strictEqual(res.headers.get("x-xss-protection"), "0");
+
+      // Verify Referrer-Policy
+      assert.strictEqual(res.headers.get("referrer-policy"), "strict-origin-when-cross-origin");
+
+      // Verify Content-Security-Policy
+      const csp = res.headers.get("content-security-policy");
+      assert.ok(csp, "Content-Security-Policy header must be present");
+      assert.match(csp, /default-src 'self'/);
+
+      // Verify X-Powered-By is suppressed
+      assert.strictEqual(res.headers.get("x-powered-by"), null, "X-Powered-By header must not be exposed");
+
+      // Verify Rate Limiting telemetry headers
+      assert.ok(res.headers.get("x-ratelimit-limit"), "X-RateLimit-Limit header must be present");
+      assert.ok(res.headers.get("x-ratelimit-remaining"), "X-RateLimit-Remaining header must be present");
+    });
+
+    test("Rejects SVG and executable file uploads to prevent Stored XSS", async () => {
+      const formData = new FormData();
+      const fakeSvg = new Blob(["<svg><script>alert('xss')</script></svg>"], { type: "image/svg+xml" });
+      formData.append("file", fakeSvg, "attack.svg");
+
+      const res = await fetch(`${baseUrl}/api/upload/media`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminToken}` },
+        body: formData
+      });
+
+      assert.strictEqual(res.status, 500); // Multer fileFilter rejection triggers error handler
+      const data = await res.json();
+      assert.strictEqual(data.success, false);
+      assert.match(data.message, /not allowed|prohibited|only standard/i);
+    });
+
+    test("Rejects direct HTTP access to script or SVG files under /uploads with 403 Forbidden", async () => {
+      const res1 = await fetch(`${baseUrl}/uploads/exploit.svg`);
+      assert.strictEqual(res1.status, 403);
+      const data1 = await res1.json();
+      assert.match(data1.message, /insecure file access prohibited/i);
+
+      const res2 = await fetch(`${baseUrl}/uploads/exploit.html`);
+      assert.strictEqual(res2.status, 403);
+      const data2 = await res2.json();
+      assert.match(data2.message, /insecure file access prohibited/i);
+    });
+  });
 });

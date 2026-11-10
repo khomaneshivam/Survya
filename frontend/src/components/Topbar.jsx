@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import AddPhoneNumberModal from './AddPhoneNumberModal';
 import { 
@@ -33,12 +33,7 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    checkMetaHealth();
-    fetchActiveNumber();
-  }, [token]);
-
-  async function checkMetaHealth() {
+  const checkMetaHealth = useCallback(async () => {
     setIsVerifying(true);
     try {
       const activeToken = token || localStorage.getItem('token');
@@ -56,9 +51,10 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
     } finally {
       setIsVerifying(false);
     }
-  }
+  }, [token]);
 
-  async function fetchActiveNumber() {
+  const fetchActiveNumber = useCallback(async () => {
+    if (!token) return;
     try {
       const res = await fetch('/api/admin/phone-numbers', {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -68,8 +64,15 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
         const defaultNum = data.data.find(n => n.is_default) || data.data[0];
         setActiveNumber(defaultNum);
       }
-    } catch (err) {}
-  }
+    } catch (err) {
+      console.warn('Could not fetch active line:', err.message);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    checkMetaHealth();
+    fetchActiveNumber();
+  }, [checkMetaHealth, fetchActiveNumber]);
 
   const tabTitles = {
     dashboard: { title: 'Platform Dashboard', subtitle: 'Real-time broadcasting metrics, delivery telemetry, and active dispatches.' },
@@ -98,39 +101,43 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
       boxShadow: 'var(--shadow-xs)'
     }}>
       {/* Left: Mobile Toggle & Breadcrumbs */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
         <button
           onClick={() => setMobileOpen(prev => !prev)}
-          style={{
-            display: 'none',
-            background: 'none',
-            border: 'none',
-            color: '#64748B',
-            cursor: 'pointer',
-            padding: '4px'
-          }}
           className="mobile-menu-btn"
           title="Open Menu"
+          aria-label="Toggle navigation drawer"
+          style={{
+            background: '#F1F5F9',
+            border: '1px solid var(--border-color)',
+            borderRadius: '8px',
+            color: '#334155',
+            cursor: 'pointer',
+            padding: '7px',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
         >
-          <Menu size={22} />
+          <Menu size={20} />
         </button>
 
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#94A3B8', fontWeight: 500 }}>
-            <span>KonkanTrip</span>
-            <ChevronRight size={12} />
-            <span style={{ color: '#64748B', fontWeight: 600 }}>{currentTab.title}</span>
+        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.72rem', color: '#94A3B8', fontWeight: 500 }}>
+            <span style={{ display: 'inline-block' }}>KonkanTrip</span>
+            <ChevronRight size={11} />
+            <span style={{ color: '#64748B', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentTab.title}</span>
           </div>
-          <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.01em' }}>
+          <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {currentTab.title}
           </div>
         </div>
       </div>
 
       {/* Right: Meta Status, Sender Line, & Quick Action */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
         {/* Live Indian Standard Time (IST) Clock */}
         <div 
+          className="topbar-ist-clock"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -159,12 +166,12 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '7px',
-            padding: '5px 12px',
+            gap: '6px',
+            padding: '5px 10px',
             borderRadius: '999px',
             background: metaStatus.connected ? '#DCFCE7' : '#FEE2E2',
             border: `1px solid ${metaStatus.connected ? '#BBF7D0' : '#FECACA'}`,
-            fontSize: '0.75rem',
+            fontSize: '0.74rem',
             fontWeight: 600,
             color: metaStatus.connected ? '#15803D' : '#DC2626',
             cursor: 'pointer'
@@ -177,18 +184,18 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
             background: metaStatus.connected ? '#16A34A' : '#DC2626',
             boxShadow: metaStatus.connected ? '0 0 6px rgba(22, 163, 74, 0.6)' : 'none'
           }} />
-          {metaStatus.loading ? 'Checking Meta...' : (metaStatus.connected ? 'Meta WABA Live' : 'Meta API Offline')}
-          <RefreshCw size={11} className={isVerifying ? 'pulse-glow' : ''} style={{ marginLeft: '2px', opacity: 0.7 }} />
+          <span>{metaStatus.loading ? 'Checking...' : (metaStatus.connected ? 'Meta Live' : 'Offline')}</span>
+          <RefreshCw size={11} className={isVerifying ? 'pulse-glow' : ''} style={{ marginLeft: '1px', opacity: 0.7 }} />
         </div>
 
         {/* Sender Line Chip or Connect Number Prompt */}
         {activeNumber ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div className="topbar-sender-chip" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <div style={{
               display: 'flex',
               alignItems: 'center',
               gap: '6px',
-              padding: '5px 12px',
+              padding: '5px 10px',
               borderRadius: '6px',
               background: '#F8FAFC',
               border: '1px solid var(--border-color)',
@@ -206,7 +213,7 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
               title="Add another WhatsApp phone line"
             >
               <Plus size={13} />
-              <span>Add Line</span>
+              <span className="topbar-action-text">Add Line</span>
             </button>
           </div>
         ) : (
@@ -216,7 +223,7 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
             style={{ padding: '6px 12px', fontSize: '0.78rem', gap: '6px' }}
           >
             <Plus size={14} />
-            <span>Connect WhatsApp Line</span>
+            <span className="topbar-action-text">Connect Line</span>
           </button>
         )}
 
@@ -225,10 +232,10 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
           <button
             onClick={() => setActiveTab('broadcast')}
             className="btn btn-primary"
-            style={{ padding: '7px 14px', fontSize: '0.8rem' }}
+            style={{ padding: '6px 12px', fontSize: '0.78rem', gap: '5px' }}
           >
-            <Plus size={15} />
-            <span>New Broadcast</span>
+            <Plus size={14} />
+            <span className="topbar-action-text">Broadcast</span>
           </button>
         )}
       </div>

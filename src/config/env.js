@@ -7,6 +7,13 @@ process.env.TZ = process.env.APP_TIMEZONE || "Asia/Kolkata";
 const NODE_ENV = process.env.NODE_ENV || "development";
 const isProduction = NODE_ENV === "production";
 
+const INSECURE_DEFAULT_SECRETS = new Set([
+  "your_jwt_secret_min_32_characters_long_here",
+  "change_this_secret_in_production_32_chars",
+  "default_secret_key_12345678901234567890",
+  "secret12345678901234567890123456789012"
+]);
+
 let jwtSecret = process.env.JWT_SECRET;
 if (isProduction) {
   if (!jwtSecret || jwtSecret.trim().length < 32) {
@@ -14,17 +21,28 @@ if (isProduction) {
       "FATAL SECURITY CONFIGURATION ERROR: JWT_SECRET environment variable is missing, empty, or shorter than 32 characters in production. Application startup aborted."
     );
   }
-} else if (!jwtSecret || !jwtSecret.trim()) {
-  // Safe ephemeral dev fallback (changes on restart in dev if not set)
+  if (INSECURE_DEFAULT_SECRETS.has(jwtSecret.trim())) {
+    throw new Error(
+      "FATAL SECURITY CONFIGURATION ERROR: JWT_SECRET is set to an insecure default placeholder from .env.example. Please generate a unique cryptographic secret for production."
+    );
+  }
+} else if (!jwtSecret || !jwtSecret.trim() || INSECURE_DEFAULT_SECRETS.has(jwtSecret.trim())) {
+  // Safe ephemeral dev fallback (changes on restart in dev if placeholder is used)
   jwtSecret = process.env.DEV_JWT_SECRET || "dev_secret_" + crypto.randomBytes(32).toString("hex");
 }
 
 let webhookVerifyToken = process.env.WEBHOOK_VERIFY_TOKEN;
-if (!webhookVerifyToken || !webhookVerifyToken.trim()) {
+if (!webhookVerifyToken || !webhookVerifyToken.trim() || webhookVerifyToken === "your_custom_webhook_verify_token_here") {
   if (isProduction) {
-    console.warn("[Security Warning] WEBHOOK_VERIFY_TOKEN is not configured in production environment.");
+    console.warn("[Security Warning] WEBHOOK_VERIFY_TOKEN is missing or set to placeholder in production environment.");
   }
   webhookVerifyToken = "wb_verify_" + crypto.randomBytes(16).toString("hex");
+}
+
+let metaAppSecret = process.env.META_APP_SECRET || "";
+if (isProduction && metaAppSecret === "your_meta_app_secret_here") {
+  console.warn("[Security Warning] META_APP_SECRET is set to placeholder in production. Webhooks cannot be securely verified.");
+  metaAppSecret = "";
 }
 
 const config = {
@@ -32,7 +50,7 @@ const config = {
   NODE_ENV,
   WHATSAPP_API_TOKEN: process.env.WHATSAPP_API_TOKEN || "",
   WHATSAPP_PHONE_NUMBER_ID: process.env.WHATSAPP_PHONE_NUMBER_ID || "",
-  META_APP_SECRET: process.env.META_APP_SECRET || "",
+  META_APP_SECRET: metaAppSecret,
   META_GRAPH_VERSION: process.env.META_GRAPH_VERSION || "v21.0",
   WHATSAPP_TEMPLATE_ID: process.env.WHATSAPP_TEMPLATE_ID || "",
   DEFAULT_TEMPLATE_NAME: process.env.DEFAULT_TEMPLATE_NAME || "kt_restaurant_invitation",
@@ -53,4 +71,3 @@ const config = {
 };
 
 module.exports = config;
-

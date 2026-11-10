@@ -418,6 +418,11 @@ export default function LoginPage({ onSwitchToRegister }) {
                     lineHeight: 1.4
                   }}>
                     {forgotSuccess}
+                    {forgotMaskedPhone && (
+                      <div style={{ marginTop: '4px', fontWeight: 600, color: '#15803D' }}>
+                        OTP dispatched to WhatsApp: +{forgotMaskedPhone}
+                      </div>
+                    )}
                   </div>
                 )}
 

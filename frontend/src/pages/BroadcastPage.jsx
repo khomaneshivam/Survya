@@ -15,11 +15,9 @@ import {
   Plus,
   Download,
   Table,
-  FileSpreadsheet,
   Search,
   RefreshCw,
   Sliders,
-  Gauge,
   Zap,
   ShieldCheck,
   Clock,
@@ -29,11 +27,9 @@ import {
   AlertTriangle,
   Image as ImageIcon,
   Megaphone,
-  Lock,
-  Tag,
-  ExternalLink
+  Lock
 } from 'lucide-react';
-import { formatIndianDateTime, formatIndianTime, formatIndianDate, getIndianCurrentInputString } from '../utils/indianTime';
+import { formatIndianDateTime, formatIndianTime, getIndianCurrentInputString } from '../utils/indianTime';
 import AddPhoneNumberModal from '../components/AddPhoneNumberModal';
 
 export default function BroadcastPage() {
@@ -56,11 +52,8 @@ export default function BroadcastPage() {
   const [headerMediaUrl, setHeaderMediaUrl] = useState('');
   const [headerMediaId, setHeaderMediaId] = useState('');
   const [uploadingMedia, setUploadingMedia] = useState(false);
-  const [mediaUploadSuccess, setMediaUploadSuccess] = useState(false);
-  const [mediaSourceTab, setMediaSourceTab] = useState('upload'); // 'upload' | 'default' | 'url'
 
   // Multi-Template Categories & Meta Sync State
-  const [categoriesSummary, setCategoriesSummary] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [syncingMeta, setSyncingMeta] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState(null);
@@ -239,17 +232,6 @@ export default function BroadcastPage() {
         if (!selectedTemplate) {
           handleSelectTemplate(list[0]);
         }
-      }
-
-      // Load template categories summary breakdown
-      try {
-        const catRes = await fetch('/api/broadcast/templates/categories', { headers });
-        const catData = await catRes.json();
-        if (catData.categories) {
-          setCategoriesSummary(catData.categories);
-        }
-      } catch (catErr) {
-        console.warn('Failed to load template categories summary:', catErr.message);
       }
 
       // Load registered sender phones
@@ -470,13 +452,6 @@ export default function BroadcastPage() {
           handleSelectTemplate(data.templates[0]);
         }
       }
-
-      // Reload category breakdown
-      try {
-        const catRes = await fetch('/api/broadcast/templates/categories', { headers });
-        const catData = await catRes.json();
-        if (catData.categories) setCategoriesSummary(catData.categories);
-      } catch (e) {}
 
       setSyncFeedback({
         type: 'success',
@@ -1066,7 +1041,7 @@ export default function BroadcastPage() {
       </div>
 
       {/* Main Form Body & Right Preview Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(340px, 0.85fr)', gap: '28px', alignItems: 'start' }}>
+      <div className="broadcast-studio-grid">
         {/* Left Wizard Cards */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* STEP 1: Audience & Campaign Details */}
@@ -1096,7 +1071,7 @@ export default function BroadcastPage() {
                 </a>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+              <div className="grid-responsive-2col" style={{ marginBottom: '20px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
                     Campaign Name <span style={{ color: 'var(--error)' }}>*</span>
@@ -1297,7 +1272,7 @@ export default function BroadcastPage() {
                     <FileCheck size={16} color="#16A34A" /> Import Validation Summary
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '14px' }}>
+                  <div className="grid-responsive-4col" style={{ marginBottom: '14px' }}>
                     <div style={{ background: '#F8FAFC', padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
                       <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0F172A' }}>{validationStats.total}</div>
                       <div style={{ fontSize: '0.7rem', color: '#64748B' }}>Total Contacts</div>
@@ -1317,7 +1292,7 @@ export default function BroadcastPage() {
                   </div>
 
                   {/* Column Selectors */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '16px' }}>
+                  <div className="grid-responsive-2col" style={{ marginBottom: '16px' }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
                         <label style={{ fontSize: '0.775rem', fontWeight: 600, color: '#334155' }}>
@@ -2397,7 +2372,7 @@ export default function BroadcastPage() {
                 </div>
 
                 {/* Calculated Metrics Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '14px' }}>
+                <div className="grid-responsive-3col" style={{ marginBottom: '14px' }}>
                   <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '10px 12px', borderRadius: '8px' }}>
                     <div style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 600, textTransform: 'uppercase' }}>Dispatch Speed</div>
                     <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0F172A', marginTop: '2px' }}>
@@ -2605,7 +2580,7 @@ export default function BroadcastPage() {
             </div>
 
             {/* Counters */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '20px' }}>
+            <div className="grid-responsive-3col" style={{ marginBottom: '20px' }}>
               <div style={{ background: '#F8FAFC', padding: '12px', borderRadius: '10px', textAlign: 'center' }}>
                 <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0F172A' }}>{progressStats.total}</div>
                 <div style={{ fontSize: '0.72rem', color: '#64748B' }}>Total Targets</div>

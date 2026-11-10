@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { 
   Send, 
@@ -7,9 +7,10 @@ import {
   CheckCircle2, 
   Eye, 
   Layers, 
-  ArrowUpRight,
-  RefreshCw,
-  Plus
+  ArrowUpRight, 
+  RefreshCw, 
+  Plus, 
+  AlertCircle 
 } from 'lucide-react';
 import { formatIndianDate } from '../utils/indianTime';
 
@@ -19,11 +20,7 @@ export default function DashboardPage({ setActiveTab }) {
   const [recentCampaigns, setRecentCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
-
-  async function loadDashboardData() {
+  const loadDashboardData = useCallback(async () => {
     setLoading(true);
     try {
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
@@ -55,7 +52,11 @@ export default function DashboardPage({ setActiveTab }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [token]);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
 
   // Calculate real rates
   const totalRecipients = overview?.totalRecipients || 0;
@@ -66,14 +67,14 @@ export default function DashboardPage({ setActiveTab }) {
   const readRate = totalDelivered > 0 ? ((totalRead / totalDelivered) * 100).toFixed(1) : 0;
 
   return (
-    <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '28px 24px' }}>
+    <div style={{ maxWidth: '1440px', margin: '0 auto', padding: 'clamp(16px, 3vw, 28px) clamp(14px, 3vw, 24px)' }}>
       {/* Top Banner with Quick Actions */}
       <div style={{
         background: 'linear-gradient(135deg, #128C7E 0%, #0a5249 100%)',
         borderRadius: '14px',
-        padding: '24px 28px',
+        padding: 'clamp(18px, 3vw, 24px) clamp(18px, 3vw, 28px)',
         color: '#FFFFFF',
-        marginBottom: '28px',
+        marginBottom: '24px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -82,18 +83,18 @@ export default function DashboardPage({ setActiveTab }) {
         boxShadow: 'var(--shadow-md)'
       }}>
         <div>
-          <div style={{ fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.85 }}>
+          <div style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.85 }}>
             WhatsApp Business Cloud API Operations
           </div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginTop: '4px', letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: 'clamp(1.35rem, 3vw, 1.75rem)', fontWeight: 800, marginTop: '4px', letterSpacing: '-0.02em' }}>
             Broadcasting & Booking Engine Overview
           </h1>
-          <p style={{ fontSize: '0.875rem', opacity: 0.9, marginTop: '4px', maxWidth: '640px' }}>
+          <p style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '4px', maxWidth: '640px' }}>
             Monitor real-time recipient telemetry, manage high-volume broadcasts, and inspect automated 4-stage guest check-in journeys.
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <button
             onClick={() => setActiveTab('broadcast')}
             className="btn"
@@ -101,12 +102,12 @@ export default function DashboardPage({ setActiveTab }) {
               background: '#FFFFFF',
               color: '#0d7064',
               fontWeight: 700,
-              padding: '10px 18px',
+              padding: '9px 16px',
               border: 'none',
               boxShadow: 'var(--shadow-sm)'
             }}
           >
-            <Send size={16} color="#0d7064" />
+            <Send size={15} color="#0d7064" />
             <span>Launch Broadcast</span>
           </button>
           <button
@@ -117,10 +118,10 @@ export default function DashboardPage({ setActiveTab }) {
               color: '#FFFFFF',
               border: '1px solid rgba(255, 255, 255, 0.3)',
               fontWeight: 600,
-              padding: '10px 16px'
+              padding: '9px 15px'
             }}
           >
-            <Cpu size={16} />
+            <Cpu size={15} />
             <span>Booking Automations</span>
           </button>
         </div>
@@ -129,9 +130,9 @@ export default function DashboardPage({ setActiveTab }) {
       {/* KPI Cards Grid */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-        gap: '18px',
-        marginBottom: '28px'
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))',
+        gap: '16px',
+        marginBottom: '24px'
       }}>
         {/* Card 1: Total Campaigns */}
         <div className="saas-card" style={{ padding: '20px' }}>
@@ -236,15 +237,31 @@ export default function DashboardPage({ setActiveTab }) {
             4-Stage guest triggers sent
           </div>
         </div>
+
+        {/* Card 6: Failures & Bounces */}
+        <div className="saas-card" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Delivery Failures</span>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: totalFailed > 0 ? '#FEE2E2' : '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <AlertCircle size={16} color={totalFailed > 0 ? '#DC2626' : '#94A3B8'} />
+            </div>
+          </div>
+          <div style={{ fontSize: '1.85rem', fontWeight: 800, color: totalFailed > 0 ? '#DC2626' : '#0F172A', marginTop: '10px' }}>
+            {totalFailed.toLocaleString()}
+          </div>
+          <div style={{ fontSize: '0.75rem', color: totalFailed > 0 ? '#DC2626' : '#64748B', marginTop: '4px' }}>
+            {overview?.failureRate || '0%'} invalid / rejected
+          </div>
+        </div>
       </div>
 
       {/* Main Section: Recent Campaigns Table + Right Side Status */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.8fr) minmax(320px, 1fr)', gap: '24px' }}>
+      <div className="dashboard-main-grid">
         {/* Left: Recent Campaigns */}
-        <div className="saas-card" style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
+        <div className="saas-card" style={{ padding: 'clamp(16px, 3vw, 24px)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
             <div>
-              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A' }}>
+              <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0F172A' }}>
                 Recent Broadcast Campaigns
               </h2>
               <p style={{ fontSize: '0.8rem', color: '#64748B' }}>
@@ -289,8 +306,8 @@ export default function DashboardPage({ setActiveTab }) {
               </button>
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="data-table">
+            <div className="table-wrapper" tabIndex={0} role="region" aria-label="Recent broadcast campaigns table">
+              <table className="responsive-table data-table">
                 <thead>
                   <tr>
                     <th>Campaign</th>

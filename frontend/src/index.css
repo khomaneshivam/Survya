@@ -579,4 +579,497 @@ body {
   to { opacity: 1; }
 }
 
+/* =========================================================================
+   PRODUCTION SAAS RESPONSIVE LAYOUT & NAVIGATION
+   ========================================================================= */
+
+.app-container {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: 100dvh;
+  position: relative;
+}
+
+.app-sidebar {
+  width: 260px;
+  background: #FFFFFF;
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  position: sticky;
+  top: 0;
+  z-index: 999;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s ease;
+  flex-shrink: 0;
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Tablet & Mobile Breakpoints for Sidebar */
+@media (max-width: 1024px) {
+  .app-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    max-width: 85vw;
+    height: 100dvh;
+    transform: translateX(-100%);
+    box-shadow: none;
+    z-index: 1001;
+  }
+
+  .app-sidebar.mobile-open {
+    transform: translateX(0);
+    box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.35);
+  }
+
+  .mobile-menu-btn {
+    display: inline-flex !important;
+  }
+}
+
+.mobile-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Mobile Bottom Navigation Bar */
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 62px;
+    background: #FFFFFF;
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -4px 16px rgba(15, 23, 42, 0.08);
+    z-index: 890;
+    padding: 0 6px;
+    align-items: center;
+    justify-content: space-around;
+  }
+
+  .mobile-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: transparent;
+    border: none;
+    padding: 6px 8px;
+    border-radius: 8px;
+    color: #64748B;
+    font-size: 0.68rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex: 1;
+    min-width: 0;
+    text-decoration: none;
+    font-family: var(--font-sans);
+  }
+
+  .mobile-nav-item.active {
+    color: var(--brand-wa);
+    font-weight: 700;
+  }
+
+  .mobile-nav-item.active .mobile-nav-icon {
+    color: var(--brand-wa);
+    transform: scale(1.1);
+  }
+
+  .app-main > main {
+    padding-bottom: 76px !important;
+  }
+}
+
+/* =========================================================================
+   RESPONSIVE SAAS GRIDS
+   ========================================================================= */
+
+.dashboard-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(320px, 1fr);
+  gap: 24px;
+}
+
+@media (max-width: 960px) {
+  .dashboard-main-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+.broadcast-studio-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(340px, 0.85fr);
+  gap: 28px;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .broadcast-studio-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}
+
+.settings-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .settings-main-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+.grid-responsive-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 640px) {
+  .grid-responsive-2col {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
+
+.grid-responsive-3col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .grid-responsive-3col {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}
+
+.grid-responsive-4col {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .grid-responsive-4col {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .grid-responsive-4col {
+    grid-template-columns: 1fr;
+  }
+}
+
+.automation-header-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr) auto;
+  gap: 14px;
+  align-items: flex-end;
+}
+
+@media (max-width: 768px) {
+  .automation-header-grid {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+}
+
+/* =========================================================================
+   RESPONSIVE TABLE CONTAINER & STICKY POSITIONING (Modern Web Guidance)
+   ========================================================================= */
+
+.table-wrapper {
+  overflow: auto;
+  max-inline-size: 100%;
+  overscroll-behavior: contain;
+  container-type: inline-size;
+}
+
+.responsive-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+}
+
+.responsive-table thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background: #F8FAFC;
+}
+
+.responsive-table th {
+  background: #F8FAFC;
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.775rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.responsive-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #F1F5F9;
+  color: var(--text-primary);
+  background: #FFFFFF;
+}
+
+.responsive-table tr:hover td {
+  background: #F8FAFC;
+}
+
+/* =========================================================================
+   MODERN ACCESSIBLE MODAL DIALOGS (Modern Web Guidance)
+   ========================================================================= */
+
+dialog:modal {
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 0;
+  background: #FFFFFF;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+  max-width: min(92vw, 560px);
+  width: 100%;
+  margin: auto;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* =========================================================================
+   DEEP REPORTING & VISUAL TELEMETRY COMPONENTS
+   ========================================================================= */
+
+.funnel-container {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+  margin: 18px 0;
+}
+
+@media (max-width: 900px) {
+  .funnel-container {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+.funnel-step-card {
+  background: #FFFFFF;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 14px 16px;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.funnel-step-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.funnel-progress-track {
+  height: 6px;
+  background: #F1F5F9;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.funnel-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+/* Slide-over Audit Dossier Drawer */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 1050;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.drawer-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 500px;
+  max-width: 92vw;
+  background: #FFFFFF;
+  box-shadow: -10px 0 35px rgba(0, 0, 0, 0.18);
+  z-index: 1051;
+  display: flex;
+  flex-direction: column;
+  animation: slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.audit-timeline {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  padding-left: 26px;
+}
+
+.audit-timeline::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  background: #E2E8F0;
+}
+
+.audit-timeline-item {
+  position: relative;
+  padding-bottom: 22px;
+}
+
+.audit-timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.audit-timeline-node {
+  position: absolute;
+  left: -26px;
+  top: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  border: 2px solid #CBD5E1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.audit-timeline-node.completed {
+  border-color: #16A34A;
+  background: #DCFCE7;
+  color: #16A34A;
+}
+
+.audit-timeline-node.read {
+  border-color: #2563EB;
+  background: #DBEAFE;
+  color: #2563EB;
+}
+
+.audit-timeline-node.failed {
+  border-color: #DC2626;
+  background: #FEE2E2;
+  color: #DC2626;
+}
+
+/* Touch-friendly interactive chips */
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid var(--border-color);
+  background: #FFFFFF;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.filter-chip:hover {
+  border-color: var(--border-strong);
+  background: #F8FAFC;
+}
+
+.filter-chip.active {
+  background: #F0FDF4;
+  border-color: #86EFAC;
+  color: #15803D;
+  font-weight: 700;
+}
+
+/* Responsive Topbar Enhancements */
+@media (max-width: 960px) {
+  .topbar-ist-clock {
+    display: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar-sender-chip span:last-child {
+    display: none !important;
+  }
+  .topbar-action-text {
+    display: none !important;
+  }
+}
+
+
+
 

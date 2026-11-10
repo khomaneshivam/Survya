@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { 
   Users, 
@@ -43,11 +43,7 @@ export default function AdminPage() {
     error: null
   });
 
-  useEffect(() => {
-    loadAllAdminData();
-  }, []);
-
-  async function loadAllAdminData() {
+  const loadAllAdminData = useCallback(async () => {
     setLoading(true);
     try {
       const headers = { 'Authorization': `Bearer ${token}` };
@@ -73,7 +69,11 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [token]);
+
+  useEffect(() => {
+    loadAllAdminData();
+  }, [loadAllAdminData]);
 
   function flashSuccess(msg) {
     setSuccessMsg(msg);

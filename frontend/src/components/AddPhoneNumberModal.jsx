@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Smartphone, X, CheckCircle2, AlertCircle, Info, Plus } from 'lucide-react';
+import { Smartphone, X, AlertCircle, Info, Plus } from 'lucide-react';
 
 export default function AddPhoneNumberModal({ isOpen, onClose, onSuccess }) {
   const { token } = useAuth();

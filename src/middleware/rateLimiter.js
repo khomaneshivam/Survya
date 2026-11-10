@@ -23,10 +23,20 @@ class MemoryRateLimiter {
     }
   }
 
+  static getClientIp(req) {
+    const xForwardedFor = req.headers["x-forwarded-for"];
+    if (xForwardedFor && typeof xForwardedFor === "string") {
+      const firstIp = xForwardedFor.split(",")[0].trim();
+      if (firstIp) return firstIp;
+    }
+    return req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || "client_unknown";
+  }
+
   middleware() {
     return (req, res, next) => {
       // Key on authenticated user ID or client IP
-      const clientKey = req.user?.id ? `user_${req.user.id}` : (req.ip || req.connection?.remoteAddress || "client_unknown");
+      const clientIp = MemoryRateLimiter.getClientIp(req);
+      const clientKey = req.user?.id ? `user_${req.user.id}` : clientIp;
       const routeKey = `${clientKey}_${req.baseUrl || ""}${req.path}`;
       const now = Date.now();
 
@@ -55,7 +65,7 @@ class MemoryRateLimiter {
   }
 }
 
-// 1. Strict rate limit on authentication (login / registration): 15 attempts / 60s
+// 1. Strict rate limit on authentication (login / registration / reset): 15 attempts / 60s
 const authLimiter = new MemoryRateLimiter(60000, 15, "Too many authentication attempts. Please try again after 1 minute.").middleware();
 
 // 2. Broadcast send limiter: 25 requests / 60s
@@ -64,8 +74,13 @@ const broadcastLimiter = new MemoryRateLimiter(60000, 25, "Broadcast dispatch ra
 // 3. Upload limiter: 30 requests / 60s
 const uploadLimiter = new MemoryRateLimiter(60000, 30, "File upload rate limit reached. Please wait before uploading more files.").middleware();
 
+// 4. General API protection limiter: 300 requests / 60s per client
+const apiLimiter = new MemoryRateLimiter(60000, 300, "API rate limit exceeded. Please reduce request frequency.").middleware();
+
 module.exports = {
   authLimiter,
   broadcastLimiter,
-  uploadLimiter
+  uploadLimiter,
+  apiLimiter,
+  MemoryRateLimiter
 };

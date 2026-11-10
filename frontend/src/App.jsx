@@ -13,7 +13,14 @@ import AdminPage from './pages/AdminPage';
 import SettingsPage from './pages/SettingsPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-import { Smartphone } from 'lucide-react';
+import { 
+  Smartphone, 
+  LayoutDashboard, 
+  Send, 
+  Cpu, 
+  MessageSquare, 
+  BarChart3 
+} from 'lucide-react';
 
 function AppContent() {
   const { isAuthenticated, loading, isAdmin } = useAuth();
@@ -60,12 +67,11 @@ function AppContent() {
     return <LoginPage onSwitchToRegister={() => setAuthView('register')} />;
   }
 
-
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
+    <div className="app-container">
       <ImpersonationBanner />
 
-      <div style={{ display: 'flex', flex: 1, minHeight: '100vh' }}>
+      <div className="app-body">
         {/* Enterprise Sidebar */}
         <Sidebar 
           activeTab={activeTab} 
@@ -75,7 +81,7 @@ function AppContent() {
         />
 
         {/* Main Content Area */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflowX: 'hidden' }}>
+        <div className="app-main">
           <Topbar 
             activeTab={activeTab} 
             setActiveTab={setActiveTab} 
@@ -92,6 +98,45 @@ function AppContent() {
             {activeTab === 'admin' && isAdmin && <AdminPage />}
             {activeTab === 'settings' && <SettingsPage />}
           </main>
+
+          {/* Native-style Mobile Bottom Navigation Bar */}
+          <nav className="mobile-bottom-nav" aria-label="Mobile Bottom Navigation">
+            <button 
+              className={`mobile-nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
+              onClick={() => setActiveTab('dashboard')}
+            >
+              <LayoutDashboard size={20} className="mobile-nav-icon" />
+              <span>Dashboard</span>
+            </button>
+            <button 
+              className={`mobile-nav-item ${activeTab === 'broadcast' ? 'active' : ''}`}
+              onClick={() => setActiveTab('broadcast')}
+            >
+              <Send size={20} className="mobile-nav-icon" />
+              <span>Broadcast</span>
+            </button>
+            <button 
+              className={`mobile-nav-item ${activeTab === 'automation' ? 'active' : ''}`}
+              onClick={() => setActiveTab('automation')}
+            >
+              <Cpu size={20} className="mobile-nav-icon" />
+              <span>Lifecycle</span>
+            </button>
+            <button 
+              className={`mobile-nav-item ${activeTab === 'inbox' ? 'active' : ''}`}
+              onClick={() => setActiveTab('inbox')}
+            >
+              <MessageSquare size={20} className="mobile-nav-icon" />
+              <span>Inbox</span>
+            </button>
+            <button 
+              className={`mobile-nav-item ${activeTab === 'reports' ? 'active' : ''}`}
+              onClick={() => setActiveTab('reports')}
+            >
+              <BarChart3 size={20} className="mobile-nav-icon" />
+              <span>Reports</span>
+            </button>
+          </nav>
 
           <footer style={{
             borderTop: '1px solid var(--border-color)',

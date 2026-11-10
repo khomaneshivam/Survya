@@ -7,7 +7,6 @@ import {
   CheckCheck, 
   Search, 
   ShieldCheck, 
-  User, 
   Sparkles,
   ArrowLeft,
   X,
@@ -22,10 +21,7 @@ import {
   ImageOff,
   ZoomIn,
   ZoomOut,
-  Bot,
   CheckCircle2,
-  Clock,
-  Settings2,
   Layers
 } from 'lucide-react';
 import { formatIndianTime } from '../utils/indianTime';
@@ -2088,7 +2084,13 @@ export default function InboxPage() {
             </div>
 
             {/* Modal Body / Form */}
-            <form onSubmit={handleSaveAutoReplySettings} style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            {loadingAutoReply ? (
+              <div style={{ padding: '40px 24px', textAlign: 'center', color: '#64748B' }}>
+                <RefreshCw size={24} className="pulse-glow" style={{ margin: '0 auto 10px auto', color: 'var(--brand-wa)' }} />
+                <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>Loading auto-reply configuration...</div>
+              </div>
+            ) : (
+              <form onSubmit={handleSaveAutoReplySettings} style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
               {/* 1. Master Toggle */}
               <div style={{
                 display: 'flex',
@@ -2343,6 +2345,7 @@ export default function InboxPage() {
                 </button>
               </div>
             </form>
+          )}
           </div>
         </div>
       )}
