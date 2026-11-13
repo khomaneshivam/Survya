@@ -1,305 +1,270 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { 
+import {
   LayoutDashboard,
-  Send, 
-  Cpu, 
-  MessageSquare, 
-  BarChart3, 
-  ShieldCheck, 
-  Settings, 
-  Smartphone,
-  ChevronRight,
-  UserCheck,
+  Users,
+  FileSpreadsheet,
+  GitBranch,
+  MessageSquare,
+  Send,
+  Bot,
+  BarChart3,
+  Plug,
+  BedDouble,
+  CreditCard,
+  ShieldCheck,
+  PanelLeftClose,
+  PanelLeftOpen,
   LogOut,
-  Layers,
   X
 } from 'lucide-react';
 
-export default function Sidebar({ activeTab, setActiveTab, mobileOpen, setMobileOpen }) {
+export default function Sidebar({
+  activeTab,
+  setActiveTab,
+  collapsed,
+  setCollapsed,
+  mobileOpen,
+  setMobileOpen
+}) {
   const { user, isAdmin, logout } = useAuth();
 
-  const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'broadcast', label: 'Broadcast Studio', icon: Send },
-    { id: 'flows', label: 'WhatsApp Flows', icon: Layers, badge: 'New' },
-    { id: 'automation', label: 'Booking Lifecycle', icon: Cpu },
-    { id: 'inbox', label: '2-Way Inbox', icon: MessageSquare },
-    { id: 'reports', label: 'Delivery Reports', icon: BarChart3 },
-    ...(isAdmin ? [{ id: 'admin', label: 'Admin Hub', icon: ShieldCheck, badge: 'Admin' }] : []),
-    { id: 'settings', label: 'Line & API Settings', icon: Settings },
+  const sections = [
+    {
+      title: 'Platform',
+      items: [
+        { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
+        { id: 'enquiries', label: 'CRM', icon: Users },
+        { id: 'flows', label: 'Forms', icon: FileSpreadsheet },
+        { id: 'automation', label: 'Workflows', icon: GitBranch },
+        { id: 'inbox', label: 'Conversations', icon: MessageSquare },
+        { id: 'broadcast', label: 'Campaigns', icon: Send },
+        { id: 'ai', label: 'SARVYA AI', icon: Bot },
+        { id: 'reports', label: 'Insights', icon: BarChart3 },
+        { id: 'connect', label: 'Connect', icon: Plug },
+        { id: 'settings', label: 'Settings', icon: Plug }
+      ]
+    },
+    {
+      title: 'Industry & Core',
+      items: [
+        { id: 'inventory', label: 'Hospitality', icon: BedDouble },
+        { id: 'pricing', label: 'Plans', icon: CreditCard },
+        ...(isAdmin ? [{ id: 'admin', label: 'Core Admin', icon: ShieldCheck }] : [])
+      ]
+    }
   ];
+
+  function handleNavigate(id) {
+    setActiveTab(id);
+    if (setMobileOpen) setMobileOpen(false);
+  }
 
   return (
     <>
-      {/* Mobile Backdrop */}
       {mobileOpen && (
-        <div 
+        <div
           className="mobile-backdrop"
           onClick={() => setMobileOpen(false)}
           aria-hidden="true"
         />
       )}
 
-      <aside className={`app-sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
+      <aside
+        className={`app-sidebar ${collapsed ? 'is-collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}
+        aria-label="Primary Sidebar Navigation"
+      >
         {/* Brand Header */}
         <div style={{
-          padding: '18px 18px 16px 18px',
+          height: 'var(--topbar-height)',
+          paddingInline: collapsed ? '12px' : '16px',
           borderBottom: '1px solid var(--border-color)',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '10px'
+          justifyContent: collapsed ? 'center' : 'space-between',
+          gap: '8px',
+          flexShrink: 0
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
             <div style={{
-              width: '38px',
-              height: '38px',
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, #128C7E, #0d7064)',
+              width: '30px',
+              height: '30px',
+              borderRadius: '8px',
+              background: 'var(--sarvya-blue)',
+              color: '#FFFFFF',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#FFFFFF',
-              boxShadow: '0 2px 8px rgba(18, 140, 126, 0.3)',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 800,
+              fontSize: '14px',
               flexShrink: 0
             }}>
-              <Smartphone size={20} strokeWidth={2.2} />
+              S
             </div>
-            <div style={{ overflow: 'hidden' }}>
-              <div style={{
-                fontWeight: 800,
-                fontSize: '1.05rem',
-                color: '#0F172A',
-                letterSpacing: '-0.02em',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}>
-                KonkanTrip
-                <span style={{
-                  background: '#DCFCE7',
-                  color: '#15803D',
-                  fontSize: '0.65rem',
+
+            {!collapsed && (
+              <div style={{ minWidth: 0 }}>
+                <div style={{
+                  fontFamily: 'var(--font-display)',
                   fontWeight: 700,
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  border: '1px solid #BBF7D0'
+                  fontSize: '15px',
+                  color: 'var(--text-primary)',
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1.1
                 }}>
-                  WABA
-                </span>
+                  SARVYA
+                </div>
+                <div style={{
+                  fontSize: '11px',
+                  color: 'var(--text-muted)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  Engagement OS
+                </div>
               </div>
-              <div style={{
-                fontSize: '0.72rem',
-                color: '#64748B',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis'
-              }}>
-                Enterprise WhatsApp Engine
-              </div>
-            </div>
+            )}
           </div>
 
-          {/* Close Button on Mobile Drawer */}
+          {!collapsed && (
+            <button
+              type="button"
+              className="sarvya-btn sarvya-btn-ghost sarvya-btn-sm sidebar-collapse-btn"
+              onClick={() => setCollapsed(true)}
+              aria-label="Collapse sidebar"
+              title="Collapse sidebar"
+              style={{ padding: '5px' }}
+            >
+              <PanelLeftClose size={16} />
+            </button>
+          )}
+
           {mobileOpen && (
             <button
+              type="button"
+              className="sarvya-btn sarvya-btn-ghost sarvya-btn-sm"
               onClick={() => setMobileOpen(false)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '32px',
-                height: '32px',
-                borderRadius: '8px',
-                background: '#F1F5F9',
-                border: '1px solid var(--border-color)',
-                color: '#64748B',
-                cursor: 'pointer'
-              }}
-              aria-label="Close menu"
+              aria-label="Close navigation menu"
+              style={{ padding: '5px' }}
             >
-              <X size={18} />
+              <X size={16} />
             </button>
           )}
         </div>
 
-        {/* Navigation Items */}
-        <div style={{ flex: 1, padding: '16px 12px', overflowY: 'auto' }}>
-          <div style={{
-            fontSize: '0.7rem',
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            color: '#94A3B8',
-            padding: '4px 12px 10px 12px'
-          }}>
-            Main Navigation
-          </div>
-
-          <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {navItems.map(item => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    setActiveTab(item.id);
-                    if (setMobileOpen) setMobileOpen(false);
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    width: '100%',
-                    padding: '9px 12px',
-                    borderRadius: '8px',
-                    fontSize: '0.875rem',
-                    fontWeight: isActive ? 600 : 500,
-                    border: '1px solid',
-                    borderColor: isActive ? '#BBF7D0' : 'transparent',
-                    background: isActive ? '#F0FDF4' : 'transparent',
-                    color: isActive ? '#15803D' : '#334155',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    textAlign: 'left'
-                  }}
-                  onMouseOver={e => {
-                    if (!isActive) {
-                      e.currentTarget.style.background = '#F8FAFC';
-                      e.currentTarget.style.color = '#0F172A';
-                    }
-                  }}
-                  onMouseOut={e => {
-                    if (!isActive) {
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.color = '#334155';
-                    }
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <Icon size={18} color={isActive ? '#16A34A' : '#64748B'} />
-                    <span>{item.label}</span>
-                  </div>
-
-                  {item.badge ? (
-                    <span style={{
-                      fontSize: '0.65rem',
-                      fontWeight: 700,
-                      background: '#FEF3C7',
-                      color: '#B45309',
-                      padding: '2px 7px',
-                      borderRadius: '999px',
-                      border: '1px solid #FDE68A'
-                    }}>
-                      {item.badge}
-                    </span>
-                  ) : isActive ? (
-                    <ChevronRight size={14} color="#16A34A" />
-                  ) : null}
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-
-        {/* User Profile & Sign Out Footer */}
-        <div style={{
-          padding: '14px 16px',
-          borderTop: '1px solid var(--border-color)',
-          background: '#F8FAFC',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '10px'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-            <div style={{
-              width: '34px',
-              height: '34px',
-              borderRadius: '8px',
-              background: user?.role === 'ADMIN' ? '#FEF3C7' : '#DCFCE7',
-              border: `1px solid ${user?.role === 'ADMIN' ? '#FDE68A' : '#BBF7D0'}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: user?.role === 'ADMIN' ? '#B45309' : '#15803D',
-              flexShrink: 0
-            }}>
-              <UserCheck size={18} />
-            </div>
-            <div style={{ minWidth: 0, overflow: 'hidden' }}>
-              <div style={{
-                fontSize: '0.825rem',
-                fontWeight: 700,
-                color: '#0F172A',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis'
-              }}>
-                {user?.name || 'Authorized User'}
-              </div>
-              <div style={{
-                fontSize: '0.7rem',
-                color: user?.role === 'ADMIN' ? '#D97706' : '#64748B',
-                fontWeight: 600
-              }}>
-                {user?.role === 'ADMIN' ? 'Master Admin' : 'Agent Operator'}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '5px',
-              background: '#DCFCE7',
-              padding: '4px 8px',
-              borderRadius: '999px',
-              border: '1px solid #BBF7D0'
-            }}>
-              <span style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                background: '#16A34A',
-                boxShadow: '0 0 5px rgba(22, 163, 74, 0.6)'
-              }} />
-              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#15803D' }}>
-                Active
-              </span>
-            </div>
-
+        {/* Navigation Groups */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: collapsed ? '12px 10px' : '14px 12px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {collapsed && (
             <button
               type="button"
-              onClick={logout}
-              title="Sign Out of KonkanTrip"
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: '#94A3B8',
-                cursor: 'pointer',
-                padding: '6px',
-                borderRadius: '6px',
+              className="sidebar-nav-btn sidebar-collapse-btn"
+              onClick={() => setCollapsed(false)}
+              data-tooltip="Expand sidebar"
+              aria-label="Expand sidebar"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              <PanelLeftOpen size={17} />
+            </button>
+          )}
+
+          {sections.map((section) => (
+            <div key={section.title}>
+              {!collapsed && (
+                <div style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  color: 'var(--text-muted)',
+                  padding: '0 10px 6px 10px'
+                }}>
+                  {section.title}
+                </div>
+              )}
+
+              <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px' }} aria-label={section.title}>
+                {section.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleNavigate(item.id)}
+                      aria-current={isActive ? 'page' : undefined}
+                      data-tooltip={collapsed ? item.label : undefined}
+                      className={`sidebar-nav-btn ${isActive ? 'is-active' : ''}`}
+                    >
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                        <Icon size={17} strokeWidth={isActive ? 2.1 : 1.75} style={{ flexShrink: 0 }} />
+                        {!collapsed && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>}
+                      </span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+          ))}
+        </div>
+
+        {/* Workspace User Footer */}
+        <div style={{
+          padding: collapsed ? '12px 10px' : '12px 14px',
+          borderTop: '1px solid var(--border-color)',
+          background: 'var(--bg-subtle)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          gap: '8px'
+        }}>
+          {!collapsed && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '9px', minWidth: 0 }}>
+              <div style={{
+                width: '30px',
+                height: '30px',
+                borderRadius: '50%',
+                background: 'var(--sarvya-blue-soft)',
+                border: '1px solid var(--sarvya-blue-border)',
+                color: 'var(--sarvya-blue)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                transition: 'all 0.15s ease'
-              }}
-              onMouseOver={e => {
-                e.currentTarget.style.color = '#EF4444';
-                e.currentTarget.style.background = '#FEE2E2';
-              }}
-              onMouseOut={e => {
-                e.currentTarget.style.color = '#94A3B8';
-                e.currentTarget.style.background = 'transparent';
-              }}
-            >
-              <LogOut size={16} />
-            </button>
-          </div>
+                fontSize: '12px',
+                fontWeight: 700,
+                flexShrink: 0
+              }}>
+                {(user?.name || 'U').charAt(0).toUpperCase()}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{
+                  fontSize: '12.5px',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis'
+                }}>
+                  {user?.name || 'Operator'}
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  {user?.role === 'ADMIN' ? 'Admin' : 'Operator'}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={logout}
+            className="sarvya-btn sarvya-btn-ghost sarvya-btn-sm"
+            title="Sign out"
+            aria-label="Sign out"
+            style={{ padding: '6px' }}
+          >
+            <LogOut size={15} />
+          </button>
         </div>
       </aside>
     </>

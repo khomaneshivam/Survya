@@ -113,6 +113,29 @@ class WebhookService {
       for (const change of changes) {
         const val = change.value || {};
 
+        // 0. Process Template Status Updates from Meta (APPROVED, REJECTED, PAUSED, PENDING_DELETION)
+        if (change.field === "message_template_status_update" && val && (val.message_template_id || val.message_template_name)) {
+          try {
+            const tplEvent = String(val.event || val.status || "").toUpperCase();
+            const tplId = val.message_template_id ? String(val.message_template_id) : null;
+            const tplName = val.message_template_name ? String(val.message_template_name) : null;
+            const reason = val.reason || val.other_info?.title || null;
+            if (tplEvent) {
+              db.prepare(`
+                UPDATE templates
+                SET status = ?,
+                    rejection_reason = CASE WHEN ? IS NOT NULL AND ? != 'NONE' THEN ? ELSE rejection_reason END,
+                    approved_at = CASE WHEN ? = 'APPROVED' THEN COALESCE(approved_at, CURRENT_TIMESTAMP) ELSE approved_at END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE meta_id = ? OR id = ? OR (name = ? AND language = COALESCE(?, language))
+              `).run(tplEvent, reason, reason, reason, tplEvent, tplId || "", tplId || "", tplName || "", val.message_template_language || null);
+              processedStatuses++;
+            }
+          } catch (tplErr) {
+            console.warn("[Webhook] Template status update notice:", tplErr.message);
+          }
+        }
+
         // 1. Process Incoming Customer Messages / Replies
         if (Array.isArray(val.messages) && val.messages.length > 0) {
           const contacts = Array.isArray(val.contacts) ? val.contacts : [];
@@ -449,6 +472,37 @@ class WebhookService {
           cleanPhone,
           answers: parsedResponse
         });
+
+        // PRD PR-007: Automatic Booking Enquiry Creation from Flow Submission
+        try {
+          const enquiryService = require("./enquiryService");
+          const checkIn = parsedResponse.check_in || parsedResponse.checkin || parsedResponse.preferred_date || parsedResponse.arrival_date;
+          let checkOut = parsedResponse.check_out || parsedResponse.checkout || parsedResponse.departure_date;
+          if (checkIn && !checkOut) {
+            const d = new Date(checkIn);
+            d.setDate(d.getDate() + 1);
+            checkOut = d.toISOString().split("T")[0];
+          }
+          if (checkIn && checkOut) {
+            const cin = new Date(checkIn);
+            const cout = new Date(checkOut);
+            if (!isNaN(cin.getTime()) && !isNaN(cout.getTime()) && cout > cin) {
+              enquiryService.createEnquiry(1, {
+                phone: cleanPhone,
+                guest_name: parsedResponse.guest_name || parsedResponse.full_name || customerName,
+                check_in: checkIn,
+                check_out: checkOut,
+                adults: Number(parsedResponse.adults || parsedResponse.party_size || 2),
+                children: Number(parsedResponse.children || 0),
+                room_preference: parsedResponse.room_preference || parsedResponse.experience_type || parsedResponse.room_type,
+                flow_session_id: waMessageId || clientToken || `flow_${Date.now()}`,
+                preferences: parsedResponse
+              });
+            }
+          }
+        } catch (enquiryErr) {
+          console.warn("[WebhookService] Auto-enquiry creation notice:", enquiryErr.message);
+        }
       } catch (respErr) {
         console.warn("[Webhook FlowResponse] Insert notice:", respErr.message);
       }
@@ -483,6 +537,12 @@ class WebhookService {
 
     const maskedSender = cleanPhone.length > 4 ? `***${cleanPhone.slice(-4)}` : "***";
     console.log(`[Webhook] Saved customer reply #${runResult.lastInsertRowid} from ${maskedSender} (type: ${msgType})`);
+
+    // PRD PR-004: Upsert contact for incoming guest message
+    try {
+      const enquiryService = require("./enquiryService");
+      enquiryService.upsertContact(1, cleanPhone, customerName, null, "WHATSAPP_INBOUND");
+    } catch (contactErr) {}
 
     // If inbound media needs background downloading from Meta
     if (incomingMediaId && (!incomingMediaUrl || incomingMediaUrl.startsWith("/api/media/inbound/"))) {
@@ -584,6 +644,53 @@ class WebhookService {
       }
     }
 
+    // Update unified whatsapp_messages & whatsapp_usage_ledger tables if tracking this meta_message_id
+    let updatedUnified = false;
+    try {
+      let waErrMsg = null;
+      let waErrCode = null;
+      if (newStatus === "FAILED" && Array.isArray(statusObj.errors) && statusObj.errors.length > 0) {
+        const firstErr = statusObj.errors[0];
+        waErrCode = String(firstErr.code || "");
+        waErrMsg = firstErr.message || firstErr.title || `Meta delivery error (${waErrCode})`;
+      }
+
+      if (newStatus === "DELIVERED") {
+        const resWa = db.prepare(`
+          UPDATE whatsapp_messages
+          SET status = CASE WHEN status = 'READ' THEN 'READ' ELSE 'DELIVERED' END,
+              delivered_at = COALESCE(delivered_at, ?),
+              updated_at = CURRENT_TIMESTAMP
+          WHERE meta_message_id = ?
+        `).run(eventTime, metaMessageId);
+        updatedUnified = resWa.changes > 0;
+        db.prepare(`UPDATE whatsapp_usage_ledger SET billing_status = 'RECORDED' WHERE meta_message_id = ?`).run(metaMessageId);
+      } else if (newStatus === "READ") {
+        const resWa = db.prepare(`
+          UPDATE whatsapp_messages
+          SET status = 'READ',
+              read_at = COALESCE(read_at, ?),
+              delivered_at = COALESCE(delivered_at, ?),
+              updated_at = CURRENT_TIMESTAMP
+          WHERE meta_message_id = ?
+        `).run(eventTime, eventTime, metaMessageId);
+        updatedUnified = resWa.changes > 0;
+        db.prepare(`UPDATE whatsapp_usage_ledger SET billing_status = 'RECORDED' WHERE meta_message_id = ?`).run(metaMessageId);
+      } else if (newStatus === "FAILED") {
+        const resWa = db.prepare(`
+          UPDATE whatsapp_messages
+          SET status = 'FAILED',
+              error_code = ?,
+              error_message = ?,
+              failed_at = COALESCE(failed_at, ?),
+              updated_at = CURRENT_TIMESTAMP
+          WHERE meta_message_id = ?
+        `).run(waErrCode, waErrMsg, eventTime, metaMessageId);
+        updatedUnified = resWa.changes > 0;
+        db.prepare(`UPDATE whatsapp_usage_ledger SET billing_status = 'WAIVED', unit_cost = 0 WHERE meta_message_id = ?`).run(metaMessageId);
+      }
+    } catch (waSyncErr) {}
+
     // Check existing recipient record (indexed by meta_message_id for O(1) lookup)
     const recipient = db.prepare(`
       SELECT id, status, campaign_id, delivered_at, read_at 
@@ -592,7 +699,7 @@ class WebhookService {
     `).get(metaMessageId);
 
     if (!recipient) {
-      return false;
+      return updatedUnified;
     }
 
     // Idempotency: Do not downgrade READ -> DELIVERED

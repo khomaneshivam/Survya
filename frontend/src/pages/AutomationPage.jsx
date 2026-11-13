@@ -476,7 +476,7 @@ export default function AutomationPage() {
       key: 'onCheckIn',
       title: 'Stage 2: On Check-In Day',
       subtitle: 'Warm welcome greeting, caretaker contact number, and key handover confirmation.',
-      color: '#15803D',
+      color: '#2F5219',
       hasOffset: false
     },
     {
@@ -502,7 +502,7 @@ export default function AutomationPage() {
       {/* Page Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
         <div>
-          <h1 style={{ fontSize: '1.65rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em' }}>
+          <h1 style={{ fontSize: '1.65rem', fontWeight: 800, color: '#171719', letterSpacing: '-0.02em' }}>
             Booking Lifecycle Automation
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '4px' }}>
@@ -533,60 +533,49 @@ export default function AutomationPage() {
         </div>
       </div>
 
-      {/* Evergreen Campaign & Auto-Sync Status Banner */}
-      <div style={{
-        background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)',
-        borderRadius: '12px',
+      {/* Evergreen Campaign & Auto-Sync Status Surface */}
+      <div className="sarvya-card" style={{
         padding: '16px 20px',
-        color: '#FFFFFF',
-        marginBottom: '24px',
+        marginBottom: '20px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         flexWrap: 'wrap',
-        gap: '14px',
-        boxShadow: '0 4px 14px rgba(15, 23, 42, 0.12)'
+        gap: '14px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{
-            width: '40px',
-            height: '40px',
-            borderRadius: '10px',
-            background: 'rgba(37, 211, 102, 0.15)',
-            border: '1px solid rgba(37, 211, 102, 0.3)',
+            width: '36px',
+            height: '36px',
+            borderRadius: '8px',
+            background: 'var(--status-success-bg)',
+            border: '1px solid var(--status-success-border)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center'
           }}>
-            <Radio size={20} color="#25D366" className={autoSync ? 'pulse-glow' : ''} />
+            <Radio size={18} color="#4C7A2B" className={autoSync ? 'pulse-glow' : ''} />
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.96rem', fontWeight: 700 }}>
-                Always-On Saved Campaign: Running in Background
+              <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                SARVYA Flow Scheduler: Always-On Lifecycle Engine
               </span>
-              <span style={{
-                background: '#22C55E',
-                color: '#FFFFFF',
-                fontSize: '0.68rem',
-                fontWeight: 700,
-                padding: '2px 8px',
-                borderRadius: '12px',
-                letterSpacing: '0.04em'
-              }}>
+              <span className="sarvya-badge sarvya-badge-green">
+                <span className="sarvya-status-dot" style={{ background: '#4C7A2B' }} />
                 ACTIVE
               </span>
             </div>
-            <div style={{ fontSize: '0.78rem', color: '#94A3B8', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <span>🔄 Auto-Sync: <strong>{autoSync ? `Every ${autoSyncIntervalHours} hour${autoSyncIntervalHours > 1 ? 's' : ''}` : 'Paused'}</strong></span>
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span>Auto-Sync: <strong>{autoSync ? `Every ${autoSyncIntervalHours} hour${autoSyncIntervalHours > 1 ? 's' : ''}` : 'Paused'}</strong></span>
               <span>•</span>
-              <span>⏱️ Last Synced: <strong>{lastSyncTime ? formatIndianTime(lastSyncTime, true) : 'Just now'}</strong></span>
+              <span>Last Synced: <strong>{lastSyncTime ? formatIndianTime(lastSyncTime, true) : 'Just now'}</strong></span>
               <span>•</span>
-              <span>📊 Active Records: <strong>{sheetData.length}</strong></span>
+              <span>Active Records: <strong>{sheetData.length}</strong></span>
               {hasSavedUploads && (
                 <>
                   <span>•</span>
-                  <span style={{ color: '#FCD34D' }}>💾 Includes Uploaded List</span>
+                  <span style={{ color: 'var(--sarvya-blue)', fontWeight: 600 }}>Includes Uploaded List</span>
                 </>
               )}
             </div>
@@ -595,7 +584,7 @@ export default function AutomationPage() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span style={{ fontSize: '0.74rem', color: '#CBD5E1' }}>Interval:</span>
+            <span style={{ fontSize: '0.74rem', color: '#D4D4D9' }}>Interval:</span>
             <select
               value={autoSyncIntervalHours}
               onChange={e => {
@@ -621,11 +610,11 @@ export default function AutomationPage() {
                 cursor: 'pointer'
               }}
             >
-              <option value={1} style={{ color: '#0F172A' }}>Every 1 hour</option>
-              <option value={3} style={{ color: '#0F172A' }}>Every 3 hours</option>
-              <option value={6} style={{ color: '#0F172A' }}>Every 6 hours</option>
-              <option value={12} style={{ color: '#0F172A' }}>Every 12 hours</option>
-              <option value={24} style={{ color: '#0F172A' }}>Every 24 hours</option>
+              <option value={1} style={{ color: '#171719' }}>Every 1 hour</option>
+              <option value={3} style={{ color: '#171719' }}>Every 3 hours</option>
+              <option value={6} style={{ color: '#171719' }}>Every 6 hours</option>
+              <option value={12} style={{ color: '#171719' }}>Every 12 hours</option>
+              <option value={24} style={{ color: '#171719' }}>Every 24 hours</option>
             </select>
           </div>
 
@@ -638,7 +627,7 @@ export default function AutomationPage() {
               fontSize: '0.75rem',
               padding: '0 10px',
               background: autoSync ? 'rgba(34, 197, 94, 0.15)' : 'rgba(255, 255, 255, 0.08)',
-              color: autoSync ? '#4ADE80' : '#E2E8F0',
+              color: autoSync ? '#4ADE80' : '#E5E5E8',
               border: autoSync ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(255, 255, 255, 0.15)'
             }}
           >
@@ -668,11 +657,11 @@ export default function AutomationPage() {
 
       {successMsg && (
         <div style={{
-          background: '#DCFCE7',
-          border: '1px solid #BBF7D0',
+          background: '#EDF4E6',
+          border: '1px solid #C3D1AC',
           borderRadius: '8px',
           padding: '12px 18px',
-          color: '#15803D',
+          color: '#2F5219',
           fontSize: '0.875rem',
           fontWeight: 600,
           display: 'flex',
@@ -687,11 +676,11 @@ export default function AutomationPage() {
 
       {errorMsg && (
         <div style={{
-          background: '#FEE2E2',
+          background: '#FDF0F0',
           border: '1px solid #FCA5A5',
           borderRadius: '8px',
           padding: '12px 18px',
-          color: '#DC2626',
+          color: '#9B2C2C',
           fontSize: '0.875rem',
           fontWeight: 600,
           display: 'flex',
@@ -708,7 +697,7 @@ export default function AutomationPage() {
         {/* Spreadsheet Data Source Integration Card */}
         <div className="saas-card" style={{ padding: '24px', marginBottom: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-            <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+            <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#171719', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
               <Sheet size={18} color="var(--brand-wa)" /> Booking Data Source (Google Sheet / Excel / CSV)
             </h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -718,7 +707,7 @@ export default function AutomationPage() {
                   onClick={handleClearSavedContacts}
                   disabled={clearingUploads}
                   className="btn btn-secondary"
-                  style={{ height: '36px', fontSize: '0.78rem', color: '#DC2626', borderColor: '#FCA5A5', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  style={{ height: '36px', fontSize: '0.78rem', color: '#9B2C2C', borderColor: '#FCA5A5', display: 'flex', alignItems: 'center', gap: '6px' }}
                   title="Clear uploaded contacts saved in database"
                 >
                   <Trash2 size={14} />
@@ -741,7 +730,7 @@ export default function AutomationPage() {
 
           <div className="automation-header-grid">
             <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '5px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#3A3A3E', marginBottom: '5px' }}>
                 Google Sheet Live URL (Public or Shared with Link)
               </label>
               <input
@@ -754,7 +743,7 @@ export default function AutomationPage() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '5px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#3A3A3E', marginBottom: '5px' }}>
                 Tab / Worksheet Name
               </label>
               <input
@@ -780,7 +769,7 @@ export default function AutomationPage() {
 
           {sheetHeaders.length > 0 && (
             <div style={{ marginTop: '14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#0F172A' }}>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#171719' }}>
                 Loaded Columns ({sheetHeaders.length}):
               </span>
               {sheetHeaders.map(col => (
@@ -795,7 +784,7 @@ export default function AutomationPage() {
         {/* 4-Stage Lifecycle Cards Grid */}
         <div style={{ marginBottom: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-            <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A' }}>
+            <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#171719' }}>
               Configure 4-Stage Booking Messages & Schedule
             </div>
             <button
@@ -831,7 +820,7 @@ export default function AutomationPage() {
                 >
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#0F172A' }}>{st.title}</span>
+                      <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#171719' }}>{st.title}</span>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
                         <input
                           type="checkbox"
@@ -842,13 +831,13 @@ export default function AutomationPage() {
                           }))}
                           style={{ width: '16px', height: '16px', accentColor: 'var(--brand-wa)' }}
                         />
-                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: cfg.enabled !== false ? '#15803D' : '#94A3B8' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: cfg.enabled !== false ? '#2F5219' : '#96969C' }}>
                           {cfg.enabled !== false ? 'ACTIVE' : 'PAUSED'}
                         </span>
                       </label>
                     </div>
 
-                    <p style={{ fontSize: '0.78rem', color: '#64748B', lineHeight: 1.45, marginBottom: '16px' }}>
+                    <p style={{ fontSize: '0.78rem', color: '#67676B', lineHeight: 1.45, marginBottom: '16px' }}>
                       {st.subtitle}
                     </p>
 
@@ -856,7 +845,7 @@ export default function AutomationPage() {
                       {/* Template Selector */}
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#334155' }}>
+                          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#3A3A3E' }}>
                             WhatsApp Template
                           </label>
                           {chosenTmpl && (
@@ -890,11 +879,11 @@ export default function AutomationPage() {
                           <div style={{
                             marginTop: '6px',
                             padding: '8px 10px',
-                            background: '#F8FAFC',
+                            background: '#F5F5F6',
                             borderRadius: '6px',
-                            border: '1px solid #E2E8F0',
+                            border: '1px solid #E5E5E8',
                             fontSize: '0.73rem',
-                            color: '#475569',
+                            color: '#67676B',
                             lineHeight: 1.4,
                             maxHeight: '62px',
                             overflowY: 'auto',
@@ -907,8 +896,8 @@ export default function AutomationPage() {
                         {/* Variables Selection: ONLY FROM SHEET/EXCEL/CSV COLUMNS */}
                         {tmplVars.length > 0 && (
                           <div style={{
-                            background: '#F8FAFC',
-                            border: '1px solid #E2E8F0',
+                            background: '#F5F5F6',
+                            border: '1px solid #E5E5E8',
                             borderRadius: '8px',
                             padding: '12px',
                             marginTop: '10px'
@@ -919,10 +908,10 @@ export default function AutomationPage() {
                               justifyContent: 'space-between',
                               marginBottom: '8px'
                             }}>
-                              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1E293B', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#171719', display: 'flex', alignItems: 'center', gap: '5px' }}>
                                 <Tag size={13} color="var(--brand-wa)" /> Variables Mapping ({tmplVars.length})
                               </span>
-                              <span style={{ fontSize: '0.68rem', color: '#64748B' }}>
+                              <span style={{ fontSize: '0.68rem', color: '#67676B' }}>
                                 Select column from sheet/file
                               </span>
                             </div>
@@ -944,13 +933,13 @@ export default function AutomationPage() {
                                   const curVal = cfg.variableMappings?.[v.key] ?? '';
 
                                   return (
-                                    <div key={v.key} style={{ background: '#FFFFFF', padding: '8px 10px', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
+                                    <div key={v.key} style={{ background: '#FFFFFF', padding: '8px 10px', borderRadius: '6px', border: '1px solid #E5E5E8' }}>
                                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#0F172A', fontFamily: 'monospace' }}>
+                                        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#171719', fontFamily: 'monospace' }}>
                                           {v.label} {v.name && v.name !== v.key ? `(${v.name})` : ''}
                                         </span>
                                         {v.example && (
-                                          <span style={{ fontSize: '0.68rem', color: '#94A3B8' }}>
+                                          <span style={{ fontSize: '0.68rem', color: '#96969C' }}>
                                             Ex: {v.example}
                                           </span>
                                         )}
@@ -979,7 +968,7 @@ export default function AutomationPage() {
                       {/* Daily Trigger Time */}
                       <div style={{ display: 'grid', gridTemplateColumns: st.hasOffset ? '1fr 1fr' : '1fr', gap: '10px' }}>
                         <div>
-                          <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                          <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#3A3A3E', marginBottom: '4px' }}>
                             Trigger Time (IST)
                           </label>
                           <input
@@ -995,7 +984,7 @@ export default function AutomationPage() {
 
                         {st.hasOffset && (
                           <div>
-                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#3A3A3E', marginBottom: '4px' }}>
                               {st.offsetLabel}
                             </label>
                             <input
@@ -1018,9 +1007,9 @@ export default function AutomationPage() {
                   <div style={{
                     marginTop: '16px',
                     paddingTop: '12px',
-                    borderTop: '1px solid #F1F5F9',
+                    borderTop: '1px solid #EEEEF0',
                     fontSize: '0.72rem',
-                    color: '#94A3B8'
+                    color: '#96969C'
                   }}>
                     Auto-dispatched via node-cron daily worker
                   </div>
@@ -1048,10 +1037,10 @@ export default function AutomationPage() {
       <div className="saas-card" style={{ padding: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
           <div>
-            <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0F172A' }}>
+            <h2 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#171719' }}>
               Live Booking Spreadsheet Inspector & Trigger Timelines
             </h2>
-            <p style={{ fontSize: '0.8rem', color: '#64748B' }}>
+            <p style={{ fontSize: '0.8rem', color: '#67676B' }}>
               All 4 lifecycle stages evaluated against today's date ({formatIndianDate(new Date())}, Indian Standard Time - IST).
             </p>
           </div>
@@ -1063,12 +1052,12 @@ export default function AutomationPage() {
 
         {/* Informational Guidance Box */}
         <div style={{
-          background: '#F0FDF4',
-          border: '1px solid #BBF7D0',
+          background: '#F3F6EE',
+          border: '1px solid #C3D1AC',
           borderRadius: '8px',
           padding: '10px 14px',
           fontSize: '0.78rem',
-          color: '#166534',
+          color: '#2F5219',
           marginBottom: '16px',
           display: 'flex',
           alignItems: 'center',
@@ -1081,7 +1070,7 @@ export default function AutomationPage() {
         </div>
 
         {sheetLoading ? (
-          <div style={{ padding: '36px', textAlign: 'center', color: '#64748B' }}>
+          <div style={{ padding: '36px', textAlign: 'center', color: '#67676B' }}>
             <RefreshCw size={24} className="pulse-glow" style={{ margin: '0 auto 8px auto' }} />
             <div>Fetching live booking spreadsheet records...</div>
           </div>
@@ -1089,13 +1078,13 @@ export default function AutomationPage() {
           <div style={{
             padding: '40px 20px',
             textAlign: 'center',
-            background: '#F8FAFC',
+            background: '#F5F5F6',
             borderRadius: '10px',
             border: '1px dashed var(--border-color)'
           }}>
-            <Sheet size={32} color="#94A3B8" style={{ margin: '0 auto 10px auto' }} />
-            <div style={{ fontWeight: 600, color: '#334155' }}>No spreadsheet records loaded</div>
-            <div style={{ fontSize: '0.8rem', color: '#64748B', marginTop: '4px' }}>
+            <Sheet size={32} color="#96969C" style={{ margin: '0 auto 10px auto' }} />
+            <div style={{ fontWeight: 600, color: '#3A3A3E' }}>No spreadsheet records loaded</div>
+            <div style={{ fontSize: '0.8rem', color: '#67676B', marginTop: '4px' }}>
               Enter a Google Sheet URL above and click "Sync Sheet", or click "Upload Excel / CSV" to choose an Excel or CSV file.
             </div>
           </div>
@@ -1125,9 +1114,9 @@ export default function AutomationPage() {
                   const st = row.stages || {};
 
                   const renderStageStatus = (stageObj, defaultLabel) => {
-                    if (!stageObj) return <span style={{ color: '#94A3B8', fontSize: '0.72rem' }}>—</span>;
+                    if (!stageObj) return <span style={{ color: '#96969C', fontSize: '0.72rem' }}>—</span>;
                     if (stageObj.status === 'DISABLED') {
-                      return <span style={{ color: '#94A3B8', fontSize: '0.72rem' }}>Disabled</span>;
+                      return <span style={{ color: '#96969C', fontSize: '0.72rem' }}>Disabled</span>;
                     }
                     if (stageObj.status === 'ALREADY_SENT') {
                       return (
@@ -1135,7 +1124,7 @@ export default function AutomationPage() {
                           <span className="badge badge-success" style={{ fontSize: '0.68rem', padding: '2px 8px' }}>
                             ✓ Sent
                           </span>
-                          <span style={{ fontSize: '0.66rem', color: '#15803D' }}>{stageObj.targetDate}</span>
+                          <span style={{ fontSize: '0.66rem', color: '#2F5219' }}>{stageObj.targetDate}</span>
                         </div>
                       );
                     }
@@ -1162,33 +1151,33 @@ export default function AutomationPage() {
                     if (stageObj.status === 'FUTURE_UPCOMING') {
                       return (
                         <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '2px' }}>
-                          <span className="badge badge-neutral" style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#F1F5F9', color: '#334155' }}>
+                          <span className="badge badge-neutral" style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#EEEEF0', color: '#3A3A3E' }}>
                             📅 {stageObj.targetDate}
                           </span>
-                          <span style={{ fontSize: '0.66rem', color: '#64748B' }}>Time: {stageObj.dispatchTime}</span>
+                          <span style={{ fontSize: '0.66rem', color: '#67676B' }}>Time: {stageObj.dispatchTime}</span>
                         </div>
                       );
                     }
                     if (stageObj.status === 'PAST') {
                       return (
                         <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '2px' }}>
-                          <span style={{ fontSize: '0.68rem', color: '#94A3B8' }}>Past ({stageObj.targetDate})</span>
+                          <span style={{ fontSize: '0.68rem', color: '#96969C' }}>Past ({stageObj.targetDate})</span>
                         </div>
                       );
                     }
-                    return <span style={{ fontSize: '0.72rem', color: '#64748B' }}>{stageObj.status}</span>;
+                    return <span style={{ fontSize: '0.72rem', color: '#67676B' }}>{stageObj.status}</span>;
                   };
 
                   return (
                     <tr key={idx}>
-                      <td style={{ color: '#94A3B8', fontSize: '0.78rem' }}>{idx + 1}</td>
+                      <td style={{ color: '#96969C', fontSize: '0.78rem' }}>{idx + 1}</td>
                       <td>
-                        <div style={{ fontWeight: 700, color: '#0F172A', fontSize: '0.85rem' }}>{gName}</div>
-                        <div style={{ fontSize: '0.74rem', color: '#64748B', fontFamily: 'monospace' }}>+{phone}</div>
+                        <div style={{ fontWeight: 700, color: '#171719', fontSize: '0.85rem' }}>{gName}</div>
+                        <div style={{ fontSize: '0.74rem', color: '#67676B', fontFamily: 'monospace' }}>+{phone}</div>
                       </td>
                       <td>
-                        <div style={{ fontSize: '0.78rem', color: '#0F172A' }}>In: <strong>{inDate}</strong></div>
-                        <div style={{ fontSize: '0.78rem', color: '#64748B' }}>Out: <strong>{outDate}</strong></div>
+                        <div style={{ fontSize: '0.78rem', color: '#171719' }}>In: <strong>{inDate}</strong></div>
+                        <div style={{ fontSize: '0.78rem', color: '#67676B' }}>Out: <strong>{outDate}</strong></div>
                       </td>
                       <td style={{ background: 'rgba(37, 99, 235, 0.02)' }}>
                         {renderStageStatus(st.beforeCheckin, 'Pre-Checkin')}
@@ -1202,7 +1191,7 @@ export default function AutomationPage() {
                       <td style={{ background: 'rgba(147, 51, 234, 0.02)' }}>
                         {renderStageStatus(st.afterCheckout, 'Post-Checkout')}
                       </td>
-                      <td style={{ fontSize: '0.8rem', color: '#334155' }}>
+                      <td style={{ fontSize: '0.8rem', color: '#3A3A3E' }}>
                         {property}
                       </td>
                     </tr>

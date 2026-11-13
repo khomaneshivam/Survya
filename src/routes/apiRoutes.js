@@ -11,6 +11,7 @@ const settingsController = require("../controllers/settingsController");
 const authController = require("../controllers/authController");
 const adminController = require("../controllers/adminController");
 const reportsController = require("../controllers/reportsController");
+const resortController = require("../controllers/resortController");
 const { authenticateToken, requireAdmin, authenticateStreamToken, optionalAuth } = require("../middleware/authMiddleware");
 const { authLimiter, broadcastLimiter, uploadLimiter, apiLimiter } = require("../middleware/rateLimiter");
 const broadcastEngine = require("../services/broadcastEngine");
@@ -631,5 +632,83 @@ router.get("/broadcast/stream", authenticateStreamToken, (req, res) => {
     broadcastEngine.removeListener("webhook:status", onWebhookStatus);
   });
 });
+
+// =========================================================================
+// 10. WHATSAPP RESORT BOOKING & GUEST MANAGEMENT PLATFORM (PRD PHASE 1)
+// =========================================================================
+
+// Tenant Dashboard Summary (PRD Section 8)
+router.get("/dashboard/summary", authenticateToken, resortController.getDashboardSummary);
+router.get("/v1/dashboard/summary", authenticateToken, resortController.getDashboardSummary);
+router.get("/resort-dashboard/summary", authenticateToken, resortController.getDashboardSummary);
+
+// Guest Contacts & Search (PRD Section 8, PR-004)
+router.get("/contacts", authenticateToken, resortController.searchContacts);
+router.get("/v1/contacts", authenticateToken, resortController.searchContacts);
+
+// Room Types Management (PRD Section 8, E5)
+router.get("/room-types", authenticateToken, resortController.listRoomTypes);
+router.get("/v1/room-types", authenticateToken, resortController.listRoomTypes);
+router.post("/room-types", authenticateToken, resortController.createRoomType);
+router.post("/v1/room-types", authenticateToken, resortController.createRoomType);
+router.patch("/room-types/:id", authenticateToken, resortController.updateRoomType);
+router.patch("/v1/room-types/:id", authenticateToken, resortController.updateRoomType);
+
+// Manual Room Availability & Daily Inventory (PRD Section 8, PR-011, PR-012)
+router.get("/inventory/availability", authenticateToken, resortController.getInventoryAvailability);
+router.get("/v1/inventory/availability", authenticateToken, resortController.getInventoryAvailability);
+router.put("/inventory/daily", authenticateToken, resortController.updateDailyInventory);
+router.put("/v1/inventory/daily", authenticateToken, resortController.updateDailyInventory);
+
+// Booking Enquiries Pipeline (PRD Section 8, PR-007, PR-008, PR-014)
+router.get("/enquiries", authenticateToken, resortController.listEnquiries);
+router.get("/v1/enquiries", authenticateToken, resortController.listEnquiries);
+router.post("/enquiries", authenticateToken, resortController.createEnquiry);
+router.post("/v1/enquiries", authenticateToken, resortController.createEnquiry);
+router.get("/enquiries/:id", authenticateToken, resortController.getEnquiry);
+router.get("/v1/enquiries/:id", authenticateToken, resortController.getEnquiry);
+router.patch("/enquiries/:id", authenticateToken, resortController.updateEnquiry);
+router.patch("/v1/enquiries/:id", authenticateToken, resortController.updateEnquiry);
+
+// Quotation Builder & WhatsApp Dispatch (PRD Section 8, PR-013, PR-014)
+router.post("/enquiries/:id/quotes", authenticateToken, resortController.createQuote);
+router.post("/v1/enquiries/:id/quotes", authenticateToken, resortController.createQuote);
+router.get("/quotes/:id", authenticateToken, resortController.getQuote);
+router.get("/v1/quotes/:id", authenticateToken, resortController.getQuote);
+router.post("/quotes/:id/send", authenticateToken, resortController.sendQuote);
+router.post("/v1/quotes/:id/send", authenticateToken, resortController.sendQuote);
+
+// Auth v1 alias (PRD Section 8)
+router.post("/v1/auth/login", authLimiter, authController.login);
+
+// =========================================================================
+// 11. SARVYA CONNECT — WHATSAPP CAMPAIGN & CUSTOM TEMPLATE MANAGEMENT (/api/v1/*)
+// =========================================================================
+const sarvyaConnectController = require("../controllers/sarvyaConnectController");
+
+// Channel & Connected Sender Accounts
+router.post("/v1/channels/whatsapp/connect", authenticateToken, sarvyaConnectController.connectWhatsAppAccount);
+router.get("/v1/channels/whatsapp/accounts", authenticateToken, sarvyaConnectController.listWhatsAppAccounts);
+
+// Custom Visual Template Builder Lifecycle
+router.get("/v1/whatsapp/templates", authenticateToken, sarvyaConnectController.listCustomTemplates);
+router.post("/v1/whatsapp/templates", authenticateToken, sarvyaConnectController.createCustomTemplate);
+router.put("/v1/whatsapp/templates/:id", authenticateToken, sarvyaConnectController.updateCustomTemplate);
+router.post("/v1/whatsapp/templates/:id/clone", authenticateToken, sarvyaConnectController.cloneCustomTemplate);
+router.post("/v1/whatsapp/templates/:id/submit", authenticateToken, sarvyaConnectController.submitTemplateToMeta);
+
+// Messaging Governance, 1-to-1 Dispatch & Message Status Tracking
+router.get("/v1/whatsapp/contacts/eligibility", authenticateToken, sarvyaConnectController.checkContactEligibility);
+router.post("/v1/whatsapp/messages/send", authenticateToken, sarvyaConnectController.sendOneToOneMessage);
+router.get("/v1/whatsapp/messages/:id", authenticateToken, sarvyaConnectController.getMessageStatusById);
+
+// Validated Campaigns & Cost/Usage Accounting
+router.post("/v1/whatsapp/campaigns", authenticateToken, broadcastLimiter, sarvyaConnectController.createCampaignV1);
+router.post("/v1/whatsapp/campaigns/:id/launch", authenticateToken, broadcastLimiter, sarvyaConnectController.launchCampaignV1);
+router.get("/v1/whatsapp/usage", authenticateToken, sarvyaConnectController.getUsageAndBilling);
+
+// Public Meta Webhook v1 Alias
+router.get("/v1/webhooks/meta/whatsapp", webhookController.handleVerification);
+router.post("/v1/webhooks/meta/whatsapp", webhookController.handleIncomingEvent);
 
 module.exports = router;

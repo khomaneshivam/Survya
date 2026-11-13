@@ -65,7 +65,7 @@ export default function PhoneMockup({ template, sampleData, mediaUrl, customBody
               width: '30px',
               height: '30px',
               borderRadius: '50%',
-              background: '#00a884',
+              background: '#2876B8',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -73,10 +73,10 @@ export default function PhoneMockup({ template, sampleData, mediaUrl, customBody
               fontSize: '0.8rem',
               color: '#fff'
             }}>
-              KT
+              S
             </div>
             <div>
-              <div style={{ fontSize: '0.825rem', fontWeight: 600, lineHeight: 1.2 }}>KonkanTrip</div>
+              <div style={{ fontSize: '0.825rem', fontWeight: 600, lineHeight: 1.2 }}>SARVYA Business</div>
               <div style={{ fontSize: '0.65rem', color: '#8696a0' }}>Official WhatsApp Business</div>
             </div>
           </div>

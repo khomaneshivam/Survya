@@ -11,60 +11,85 @@ import InboxPage from './pages/InboxPage';
 import ReportsPage from './pages/ReportsPage';
 import AdminPage from './pages/AdminPage';
 import SettingsPage from './pages/SettingsPage';
+import SarvyaConnectPage from './pages/SarvyaConnectPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-import { 
-  Smartphone, 
-  LayoutDashboard, 
-  Send, 
-  Cpu, 
-  MessageSquare, 
-  BarChart3 
+import LandingPage from './pages/LandingPage';
+import EnquiriesPage from './pages/EnquiriesPage';
+import InventoryCalendarPage from './pages/InventoryCalendarPage';
+import AiAssistantPage from './pages/AiAssistantPage';
+import {
+  LayoutDashboard,
+  Users,
+  GitBranch,
+  MessageSquare,
+  BarChart3
 } from 'lucide-react';
 
 function AppContent() {
   const { isAuthenticated, loading, isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [authView, setAuthView] = useState('login'); // 'login' or 'register'
+  const [authView, setAuthView] = useState('landing');
 
   if (loading) {
     return (
       <div style={{
-        minHeight: '100vh',
+        minHeight: '100dvh',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: '16px',
-        color: '#64748B',
-        background: 'var(--bg-primary)'
+        gap: '12px',
+        background: 'var(--bg-app)',
+        color: 'var(--text-secondary)'
       }}>
         <div style={{
-          width: '50px',
-          height: '50px',
-          borderRadius: '14px',
-          background: 'linear-gradient(135deg, #128C7E, #0d7064)',
+          width: '40px',
+          height: '40px',
+          borderRadius: '10px',
+          background: 'var(--sarvya-blue)',
+          color: '#FFFFFF',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          animation: 'pulseGlow 1.5s infinite',
-          boxShadow: '0 4px 14px rgba(18, 140, 126, 0.3)'
+          fontFamily: 'var(--font-display)',
+          fontWeight: 800,
+          fontSize: '18px'
         }}>
-          <Smartphone size={26} color="#FFFFFF" />
+          S
         </div>
-        <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#0F172A' }}>
-          Initializing KonkanTrip Enterprise Engine...
+        <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
+          Loading SARVYA Workspace...
         </div>
       </div>
     );
   }
 
   if (!isAuthenticated) {
-    if (authView === 'register') {
-      return <RegisterPage onSwitchToLogin={() => setAuthView('login')} />;
+    if (authView === 'landing') {
+      return (
+        <LandingPage
+          onGetStarted={() => setAuthView('register')}
+          onSignIn={() => setAuthView('login')}
+        />
+      );
     }
-    return <LoginPage onSwitchToRegister={() => setAuthView('register')} />;
+    if (authView === 'register') {
+      return (
+        <RegisterPage
+          onSwitchToLogin={() => setAuthView('login')}
+          onBackToLanding={() => setAuthView('landing')}
+        />
+      );
+    }
+    return (
+      <LoginPage
+        onSwitchToRegister={() => setAuthView('register')}
+        onBackToLanding={() => setAuthView('landing')}
+      />
+    );
   }
 
   return (
@@ -72,83 +97,95 @@ function AppContent() {
       <ImpersonationBanner />
 
       <div className="app-body">
-        {/* Enterprise Sidebar */}
-        <Sidebar 
-          activeTab={activeTab} 
-          setActiveTab={setActiveTab} 
-          mobileOpen={mobileOpen} 
-          setMobileOpen={setMobileOpen} 
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          collapsed={sidebarCollapsed}
+          setCollapsed={setSidebarCollapsed}
+          mobileOpen={mobileOpen}
+          setMobileOpen={setMobileOpen}
         />
 
-        {/* Main Content Area */}
         <div className="app-main">
-          <Topbar 
-            activeTab={activeTab} 
-            setActiveTab={setActiveTab} 
-            setMobileOpen={setMobileOpen} 
+          <Topbar
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            setMobileOpen={setMobileOpen}
           />
 
-          <main style={{ flex: 1, paddingBottom: '40px' }}>
+          <main style={{ flex: 1 }}>
             {activeTab === 'dashboard' && <DashboardPage setActiveTab={setActiveTab} />}
+            {activeTab === 'enquiries' && <EnquiriesPage />}
+            {activeTab === 'inventory' && <InventoryCalendarPage />}
             {activeTab === 'broadcast' && <BroadcastPage />}
             {activeTab === 'flows' && <FlowsPage />}
             {activeTab === 'automation' && <AutomationPage />}
             {activeTab === 'inbox' && <InboxPage />}
+            {activeTab === 'ai' && <AiAssistantPage />}
             {activeTab === 'reports' && <ReportsPage />}
+            {activeTab === 'pricing' && (
+              <LandingPage
+                onGetStarted={() => setActiveTab('broadcast')}
+                onSignIn={() => setActiveTab('dashboard')}
+              />
+            )}
             {activeTab === 'admin' && isAdmin && <AdminPage />}
+            {activeTab === 'connect' && <SarvyaConnectPage onNavigate={setActiveTab} currentUser={{ role: isAdmin ? 'ADMIN' : 'USER' }} />}
             {activeTab === 'settings' && <SettingsPage />}
           </main>
 
-          {/* Native-style Mobile Bottom Navigation Bar */}
-          <nav className="mobile-bottom-nav" aria-label="Mobile Bottom Navigation">
-            <button 
+          <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
+            <button
+              type="button"
               className={`mobile-nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
               onClick={() => setActiveTab('dashboard')}
             >
-              <LayoutDashboard size={20} className="mobile-nav-icon" />
-              <span>Dashboard</span>
+              <LayoutDashboard size={18} />
+              <span>Overview</span>
             </button>
-            <button 
-              className={`mobile-nav-item ${activeTab === 'broadcast' ? 'active' : ''}`}
-              onClick={() => setActiveTab('broadcast')}
+            <button
+              type="button"
+              className={`mobile-nav-item ${activeTab === 'enquiries' ? 'active' : ''}`}
+              onClick={() => setActiveTab('enquiries')}
             >
-              <Send size={20} className="mobile-nav-icon" />
-              <span>Broadcast</span>
+              <Users size={18} />
+              <span>CRM</span>
             </button>
-            <button 
+            <button
+              type="button"
               className={`mobile-nav-item ${activeTab === 'automation' ? 'active' : ''}`}
               onClick={() => setActiveTab('automation')}
             >
-              <Cpu size={20} className="mobile-nav-icon" />
-              <span>Lifecycle</span>
+              <GitBranch size={18} />
+              <span>Workflows</span>
             </button>
-            <button 
+            <button
+              type="button"
               className={`mobile-nav-item ${activeTab === 'inbox' ? 'active' : ''}`}
               onClick={() => setActiveTab('inbox')}
             >
-              <MessageSquare size={20} className="mobile-nav-icon" />
+              <MessageSquare size={18} />
               <span>Inbox</span>
             </button>
-            <button 
+            <button
+              type="button"
               className={`mobile-nav-item ${activeTab === 'reports' ? 'active' : ''}`}
               onClick={() => setActiveTab('reports')}
             >
-              <BarChart3 size={20} className="mobile-nav-icon" />
-              <span>Reports</span>
+              <BarChart3 size={18} />
+              <span>Insights</span>
             </button>
           </nav>
 
           <footer style={{
             borderTop: '1px solid var(--border-color)',
-            padding: '16px 24px',
+            padding: '14px 24px',
             textAlign: 'center',
-            fontSize: '0.78rem',
-            color: '#94A3B8',
-            background: '#FFFFFF'
+            fontSize: '12px',
+            color: 'var(--text-muted)',
+            background: 'var(--bg-surface)'
           }}>
-            <div>
-              KonkanTrip Official WhatsApp Cloud API Broadcasting & 4-Stage Booking Lifecycle Platform • Enterprise Secured RBAC
-            </div>
+            SARVYA Engagement &amp; Automation Ecosystem • Core, CRM, Forms, Flow, Connect, AI &amp; Insights
           </footer>
         </div>
       </div>

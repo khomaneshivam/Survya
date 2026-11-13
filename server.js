@@ -126,12 +126,17 @@ app.get("/webhook", webhookController.handleVerification);
 app.post("/webhook", webhookController.handleIncomingEvent);
 app.post("/flows/exchange", flowController.handleDataExchange);
 
+// PRD Section 8 Webhook Aliases
+app.get("/webhooks/meta/whatsapp", webhookController.handleVerification);
+app.post("/webhooks/meta/whatsapp", webhookController.handleIncomingEvent);
+app.post("/webhooks/meta/flows", flowController.handleDataExchange);
+
 // 5. API routes
 app.use("/api", apiRoutes);
 
 // 6. SPA fallback
 app.get("*", (req, res) => {
-  if (!req.path.startsWith("/api") && !req.path.startsWith("/webhook") && !req.path.startsWith("/uploads") && !req.path.startsWith("/flows")) {
+  if (!req.path.startsWith("/api") && !req.path.startsWith("/webhook") && !req.path.startsWith("/webhooks") && !req.path.startsWith("/uploads") && !req.path.startsWith("/flows")) {
     if (fs.existsSync(path.join(distPath, "index.html"))) {
       res.sendFile(path.join(distPath, "index.html"));
     } else {

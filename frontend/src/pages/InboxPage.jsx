@@ -91,7 +91,7 @@ function ChatImageBubble({
         <div style={{
           width: '100%',
           height: '210px',
-          background: 'linear-gradient(110deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%)',
+          background: 'linear-gradient(110deg, #EEEEF0 25%, #E5E5E8 50%, #EEEEF0 75%)',
           backgroundSize: '200% 100%',
           animation: 'shimmer 1.4s infinite linear',
           display: 'flex',
@@ -99,12 +99,12 @@ function ChatImageBubble({
           alignItems: 'center',
           justifyContent: 'center',
           gap: '8px',
-          color: '#64748B',
+          color: '#67676B',
           borderRadius: '8px',
-          border: '1px solid #E2E8F0'
+          border: '1px solid #E5E5E8'
         }}>
-          <ImageIcon size={28} color="#94A3B8" className="pulse-glow" />
-          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>
+          <ImageIcon size={28} color="#96969C" className="pulse-glow" />
+          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#67676B' }}>
             Loading WhatsApp Photo...
           </span>
         </div>
@@ -114,8 +114,8 @@ function ChatImageBubble({
       {loadStatus === 'error' && (
         <div style={{
           padding: '16px 12px',
-          background: '#FEF2F2',
-          border: '1px solid #FECACA',
+          background: '#FDF0F0',
+          border: '1px solid #FDB1AF',
           borderRadius: '8px',
           textAlign: 'center',
           display: 'flex',
@@ -127,18 +127,18 @@ function ChatImageBubble({
             width: '38px',
             height: '38px',
             borderRadius: '50%',
-            background: '#FEE2E2',
+            background: '#FDF0F0',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#DC2626'
+            color: '#9B2C2C'
           }}>
             <ImageOff size={18} />
           </div>
-          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#991B1B' }}>
+          <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#9B2C2C' }}>
             Photo Unavailable
           </div>
-          <div style={{ fontSize: '0.7rem', color: '#B91C1C', lineHeight: 1.35, maxWidth: '240px' }}>
+          <div style={{ fontSize: '0.7rem', color: '#9B2C2C', lineHeight: 1.35, maxWidth: '240px' }}>
             Image could not be loaded or is downloading from Meta WhatsApp servers.
           </div>
           <button
@@ -147,8 +147,8 @@ function ChatImageBubble({
             style={{
               marginTop: '4px',
               background: '#FFFFFF',
-              border: '1px solid #DC2626',
-              color: '#DC2626',
+              border: '1px solid #9B2C2C',
+              color: '#9B2C2C',
               borderRadius: '6px',
               padding: '5px 12px',
               fontSize: '0.72rem',
@@ -251,7 +251,7 @@ function ChatImageBubble({
           padding: '6px 4px 2px 4px',
           fontSize: '0.85rem',
           lineHeight: 1.45,
-          color: '#0F172A',
+          color: '#171719',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word'
         }}>
@@ -900,9 +900,9 @@ export default function InboxPage() {
       {/* Page Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: '#171719', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span>2-Way Customer Inbox</span>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, background: '#DCFCE7', color: '#15803D', padding: '3px 10px', borderRadius: '12px', border: '1px solid #BBF7D0' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, background: '#EDF4E6', color: '#2F5219', padding: '3px 10px', borderRadius: '12px', border: '1px solid #C3D1AC' }}>
               Live Sync
             </span>
           </h1>
@@ -923,24 +923,24 @@ export default function InboxPage() {
             style={{
               gap: '8px',
               fontSize: '0.825rem',
-              border: autoReplySettings.enabled ? '1px solid #86EFAC' : '1px solid #CBD5E1',
-              background: autoReplySettings.enabled ? '#F0FDF4' : '#FFFFFF',
-              color: autoReplySettings.enabled ? '#15803D' : '#475569',
+              border: autoReplySettings.enabled ? '1px solid #C3D1AC' : '1px solid #D4D4D9',
+              background: autoReplySettings.enabled ? '#F3F6EE' : '#FFFFFF',
+              color: autoReplySettings.enabled ? '#2F5219' : '#67676B',
               fontWeight: 600,
               boxShadow: 'var(--shadow-xs)'
             }}
             title="Configure Automated Message Settings"
           >
-            <Sparkles size={14} color={autoReplySettings.enabled ? '#16A34A' : '#94A3B8'} />
+            <Sparkles size={14} color={autoReplySettings.enabled ? '#2876B8' : '#96969C'} />
             <span>Auto-Reply Bot</span>
             {autoReplySettings.enabled ? (
               <span style={{
                 fontSize: '0.68rem',
-                background: '#DCFCE7',
-                color: '#15803D',
+                background: '#EDF4E6',
+                color: '#2F5219',
                 padding: '1px 7px',
                 borderRadius: '10px',
-                border: '1px solid #BBF7D0',
+                border: '1px solid #C3D1AC',
                 fontWeight: 700
               }}>
                 {autoReplySettings.mode === 'ONCE_PER_24_HOURS' ? '24h Window' : 'Once Only'}
@@ -948,8 +948,8 @@ export default function InboxPage() {
             ) : (
               <span style={{
                 fontSize: '0.68rem',
-                background: '#F1F5F9',
-                color: '#64748B',
+                background: '#EEEEF0',
+                color: '#67676B',
                 padding: '1px 7px',
                 borderRadius: '10px',
                 fontWeight: 600
@@ -988,7 +988,7 @@ export default function InboxPage() {
                 onChange={e => setSearch(e.target.value)}
                 style={{ paddingLeft: '34px', paddingRight: search ? '30px' : '14px', fontSize: '0.825rem' }}
               />
-              <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
+              <Search size={15} color="#96969C" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
               {search && (
                 <button
                   type="button"
@@ -1000,7 +1000,7 @@ export default function InboxPage() {
                     transform: 'translateY(-50%)',
                     background: 'none',
                     border: 'none',
-                    color: '#94A3B8',
+                    color: '#96969C',
                     cursor: 'pointer',
                     padding: '2px',
                     display: 'flex'
@@ -1023,9 +1023,9 @@ export default function InboxPage() {
                   fontSize: '0.75rem',
                   fontWeight: convoFilter === 'replies' ? 700 : 500,
                   borderRadius: '6px',
-                  border: convoFilter === 'replies' ? '1px solid #86EFAC' : '1px solid #E2E8F0',
-                  background: convoFilter === 'replies' ? '#DCFCE7' : '#F8FAFC',
-                  color: convoFilter === 'replies' ? '#15803D' : '#64748B',
+                  border: convoFilter === 'replies' ? '1px solid #C3D1AC' : '1px solid #E5E5E8',
+                  background: convoFilter === 'replies' ? '#EDF4E6' : '#F5F5F6',
+                  color: convoFilter === 'replies' ? '#2F5219' : '#67676B',
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -1038,7 +1038,7 @@ export default function InboxPage() {
                 {repliesCount > 0 && (
                   <span style={{
                     fontSize: '0.675rem',
-                    background: convoFilter === 'replies' ? '#15803D' : '#94A3B8',
+                    background: convoFilter === 'replies' ? '#2F5219' : '#96969C',
                     color: '#FFFFFF',
                     padding: '1px 5px',
                     borderRadius: '10px',
@@ -1058,9 +1058,9 @@ export default function InboxPage() {
                   fontSize: '0.75rem',
                   fontWeight: convoFilter === 'all' ? 700 : 500,
                   borderRadius: '6px',
-                  border: convoFilter === 'all' ? '1px solid #86EFAC' : '1px solid #E2E8F0',
-                  background: convoFilter === 'all' ? '#DCFCE7' : '#F8FAFC',
-                  color: convoFilter === 'all' ? '#15803D' : '#64748B',
+                  border: convoFilter === 'all' ? '1px solid #C3D1AC' : '1px solid #E5E5E8',
+                  background: convoFilter === 'all' ? '#EDF4E6' : '#F5F5F6',
+                  color: convoFilter === 'all' ? '#2F5219' : '#67676B',
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -1073,7 +1073,7 @@ export default function InboxPage() {
                 {allCount > 0 && (
                   <span style={{
                     fontSize: '0.675rem',
-                    background: convoFilter === 'all' ? '#15803D' : '#94A3B8',
+                    background: convoFilter === 'all' ? '#2F5219' : '#96969C',
                     color: '#FFFFFF',
                     padding: '1px 5px',
                     borderRadius: '10px',
@@ -1093,9 +1093,9 @@ export default function InboxPage() {
                   fontSize: '0.75rem',
                   fontWeight: convoFilter === 'unread' ? 700 : 500,
                   borderRadius: '6px',
-                  border: convoFilter === 'unread' ? '1px solid #FECACA' : '1px solid #E2E8F0',
-                  background: convoFilter === 'unread' ? '#FEF2F2' : '#F8FAFC',
-                  color: convoFilter === 'unread' ? '#B91C1C' : '#64748B',
+                  border: convoFilter === 'unread' ? '1px solid #FDB1AF' : '1px solid #E5E5E8',
+                  background: convoFilter === 'unread' ? '#FDF0F0' : '#F5F5F6',
+                  color: convoFilter === 'unread' ? '#9B2C2C' : '#67676B',
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -1108,7 +1108,7 @@ export default function InboxPage() {
                 {unreadCount > 0 && (
                   <span style={{
                     fontSize: '0.675rem',
-                    background: '#DC2626',
+                    background: '#9B2C2C',
                     color: '#FFFFFF',
                     padding: '1px 5px',
                     borderRadius: '10px',
@@ -1124,9 +1124,9 @@ export default function InboxPage() {
           {/* List items */}
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {filteredConvos.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: '#94A3B8', fontSize: '0.85rem' }}>
-                <MessageSquare size={36} color="#CBD5E1" style={{ margin: '0 auto 12px auto' }} />
-                <div style={{ fontWeight: 600, color: '#475569' }}>
+              <div style={{ padding: '40px 20px', textAlign: 'center', color: '#96969C', fontSize: '0.85rem' }}>
+                <MessageSquare size={36} color="#D4D4D9" style={{ margin: '0 auto 12px auto' }} />
+                <div style={{ fontWeight: 600, color: '#67676B' }}>
                   {loading ? 'Loading conversations...' : 'No conversations found'}
                 </div>
                 <div style={{ fontSize: '0.75rem', marginTop: '4px', lineHeight: 1.4 }}>
@@ -1146,7 +1146,7 @@ export default function InboxPage() {
                     onClick={() => handleSelectConversation(c)}
                     style={{
                       padding: '13px 16px',
-                      borderBottom: '1px solid #E2E8F0',
+                      borderBottom: '1px solid #E5E5E8',
                       background: isSelected ? '#FFFFFF' : 'transparent',
                       cursor: 'pointer',
                       transition: 'all 0.15s ease',
@@ -1162,12 +1162,12 @@ export default function InboxPage() {
                       width: '40px',
                       height: '40px',
                       borderRadius: '50%',
-                      background: isSelected ? '#DCFCE7' : '#F1F5F9',
-                      border: `1px solid ${isSelected ? '#BBF7D0' : '#E2E8F0'}`,
+                      background: isSelected ? '#EDF4E6' : '#EEEEF0',
+                      border: `1px solid ${isSelected ? '#C3D1AC' : '#E5E5E8'}`,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      color: isSelected ? '#15803D' : '#475569',
+                      color: isSelected ? '#2F5219' : '#67676B',
                       fontWeight: 700,
                       fontSize: '0.85rem',
                       flexShrink: 0
@@ -1177,21 +1177,21 @@ export default function InboxPage() {
 
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '2px' }}>
-                        <span style={{ fontWeight: 700, color: isSelected ? '#0F172A' : '#334155', fontSize: '0.875rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontWeight: 700, color: isSelected ? '#171719' : '#3A3A3E', fontSize: '0.875rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {c.name}
                         </span>
-                        <span style={{ fontSize: '0.7rem', color: '#94A3B8', flexShrink: 0, marginLeft: '6px' }}>
+                        <span style={{ fontSize: '0.7rem', color: '#96969C', flexShrink: 0, marginLeft: '6px' }}>
                           {c.lastTime ? formatIndianTime(c.lastTime) : ''}
                         </span>
                       </div>
 
-                      <div style={{ fontSize: '0.74rem', fontFamily: 'var(--font-mono)', color: '#64748B', marginBottom: '2px' }}>
+                      <div style={{ fontSize: '0.74rem', fontFamily: 'var(--font-mono)', color: '#67676B', marginBottom: '2px' }}>
                         +{c.phone}
                       </div>
 
                       <div style={{
                         fontSize: '0.78rem',
-                        color: isSelected ? '#334155' : '#64748B',
+                        color: isSelected ? '#3A3A3E' : '#67676B',
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis'
@@ -1223,7 +1223,7 @@ export default function InboxPage() {
                         style={{
                           background: 'transparent',
                           border: 'none',
-                          color: '#94A3B8',
+                          color: '#96969C',
                           padding: '3px',
                           borderRadius: '4px',
                           cursor: 'pointer',
@@ -1233,11 +1233,11 @@ export default function InboxPage() {
                           transition: 'all 0.15s ease'
                         }}
                         onMouseEnter={e => {
-                          e.currentTarget.style.color = '#DC2626';
-                          e.currentTarget.style.background = '#FEE2E2';
+                          e.currentTarget.style.color = '#9B2C2C';
+                          e.currentTarget.style.background = '#FDF0F0';
                         }}
                         onMouseLeave={e => {
-                          e.currentTarget.style.color = '#94A3B8';
+                          e.currentTarget.style.color = '#96969C';
                           e.currentTarget.style.background = 'transparent';
                         }}
                         title={`Delete chat with ${c.name || c.phone}`}
@@ -1282,12 +1282,12 @@ export default function InboxPage() {
                     width: '38px',
                     height: '38px',
                     borderRadius: '50%',
-                    background: '#DCFCE7',
-                    border: '1px solid #BBF7D0',
+                    background: '#EDF4E6',
+                    border: '1px solid #C3D1AC',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: '#15803D',
+                    color: '#2F5219',
                     fontWeight: 800,
                     fontSize: '0.875rem',
                     flexShrink: 0
@@ -1296,10 +1296,10 @@ export default function InboxPage() {
                   </div>
 
                   <div style={{ minWidth: 0 }}>
-                    <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#0F172A', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: '#171719', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {selectedConvo.name}
                     </h3>
-                    <div style={{ fontSize: '0.74rem', color: '#64748B', fontFamily: 'var(--font-mono)' }}>
+                    <div style={{ fontSize: '0.74rem', color: '#67676B', fontFamily: 'var(--font-mono)' }}>
                       +{selectedConvo.phone}
                     </div>
                   </div>
@@ -1313,9 +1313,9 @@ export default function InboxPage() {
                     type="button"
                     onClick={() => handleDeleteConversation(selectedConvo)}
                     style={{
-                      background: '#FEF2F2',
-                      border: '1px solid #FECACA',
-                      color: '#DC2626',
+                      background: '#FDF0F0',
+                      border: '1px solid #FDB1AF',
+                      color: '#9B2C2C',
                       cursor: 'pointer',
                       padding: '5px 10px',
                       borderRadius: '6px',
@@ -1327,12 +1327,12 @@ export default function InboxPage() {
                       transition: 'all 0.15s ease'
                     }}
                     onMouseEnter={e => {
-                      e.currentTarget.style.background = '#FEE2E2';
+                      e.currentTarget.style.background = '#FDF0F0';
                       e.currentTarget.style.borderColor = '#F87171';
                     }}
                     onMouseLeave={e => {
-                      e.currentTarget.style.background = '#FEF2F2';
-                      e.currentTarget.style.borderColor = '#FECACA';
+                      e.currentTarget.style.background = '#FDF0F0';
+                      e.currentTarget.style.borderColor = '#FDB1AF';
                     }}
                     title="Delete entire chat conversation"
                   >
@@ -1345,7 +1345,7 @@ export default function InboxPage() {
                     style={{
                       background: 'none',
                       border: 'none',
-                      color: '#94A3B8',
+                      color: '#96969C',
                       cursor: 'pointer',
                       padding: '4px',
                       borderRadius: '6px',
@@ -1367,7 +1367,7 @@ export default function InboxPage() {
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '12px',
-                background: '#F8FAFC'
+                background: '#F5F5F6'
               }}>
                 {selectedConvo.messages.map((m, idx) => {
                   const isOutbound = m.is_outbound;
@@ -1397,9 +1397,9 @@ export default function InboxPage() {
                       style={{
                         maxWidth: isImage ? '340px' : '80%',
                         alignSelf: isOutbound ? 'flex-end' : 'flex-start',
-                        background: isOutbound ? '#DCFCE7' : '#FFFFFF',
-                        color: '#0F172A',
-                        border: `1px solid ${isOutbound ? '#BBF7D0' : '#E2E8F0'}`,
+                        background: isOutbound ? '#EDF4E6' : '#FFFFFF',
+                        color: '#171719',
+                        border: `1px solid ${isOutbound ? '#C3D1AC' : '#E5E5E8'}`,
                         borderRadius: isOutbound ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
                         padding: isImage ? '6px 6px 6px 6px' : '10px 14px',
                         boxShadow: 'var(--shadow-xs)',
@@ -1408,7 +1408,7 @@ export default function InboxPage() {
                       }}
                     >
                       {m.is_auto && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.68rem', fontWeight: 700, color: '#16A34A', marginBottom: '6px', padding: isImage ? '4px 6px 0 6px' : '0' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.68rem', fontWeight: 700, color: '#2876B8', marginBottom: '6px', padding: isImage ? '4px 6px 0 6px' : '0' }}>
                           <Sparkles size={11} /> Auto-Reply Bot
                         </div>
                       )}
@@ -1421,8 +1421,8 @@ export default function InboxPage() {
                           fontSize: '0.68rem',
                           fontWeight: 600,
                           color: '#047857',
-                          background: '#ECFDF5',
-                          border: '1px solid #A7F3D0',
+                          background: '#EEF5FB',
+                          border: '1px solid #B0DBF6',
                           padding: '2px 7px',
                           borderRadius: '6px',
                           marginBottom: '6px'
@@ -1472,8 +1472,8 @@ export default function InboxPage() {
                       {shouldShowTextBlock && (
                         msgText?.startsWith('[Flow') ? (
                           <div style={{
-                            background: isOutbound ? 'rgba(255,255,255,0.2)' : '#F0FDF4',
-                            border: `1px solid ${isOutbound ? 'rgba(255,255,255,0.3)' : '#BBF7D0'}`,
+                            background: isOutbound ? 'rgba(255,255,255,0.2)' : '#F3F6EE',
+                            border: `1px solid ${isOutbound ? 'rgba(255,255,255,0.3)' : '#C3D1AC'}`,
                             borderRadius: '8px',
                             padding: '8px 10px',
                             margin: '2px 0',
@@ -1484,14 +1484,14 @@ export default function InboxPage() {
                               alignItems: 'center',
                               gap: '6px',
                               fontWeight: 700,
-                              color: isOutbound ? '#FFFFFF' : '#166534',
+                              color: isOutbound ? '#FFFFFF' : '#2F5219',
                               marginBottom: '4px'
                             }}>
                               <Layers size={14} />
                               <span>{msgText.split(']')[0].replace('[', '')}</span>
                             </div>
                             <div style={{
-                              color: isOutbound ? '#F1F5F9' : '#15803D',
+                              color: isOutbound ? '#EEEEF0' : '#2F5219',
                               fontSize: '0.78rem',
                               lineHeight: 1.4
                             }}>
@@ -1518,7 +1518,7 @@ export default function InboxPage() {
                           justifyContent: 'flex-end',
                           gap: '6px',
                           fontSize: '0.675rem',
-                          color: '#64748B',
+                          color: '#67676B',
                           marginTop: isImage ? '2px' : '4px',
                           padding: isImage ? '0 4px 2px 0' : '0'
                         }}>
@@ -1531,7 +1531,7 @@ export default function InboxPage() {
                               style={{
                                 background: 'transparent',
                                 border: 'none',
-                                color: '#94A3B8',
+                                color: '#96969C',
                                 cursor: 'pointer',
                                 padding: '2px',
                                 borderRadius: '3px',
@@ -1540,8 +1540,8 @@ export default function InboxPage() {
                                 marginLeft: '2px',
                                 transition: 'color 0.15s ease'
                               }}
-                              onMouseEnter={e => e.currentTarget.style.color = '#DC2626'}
-                              onMouseLeave={e => e.currentTarget.style.color = '#94A3B8'}
+                              onMouseEnter={e => e.currentTarget.style.color = '#9B2C2C'}
+                              onMouseLeave={e => e.currentTarget.style.color = '#96969C'}
                               title="Delete this message"
                             >
                               <Trash2 size={11} />
@@ -1559,7 +1559,7 @@ export default function InboxPage() {
               {selectedMediaFile && (
                 <div style={{
                   padding: '10px 16px',
-                  background: '#F1F5F9',
+                  background: '#EEEEF0',
                   borderTop: '1px solid var(--border-color)',
                   display: 'flex',
                   alignItems: 'center',
@@ -1573,7 +1573,7 @@ export default function InboxPage() {
                         width: '52px',
                         height: '52px',
                         borderRadius: '8px',
-                        background: '#0F172A',
+                        background: '#171719',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -1583,7 +1583,7 @@ export default function InboxPage() {
                         {mediaPreviewUrl ? (
                           <video src={mediaPreviewUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
-                          <FileVideo size={24} color="#94A3B8" />
+                          <FileVideo size={24} color="#96969C" />
                         )}
                         <div style={{
                           position: 'absolute',
@@ -1602,7 +1602,7 @@ export default function InboxPage() {
                         width: '52px',
                         height: '52px',
                         borderRadius: '8px',
-                        border: '1px solid #CBD5E1',
+                        border: '1px solid #D4D4D9',
                         overflow: 'hidden',
                         background: '#FFFFFF',
                         flexShrink: 0
@@ -1620,20 +1620,20 @@ export default function InboxPage() {
                         <span className="badge" style={{
                           fontSize: '0.68rem',
                           padding: '2px 6px',
-                          background: mediaType === 'video' ? '#EFF6FF' : '#F0FDF4',
-                          color: mediaType === 'video' ? '#1D4ED8' : '#15803D',
-                          border: `1px solid ${mediaType === 'video' ? '#BFDBFE' : '#BBF7D0'}`
+                          background: mediaType === 'video' ? '#EFF6FF' : '#F3F6EE',
+                          color: mediaType === 'video' ? '#1D4ED8' : '#2F5219',
+                          border: `1px solid ${mediaType === 'video' ? '#BFDBFE' : '#C3D1AC'}`
                         }}>
                           {mediaType === 'video' ? 'Video Ready' : 'Image Ready'}
                         </span>
-                        <span style={{ fontSize: '0.725rem', color: '#64748B' }}>
+                        <span style={{ fontSize: '0.725rem', color: '#67676B' }}>
                           {(selectedMediaFile.size / (1024 * 1024)).toFixed(2)} MB
                         </span>
                       </div>
                       <div style={{
                         fontSize: '0.8rem',
                         fontWeight: 600,
-                        color: '#334155',
+                        color: '#3A3A3E',
                         marginTop: '2px',
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
@@ -1648,7 +1648,7 @@ export default function InboxPage() {
                     type="button"
                     onClick={handleClearMedia}
                     style={{
-                      background: '#E2E8F0',
+                      background: '#E5E5E8',
                       border: 'none',
                       borderRadius: '50%',
                       width: '26px',
@@ -1657,7 +1657,7 @@ export default function InboxPage() {
                       alignItems: 'center',
                       justifyContent: 'center',
                       cursor: 'pointer',
-                      color: '#475569',
+                      color: '#67676B',
                       flexShrink: 0
                     }}
                     title="Remove attachment"
@@ -1693,9 +1693,9 @@ export default function InboxPage() {
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   style={{
-                    background: selectedMediaFile ? '#DCFCE7' : '#F1F5F9',
-                    border: `1px solid ${selectedMediaFile ? '#86EFAC' : '#CBD5E1'}`,
-                    color: selectedMediaFile ? '#15803D' : '#475569',
+                    background: selectedMediaFile ? '#EDF4E6' : '#EEEEF0',
+                    border: `1px solid ${selectedMediaFile ? '#C3D1AC' : '#D4D4D9'}`,
+                    color: selectedMediaFile ? '#2F5219' : '#67676B',
                     borderRadius: '8px',
                     width: '42px',
                     height: '42px',
@@ -1716,9 +1716,9 @@ export default function InboxPage() {
                   type="button"
                   onClick={handleOpenFlowModal}
                   style={{
-                    background: '#F0FDF4',
-                    border: '1px solid #BBF7D0',
-                    color: '#15803D',
+                    background: '#F3F6EE',
+                    border: '1px solid #C3D1AC',
+                    color: '#2F5219',
                     borderRadius: '8px',
                     width: '42px',
                     height: '42px',
@@ -1801,12 +1801,12 @@ export default function InboxPage() {
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#94A3B8',
+              color: '#96969C',
               padding: '30px'
             }}>
-              <MessageSquare size={44} color="#CBD5E1" style={{ marginBottom: '14px' }} />
-              <div style={{ fontWeight: 700, color: '#334155', fontSize: '1rem' }}>Select a customer conversation</div>
-              <div style={{ fontSize: '0.825rem', marginTop: '6px', maxWidth: '340px', textAlign: 'center', color: '#64748B', lineHeight: 1.5 }}>
+              <MessageSquare size={44} color="#D4D4D9" style={{ marginBottom: '14px' }} />
+              <div style={{ fontWeight: 700, color: '#3A3A3E', fontSize: '1rem' }}>Select a customer conversation</div>
+              <div style={{ fontSize: '0.825rem', marginTop: '6px', maxWidth: '340px', textAlign: 'center', color: '#67676B', lineHeight: 1.5 }}>
                 Choose a guest from the left panel to review message history and dispatch instant WhatsApp replies.
               </div>
             </div>
@@ -2029,7 +2029,7 @@ export default function InboxPage() {
               maxHeight: '90vh',
               overflowY: 'auto',
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-              border: '1px solid #E2E8F0',
+              border: '1px solid #E5E5E8',
               display: 'flex',
               flexDirection: 'column'
             }}
@@ -2037,11 +2037,11 @@ export default function InboxPage() {
             {/* Modal Header */}
             <div style={{
               padding: '18px 22px',
-              borderBottom: '1px solid #E2E8F0',
+              borderBottom: '1px solid #E5E5E8',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              background: '#F8FAFC',
+              background: '#F5F5F6',
               borderTopLeftRadius: '16px',
               borderTopRightRadius: '16px'
             }}>
@@ -2050,8 +2050,8 @@ export default function InboxPage() {
                   width: '36px',
                   height: '36px',
                   borderRadius: '10px',
-                  background: '#DCFCE7',
-                  color: '#15803D',
+                  background: '#EDF4E6',
+                  color: '#2F5219',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center'
@@ -2059,10 +2059,10 @@ export default function InboxPage() {
                   <Sparkles size={18} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#171719', margin: 0 }}>
                     Automated Message Settings
                   </h3>
-                  <p style={{ fontSize: '0.78rem', color: '#64748B', margin: '2px 0 0 0' }}>
+                  <p style={{ fontSize: '0.78rem', color: '#67676B', margin: '2px 0 0 0' }}>
                     Control automated greeting replies for incoming WhatsApp customer messages
                   </p>
                 </div>
@@ -2073,7 +2073,7 @@ export default function InboxPage() {
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#94A3B8',
+                  color: '#96969C',
                   cursor: 'pointer',
                   padding: '4px',
                   borderRadius: '6px'
@@ -2085,7 +2085,7 @@ export default function InboxPage() {
 
             {/* Modal Body / Form */}
             {loadingAutoReply ? (
-              <div style={{ padding: '40px 24px', textAlign: 'center', color: '#64748B' }}>
+              <div style={{ padding: '40px 24px', textAlign: 'center', color: '#67676B' }}>
                 <RefreshCw size={24} className="pulse-glow" style={{ margin: '0 auto 10px auto', color: 'var(--brand-wa)' }} />
                 <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>Loading auto-reply configuration...</div>
               </div>
@@ -2098,19 +2098,19 @@ export default function InboxPage() {
                 justifyContent: 'space-between',
                 padding: '14px 16px',
                 borderRadius: '12px',
-                background: autoReplySettings.enabled ? '#F0FDF4' : '#F8FAFC',
-                border: `1.5px solid ${autoReplySettings.enabled ? '#BBF7D0' : '#E2E8F0'}`
+                background: autoReplySettings.enabled ? '#F3F6EE' : '#F5F5F6',
+                border: `1.5px solid ${autoReplySettings.enabled ? '#C3D1AC' : '#E5E5E8'}`
               }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#171719', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span>Enable Auto-Reply Bot</span>
                     {autoReplySettings.enabled && (
-                      <span style={{ fontSize: '0.7rem', color: '#15803D', background: '#DCFCE7', padding: '1px 8px', borderRadius: '10px', fontWeight: 700 }}>
+                      <span style={{ fontSize: '0.7rem', color: '#2F5219', background: '#EDF4E6', padding: '1px 8px', borderRadius: '10px', fontWeight: 700 }}>
                         Active
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: '0.78rem', color: '#64748B', marginTop: '2px' }}>
+                  <div style={{ fontSize: '0.78rem', color: '#67676B', marginTop: '2px' }}>
                     Automatically reply to incoming customer messages via WhatsApp Cloud API
                   </div>
                 </div>
@@ -2129,7 +2129,7 @@ export default function InboxPage() {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    backgroundColor: autoReplySettings.enabled ? '#16A34A' : '#CBD5E1',
+                    backgroundColor: autoReplySettings.enabled ? '#2876B8' : '#D4D4D9',
                     transition: '0.2s',
                     borderRadius: '24px'
                   }}>
@@ -2150,7 +2150,7 @@ export default function InboxPage() {
 
               {/* 2. Message Frequency Selection (Only Once vs 24 Hours) */}
               <div>
-                <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#334155', marginBottom: '6px' }}>
+                <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '6px' }}>
                   Auto-Reply Frequency (Deduplication)
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
@@ -2158,8 +2158,8 @@ export default function InboxPage() {
                   <div
                     onClick={() => setAutoReplySettings({ ...autoReplySettings, mode: 'ONCE_PER_CONTACT' })}
                     style={{
-                      border: autoReplySettings.mode === 'ONCE_PER_CONTACT' ? '2px solid #16A34A' : '1px solid #E2E8F0',
-                      background: autoReplySettings.mode === 'ONCE_PER_CONTACT' ? '#F0FDF4' : '#FFFFFF',
+                      border: autoReplySettings.mode === 'ONCE_PER_CONTACT' ? '2px solid #2876B8' : '1px solid #E5E5E8',
+                      background: autoReplySettings.mode === 'ONCE_PER_CONTACT' ? '#F3F6EE' : '#FFFFFF',
                       borderRadius: '10px',
                       padding: '12px 14px',
                       cursor: 'pointer',
@@ -2173,25 +2173,25 @@ export default function InboxPage() {
                           name="autoReplyMode"
                           checked={autoReplySettings.mode === 'ONCE_PER_CONTACT'}
                           onChange={() => setAutoReplySettings({ ...autoReplySettings, mode: 'ONCE_PER_CONTACT' })}
-                          style={{ accentColor: '#16A34A' }}
+                          style={{ accentColor: '#2876B8' }}
                         />
-                        <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#0F172A' }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#171719' }}>
                           Send Only Once Ever per Contact
                         </span>
                       </div>
                       <span style={{
                         fontSize: '0.675rem',
                         fontWeight: 700,
-                        background: '#DCFCE7',
-                        color: '#15803D',
+                        background: '#EDF4E6',
+                        color: '#2F5219',
                         padding: '2px 8px',
                         borderRadius: '6px',
-                        border: '1px solid #BBF7D0'
+                        border: '1px solid #C3D1AC'
                       }}>
                         RECOMMENDED
                       </span>
                     </div>
-                    <p style={{ fontSize: '0.78rem', color: '#64748B', margin: '0 0 0 24px', lineHeight: 1.4 }}>
+                    <p style={{ fontSize: '0.78rem', color: '#67676B', margin: '0 0 0 24px', lineHeight: 1.4 }}>
                       Sends the automated message <strong>strictly once</strong> when a new contact reaches out for the first time. Will <strong>never repeat</strong> on subsequent messages from that customer.
                     </p>
                   </div>
@@ -2200,8 +2200,8 @@ export default function InboxPage() {
                   <div
                     onClick={() => setAutoReplySettings({ ...autoReplySettings, mode: 'ONCE_PER_24_HOURS' })}
                     style={{
-                      border: autoReplySettings.mode === 'ONCE_PER_24_HOURS' ? '2px solid #16A34A' : '1px solid #E2E8F0',
-                      background: autoReplySettings.mode === 'ONCE_PER_24_HOURS' ? '#F0FDF4' : '#FFFFFF',
+                      border: autoReplySettings.mode === 'ONCE_PER_24_HOURS' ? '2px solid #2876B8' : '1px solid #E5E5E8',
+                      background: autoReplySettings.mode === 'ONCE_PER_24_HOURS' ? '#F3F6EE' : '#FFFFFF',
                       borderRadius: '10px',
                       padding: '12px 14px',
                       cursor: 'pointer',
@@ -2214,13 +2214,13 @@ export default function InboxPage() {
                         name="autoReplyMode"
                         checked={autoReplySettings.mode === 'ONCE_PER_24_HOURS'}
                         onChange={() => setAutoReplySettings({ ...autoReplySettings, mode: 'ONCE_PER_24_HOURS' })}
-                        style={{ accentColor: '#16A34A' }}
+                        style={{ accentColor: '#2876B8' }}
                       />
-                      <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#0F172A' }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#171719' }}>
                         At Most Once per 24 Hours
                       </span>
                     </div>
-                    <p style={{ fontSize: '0.78rem', color: '#64748B', margin: '0 0 0 24px', lineHeight: 1.4 }}>
+                    <p style={{ fontSize: '0.78rem', color: '#67676B', margin: '0 0 0 24px', lineHeight: 1.4 }}>
                       Sends at most once every 24 hours. If the customer messages on a different day, they receive an updated greeting.
                     </p>
                   </div>
@@ -2230,7 +2230,7 @@ export default function InboxPage() {
               {/* 3. Message Template Textarea */}
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
-                  <label style={{ fontSize: '0.825rem', fontWeight: 700, color: '#334155' }}>
+                  <label style={{ fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E' }}>
                     Auto-Reply Message Template
                   </label>
                   <button
@@ -2243,13 +2243,13 @@ export default function InboxPage() {
                       });
                     }}
                     style={{
-                      background: '#F1F5F9',
-                      border: '1px solid #E2E8F0',
+                      background: '#EEEEF0',
+                      border: '1px solid #E5E5E8',
                       borderRadius: '6px',
                       padding: '2px 8px',
                       fontSize: '0.72rem',
                       fontWeight: 600,
-                      color: '#475569',
+                      color: '#67676B',
                       cursor: 'pointer'
                     }}
                     title="Insert dynamic customer name variable"
@@ -2266,21 +2266,21 @@ export default function InboxPage() {
                   placeholder="Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message. Our team will get back to you shortly."
                   style={{ width: '100%', resize: 'vertical', fontSize: '0.85rem', lineHeight: 1.45, padding: '10px 12px' }}
                 />
-                <span style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: '4px', display: 'block' }}>
+                <span style={{ fontSize: '0.72rem', color: '#96969C', marginTop: '4px', display: 'block' }}>
                   <code>{`{{name}}`}</code> will be replaced with the customer's WhatsApp profile name (e.g. &ldquo;Shivam&rdquo;).
                 </span>
               </div>
 
               {/* 4. Live WhatsApp Preview Bubble */}
               <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '6px' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#67676B', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '6px' }}>
                   Customer WhatsApp Preview
                 </label>
                 <div style={{
                   background: '#ECE5DD',
                   borderRadius: '12px',
                   padding: '16px',
-                  border: '1px solid #E2E8F0',
+                  border: '1px solid #E5E5E8',
                   display: 'flex',
                   justifyContent: 'flex-start'
                 }}>
@@ -2292,13 +2292,13 @@ export default function InboxPage() {
                     boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
                     position: 'relative'
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.68rem', fontWeight: 700, color: '#16A34A', marginBottom: '4px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.68rem', fontWeight: 700, color: '#2876B8', marginBottom: '4px' }}>
                       <Sparkles size={11} /> Auto-Reply Bot
                     </div>
-                    <div style={{ fontSize: '0.85rem', color: '#0F172A', whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>
+                    <div style={{ fontSize: '0.85rem', color: '#171719', whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>
                       {(autoReplySettings.message || 'Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message. Our team will get back to you shortly.').replace(/\{\{name\}\}/gi, 'Shivam')}
                     </div>
-                    <div style={{ textAlign: 'right', fontSize: '0.675rem', color: '#94A3B8', marginTop: '4px' }}>
+                    <div style={{ textAlign: 'right', fontSize: '0.675rem', color: '#96969C', marginTop: '4px' }}>
                       10:30 AM
                     </div>
                   </div>
@@ -2308,9 +2308,9 @@ export default function InboxPage() {
               {/* Save Success Alert */}
               {autoReplySaveSuccess && (
                 <div style={{
-                  background: '#DCFCE7',
-                  border: '1px solid #BBF7D0',
-                  color: '#15803D',
+                  background: '#EDF4E6',
+                  border: '1px solid #C3D1AC',
+                  color: '#2F5219',
                   padding: '10px 14px',
                   borderRadius: '8px',
                   fontSize: '0.825rem',
@@ -2325,7 +2325,7 @@ export default function InboxPage() {
               )}
 
               {/* Modal Footer Buttons */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px', borderTop: '1px solid #F1F5F9', paddingTop: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px', borderTop: '1px solid #EEEEF0', paddingTop: '16px' }}>
                 <button
                   type="button"
                   onClick={() => setShowAutoReplyModal(false)}
@@ -2372,7 +2372,7 @@ export default function InboxPage() {
             width: '100%',
             maxWidth: '520px',
             boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-            border: '1px solid #E2E8F0',
+            border: '1px solid #E5E5E8',
             overflow: 'hidden'
           }}>
             <div style={{
@@ -2380,15 +2380,15 @@ export default function InboxPage() {
               alignItems: 'center',
               justifyContent: 'space-between',
               padding: '18px 24px',
-              borderBottom: '1px solid #F1F5F9'
+              borderBottom: '1px solid #EEEEF0'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{
                   width: '36px',
                   height: '36px',
                   borderRadius: '10px',
-                  background: '#DCFCE7',
-                  color: '#15803D',
+                  background: '#EDF4E6',
+                  color: '#2F5219',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center'
@@ -2396,10 +2396,10 @@ export default function InboxPage() {
                   <Layers size={20} />
                 </div>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0F172A' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#171719' }}>
                     Send WhatsApp Flow
                   </h3>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748B' }}>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#67676B' }}>
                     Send an interactive native form to {selectedConvo?.name || selectedConvo?.phone}
                   </p>
                 </div>
@@ -2410,7 +2410,7 @@ export default function InboxPage() {
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#94A3B8',
+                  color: '#96969C',
                   cursor: 'pointer',
                   padding: '4px'
                 }}
@@ -2422,16 +2422,16 @@ export default function InboxPage() {
             <div style={{ padding: '24px' }}>
               {availableFlows.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '24px 12px' }}>
-                  <Layers size={40} style={{ color: '#94A3B8', margin: '0 auto 12px' }} />
-                  <h4 style={{ margin: '0 0 6px', color: '#334155', fontWeight: 600 }}>No Meta Flows Available</h4>
-                  <p style={{ margin: 0, fontSize: '0.85rem', color: '#64748B' }}>
+                  <Layers size={40} style={{ color: '#96969C', margin: '0 auto 12px' }} />
+                  <h4 style={{ margin: '0 0 6px', color: '#3A3A3E', fontWeight: 600 }}>No Meta Flows Available</h4>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: '#67676B' }}>
                     You have not published or synchronized any WhatsApp Flows with Meta yet. Go to the WhatsApp Flows tab to create or sync your flows.
                   </p>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#3A3A3E', marginBottom: '6px' }}>
                       Select Flow Form
                     </label>
                     <select
@@ -2444,7 +2444,7 @@ export default function InboxPage() {
                         }
                       }}
                       className="form-control"
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.9rem' }}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #D4D4D9', fontSize: '0.9rem' }}
                     >
                       {availableFlows.map(f => (
                         <option key={f.id} value={f.id}>
@@ -2455,7 +2455,7 @@ export default function InboxPage() {
                   </div>
 
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#3A3A3E', marginBottom: '6px' }}>
                       Accompanying Message
                     </label>
                     <textarea
@@ -2464,12 +2464,12 @@ export default function InboxPage() {
                       onChange={(e) => setFlowBodyText(e.target.value)}
                       placeholder="Enter a message to introduce the interactive form..."
                       className="form-control"
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.875rem' }}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #D4D4D9', fontSize: '0.875rem' }}
                     />
                   </div>
 
                   <div>
-                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                    <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: '#3A3A3E', marginBottom: '6px' }}>
                       Button CTA Label
                     </label>
                     <input
@@ -2479,17 +2479,17 @@ export default function InboxPage() {
                       onChange={(e) => setFlowCtaText(e.target.value)}
                       placeholder="e.g. Open Form, Book Now"
                       className="form-control"
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #CBD5E1', fontSize: '0.9rem' }}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #D4D4D9', fontSize: '0.9rem' }}
                     />
                   </div>
 
                   <div style={{
-                    background: '#F8FAFC',
+                    background: '#F5F5F6',
                     borderRadius: '8px',
                     padding: '12px',
-                    border: '1px solid #E2E8F0',
+                    border: '1px solid #E5E5E8',
                     fontSize: '0.8rem',
-                    color: '#64748B'
+                    color: '#67676B'
                   }}>
                     💡 The customer will see an interactive WhatsApp message with an open-form button. When they submit, their responses will automatically appear right here in this chat!
                   </div>
@@ -2503,8 +2503,8 @@ export default function InboxPage() {
               justifyContent: 'flex-end',
               gap: '12px',
               padding: '16px 24px',
-              borderTop: '1px solid #F1F5F9',
-              background: '#F8FAFC'
+              borderTop: '1px solid #EEEEF0',
+              background: '#F5F5F6'
             }}>
               <button
                 type="button"

@@ -479,9 +479,9 @@ export default function FlowsPage() {
           marginBottom: '20px',
           padding: '12px 18px',
           borderRadius: '10px',
-          background: notification.type === 'error' ? '#FEE2E2' : '#DCFCE7',
-          color: notification.type === 'error' ? '#B91C1C' : '#15803D',
-          border: `1px solid ${notification.type === 'error' ? '#FCA5A5' : '#86EFAC'}`,
+          background: notification.type === 'error' ? '#FDF0F0' : '#EDF4E6',
+          color: notification.type === 'error' ? '#9B2C2C' : '#2F5219',
+          border: `1px solid ${notification.type === 'error' ? '#FCA5A5' : '#C3D1AC'}`,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -540,24 +540,24 @@ export default function FlowsPage() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, #059669, #0d9488)',
+              width: '38px',
+              height: '38px',
+              borderRadius: '8px',
+              background: 'var(--sarvya-blue-soft)',
+              border: '1px solid var(--sarvya-blue-border)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#FFFFFF',
-              boxShadow: '0 3px 10px rgba(13, 148, 136, 0.25)'
+              color: 'var(--sarvya-blue)'
             }}>
-              <Layers size={22} />
+              <Layers size={20} />
             </div>
             <div>
-              <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0F172A', margin: 0, letterSpacing: '-0.02em' }}>
-                WhatsApp Interactive Flows
+              <h1 className="sarvya-page-title">
+                SARVYA Forms — Interactive Flows
               </h1>
-              <p style={{ margin: '2px 0 0', fontSize: '0.85rem', color: '#64748B' }}>
-                Build, publish, and send rich native forms directly inside WhatsApp chats.
+              <p className="sarvya-page-desc">
+                Design, inspect, publish, and dispatch native WhatsApp interactive data collection forms.
               </p>
             </div>
           </div>
@@ -576,8 +576,8 @@ export default function FlowsPage() {
                 padding: '9px 16px',
                 borderRadius: '8px',
                 background: '#FFFFFF',
-                border: '1px solid #CBD5E1',
-                color: '#334155',
+                border: '1px solid #D4D4D9',
+                color: '#3A3A3E',
                 fontSize: '0.85rem',
                 fontWeight: 600,
                 cursor: loading ? 'not-allowed' : 'pointer',
@@ -592,24 +592,10 @@ export default function FlowsPage() {
 
           <button
             onClick={() => handleOpenCreate()}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '9px 18px',
-              borderRadius: '8px',
-              background: 'linear-gradient(135deg, #128C7E, #0d7064)',
-              border: 'none',
-              color: '#FFFFFF',
-              fontSize: '0.88rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              boxShadow: '0 3px 12px rgba(18, 140, 126, 0.3)',
-              transition: 'all 0.2s ease'
-            }}
+            className="sarvya-btn sarvya-btn-primary"
           >
-            <Plus size={16} strokeWidth={2.5} />
-            Create Flow
+            <Plus size={15} strokeWidth={2.2} />
+            Create Form
           </button>
         </div>
       </div>
@@ -627,8 +613,8 @@ export default function FlowsPage() {
             padding: '10px 18px',
             background: 'none',
             border: 'none',
-            borderBottom: currentTab === 'flows' ? '3px solid #128C7E' : '3px solid transparent',
-            color: currentTab === 'flows' ? '#128C7E' : '#64748B',
+            borderBottom: currentTab === 'flows' ? '3px solid #2876B8' : '3px solid transparent',
+            color: currentTab === 'flows' ? '#2876B8' : '#67676B',
             fontWeight: currentTab === 'flows' ? 700 : 500,
             fontSize: '0.92rem',
             cursor: 'pointer',
@@ -647,8 +633,8 @@ export default function FlowsPage() {
             padding: '10px 18px',
             background: 'none',
             border: 'none',
-            borderBottom: currentTab === 'responses' ? '3px solid #128C7E' : '3px solid transparent',
-            color: currentTab === 'responses' ? '#128C7E' : '#64748B',
+            borderBottom: currentTab === 'responses' ? '3px solid #2876B8' : '3px solid transparent',
+            color: currentTab === 'responses' ? '#2876B8' : '#67676B',
             fontWeight: currentTab === 'responses' ? 700 : 500,
             fontSize: '0.92rem',
             cursor: 'pointer',
@@ -667,8 +653,8 @@ export default function FlowsPage() {
             padding: '10px 18px',
             background: 'none',
             border: 'none',
-            borderBottom: currentTab === 'crypto' ? '3px solid #128C7E' : '3px solid transparent',
-            color: currentTab === 'crypto' ? '#128C7E' : '#64748B',
+            borderBottom: currentTab === 'crypto' ? '3px solid #2876B8' : '3px solid transparent',
+            color: currentTab === 'crypto' ? '#2876B8' : '#67676B',
             fontWeight: currentTab === 'crypto' ? 700 : 500,
             fontSize: '0.92rem',
             cursor: 'pointer',
@@ -696,11 +682,11 @@ export default function FlowsPage() {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
                 <Sparkles size={20} color="#D97706" />
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0F172A' }}>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#171719' }}>
                   Quick Start with Validated Templates
                 </h3>
               </div>
-              <p style={{ margin: '0 0 16px', fontSize: '0.85rem', color: '#64748B' }}>
+              <p style={{ margin: '0 0 16px', fontSize: '0.85rem', color: '#67676B' }}>
                 Select a pre-designed Meta Flow template to customize and deploy in seconds:
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px' }}>
@@ -709,23 +695,23 @@ export default function FlowsPage() {
                     key={tpl.key}
                     onClick={() => handleOpenCreate(tpl.key)}
                     style={{
-                      border: '1px solid #E2E8F0',
+                      border: '1px solid #E5E5E8',
                       borderRadius: '10px',
                       padding: '16px',
                       cursor: 'pointer',
-                      background: '#F8FAFC',
+                      background: '#F5F5F6',
                       transition: 'all 0.2s ease'
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#128C7E'; e.currentTarget.style.background = '#F0FDF4'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#E2E8F0'; e.currentTarget.style.background = '#F8FAFC'; }}
+                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#2876B8'; e.currentTarget.style.background = '#F3F6EE'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#E5E5E8'; e.currentTarget.style.background = '#F5F5F6'; }}
                   >
-                    <div style={{ fontWeight: 700, color: '#0F172A', fontSize: '0.92rem' }}>{tpl.name}</div>
-                    <div style={{ fontSize: '0.78rem', color: '#64748B', marginTop: '4px', lineHeight: 1.4 }}>{tpl.description}</div>
+                    <div style={{ fontWeight: 700, color: '#171719', fontSize: '0.92rem' }}>{tpl.name}</div>
+                    <div style={{ fontSize: '0.78rem', color: '#67676B', marginTop: '4px', lineHeight: 1.4 }}>{tpl.description}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px' }}>
                       <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '4px', background: '#E0F2FE', color: '#0369A1', fontWeight: 600 }}>
                         {tpl.category}
                       </span>
-                      <span style={{ fontSize: '0.75rem', color: '#128C7E', fontWeight: 600, marginLeft: 'auto' }}>
+                      <span style={{ fontSize: '0.75rem', color: '#2876B8', fontWeight: 600, marginLeft: 'auto' }}>
                         Use Template →
                       </span>
                     </div>
@@ -746,7 +732,7 @@ export default function FlowsPage() {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '240px', maxWidth: '400px' }}>
               <div style={{ position: 'relative', width: '100%' }}>
-                <Search size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                <Search size={16} color="#96969C" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
                 <input
                   type="text"
                   placeholder="Search flows by name or ID..."
@@ -756,7 +742,7 @@ export default function FlowsPage() {
                     width: '100%',
                     padding: '8px 12px 8px 36px',
                     borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
+                    border: '1px solid #D4D4D9',
                     fontSize: '0.85rem'
                   }}
                 />
@@ -770,10 +756,10 @@ export default function FlowsPage() {
                 style={{
                   padding: '8px 12px',
                   borderRadius: '8px',
-                  border: '1px solid #CBD5E1',
+                  border: '1px solid #D4D4D9',
                   fontSize: '0.82rem',
                   background: '#FFFFFF',
-                  color: '#334155'
+                  color: '#3A3A3E'
                 }}
               >
                 <option value="ALL">All Categories</option>
@@ -790,10 +776,10 @@ export default function FlowsPage() {
                 style={{
                   padding: '8px 12px',
                   borderRadius: '8px',
-                  border: '1px solid #CBD5E1',
+                  border: '1px solid #D4D4D9',
                   fontSize: '0.82rem',
                   background: '#FFFFFF',
-                  color: '#334155'
+                  color: '#3A3A3E'
                 }}
               >
                 <option value="ALL">All Statuses</option>
@@ -806,21 +792,21 @@ export default function FlowsPage() {
 
           {/* Flows Grid */}
           {loading ? (
-            <div style={{ padding: '60px 20px', textAlign: 'center', color: '#94A3B8' }}>
-              <RefreshCw size={28} className="animate-spin" style={{ margin: '0 auto 12px', color: '#128C7E' }} />
+            <div style={{ padding: '60px 20px', textAlign: 'center', color: '#96969C' }}>
+              <RefreshCw size={28} className="animate-spin" style={{ margin: '0 auto 12px', color: '#2876B8' }} />
               <div>Loading WhatsApp Flows...</div>
             </div>
           ) : filteredFlows.length === 0 ? (
             <div style={{
               background: '#FFFFFF',
-              border: '1px dashed #CBD5E1',
+              border: '1px dashed #D4D4D9',
               borderRadius: '14px',
               padding: '60px 20px',
               textAlign: 'center'
             }}>
-              <Layers size={40} color="#94A3B8" style={{ margin: '0 auto 12px' }} />
-              <h3 style={{ margin: '0 0 6px', fontSize: '1.1rem', color: '#0F172A' }}>No WhatsApp Flows Found</h3>
-              <p style={{ margin: '0 0 18px', color: '#64748B', fontSize: '0.85rem' }}>
+              <Layers size={40} color="#96969C" style={{ margin: '0 auto 12px' }} />
+              <h3 style={{ margin: '0 0 6px', fontSize: '1.1rem', color: '#171719' }}>No WhatsApp Flows Found</h3>
+              <p style={{ margin: '0 0 18px', color: '#67676B', fontSize: '0.85rem' }}>
                 {search ? 'Try clearing your search terms or filters.' : 'Create your first Flow using one of our starter templates.'}
               </p>
               <button
@@ -828,7 +814,7 @@ export default function FlowsPage() {
                 style={{
                   padding: '9px 18px',
                   borderRadius: '8px',
-                  background: '#128C7E',
+                  background: '#2876B8',
                   color: '#FFFFFF',
                   border: 'none',
                   fontWeight: 600,
@@ -865,10 +851,10 @@ export default function FlowsPage() {
                       {/* Top Header of Card */}
                       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
                         <div>
-                          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0F172A', lineHeight: 1.3 }}>
+                          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#171719', lineHeight: 1.3 }}>
                             {flow.name}
                           </h3>
-                          <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '4px', fontFamily: 'monospace' }}>
+                          <div style={{ fontSize: '0.75rem', color: '#67676B', marginTop: '4px', fontFamily: 'monospace' }}>
                             {flow.meta_flow_id ? `Meta ID: ${flow.meta_flow_id}` : 'Local Draft (Not Pushed)'}
                           </div>
                         </div>
@@ -879,9 +865,9 @@ export default function FlowsPage() {
                           borderRadius: '6px',
                           fontSize: '0.72rem',
                           fontWeight: 700,
-                          background: isPublished ? '#DCFCE7' : (isDraft ? '#FEF3C7' : (isDeprecated ? '#FEE2E2' : '#F1F5F9')),
-                          color: isPublished ? '#15803D' : (isDraft ? '#B45309' : (isDeprecated ? '#DC2626' : '#64748B')),
-                          border: `1px solid ${isPublished ? '#BBF7D0' : (isDraft ? '#FDE68A' : (isDeprecated ? '#FECACA' : '#E2E8F0'))}`
+                          background: isPublished ? '#EDF4E6' : (isDraft ? '#FEF3C7' : (isDeprecated ? '#FDF0F0' : '#EEEEF0')),
+                          color: isPublished ? '#2F5219' : (isDraft ? '#B45309' : (isDeprecated ? '#9B2C2C' : '#67676B')),
+                          border: `1px solid ${isPublished ? '#C3D1AC' : (isDraft ? '#FDE68A' : (isDeprecated ? '#FDB1AF' : '#E5E5E8'))}`
                         }}>
                           {flow.status}
                         </span>
@@ -890,7 +876,7 @@ export default function FlowsPage() {
                       {/* Description */}
                       <p style={{
                         fontSize: '0.82rem',
-                        color: '#475569',
+                        color: '#67676B',
                         margin: '12px 0 16px',
                         lineHeight: 1.4,
                         minHeight: '36px'
@@ -905,8 +891,8 @@ export default function FlowsPage() {
                             fontSize: '0.7rem',
                             padding: '2px 8px',
                             borderRadius: '4px',
-                            background: '#F1F5F9',
-                            color: '#475569',
+                            background: '#EEEEF0',
+                            color: '#67676B',
                             fontWeight: 600
                           }}>
                             {cat}
@@ -948,7 +934,7 @@ export default function FlowsPage() {
 
                     {/* Card Actions */}
                     <div style={{
-                      borderTop: '1px solid #F1F5F9',
+                      borderTop: '1px solid #EEEEF0',
                       paddingTop: '14px',
                       display: 'flex',
                       alignItems: 'center',
@@ -962,9 +948,9 @@ export default function FlowsPage() {
                           style={{
                             padding: '6px 10px',
                             borderRadius: '6px',
-                            background: '#F8FAFC',
-                            border: '1px solid #CBD5E1',
-                            color: '#334155',
+                            background: '#F5F5F6',
+                            border: '1px solid #D4D4D9',
+                            color: '#3A3A3E',
                             fontSize: '0.78rem',
                             fontWeight: 600,
                             cursor: 'pointer',
@@ -985,9 +971,9 @@ export default function FlowsPage() {
                           style={{
                             padding: '6px 10px',
                             borderRadius: '6px',
-                            background: flow.meta_flow_id ? '#F0FDF4' : '#F1F5F9',
-                            border: `1px solid ${flow.meta_flow_id ? '#BBF7D0' : '#E2E8F0'}`,
-                            color: flow.meta_flow_id ? '#15803D' : '#94A3B8',
+                            background: flow.meta_flow_id ? '#F3F6EE' : '#EEEEF0',
+                            border: `1px solid ${flow.meta_flow_id ? '#C3D1AC' : '#E5E5E8'}`,
+                            color: flow.meta_flow_id ? '#2F5219' : '#96969C',
                             fontSize: '0.78rem',
                             fontWeight: 600,
                             cursor: flow.meta_flow_id ? 'pointer' : 'not-allowed',
@@ -1036,7 +1022,7 @@ export default function FlowsPage() {
                                 style={{
                                   padding: '6px 10px',
                                   borderRadius: '6px',
-                                  background: '#128C7E',
+                                  background: '#2876B8',
                                   border: 'none',
                                   color: '#FFFFFF',
                                   fontSize: '0.78rem',
@@ -1099,17 +1085,17 @@ export default function FlowsPage() {
         <div style={{ background: '#FFFFFF', borderRadius: '14px', border: '1px solid var(--border-color)', padding: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
             <div>
-              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0F172A' }}>
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#171719' }}>
                 Customer Flow Submissions ({responses.length})
               </h3>
-              <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: '#64748B' }}>
+              <p style={{ margin: '2px 0 0', fontSize: '0.82rem', color: '#67676B' }}>
                 Real-time answers submitted by customers when completing WhatsApp Flows.
               </p>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{ position: 'relative', width: '260px' }}>
-                <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+                <Search size={15} color="#96969C" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
                 <input
                   type="text"
                   placeholder="Filter by customer or phone..."
@@ -1119,7 +1105,7 @@ export default function FlowsPage() {
                     width: '100%',
                     padding: '7px 10px 7px 32px',
                     borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
+                    border: '1px solid #D4D4D9',
                     fontSize: '0.82rem'
                   }}
                 />
@@ -1131,9 +1117,9 @@ export default function FlowsPage() {
                 style={{
                   padding: '7px 12px',
                   borderRadius: '8px',
-                  background: '#F8FAFC',
-                  border: '1px solid #CBD5E1',
-                  color: '#334155',
+                  background: '#F5F5F6',
+                  border: '1px solid #D4D4D9',
+                  color: '#3A3A3E',
                   fontSize: '0.82rem',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -1149,13 +1135,13 @@ export default function FlowsPage() {
           </div>
 
           {loadingResponses ? (
-            <div style={{ padding: '60px', textAlign: 'center', color: '#94A3B8' }}>
-              <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 10px', color: '#128C7E' }} />
+            <div style={{ padding: '60px', textAlign: 'center', color: '#96969C' }}>
+              <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 10px', color: '#2876B8' }} />
               <div>Loading submissions...</div>
             </div>
           ) : responses.length === 0 ? (
-            <div style={{ padding: '60px 20px', textAlign: 'center', color: '#64748B' }}>
-              <Inbox size={36} color="#CBD5E1" style={{ margin: '0 auto 10px' }} />
+            <div style={{ padding: '60px 20px', textAlign: 'center', color: '#67676B' }}>
+              <Inbox size={36} color="#D4D4D9" style={{ margin: '0 auto 10px' }} />
               <div style={{ fontWeight: 600 }}>No Flow Submissions Yet</div>
               <div style={{ fontSize: '0.82rem', marginTop: '4px' }}>
                 When customers fill out and submit interactive Flows on their WhatsApp device, their answers will automatically appear here.
@@ -1165,7 +1151,7 @@ export default function FlowsPage() {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                 <thead>
-                  <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', color: '#475569', textAlign: 'left' }}>
+                  <tr style={{ background: '#F5F5F6', borderBottom: '1px solid #E5E5E8', color: '#67676B', textAlign: 'left' }}>
                     <th style={{ padding: '10px 14px' }}>Timestamp</th>
                     <th style={{ padding: '10px 14px' }}>Customer</th>
                     <th style={{ padding: '10px 14px' }}>Flow Name</th>
@@ -1181,15 +1167,15 @@ export default function FlowsPage() {
                       JSON.stringify(r.parsed_data || {}).toLowerCase().includes(responseSearch.toLowerCase())
                     )
                     .map(item => (
-                      <tr key={item.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                        <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', color: '#64748B', fontSize: '0.8rem' }}>
+                      <tr key={item.id} style={{ borderBottom: '1px solid #EEEEF0' }}>
+                        <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', color: '#67676B', fontSize: '0.8rem' }}>
                           {item.created_at ? new Date(item.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '—'}
                         </td>
                         <td style={{ padding: '12px 14px' }}>
-                          <div style={{ fontWeight: 700, color: '#0F172A' }}>{item.customer_name || 'Customer'}</div>
-                          <div style={{ fontSize: '0.78rem', color: '#64748B', fontFamily: 'monospace' }}>+{item.from_phone}</div>
+                          <div style={{ fontWeight: 700, color: '#171719' }}>{item.customer_name || 'Customer'}</div>
+                          <div style={{ fontSize: '0.78rem', color: '#67676B', fontFamily: 'monospace' }}>+{item.from_phone}</div>
                         </td>
-                        <td style={{ padding: '12px 14px', fontWeight: 600, color: '#1E293B' }}>
+                        <td style={{ padding: '12px 14px', fontWeight: 600, color: '#171719' }}>
                           {item.flow_name || `Flow ${item.flow_id}`}
                         </td>
                         <td style={{ padding: '12px 14px', maxWidth: '380px' }}>
@@ -1202,8 +1188,8 @@ export default function FlowsPage() {
                                   fontSize: '0.72rem',
                                   padding: '2px 6px',
                                   borderRadius: '4px',
-                                  background: '#F1F5F9',
-                                  color: '#334155'
+                                  background: '#EEEEF0',
+                                  color: '#3A3A3E'
                                 }}>
                                   <strong>{k.replace(/^[a-zA-Z0-9]+_/, '')}:</strong> {typeof v === 'object' ? JSON.stringify(v) : String(v)}
                                 </span>
@@ -1216,9 +1202,9 @@ export default function FlowsPage() {
                             style={{
                               padding: '5px 10px',
                               borderRadius: '6px',
-                              background: '#F8FAFC',
-                              border: '1px solid #CBD5E1',
-                              color: '#334155',
+                              background: '#F5F5F6',
+                              border: '1px solid #D4D4D9',
+                              color: '#3A3A3E',
                               fontSize: '0.75rem',
                               fontWeight: 600,
                               cursor: 'pointer'
@@ -1248,14 +1234,14 @@ export default function FlowsPage() {
             padding: '24px'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
-              <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#F0FDF4', color: '#16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#F3F6EE', color: '#2876B8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Key size={20} />
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0F172A' }}>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#171719' }}>
                   Meta Flow Encryption Keys
                 </h3>
-                <div style={{ fontSize: '0.8rem', color: '#64748B' }}>
+                <div style={{ fontSize: '0.8rem', color: '#67676B' }}>
                   RSA 2048-bit keypair for encrypting dynamic data exchange between Meta and your server.
                 </div>
               </div>
@@ -1264,8 +1250,8 @@ export default function FlowsPage() {
             <div style={{
               padding: '12px 16px',
               borderRadius: '8px',
-              background: cryptoConfig?.hasPrivateKey ? '#F0FDF4' : '#FFFBEB',
-              border: `1px solid ${cryptoConfig?.hasPrivateKey ? '#BBF7D0' : '#FDE68A'}`,
+              background: cryptoConfig?.hasPrivateKey ? '#F3F6EE' : '#FFFBEB',
+              border: `1px solid ${cryptoConfig?.hasPrivateKey ? '#C3D1AC' : '#FDE68A'}`,
               marginBottom: '20px',
               display: 'flex',
               alignItems: 'center',
@@ -1273,11 +1259,11 @@ export default function FlowsPage() {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {cryptoConfig?.hasPrivateKey ? (
-                  <CheckCircle2 size={18} color="#16A34A" />
+                  <CheckCircle2 size={18} color="#2876B8" />
                 ) : (
                   <AlertCircle size={18} color="#D97706" />
                 )}
-                <span style={{ fontSize: '0.88rem', fontWeight: 600, color: cryptoConfig?.hasPrivateKey ? '#166534' : '#92400E' }}>
+                <span style={{ fontSize: '0.88rem', fontWeight: 600, color: cryptoConfig?.hasPrivateKey ? '#2F5219' : '#92400E' }}>
                   {cryptoConfig?.hasPrivateKey ? 'Private Encryption Key Configured & Active' : 'No Private Key Configured'}
                 </span>
               </div>
@@ -1290,7 +1276,7 @@ export default function FlowsPage() {
                     padding: '6px 12px',
                     borderRadius: '6px',
                     background: '#FFFFFF',
-                    border: '1px solid #CBD5E1',
+                    border: '1px solid #D4D4D9',
                     fontSize: '0.78rem',
                     fontWeight: 600,
                     cursor: 'pointer'
@@ -1305,7 +1291,7 @@ export default function FlowsPage() {
             {cryptoConfig?.publicKey ? (
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#3A3A3E' }}>
                     RSA Public Key (Upload this to Meta WhatsApp Manager):
                   </label>
                   <button
@@ -1313,7 +1299,7 @@ export default function FlowsPage() {
                     style={{
                       background: 'none',
                       border: 'none',
-                      color: '#128C7E',
+                      color: '#2876B8',
                       fontSize: '0.78rem',
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -1322,7 +1308,7 @@ export default function FlowsPage() {
                       gap: '4px'
                     }}
                   >
-                    {copiedKey ? <Check size={14} color="#16A34A" /> : <Copy size={14} />}
+                    {copiedKey ? <Check size={14} color="#2876B8" /> : <Copy size={14} />}
                     {copiedKey ? 'Copied!' : 'Copy PEM'}
                   </button>
                 </div>
@@ -1337,14 +1323,14 @@ export default function FlowsPage() {
                     fontSize: '0.75rem',
                     padding: '10px',
                     borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
-                    background: '#F8FAFC',
-                    color: '#334155'
+                    border: '1px solid #D4D4D9',
+                    background: '#F5F5F6',
+                    color: '#3A3A3E'
                   }}
                 />
               </div>
             ) : (
-              <div style={{ fontSize: '0.82rem', color: '#64748B', fontStyle: 'italic' }}>
+              <div style={{ fontSize: '0.82rem', color: '#67676B', fontStyle: 'italic' }}>
                 Click "Generate Keypair" above to create an RSA 2048-bit keypair for your server.
               </div>
             )}
@@ -1362,17 +1348,17 @@ export default function FlowsPage() {
                 <ExternalLink size={20} />
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0F172A' }}>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#171719' }}>
                   Dynamic Flow Endpoint URL
                 </h3>
-                <div style={{ fontSize: '0.8rem', color: '#64748B' }}>
+                <div style={{ fontSize: '0.8rem', color: '#67676B' }}>
                   HTTPS endpoint configured on Meta WhatsApp Business Manager.
                 </div>
               </div>
             </div>
 
             <div style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '6px' }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#3A3A3E', display: 'block', marginBottom: '6px' }}>
                 Your Server Data-Exchange Endpoint:
               </label>
               <div style={{
@@ -1380,12 +1366,12 @@ export default function FlowsPage() {
                 alignItems: 'center',
                 gap: '8px',
                 padding: '10px 14px',
-                background: '#F8FAFC',
-                border: '1px solid #CBD5E1',
+                background: '#F5F5F6',
+                border: '1px solid #D4D4D9',
                 borderRadius: '8px',
                 fontFamily: 'monospace',
                 fontSize: '0.82rem',
-                color: '#0F172A'
+                color: '#171719'
               }}>
                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {cryptoConfig?.endpointUrl || 'https://whatsapp.konkantrip.com/api/flows/exchange'}
@@ -1395,15 +1381,15 @@ export default function FlowsPage() {
                     navigator.clipboard.writeText(cryptoConfig?.endpointUrl || 'https://whatsapp.konkantrip.com/api/flows/exchange');
                     showNotification('Endpoint URL copied to clipboard.');
                   }}
-                  style={{ background: 'none', border: 'none', color: '#128C7E', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem' }}
+                  style={{ background: 'none', border: 'none', color: '#2876B8', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem' }}
                 >
                   Copy
                 </button>
               </div>
             </div>
 
-            <div style={{ fontSize: '0.82rem', color: '#64748B', lineHeight: 1.5, background: '#F8FAFC', padding: '14px', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
-              <strong style={{ color: '#0F172A', display: 'block', marginBottom: '6px' }}>How to link with Meta WhatsApp Manager:</strong>
+            <div style={{ fontSize: '0.82rem', color: '#67676B', lineHeight: 1.5, background: '#F5F5F6', padding: '14px', borderRadius: '8px', border: '1px solid #E5E5E8' }}>
+              <strong style={{ color: '#171719', display: 'block', marginBottom: '6px' }}>How to link with Meta WhatsApp Manager:</strong>
               <ol style={{ margin: 0, paddingLeft: '18px' }}>
                 <li>Log in to <strong>Meta WhatsApp Business Manager</strong>.</li>
                 <li>Go to <strong>Account Tools → Flows</strong>.</li>
@@ -1442,20 +1428,20 @@ export default function FlowsPage() {
             {/* Modal Header */}
             <div style={{
               padding: '18px 24px',
-              borderBottom: '1px solid #E2E8F0',
+              borderBottom: '1px solid #E5E5E8',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Layers size={22} color="#128C7E" />
-                <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#0F172A' }}>
+                <Layers size={22} color="#2876B8" />
+                <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#171719' }}>
                   {editingFlow ? `Edit Flow: ${editingFlow.name}` : 'Create WhatsApp Flow'}
                 </h2>
               </div>
               <button
                 onClick={() => setIsEditorOpen(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#67676B' }}
               >
                 <X size={20} />
               </button>
@@ -1466,7 +1452,7 @@ export default function FlowsPage() {
               {/* Template Picker if new */}
               {!editingFlow && starterTemplates.length > 0 && (
                 <div style={{ marginBottom: '18px' }}>
-                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '6px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#67676B', display: 'block', marginBottom: '6px' }}>
                     Quick Load Template:
                   </label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
@@ -1483,9 +1469,9 @@ export default function FlowsPage() {
                         style={{
                           padding: '5px 10px',
                           borderRadius: '6px',
-                          background: '#F1F5F9',
-                          border: '1px solid #CBD5E1',
-                          color: '#334155',
+                          background: '#EEEEF0',
+                          border: '1px solid #D4D4D9',
+                          color: '#3A3A3E',
                           fontSize: '0.78rem',
                           fontWeight: 600,
                           cursor: 'pointer'
@@ -1501,7 +1487,7 @@ export default function FlowsPage() {
               {/* Form Metadata */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '14px', marginBottom: '16px' }}>
                 <div>
-                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#3A3A3E', display: 'block', marginBottom: '4px' }}>
                     Flow Name *
                   </label>
                   <input
@@ -1513,14 +1499,14 @@ export default function FlowsPage() {
                       width: '100%',
                       padding: '8px 12px',
                       borderRadius: '8px',
-                      border: '1px solid #CBD5E1',
+                      border: '1px solid #D4D4D9',
                       fontSize: '0.85rem'
                     }}
                   />
                 </div>
 
                 <div>
-                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#3A3A3E', display: 'block', marginBottom: '4px' }}>
                     Category *
                   </label>
                   <select
@@ -1530,7 +1516,7 @@ export default function FlowsPage() {
                       width: '100%',
                       padding: '8px 12px',
                       borderRadius: '8px',
-                      border: '1px solid #CBD5E1',
+                      border: '1px solid #D4D4D9',
                       fontSize: '0.85rem',
                       background: '#FFFFFF'
                     }}
@@ -1545,7 +1531,7 @@ export default function FlowsPage() {
               </div>
 
               <div style={{ marginBottom: '16px' }}>
-                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#3A3A3E', display: 'block', marginBottom: '4px' }}>
                   Description (Optional)
                 </label>
                 <input
@@ -1557,7 +1543,7 @@ export default function FlowsPage() {
                     width: '100%',
                     padding: '8px 12px',
                     borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
+                    border: '1px solid #D4D4D9',
                     fontSize: '0.85rem'
                   }}
                 />
@@ -1566,10 +1552,10 @@ export default function FlowsPage() {
               {/* JSON Editor */}
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155' }}>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#3A3A3E' }}>
                     Flow JSON Definition (Meta Schema 3.1 / 6.0) *
                   </label>
-                  <span style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#67676B' }}>
                     Must contain valid screens, layouts, and components
                   </span>
                 </div>
@@ -1584,8 +1570,8 @@ export default function FlowsPage() {
                     fontSize: '0.8rem',
                     padding: '12px',
                     borderRadius: '8px',
-                    border: jsonError ? '1px solid #EF4444' : '1px solid #CBD5E1',
-                    background: '#0F172A',
+                    border: jsonError ? '1px solid #EF4444' : '1px solid #D4D4D9',
+                    background: '#171719',
                     color: '#38BDF8',
                     lineHeight: 1.4
                   }}
@@ -1596,9 +1582,9 @@ export default function FlowsPage() {
                     marginTop: '8px',
                     padding: '8px 12px',
                     borderRadius: '6px',
-                    background: '#FEF2F2',
+                    background: '#FDF0F0',
                     border: '1px solid #FCA5A5',
-                    color: '#B91C1C',
+                    color: '#9B2C2C',
                     fontSize: '0.8rem',
                     display: 'flex',
                     alignItems: 'center',
@@ -1614,7 +1600,7 @@ export default function FlowsPage() {
             {/* Modal Footer */}
             <div style={{
               padding: '16px 24px',
-              borderTop: '1px solid #E2E8F0',
+              borderTop: '1px solid #E5E5E8',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
@@ -1627,8 +1613,8 @@ export default function FlowsPage() {
                   padding: '8px 16px',
                   borderRadius: '8px',
                   background: '#FFFFFF',
-                  border: '1px solid #CBD5E1',
-                  color: '#475569',
+                  border: '1px solid #D4D4D9',
+                  color: '#67676B',
                   fontSize: '0.85rem',
                   fontWeight: 600,
                   cursor: 'pointer'
@@ -1644,7 +1630,7 @@ export default function FlowsPage() {
                 style={{
                   padding: '8px 20px',
                   borderRadius: '8px',
-                  background: '#128C7E',
+                  background: '#2876B8',
                   color: '#FFFFFF',
                   border: 'none',
                   fontSize: '0.85rem',
@@ -1681,20 +1667,20 @@ export default function FlowsPage() {
           }}>
             <div style={{
               padding: '18px 24px',
-              borderBottom: '1px solid #E2E8F0',
+              borderBottom: '1px solid #E5E5E8',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Send size={20} color="#128C7E" />
-                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#0F172A' }}>
+                <Send size={20} color="#2876B8" />
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#171719' }}>
                   Send Flow: {testSendFlow.name}
                 </h3>
               </div>
               <button
                 onClick={() => setIsTestSendOpen(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#67676B' }}
               >
                 <X size={18} />
               </button>
@@ -1702,7 +1688,7 @@ export default function FlowsPage() {
 
             <div style={{ padding: '20px 24px' }}>
               <div style={{ marginBottom: '14px' }}>
-                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#3A3A3E', display: 'block', marginBottom: '4px' }}>
                   Recipient Phone Number *
                 </label>
                 <input
@@ -1714,17 +1700,17 @@ export default function FlowsPage() {
                     width: '100%',
                     padding: '8px 12px',
                     borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
+                    border: '1px solid #D4D4D9',
                     fontSize: '0.85rem'
                   }}
                 />
-                <span style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '2px', display: 'block' }}>
+                <span style={{ fontSize: '0.72rem', color: '#67676B', marginTop: '2px', display: 'block' }}>
                   Enter mobile number with country code (e.g. 91 for India).
                 </span>
               </div>
 
               <div style={{ marginBottom: '14px' }}>
-                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#3A3A3E', display: 'block', marginBottom: '4px' }}>
                   Message Body
                 </label>
                 <textarea
@@ -1735,14 +1721,14 @@ export default function FlowsPage() {
                     width: '100%',
                     padding: '8px 12px',
                     borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
+                    border: '1px solid #D4D4D9',
                     fontSize: '0.85rem'
                   }}
                 />
               </div>
 
               <div style={{ marginBottom: '14px' }}>
-                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '4px' }}>
+                <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#3A3A3E', display: 'block', marginBottom: '4px' }}>
                   Call To Action Button Label
                 </label>
                 <input
@@ -1755,7 +1741,7 @@ export default function FlowsPage() {
                     width: '100%',
                     padding: '8px 12px',
                     borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
+                    border: '1px solid #D4D4D9',
                     fontSize: '0.85rem'
                   }}
                 />
@@ -1765,9 +1751,9 @@ export default function FlowsPage() {
                 <div style={{
                   padding: '10px 14px',
                   borderRadius: '8px',
-                  background: testResult.type === 'success' ? '#F0FDF4' : '#FEF2F2',
-                  border: `1px solid ${testResult.type === 'success' ? '#BBF7D0' : '#FCA5A5'}`,
-                  color: testResult.type === 'success' ? '#166534' : '#991B1B',
+                  background: testResult.type === 'success' ? '#F3F6EE' : '#FDF0F0',
+                  border: `1px solid ${testResult.type === 'success' ? '#C3D1AC' : '#FCA5A5'}`,
+                  color: testResult.type === 'success' ? '#2F5219' : '#9B2C2C',
                   fontSize: '0.82rem'
                 }}>
                   {testResult.msg}
@@ -1782,7 +1768,7 @@ export default function FlowsPage() {
 
             <div style={{
               padding: '14px 24px',
-              borderTop: '1px solid #E2E8F0',
+              borderTop: '1px solid #E5E5E8',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
@@ -1795,8 +1781,8 @@ export default function FlowsPage() {
                   padding: '7px 14px',
                   borderRadius: '8px',
                   background: '#FFFFFF',
-                  border: '1px solid #CBD5E1',
-                  color: '#475569',
+                  border: '1px solid #D4D4D9',
+                  color: '#67676B',
                   fontSize: '0.82rem',
                   fontWeight: 600,
                   cursor: 'pointer'
@@ -1812,7 +1798,7 @@ export default function FlowsPage() {
                 style={{
                   padding: '7px 18px',
                   borderRadius: '8px',
-                  background: '#128C7E',
+                  background: '#2876B8',
                   color: '#FFFFFF',
                   border: 'none',
                   fontSize: '0.82rem',
@@ -1856,17 +1842,17 @@ export default function FlowsPage() {
           }}>
             <div style={{
               padding: '16px 20px',
-              borderBottom: '1px solid #E2E8F0',
+              borderBottom: '1px solid #E5E5E8',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between'
             }}>
-              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0F172A' }}>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#171719' }}>
                 Submission Details: {selectedResponse.customer_name || 'Customer'}
               </h3>
               <button
                 onClick={() => setSelectedResponse(null)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#67676B' }}
               >
                 <X size={18} />
               </button>
@@ -1880,17 +1866,17 @@ export default function FlowsPage() {
               </div>
 
               <div style={{ marginBottom: '14px' }}>
-                <strong style={{ fontSize: '0.82rem', color: '#0F172A', display: 'block', marginBottom: '8px' }}>
+                <strong style={{ fontSize: '0.82rem', color: '#171719', display: 'block', marginBottom: '8px' }}>
                   Parsed Form Answers:
                 </strong>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
                   <tbody>
                     {Object.entries(selectedResponse.parsed_data || {}).map(([key, value], i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                        <td style={{ padding: '8px', fontWeight: 600, color: '#475569', width: '40%' }}>
+                      <tr key={i} style={{ borderBottom: '1px solid #EEEEF0' }}>
+                        <td style={{ padding: '8px', fontWeight: 600, color: '#67676B', width: '40%' }}>
                           {key}
                         </td>
-                        <td style={{ padding: '8px', color: '#0F172A' }}>
+                        <td style={{ padding: '8px', color: '#171719' }}>
                           {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
                         </td>
                       </tr>
@@ -1900,13 +1886,13 @@ export default function FlowsPage() {
               </div>
             </div>
 
-            <div style={{ padding: '14px 20px', borderTop: '1px solid #E2E8F0', textAlign: 'right' }}>
+            <div style={{ padding: '14px 20px', borderTop: '1px solid #E5E5E8', textAlign: 'right' }}>
               <button
                 onClick={() => setSelectedResponse(null)}
                 style={{
                   padding: '6px 14px',
                   borderRadius: '6px',
-                  background: '#128C7E',
+                  background: '#2876B8',
                   color: '#FFFFFF',
                   border: 'none',
                   fontSize: '0.8rem',

@@ -377,8 +377,131 @@ const STARTER_TEMPLATES = [
   }
 ];
 
+const RESORT_BOOKING_TEMPLATE = {
+  key: "resort_booking_enquiry",
+  name: "Resort Stay & Booking Enquiry",
+  category: "LEAD_GENERATION",
+  categories: ["LEAD_GENERATION"],
+  description: "Capture guest stay dates, party size, room preference, and contact details with instant quotation eligibility.",
+  json_version: "3.1",
+  data_api_version: "3.0",
+  flow_json: {
+    version: "3.1",
+    data_api_version: "3.0",
+    routing_model: {
+      BOOKING_ENQUIRY_SCREEN: []
+    },
+    screens: [
+      {
+        id: "BOOKING_ENQUIRY_SCREEN",
+        title: "KonkanTrip Stay Enquiry",
+        terminal: true,
+        data: {},
+        layout: {
+          type: "SingleColumnLayout",
+          children: [
+            {
+              type: "Form",
+              name: "enquiry_form",
+              children: [
+                {
+                  type: "TextHeading",
+                  text: "Plan Your Beach Getaway"
+                },
+                {
+                  type: "TextSubheading",
+                  text: "Share your travel dates and preferences. Our reservation concierge will verify availability and send an official quotation."
+                },
+                {
+                  type: "TextInput",
+                  name: "guest_name",
+                  label: "Guest Full Name",
+                  required: true
+                },
+                {
+                  type: "TextInput",
+                  name: "check_in",
+                  label: "Check-in Date (YYYY-MM-DD)",
+                  required: true
+                },
+                {
+                  type: "TextInput",
+                  name: "check_out",
+                  label: "Check-out Date (YYYY-MM-DD)",
+                  required: true
+                },
+                {
+                  type: "Dropdown",
+                  name: "room_preference",
+                  label: "Preferred Room Category",
+                  required: true,
+                  "data-source": [
+                    { id: "deluxe_sea_view", title: "Deluxe Sea View Room" },
+                    { id: "luxury_cottage", title: "Luxury Coconut Cottage" },
+                    { id: "family_suite", title: "Family Ocean Suite" }
+                  ]
+                },
+                {
+                  type: "Dropdown",
+                  name: "adults",
+                  label: "Adult Guests (12+ yrs)",
+                  required: true,
+                  "data-source": [
+                    { id: "1", title: "1 Adult" },
+                    { id: "2", title: "2 Adults" },
+                    { id: "3", title: "3 Adults" },
+                    { id: "4", title: "4+ Adults" }
+                  ]
+                },
+                {
+                  type: "Dropdown",
+                  name: "children",
+                  label: "Children (0-11 yrs)",
+                  required: false,
+                  "data-source": [
+                    { id: "0", title: "None" },
+                    { id: "1", title: "1 Child" },
+                    { id: "2", title: "2 Children" },
+                    { id: "3", title: "3+ Children" }
+                  ]
+                },
+                {
+                  type: "TextInput",
+                  name: "special_requests",
+                  label: "Special Requests (Optional)",
+                  required: false
+                },
+                {
+                  type: "Footer",
+                  label: "Request Availability & Quote",
+                  "on-click-action": {
+                    "name": "complete",
+                    "payload": {
+                      "guest_name": "${form.guest_name}",
+                      "check_in": "${form.check_in}",
+                      "check_out": "${form.check_out}",
+                      "room_preference": "${form.room_preference}",
+                      "adults": "${form.adults}",
+                      "children": "${form.children}",
+                      "special_requests": "${form.special_requests}"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+};
+
 module.exports = {
   STARTER_TEMPLATES,
+  RESORT_BOOKING_TEMPLATE,
   getStarterTemplates: () => STARTER_TEMPLATES,
-  getTemplateBySlug: (key) => STARTER_TEMPLATES.find(t => t.key === key || t.slug === key)
+  getTemplateBySlug: (key) => {
+    if (key === "resort_booking_enquiry") return RESORT_BOOKING_TEMPLATE;
+    return STARTER_TEMPLATES.find(t => t.key === key || t.slug === key);
+  }
 };

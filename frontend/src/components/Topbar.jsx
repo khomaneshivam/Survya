@@ -1,47 +1,89 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import AddPhoneNumberModal from './AddPhoneNumberModal';
-import { 
-  Menu, 
-  Smartphone, 
-  RefreshCw,
+import {
+  Menu,
+  Search,
   Plus,
-  ChevronRight
+  Bell,
+  HelpCircle,
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+  Smartphone,
+  Settings,
+  LogOut,
+  ShieldCheck,
+  Send,
+  Users,
+  FileSpreadsheet,
+  MessageSquare
 } from 'lucide-react';
 
+const MODULE_SEARCH_INDEX = [
+  { id: 'dashboard', label: 'Overview', group: 'SARVYA Insights', keywords: 'overview dashboard metrics kpi summary' },
+  { id: 'enquiries', label: 'CRM & Booking Pipeline', group: 'SARVYA CRM', keywords: 'crm contacts leads pipeline enquiries quotes' },
+  { id: 'flows', label: 'Forms Builder', group: 'SARVYA Forms', keywords: 'forms flows builder interactive json publish' },
+  { id: 'automation', label: 'Workflows & Lifecycle', group: 'SARVYA Flow', keywords: 'workflows automation sheets triggers lifecycle' },
+  { id: 'inbox', label: 'Shared Conversations', group: 'SARVYA Connect', keywords: 'inbox chat messages conversations whatsapp replies' },
+  { id: 'broadcast', label: 'Campaigns Studio', group: 'SARVYA Connect', keywords: 'campaigns broadcast bulk template send' },
+  { id: 'ai', label: 'AI Assistant & Guardrails', group: 'SARVYA AI', keywords: 'ai assistant auto reply rules prompts safety' },
+  { id: 'reports', label: 'Insights & Telemetry', group: 'SARVYA Insights', keywords: 'insights analytics reports export logs' },
+  { id: 'inventory', label: 'Hospitality Inventory', group: 'Industry Module', keywords: 'hospitality rooms inventory calendar rates' },
+  { id: 'settings', label: 'Connect & API Integrations', group: 'SARVYA Connect', keywords: 'connect settings api waba phone lines webhook' },
+  { id: 'pricing', label: 'Enterprise Plans', group: 'SARVYA Core', keywords: 'plans pricing tiers billing' },
+  { id: 'admin', label: 'Core Admin', group: 'SARVYA Core', keywords: 'admin users roles tenants system', adminOnly: true }
+];
+
+const TAB_META = {
+  dashboard: { module: 'Insights', title: 'Overview' },
+  enquiries: { module: 'CRM', title: 'Contacts & Pipeline' },
+  flows: { module: 'Forms', title: 'Form Builder' },
+  automation: { module: 'Flow', title: 'Workflows' },
+  inbox: { module: 'Connect', title: 'Conversations' },
+  broadcast: { module: 'Connect', title: 'Campaigns' },
+  ai: { module: 'AI', title: 'Assistant & Safety' },
+  reports: { module: 'Insights', title: 'Analytics & Reports' },
+  inventory: { module: 'Industry', title: 'Hospitality Inventory' },
+  pricing: { module: 'Core', title: 'Plans & Modules' },
+  admin: { module: 'Core', title: 'Workspace Admin' },
+  settings: { module: 'Connect', title: 'Integrations & Settings' }
+};
+
 export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
-  const { token } = useAuth();
+  const { token, user, isAdmin, logout } = useAuth();
   const [metaStatus, setMetaStatus] = useState({ connected: false, loading: true });
+  const [phoneNumbers, setPhoneNumbers] = useState([]);
   const [activeNumber, setActiveNumber] = useState(null);
   const [isVerifying, setIsVerifying] = useState(false);
   const [showAddPhoneModal, setShowAddPhoneModal] = useState(false);
-  const [istTime, setIstTime] = useState('');
+
+  const [globalQuery, setGlobalQuery] = useState('');
+  const [openMenu, setOpenMenu] = useState(null); // 'workspace' | 'create' | 'notifications' | 'help' | 'profile' | null
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [pendingEnquiries, setPendingEnquiries] = useState(0);
+
+  const headerRef = useRef(null);
 
   useEffect(() => {
-    function updateClock() {
-      const now = new Date();
-      setIstTime(new Intl.DateTimeFormat('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: true
-      }).format(now));
+    function handleOutside(e) {
+      if (headerRef.current && !headerRef.current.contains(e.target)) {
+        setOpenMenu(null);
+      }
     }
-    updateClock();
-    const interval = setInterval(updateClock, 1000);
-    return () => clearInterval(interval);
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
   }, []);
 
   const checkMetaHealth = useCallback(async () => {
     setIsVerifying(true);
     try {
       const activeToken = token || localStorage.getItem('token');
-      const headers = activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {};
+      const headers = activeToken ? { Authorization: `Bearer ${activeToken}` } : {};
       const res = await fetch('/api/settings/verify-meta', { headers });
       const data = await res.json();
-      setMetaStatus({ 
-        connected: Boolean(data.success), 
+      setMetaStatus({
+        connected: Boolean(data.success),
         loading: false,
         message: data.message,
         hint: data.hint
@@ -53,199 +95,413 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
     }
   }, [token]);
 
-  const fetchActiveNumber = useCallback(async () => {
+  const fetchWorkspaceContext = useCallback(async () => {
     if (!token) return;
+    const headers = { Authorization: `Bearer ${token}` };
     try {
-      const res = await fetch('/api/admin/phone-numbers', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (data.success && data.data?.length > 0) {
-        const defaultNum = data.data.find(n => n.is_default) || data.data[0];
-        setActiveNumber(defaultNum);
+      const [numRes, sumRes] = await Promise.all([
+        fetch('/api/admin/phone-numbers', { headers }),
+        fetch('/api/v1/dashboard/summary', { headers }).catch(() => null)
+      ]);
+      const numData = await numRes.json();
+      if (numData.success && Array.isArray(numData.data)) {
+        setPhoneNumbers(numData.data);
+        const def = numData.data.find((n) => n.is_default) || numData.data[0] || null;
+        setActiveNumber(def);
       }
-    } catch (err) {
-      console.warn('Could not fetch active line:', err.message);
+      if (sumRes) {
+        const sumData = await sumRes.json().catch(() => null);
+        if (sumData?.success && sumData.data) {
+          setPendingEnquiries(sumData.data.pendingEnquiries || sumData.data.openEnquiries || 0);
+          setUnreadCount(sumData.data.unreadMessages || 0);
+        }
+      }
+    } catch {
+      // Non-blocking topbar telemetry
     }
   }, [token]);
 
   useEffect(() => {
     checkMetaHealth();
-    fetchActiveNumber();
-  }, [checkMetaHealth, fetchActiveNumber]);
+    fetchWorkspaceContext();
+  }, [checkMetaHealth, fetchWorkspaceContext]);
 
-  const tabTitles = {
-    dashboard: { title: 'Platform Dashboard', subtitle: 'Real-time broadcasting metrics, delivery telemetry, and active dispatches.' },
-    broadcast: { title: 'Broadcast Campaign Studio', subtitle: 'Target verified audiences with official Meta templates and live handset preview.' },
-    automation: { title: 'Booking Lifecycle Automation', subtitle: 'Scheduled 4-stage guest messaging triggers synced directly with Google Sheets.' },
-    inbox: { title: '2-Way Guest Inbox', subtitle: 'Live webhook-driven customer conversations with instant agent replies.' },
-    reports: { title: 'Analytics & Delivery Logs', subtitle: 'Audited message delivery records, Meta IDs, and 1-click Excel/CSV exports.' },
-    admin: { title: 'Enterprise Admin Hub', subtitle: 'Platform user access, WhatsApp sender line registry, and system health controls.' },
-    settings: { title: 'Line & API Settings', subtitle: 'Meta Graph API credentials, webhook verification, and account security.' }
-  };
+  async function switchDefaultLine(lineId) {
+    try {
+      const endpoint = isAdmin
+        ? `/api/admin/phone-numbers/${lineId}/default`
+        : `/api/phone-numbers/${lineId}/default`;
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        await fetchWorkspaceContext();
+      }
+    } catch {
+      // Ignore transient switch failures
+    } finally {
+      setOpenMenu(null);
+    }
+  }
 
-  const currentTab = tabTitles[activeTab] || tabTitles.dashboard;
+  const currentMeta = TAB_META[activeTab] || TAB_META.dashboard;
+  const searchMatches = globalQuery.trim()
+    ? MODULE_SEARCH_INDEX.filter((m) => {
+        if (m.adminOnly && !isAdmin) return false;
+        const q = globalQuery.toLowerCase();
+        return m.label.toLowerCase().includes(q) || m.keywords.includes(q);
+      })
+    : [];
 
   return (
-    <header style={{
-      background: '#FFFFFF',
-      borderBottom: '1px solid var(--border-color)',
-      padding: '0 24px',
-      height: '66px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      position: 'sticky',
-      top: 0,
-      zIndex: 900,
-      boxShadow: 'var(--shadow-xs)'
-    }}>
-      {/* Left: Mobile Toggle & Breadcrumbs */}
+    <header ref={headerRef} className="app-topbar">
+      {/* Left: Mobile toggle, Workspace Switcher, Breadcrumb */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
         <button
-          onClick={() => setMobileOpen(prev => !prev)}
-          className="mobile-menu-btn"
-          title="Open Menu"
-          aria-label="Toggle navigation drawer"
-          style={{
-            background: '#F1F5F9',
-            border: '1px solid var(--border-color)',
-            borderRadius: '8px',
-            color: '#334155',
-            cursor: 'pointer',
-            padding: '7px',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
+          type="button"
+          onClick={() => setMobileOpen((prev) => !prev)}
+          className="sarvya-btn sarvya-btn-secondary sarvya-btn-sm mobile-menu-btn"
+          aria-label="Open navigation menu"
+          style={{ padding: '6px' }}
         >
-          <Menu size={20} />
+          <Menu size={18} />
         </button>
 
-        <div style={{ minWidth: 0, overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.72rem', color: '#94A3B8', fontWeight: 500 }}>
-            <span style={{ display: 'inline-block' }}>KonkanTrip</span>
-            <ChevronRight size={11} />
-            <span style={{ color: '#64748B', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentTab.title}</span>
-          </div>
-          <div style={{ fontSize: '1rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {currentTab.title}
-          </div>
-        </div>
-      </div>
+        {/* Workspace / Channel Switcher */}
+        <div style={{ position: 'relative' }}>
+          <button
+            type="button"
+            className="sarvya-btn sarvya-btn-secondary sarvya-btn-sm"
+            onClick={() => setOpenMenu(openMenu === 'workspace' ? null : 'workspace')}
+            aria-expanded={openMenu === 'workspace'}
+            style={{ maxWidth: '210px', justifyContent: 'space-between' }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+              <Smartphone size={14} color="var(--sarvya-blue)" style={{ flexShrink: 0 }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {activeNumber ? activeNumber.display_name : 'SARVYA Workspace'}
+              </span>
+            </span>
+            <ChevronDown size={13} color="var(--text-muted)" />
+          </button>
 
-      {/* Right: Meta Status, Sender Line, & Quick Action */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-        {/* Live Indian Standard Time (IST) Clock */}
-        <div 
-          className="topbar-ist-clock"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '5px 12px',
-            borderRadius: '6px',
-            background: '#F8FAFC',
-            border: '1px solid var(--border-color)',
-            fontSize: '0.75rem',
-            color: '#334155',
-            fontWeight: 600
-          }}
-          title="System operating on Indian Standard Time (Asia/Kolkata, UTC+05:30)"
-        >
-          <span style={{ fontSize: '0.85rem' }}>🇮🇳</span>
-          <span>{istTime || 'IST Clock'}</span>
-          <span style={{ fontSize: '0.62rem', background: '#E2E8F0', color: '#475569', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
-            IST
+          {openMenu === 'workspace' && (
+            <div className="sarvya-popover" style={{ insetInlineStart: 0, insetInlineEnd: 'auto', minWidth: '260px' }}>
+              <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)', fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                Connected Channels
+              </div>
+              {phoneNumbers.length === 0 ? (
+                <div style={{ padding: '12px 14px', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                  No WhatsApp channels configured yet.
+                </div>
+              ) : (
+                phoneNumbers.map((line) => (
+                  <button
+                    key={line.id}
+                    type="button"
+                    className="sarvya-menu-item"
+                    onClick={() => switchDefaultLine(line.id)}
+                    style={{ justifyContent: 'space-between' }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600 }}>{line.display_name}</div>
+                      <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{line.phone_number}</div>
+                    </div>
+                    {line.is_default && <span className="sarvya-badge sarvya-badge-blue">Primary</span>}
+                  </button>
+                ))
+              )}
+              <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '6px' }}>
+                <button
+                  type="button"
+                  className="sarvya-menu-item"
+                  onClick={() => {
+                    setOpenMenu(null);
+                    setShowAddPhoneModal(true);
+                  }}
+                  style={{ color: 'var(--sarvya-blue)' }}
+                >
+                  <Plus size={14} />
+                  <span>Connect WhatsApp Line</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Breadcrumb */}
+        <div className="topbar-sender-chip" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', color: 'var(--text-secondary)', minWidth: 0 }}>
+          <span>{currentMeta.module}</span>
+          <ChevronRight size={13} color="var(--text-muted)" />
+          <span style={{ color: 'var(--text-primary)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {currentMeta.title}
           </span>
         </div>
-
-        {/* Meta Health Pill */}
-        <div 
-          onClick={checkMetaHealth}
-          title={metaStatus.connected ? 'Meta Cloud API Connected & Ready' : (metaStatus.hint || metaStatus.message || 'Meta API Offline - Click to re-verify')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '5px 10px',
-            borderRadius: '999px',
-            background: metaStatus.connected ? '#DCFCE7' : '#FEE2E2',
-            border: `1px solid ${metaStatus.connected ? '#BBF7D0' : '#FECACA'}`,
-            fontSize: '0.74rem',
-            fontWeight: 600,
-            color: metaStatus.connected ? '#15803D' : '#DC2626',
-            cursor: 'pointer'
-          }}
-        >
-          <span style={{
-            width: '7px',
-            height: '7px',
-            borderRadius: '50%',
-            background: metaStatus.connected ? '#16A34A' : '#DC2626',
-            boxShadow: metaStatus.connected ? '0 0 6px rgba(22, 163, 74, 0.6)' : 'none'
-          }} />
-          <span>{metaStatus.loading ? 'Checking...' : (metaStatus.connected ? 'Meta Live' : 'Offline')}</span>
-          <RefreshCw size={11} className={isVerifying ? 'pulse-glow' : ''} style={{ marginLeft: '1px', opacity: 0.7 }} />
-        </div>
-
-        {/* Sender Line Chip or Connect Number Prompt */}
-        {activeNumber ? (
-          <div className="topbar-sender-chip" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '5px 10px',
-              borderRadius: '6px',
-              background: '#F8FAFC',
-              border: '1px solid var(--border-color)',
-              fontSize: '0.75rem',
-              color: '#475569'
-            }}>
-              <Smartphone size={13} color="var(--brand-wa)" />
-              <span style={{ color: '#0F172A', fontWeight: 600 }}>{activeNumber.display_name}</span>
-              <span style={{ color: '#94A3B8' }}>({activeNumber.phone_number})</span>
-            </div>
-            <button
-              onClick={() => setShowAddPhoneModal(true)}
-              className="btn btn-secondary"
-              style={{ padding: '5px 8px', fontSize: '0.75rem', gap: '4px' }}
-              title="Add another WhatsApp phone line"
-            >
-              <Plus size={13} />
-              <span className="topbar-action-text">Add Line</span>
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowAddPhoneModal(true)}
-            className="btn btn-action-green"
-            style={{ padding: '6px 12px', fontSize: '0.78rem', gap: '6px' }}
-          >
-            <Plus size={14} />
-            <span className="topbar-action-text">Connect Line</span>
-          </button>
-        )}
-
-        {/* Quick Action Button */}
-        {activeTab !== 'broadcast' && (
-          <button
-            onClick={() => setActiveTab('broadcast')}
-            className="btn btn-primary"
-            style={{ padding: '6px 12px', fontSize: '0.78rem', gap: '5px' }}
-          >
-            <Plus size={14} />
-            <span className="topbar-action-text">Broadcast</span>
-          </button>
-        )}
       </div>
 
-      {/* Add WhatsApp Number Modal */}
+      {/* Right: Global Search, Quick Create, Meta Pill, Notifications, Help, Profile */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+        {/* Global Search */}
+        <div className="topbar-ist-clock" style={{ position: 'relative', width: '210px' }}>
+          <Search size={14} className="sarvya-search-icon" />
+          <input
+            type="search"
+            className="sarvya-input"
+            placeholder="Jump to module..."
+            value={globalQuery}
+            onChange={(e) => setGlobalQuery(e.target.value)}
+            aria-label="Global navigation search"
+            style={{ padding: '6px 10px 6px 30px', fontSize: '12.5px' }}
+          />
+          {searchMatches.length > 0 && (
+            <div className="sarvya-popover" style={{ width: '260px', insetInlineStart: 0 }}>
+              {searchMatches.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  className="sarvya-menu-item"
+                  onClick={() => {
+                    setActiveTab(m.id);
+                    setGlobalQuery('');
+                  }}
+                  style={{ justifyContent: 'space-between' }}
+                >
+                  <span>{m.label}</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{m.group}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Meta API Health */}
+        <button
+          type="button"
+          onClick={checkMetaHealth}
+          className={`sarvya-badge ${metaStatus.connected ? 'sarvya-badge-green' : 'sarvya-badge-coral'}`}
+          title={metaStatus.connected ? 'Meta Cloud API connected' : (metaStatus.message || 'Check Meta connection')}
+          style={{ cursor: 'pointer', padding: '4px 10px' }}
+        >
+          <span
+            className="sarvya-status-dot"
+            style={{ background: metaStatus.connected ? '#4C7A2B' : '#C9403D' }}
+          />
+          <span>{metaStatus.loading ? 'Checking' : (metaStatus.connected ? 'Meta Live' : 'Offline')}</span>
+          <RefreshCw size={11} className={isVerifying ? 'spin-slow' : ''} />
+        </button>
+
+        {/* Quick Create */}
+        <div style={{ position: 'relative' }}>
+          <button
+            type="button"
+            className="sarvya-btn sarvya-btn-primary sarvya-btn-sm"
+            onClick={() => setOpenMenu(openMenu === 'create' ? null : 'create')}
+            aria-expanded={openMenu === 'create'}
+          >
+            <Plus size={14} />
+            <span className="topbar-action-text">Create</span>
+          </button>
+
+          {openMenu === 'create' && (
+            <div className="sarvya-popover">
+              <div style={{ padding: '9px 14px', borderBottom: '1px solid var(--border-subtle)', fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                Quick Create
+              </div>
+              <button
+                type="button"
+                className="sarvya-menu-item"
+                onClick={() => { setOpenMenu(null); setActiveTab('enquiries'); }}
+              >
+                <Users size={14} color="var(--sarvya-blue)" />
+                <span>CRM Enquiry / Contact</span>
+              </button>
+              <button
+                type="button"
+                className="sarvya-menu-item"
+                onClick={() => { setOpenMenu(null); setActiveTab('broadcast'); }}
+              >
+                <Send size={14} color="var(--sarvya-blue)" />
+                <span>Broadcast Campaign</span>
+              </button>
+              <button
+                type="button"
+                className="sarvya-menu-item"
+                onClick={() => { setOpenMenu(null); setActiveTab('flows'); }}
+              >
+                <FileSpreadsheet size={14} color="var(--sarvya-blue)" />
+                <span>Interactive Form / Flow</span>
+              </button>
+              <button
+                type="button"
+                className="sarvya-menu-item"
+                onClick={() => { setOpenMenu(null); setShowAddPhoneModal(true); }}
+              >
+                <Smartphone size={14} color="var(--sarvya-blue)" />
+                <span>Connect WhatsApp Line</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Notifications */}
+        <div style={{ position: 'relative' }}>
+          <button
+            type="button"
+            className="sarvya-btn sarvya-btn-ghost sarvya-btn-sm"
+            onClick={() => setOpenMenu(openMenu === 'notifications' ? null : 'notifications')}
+            aria-label="Notifications"
+            style={{ position: 'relative', padding: '6px' }}
+          >
+            <Bell size={16} />
+            {(unreadCount > 0 || pendingEnquiries > 0) && (
+              <span
+                style={{
+                  position: 'absolute',
+                  top: '4px',
+                  insetInlineEnd: '4px',
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  background: '#C9403D'
+                }}
+              />
+            )}
+          </button>
+
+          {openMenu === 'notifications' && (
+            <div className="sarvya-popover" style={{ minWidth: '270px' }}>
+              <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)', fontWeight: 600, fontSize: '13px' }}>
+                Workspace Notifications
+              </div>
+              <button
+                type="button"
+                className="sarvya-menu-item"
+                onClick={() => { setOpenMenu(null); setActiveTab('inbox'); }}
+                style={{ justifyContent: 'space-between' }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <MessageSquare size={14} /> Unread Conversations
+                </span>
+                <span className="sarvya-badge sarvya-badge-blue">{unreadCount}</span>
+              </button>
+              <button
+                type="button"
+                className="sarvya-menu-item"
+                onClick={() => { setOpenMenu(null); setActiveTab('enquiries'); }}
+                style={{ justifyContent: 'space-between' }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Users size={14} /> Active CRM Enquiries
+                </span>
+                <span className="sarvya-badge sarvya-badge-green">{pendingEnquiries}</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Help */}
+        <div style={{ position: 'relative' }}>
+          <button
+            type="button"
+            className="sarvya-btn sarvya-btn-ghost sarvya-btn-sm"
+            onClick={() => setOpenMenu(openMenu === 'help' ? null : 'help')}
+            aria-label="Platform Help"
+            style={{ padding: '6px' }}
+          >
+            <HelpCircle size={16} />
+          </button>
+
+          {openMenu === 'help' && (
+            <div className="sarvya-popover" style={{ minWidth: '260px', padding: '14px' }}>
+              <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '6px' }}>SARVYA Quick Guide</div>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
+                Configure Meta WABA credentials in <strong>Connect</strong>, build data collection schemas in <strong>Forms</strong>, and manage enquiries in <strong>CRM</strong>.
+              </p>
+              <button
+                type="button"
+                className="sarvya-btn sarvya-btn-secondary sarvya-btn-sm"
+                style={{ width: '100%' }}
+                onClick={() => { setOpenMenu(null); setActiveTab('settings'); }}
+              >
+                Open Connect Settings
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* User Profile */}
+        <div style={{ position: 'relative' }}>
+          <button
+            type="button"
+            className="sarvya-btn sarvya-btn-secondary sarvya-btn-sm"
+            onClick={() => setOpenMenu(openMenu === 'profile' ? null : 'profile')}
+            aria-expanded={openMenu === 'profile'}
+            style={{ padding: '4px 8px 4px 5px', borderRadius: '999px' }}
+          >
+            <span style={{
+              width: '22px',
+              height: '22px',
+              borderRadius: '50%',
+              background: 'var(--sarvya-blue-soft)',
+              color: 'var(--sarvya-blue)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '11px',
+              fontWeight: 700
+            }}>
+              {(user?.name || 'U').charAt(0).toUpperCase()}
+            </span>
+            <ChevronDown size={13} color="var(--text-muted)" />
+          </button>
+
+          {openMenu === 'profile' && (
+            <div className="sarvya-popover">
+              <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)' }}>
+                <div style={{ fontWeight: 600, fontSize: '13px' }}>{user?.name || 'Authorized User'}</div>
+                <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{user?.email || ''}</div>
+              </div>
+              <button
+                type="button"
+                className="sarvya-menu-item"
+                onClick={() => { setOpenMenu(null); setActiveTab('settings'); }}
+              >
+                <Settings size={14} />
+                <span>Account &amp; Connect Settings</span>
+              </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  className="sarvya-menu-item"
+                  onClick={() => { setOpenMenu(null); setActiveTab('admin'); }}
+                >
+                  <ShieldCheck size={14} />
+                  <span>Workspace Admin Core</span>
+                </button>
+              )}
+              <div style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                <button
+                  type="button"
+                  className="sarvya-menu-item"
+                  onClick={logout}
+                  style={{ color: 'var(--status-error-text)' }}
+                >
+                  <LogOut size={14} />
+                  <span>Sign Out</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       <AddPhoneNumberModal
         isOpen={showAddPhoneModal}
         onClose={() => setShowAddPhoneModal(false)}
         onSuccess={(newPhone) => {
           setActiveNumber(newPhone);
+          fetchWorkspaceContext();
           checkMetaHealth();
         }}
       />

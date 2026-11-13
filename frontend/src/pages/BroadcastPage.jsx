@@ -181,10 +181,10 @@ export default function BroadcastPage() {
       return {
         level: 'optimal',
         label: '✅ Meta Recommended',
-        color: '#16A34A',
-        badgeBg: '#DCFCE7',
-        badgeColor: '#15803D',
-        badgeBorder: '#BBF7D0',
+        color: '#2876B8',
+        badgeBg: '#EDF4E6',
+        badgeColor: '#2F5219',
+        badgeBorder: '#C3D1AC',
         desc: `Optimal throughput (~${(1000 / (num || 1)).toFixed(1)} msgs/sec). Best balance of speed and 100% rate-limit safety.`
       };
     } else if (num <= 800) {
@@ -201,10 +201,10 @@ export default function BroadcastPage() {
       return {
         level: 'gentle',
         label: '⏳ Relaxed Pacing',
-        color: '#7C3AED',
+        color: '#7A2E83',
         badgeBg: '#F3E8FF',
         badgeColor: '#6B21A8',
-        badgeBorder: '#E9D5FF',
+        badgeBorder: '#EFB0F6',
         desc: `Extended delay (~${(1000 / (num || 1)).toFixed(1)} msgs/sec). Gentle trickle dispatch to preserve account quality.`
       };
     }
@@ -876,7 +876,7 @@ export default function BroadcastPage() {
     <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '28px 24px' }}>
       {/* Page Header */}
       <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '1.65rem', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em' }}>
+        <h1 style={{ fontSize: '1.65rem', fontWeight: 800, color: '#171719', letterSpacing: '-0.02em' }}>
           WhatsApp Broadcast Studio
         </h1>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '4px' }}>
@@ -887,8 +887,8 @@ export default function BroadcastPage() {
       {/* Upcoming Scheduled Broadcasts Queue Banner */}
       {scheduledQueue.length > 0 && (
         <div style={{
-          background: '#F5F3FF',
-          border: '1px solid #DDD6FE',
+          background: '#FCF2FE',
+          border: '1px solid #EFB0F6',
           borderRadius: '12px',
           padding: '16px 20px',
           marginBottom: '24px',
@@ -896,12 +896,12 @@ export default function BroadcastPage() {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Clock size={20} color="#7C3AED" />
-              <span style={{ fontWeight: 800, color: '#5B21B6', fontSize: '0.95rem' }}>
+              <Clock size={20} color="#7A2E83" />
+              <span style={{ fontWeight: 800, color: '#7A2E83', fontSize: '0.95rem' }}>
                 Upcoming Scheduled Broadcasts ({scheduledQueue.length})
               </span>
             </div>
-            <span style={{ fontSize: '0.78rem', color: '#6D28D9' }}>
+            <span style={{ fontSize: '0.78rem', color: '#7A2E83' }}>
               These campaigns are queued to send automatically at their scheduled times.
             </span>
           </div>
@@ -912,7 +912,7 @@ export default function BroadcastPage() {
                 key={item.id}
                 style={{
                   background: '#FFFFFF',
-                  border: '1px solid #E9D5FF',
+                  border: '1px solid #EFB0F6',
                   borderRadius: '10px',
                   padding: '12px 16px',
                   display: 'flex',
@@ -923,13 +923,13 @@ export default function BroadcastPage() {
                 }}
               >
                 <div>
-                  <div style={{ fontWeight: 700, color: '#0F172A', fontSize: '0.9rem' }}>
+                  <div style={{ fontWeight: 700, color: '#171719', fontSize: '0.9rem' }}>
                     {item.name}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748B', display: 'flex', gap: '12px', marginTop: '2px', flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#67676B', display: 'flex', gap: '12px', marginTop: '2px', flexWrap: 'wrap' }}>
                     <span>Template: <strong>{item.template_name}</strong></span>
                     <span>Targets: <strong>{item.valid_contacts || item.total_contacts}</strong></span>
-                    <span style={{ color: '#7C3AED', fontWeight: 600 }}>
+                    <span style={{ color: '#7A2E83', fontWeight: 600 }}>
                       ⏰ Scheduled for: <strong>{formatIndianDateTime(item.scheduled_at)} (IST)</strong>
                     </span>
                   </div>
@@ -943,9 +943,9 @@ export default function BroadcastPage() {
                     style={{
                       padding: '5px 12px',
                       fontSize: '0.75rem',
-                      background: '#DCFCE7',
-                      color: '#15803D',
-                      borderColor: '#86EFAC',
+                      background: '#EDF4E6',
+                      color: '#2F5219',
+                      borderColor: '#C3D1AC',
                       fontWeight: 700,
                       gap: '4px'
                     }}
@@ -1006,8 +1006,8 @@ export default function BroadcastPage() {
                   width: '32px',
                   height: '32px',
                   borderRadius: '50%',
-                  background: isDone ? '#16A34A' : isActive ? 'var(--brand-wa)' : '#F1F5F9',
-                  color: isDone || isActive ? '#FFFFFF' : '#64748B',
+                  background: isDone ? '#2876B8' : isActive ? 'var(--brand-wa)' : '#EEEEF0',
+                  color: isDone || isActive ? '#FFFFFF' : '#67676B',
                   fontWeight: 700,
                   fontSize: '0.85rem',
                   display: 'flex',
@@ -1018,10 +1018,10 @@ export default function BroadcastPage() {
                   {isDone ? <CheckCircle2 size={16} /> : st.number}
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.7rem', fontWeight: 600, color: '#94A3B8', textTransform: 'uppercase' }}>
+                  <div style={{ fontSize: '0.7rem', fontWeight: 600, color: '#96969C', textTransform: 'uppercase' }}>
                     Step {st.number}
                   </div>
-                  <div style={{ fontSize: '0.875rem', fontWeight: 700, color: isActive ? '#0F172A' : '#64748B' }}>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 700, color: isActive ? '#171719' : '#67676B' }}>
                     {st.title}
                   </div>
                 </div>
@@ -1031,7 +1031,7 @@ export default function BroadcastPage() {
                 <div style={{
                   flex: 1,
                   height: '2px',
-                  background: currentStep > st.number ? '#16A34A' : '#E2E8F0',
+                  background: currentStep > st.number ? '#2876B8' : '#E5E5E8',
                   margin: '0 20px'
                 }} />
               )}
@@ -1048,7 +1048,7 @@ export default function BroadcastPage() {
           {currentStep === 1 && (
             <div className="saas-card" style={{ padding: '24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
-                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#171719', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                   <Layers size={18} color="var(--brand-wa)" /> Campaign Details & Recipient Contact File
                 </h2>
                 <a
@@ -1062,7 +1062,7 @@ export default function BroadcastPage() {
                     alignItems: 'center',
                     gap: '6px',
                     textDecoration: 'none',
-                    color: '#334155'
+                    color: '#3A3A3E'
                   }}
                   title="Download verified sample Excel file template"
                 >
@@ -1073,7 +1073,7 @@ export default function BroadcastPage() {
 
               <div className="grid-responsive-2col" style={{ marginBottom: '20px' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#3A3A3E', marginBottom: '6px' }}>
                     Campaign Name <span style={{ color: 'var(--error)' }}>*</span>
                   </label>
                   <input
@@ -1087,7 +1087,7 @@ export default function BroadcastPage() {
 
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#334155' }}>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#3A3A3E' }}>
                       WhatsApp Sender Line <span style={{ color: 'var(--error)' }}>*</span>
                     </label>
                     <button
@@ -1112,8 +1112,8 @@ export default function BroadcastPage() {
                   </div>
                   {phoneNumbers.length === 0 ? (
                     <div style={{
-                      background: '#F0FDF4',
-                      border: '1px solid #BBF7D0',
+                      background: '#F3F6EE',
+                      border: '1px solid #C3D1AC',
                       borderRadius: '8px',
                       padding: '8px 12px',
                       display: 'flex',
@@ -1121,7 +1121,7 @@ export default function BroadcastPage() {
                       justifyContent: 'space-between',
                       gap: '8px'
                     }}>
-                      <span style={{ fontSize: '0.78rem', color: '#166534', fontWeight: 500 }}>
+                      <span style={{ fontSize: '0.78rem', color: '#2F5219', fontWeight: 500 }}>
                         No WhatsApp line connected yet.
                       </span>
                       <button
@@ -1151,7 +1151,7 @@ export default function BroadcastPage() {
 
               {/* Quick Dispatch Throttle Selector in Step 1 */}
               <div style={{
-                background: '#F8FAFC',
+                background: '#F5F5F6',
                 border: '1px solid var(--border-color)',
                 borderRadius: '10px',
                 padding: '12px 16px',
@@ -1167,8 +1167,8 @@ export default function BroadcastPage() {
                     width: '32px',
                     height: '32px',
                     borderRadius: '8px',
-                    background: '#F0FDF4',
-                    border: '1px solid #BBF7D0',
+                    background: '#F3F6EE',
+                    border: '1px solid #C3D1AC',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -1177,7 +1177,7 @@ export default function BroadcastPage() {
                     <Zap size={16} />
                   </div>
                   <div>
-                    <div style={{ fontSize: '0.825rem', fontWeight: 700, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ fontSize: '0.825rem', fontWeight: 700, color: '#171719', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span>Dispatch Throttle Delay:</span>
                       <span style={{ color: 'var(--brand-wa)', fontWeight: 800 }}>{throttleDelay} ms</span>
                       <span style={{
@@ -1192,7 +1192,7 @@ export default function BroadcastPage() {
                         {currentSafetyTier.label}
                       </span>
                     </div>
-                    <div style={{ fontSize: '0.725rem', color: '#64748B' }}>
+                    <div style={{ fontSize: '0.725rem', color: '#67676B' }}>
                       Rate: ~{msgsPerSecond} msgs/sec • Fully adjustable with live estimator in Step 3 before starting
                     </div>
                   </div>
@@ -1209,9 +1209,9 @@ export default function BroadcastPage() {
                         borderRadius: '6px',
                         fontSize: '0.75rem',
                         fontWeight: 600,
-                        border: throttleDelay === p.ms ? '1.5px solid var(--brand-wa)' : '1px solid #CBD5E1',
-                        background: throttleDelay === p.ms ? '#F0FDF4' : '#FFFFFF',
-                        color: throttleDelay === p.ms ? '#15803D' : '#475569',
+                        border: throttleDelay === p.ms ? '1.5px solid var(--brand-wa)' : '1px solid #D4D4D9',
+                        background: throttleDelay === p.ms ? '#F3F6EE' : '#FFFFFF',
+                        color: throttleDelay === p.ms ? '#2F5219' : '#67676B',
                         cursor: 'pointer',
                         transition: 'all 0.15s ease'
                       }}
@@ -1224,7 +1224,7 @@ export default function BroadcastPage() {
 
               {/* Recipient File Upload Area */}
               <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#3A3A3E', marginBottom: '6px' }}>
                   Upload Contact Audience (Excel / CSV) <span style={{ color: 'var(--error)' }}>*</span>
                 </label>
                 <div style={{
@@ -1232,7 +1232,7 @@ export default function BroadcastPage() {
                   borderRadius: '10px',
                   padding: '24px',
                   textAlign: 'center',
-                  background: parsingFile ? '#F0FDF4' : '#F8FAFC',
+                  background: parsingFile ? '#F3F6EE' : '#F5F5F6',
                   cursor: 'pointer',
                   position: 'relative',
                   transition: 'background 0.2s ease'
@@ -1250,10 +1250,10 @@ export default function BroadcastPage() {
                     }}
                   />
                   <UploadCloud size={32} color="var(--brand-wa)" style={{ margin: '0 auto 8px auto' }} />
-                  <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#0F172A' }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#171719' }}>
                     {parsingFile ? 'Parsing Excel/CSV with SheetJS...' : (file ? file.name : 'Drag & drop Excel or CSV file here, or click to browse')}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '4px' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#67676B', marginTop: '4px' }}>
                     Supports official .xlsx, .xls, and .csv up to 25MB (e.g., Name, Phone, City, Offer columns)
                   </div>
                 </div>
@@ -1268,26 +1268,26 @@ export default function BroadcastPage() {
                   padding: '16px',
                   marginBottom: '20px'
                 }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0F172A', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <FileCheck size={16} color="#16A34A" /> Import Validation Summary
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#171719', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <FileCheck size={16} color="#2876B8" /> Import Validation Summary
                   </div>
 
                   <div className="grid-responsive-4col" style={{ marginBottom: '14px' }}>
-                    <div style={{ background: '#F8FAFC', padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#0F172A' }}>{validationStats.total}</div>
-                      <div style={{ fontSize: '0.7rem', color: '#64748B' }}>Total Contacts</div>
+                    <div style={{ background: '#F5F5F6', padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#171719' }}>{validationStats.total}</div>
+                      <div style={{ fontSize: '0.7rem', color: '#67676B' }}>Total Contacts</div>
                     </div>
-                    <div style={{ background: '#DCFCE7', padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#15803D' }}>{validationStats.valid}</div>
-                      <div style={{ fontSize: '0.7rem', color: '#15803D' }}>Valid Phone Numbers</div>
+                    <div style={{ background: '#EDF4E6', padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#2F5219' }}>{validationStats.valid}</div>
+                      <div style={{ fontSize: '0.7rem', color: '#2F5219' }}>Valid Phone Numbers</div>
                     </div>
                     <div style={{ background: '#FEF3C7', padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
                       <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#B45309' }}>{validationStats.duplicates}</div>
                       <div style={{ fontSize: '0.7rem', color: '#B45309' }}>Duplicates Suppressed</div>
                     </div>
-                    <div style={{ background: '#FEE2E2', padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#DC2626' }}>{validationStats.invalid}</div>
-                      <div style={{ fontSize: '0.7rem', color: '#DC2626' }}>Invalid Numbers</div>
+                    <div style={{ background: '#FDF0F0', padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
+                      <div style={{ fontSize: '1.2rem', fontWeight: 800, color: '#9B2C2C' }}>{validationStats.invalid}</div>
+                      <div style={{ fontSize: '0.7rem', color: '#9B2C2C' }}>Invalid Numbers</div>
                     </div>
                   </div>
 
@@ -1295,10 +1295,10 @@ export default function BroadcastPage() {
                   <div className="grid-responsive-2col" style={{ marginBottom: '16px' }}>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <label style={{ fontSize: '0.775rem', fontWeight: 600, color: '#334155' }}>
+                        <label style={{ fontSize: '0.775rem', fontWeight: 600, color: '#3A3A3E' }}>
                           WhatsApp Phone Number Column
                         </label>
-                        <span style={{ fontSize: '0.65rem', background: '#DCFCE7', color: '#15803D', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                        <span style={{ fontSize: '0.65rem', background: '#EDF4E6', color: '#2F5219', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
                           Auto-Detected
                         </span>
                       </div>
@@ -1315,10 +1315,10 @@ export default function BroadcastPage() {
 
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <label style={{ fontSize: '0.775rem', fontWeight: 600, color: '#334155' }}>
+                        <label style={{ fontSize: '0.775rem', fontWeight: 600, color: '#3A3A3E' }}>
                           Contact / Customer Name Column
                         </label>
-                        <span style={{ fontSize: '0.65rem', background: '#DCFCE7', color: '#15803D', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                        <span style={{ fontSize: '0.65rem', background: '#EDF4E6', color: '#2F5219', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
                           Auto-Detected
                         </span>
                       </div>
@@ -1349,11 +1349,11 @@ export default function BroadcastPage() {
                         justifyContent: 'space-between',
                         marginBottom: '8px'
                       }}>
-                        <div style={{ fontSize: '0.825rem', fontWeight: 700, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ fontSize: '0.825rem', fontWeight: 700, color: '#171719', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <Table size={15} color="var(--brand-wa)" />
                           <span>First 10 Contacts Preview</span>
                         </div>
-                        <span style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#67676B' }}>
                           {file?.name}
                         </span>
                       </div>
@@ -1366,7 +1366,7 @@ export default function BroadcastPage() {
                       }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', textAlign: 'left' }}>
                           <thead>
-                            <tr style={{ background: '#F8FAFC', borderBottom: '1px solid var(--border-color)', color: '#475569', fontWeight: 600 }}>
+                            <tr style={{ background: '#F5F5F6', borderBottom: '1px solid var(--border-color)', color: '#67676B', fontWeight: 600 }}>
                               <th style={{ padding: '8px 12px', width: '40px' }}>#</th>
                               <th style={{ padding: '8px 12px' }}>Contact Name</th>
                               <th style={{ padding: '8px 12px' }}>Raw Phone</th>
@@ -1380,19 +1380,19 @@ export default function BroadcastPage() {
                               const nameVal = nameColumn && row.data ? row.data[nameColumn] : (row.contactName || '—');
                               const cleanP = row.cleanPhone || '—';
                               return (
-                                <tr key={idx} style={{ borderBottom: idx < filePreviewRows.length - 1 ? '1px solid #F1F5F9' : 'none' }}>
-                                  <td style={{ padding: '8px 12px', color: '#94A3B8' }}>{idx + 1}</td>
-                                  <td style={{ padding: '8px 12px', fontWeight: 600, color: '#0F172A' }}>{nameVal || '—'}</td>
-                                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#475569' }}>{rawP || '—'}</td>
-                                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#0F172A', fontWeight: 600 }}>{cleanP || '—'}</td>
+                                <tr key={idx} style={{ borderBottom: idx < filePreviewRows.length - 1 ? '1px solid #EEEEF0' : 'none' }}>
+                                  <td style={{ padding: '8px 12px', color: '#96969C' }}>{idx + 1}</td>
+                                  <td style={{ padding: '8px 12px', fontWeight: 600, color: '#171719' }}>{nameVal || '—'}</td>
+                                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#67676B' }}>{rawP || '—'}</td>
+                                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#171719', fontWeight: 600 }}>{cleanP || '—'}</td>
                                   <td style={{ padding: '8px 12px' }}>
                                     {row.isValid ? (
                                       <span style={{
                                         display: 'inline-flex',
                                         alignItems: 'center',
                                         gap: '4px',
-                                        background: '#DCFCE7',
-                                        color: '#15803D',
+                                        background: '#EDF4E6',
+                                        color: '#2F5219',
                                         padding: '2px 8px',
                                         borderRadius: '4px',
                                         fontSize: '0.72rem',
@@ -1419,8 +1419,8 @@ export default function BroadcastPage() {
                                         display: 'inline-flex',
                                         alignItems: 'center',
                                         gap: '4px',
-                                        background: '#FEE2E2',
-                                        color: '#DC2626',
+                                        background: '#FDF0F0',
+                                        color: '#9B2C2C',
                                         padding: '2px 8px',
                                         borderRadius: '4px',
                                         fontSize: '0.72rem',
@@ -1466,10 +1466,10 @@ export default function BroadcastPage() {
             <div className="saas-card" style={{ padding: '24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px', flexWrap: 'wrap', gap: '10px' }}>
                 <div>
-                  <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                  <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#171719', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                     <Layers size={19} color="var(--brand-wa)" /> Select Official Meta Template
                   </h2>
-                  <p style={{ fontSize: '0.8rem', color: '#64748B', margin: '4px 0 0 0' }}>
+                  <p style={{ fontSize: '0.8rem', color: '#67676B', margin: '4px 0 0 0' }}>
                     Choose pre-approved WhatsApp templates categorized by Marketing, Utility, and Authentication.
                   </p>
                 </div>
@@ -1508,9 +1508,9 @@ export default function BroadcastPage() {
                 const authCount = templates.filter(t => (t.category || '').toUpperCase() === 'AUTHENTICATION').length;
 
                 const tabs = [
-                  { key: 'ALL', label: 'All Templates', count: totalCount, icon: Layers, activeColor: '#0F172A', activeBg: '#F1F5F9', activeBorder: '#CBD5E1' },
-                  { key: 'MARKETING', label: 'Marketing', count: mktCount, icon: Megaphone, activeColor: '#7C3AED', activeBg: '#F3E8FF', activeBorder: '#E9D5FF' },
-                  { key: 'UTILITY', label: 'Utility', count: utlCount, icon: Zap, activeColor: '#16A34A', activeBg: '#DCFCE7', activeBorder: '#BBF7D0' },
+                  { key: 'ALL', label: 'All Templates', count: totalCount, icon: Layers, activeColor: '#171719', activeBg: '#EEEEF0', activeBorder: '#D4D4D9' },
+                  { key: 'MARKETING', label: 'Marketing', count: mktCount, icon: Megaphone, activeColor: '#7A2E83', activeBg: '#F3E8FF', activeBorder: '#EFB0F6' },
+                  { key: 'UTILITY', label: 'Utility', count: utlCount, icon: Zap, activeColor: '#2876B8', activeBg: '#EDF4E6', activeBorder: '#C3D1AC' },
                   { key: 'AUTHENTICATION', label: 'Authentication', count: authCount, icon: Lock, activeColor: '#D97706', activeBg: '#FEF3C7', activeBorder: '#FDE68A' }
                 ];
 
@@ -1539,7 +1539,7 @@ export default function BroadcastPage() {
                             borderRadius: '8px',
                             border: isSel ? `1.5px solid ${tab.activeColor}` : '1px solid var(--border-color)',
                             background: isSel ? tab.activeBg : '#FFFFFF',
-                            color: isSel ? tab.activeColor : '#64748B',
+                            color: isSel ? tab.activeColor : '#67676B',
                             fontWeight: isSel ? 700 : 600,
                             fontSize: '0.825rem',
                             cursor: 'pointer',
@@ -1548,16 +1548,16 @@ export default function BroadcastPage() {
                             boxShadow: isSel ? '0 1px 3px rgba(0,0,0,0.06)' : 'none'
                           }}
                         >
-                          <IconComp size={15} color={isSel ? tab.activeColor : '#94A3B8'} />
+                          <IconComp size={15} color={isSel ? tab.activeColor : '#96969C'} />
                           <span>{tab.label}</span>
                           <span style={{
                             fontSize: '0.72rem',
                             fontWeight: 700,
                             padding: '1px 7px',
                             borderRadius: '999px',
-                            background: isSel ? '#FFFFFF' : '#F1F5F9',
-                            color: isSel ? tab.activeColor : '#64748B',
-                            border: `1px solid ${isSel ? tab.activeBorder : '#E2E8F0'}`
+                            background: isSel ? '#FFFFFF' : '#EEEEF0',
+                            color: isSel ? tab.activeColor : '#67676B',
+                            border: `1px solid ${isSel ? tab.activeBorder : '#E5E5E8'}`
                           }}>
                             {tab.count}
                           </span>
@@ -1571,7 +1571,7 @@ export default function BroadcastPage() {
               {/* Template Search & Live Meta Inspector */}
               <div style={{ display: 'flex', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
                 <div style={{ position: 'relative', flex: 1, minWidth: '240px' }}>
-                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '12px', color: '#94A3B8' }} />
+                  <Search size={14} style={{ position: 'absolute', left: '10px', top: '12px', color: '#96969C' }} />
                   <input
                     type="text"
                     placeholder={`Filter ${selectedCategory === 'ALL' ? 'all' : selectedCategory.toLowerCase()} templates by name or text...`}
@@ -1591,7 +1591,7 @@ export default function BroadcastPage() {
                         background: 'none',
                         border: 'none',
                         cursor: 'pointer',
-                        color: '#94A3B8',
+                        color: '#96969C',
                         padding: '2px'
                       }}
                     >
@@ -1633,9 +1633,9 @@ export default function BroadcastPage() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  background: syncFeedback.type === 'success' ? '#DCFCE7' : '#FEE2E2',
-                  color: syncFeedback.type === 'success' ? '#15803D' : '#DC2626',
-                  border: `1px solid ${syncFeedback.type === 'success' ? '#BBF7D0' : '#FECACA'}`
+                  background: syncFeedback.type === 'success' ? '#EDF4E6' : '#FDF0F0',
+                  color: syncFeedback.type === 'success' ? '#2F5219' : '#9B2C2C',
+                  border: `1px solid ${syncFeedback.type === 'success' ? '#C3D1AC' : '#FDB1AF'}`
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     {syncFeedback.type === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
@@ -1658,9 +1658,9 @@ export default function BroadcastPage() {
                   marginBottom: '14px',
                   fontSize: '0.78rem',
                   fontWeight: 600,
-                  background: inspectMessage.type === 'success' ? '#DCFCE7' : '#FEE2E2',
-                  color: inspectMessage.type === 'success' ? '#15803D' : '#DC2626',
-                  border: `1px solid ${inspectMessage.type === 'success' ? '#BBF7D0' : '#FECACA'}`
+                  background: inspectMessage.type === 'success' ? '#EDF4E6' : '#FDF0F0',
+                  color: inspectMessage.type === 'success' ? '#2F5219' : '#9B2C2C',
+                  border: `1px solid ${inspectMessage.type === 'success' ? '#C3D1AC' : '#FDB1AF'}`
                 }}>
                   {inspectMessage.text}
                 </div>
@@ -1691,16 +1691,16 @@ export default function BroadcastPage() {
                     <div style={{
                       padding: '36px 20px',
                       textAlign: 'center',
-                      background: '#F8FAFC',
-                      border: '1px dashed #CBD5E1',
+                      background: '#F5F5F6',
+                      border: '1px dashed #D4D4D9',
                       borderRadius: '10px',
                       marginBottom: '16px'
                     }}>
-                      <Layers size={32} color="#94A3B8" style={{ margin: '0 auto 8px auto' }} />
-                      <div style={{ fontSize: '0.925rem', fontWeight: 700, color: '#334155' }}>
+                      <Layers size={32} color="#96969C" style={{ margin: '0 auto 8px auto' }} />
+                      <div style={{ fontSize: '0.925rem', fontWeight: 700, color: '#3A3A3E' }}>
                         No {selectedCategory === 'ALL' ? '' : selectedCategory.toLowerCase()} templates found
                       </div>
-                      <div style={{ fontSize: '0.78rem', color: '#64748B', maxWidth: '380px', margin: '4px auto 14px auto' }}>
+                      <div style={{ fontSize: '0.78rem', color: '#67676B', maxWidth: '380px', margin: '4px auto 14px auto' }}>
                         {templateSearch ? `No templates matched "${templateSearch}".` : `There are no approved templates saved in the ${selectedCategory} category yet.`}
                       </div>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
@@ -1746,10 +1746,10 @@ export default function BroadcastPage() {
 
                       // Category specific colors
                       const catStyle = catUpper === 'UTILITY'
-                        ? { bg: '#DCFCE7', color: '#15803D', border: '#BBF7D0', label: '⚡ Utility' }
+                        ? { bg: '#EDF4E6', color: '#2F5219', border: '#C3D1AC', label: '⚡ Utility' }
                         : catUpper === 'AUTHENTICATION'
                           ? { bg: '#FEF3C7', color: '#92400E', border: '#FDE68A', label: '🔐 Auth' }
-                          : { bg: '#F3E8FF', color: '#6B21A8', border: '#E9D5FF', label: '📢 Marketing' };
+                          : { bg: '#F3E8FF', color: '#6B21A8', border: '#EFB0F6', label: '📢 Marketing' };
 
                       return (
                         <div
@@ -1759,7 +1759,7 @@ export default function BroadcastPage() {
                             padding: '14px',
                             borderRadius: '10px',
                             border: isSelected ? '2px solid var(--brand-wa)' : '1px solid var(--border-color)',
-                            background: isSelected ? '#F0FDF4' : '#FFFFFF',
+                            background: isSelected ? '#F3F6EE' : '#FFFFFF',
                             cursor: 'pointer',
                             transition: 'all 0.15s ease',
                             boxShadow: isSelected ? '0 0 0 2px rgba(18, 140, 126, 0.18)' : 'var(--shadow-xs)',
@@ -1774,7 +1774,7 @@ export default function BroadcastPage() {
                               <span style={{
                                 fontWeight: 700,
                                 fontSize: '0.875rem',
-                                color: isSelected ? '#0d7064' : '#0F172A',
+                                color: isSelected ? '#1F629C' : '#171719',
                                 wordBreak: 'break-word',
                                 lineHeight: 1.3
                               }}>
@@ -1806,8 +1806,8 @@ export default function BroadcastPage() {
                                 fontWeight: 600,
                                 padding: '2px 6px',
                                 borderRadius: '4px',
-                                background: tmpl.status === 'APPROVED' ? '#DCFCE7' : '#FEF3C7',
-                                color: tmpl.status === 'APPROVED' ? '#15803D' : '#B45309'
+                                background: tmpl.status === 'APPROVED' ? '#EDF4E6' : '#FEF3C7',
+                                color: tmpl.status === 'APPROVED' ? '#2F5219' : '#B45309'
                               }}>
                                 {tmpl.status || 'APPROVED'}
                               </span>
@@ -1815,8 +1815,8 @@ export default function BroadcastPage() {
                               {/* Variable Count */}
                               <span style={{
                                 fontSize: '0.65rem',
-                                color: '#64748B',
-                                background: '#F1F5F9',
+                                color: '#67676B',
+                                background: '#EEEEF0',
                                 padding: '2px 6px',
                                 borderRadius: '4px',
                                 fontWeight: 600
@@ -1847,17 +1847,17 @@ export default function BroadcastPage() {
                             {tmpl.bodyText && (
                               <div style={{
                                 fontSize: '0.73rem',
-                                color: '#475569',
+                                color: '#67676B',
                                 lineHeight: 1.35,
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
                                 display: '-webkit-box',
                                 WebkitLineClamp: 2,
                                 WebkitBoxOrient: 'vertical',
-                                background: isSelected ? '#FFFFFF' : '#F8FAFC',
+                                background: isSelected ? '#FFFFFF' : '#F5F5F6',
                                 padding: '6px 8px',
                                 borderRadius: '6px',
-                                border: '1px solid #E2E8F0'
+                                border: '1px solid #E5E5E8'
                               }}>
                                 {tmpl.bodyText}
                               </div>
@@ -1873,19 +1873,19 @@ export default function BroadcastPage() {
               {/* Selected Template Details Card */}
               {selectedTemplate && (
                 <div style={{
-                  background: '#F0FDF4',
-                  border: '1px solid #BBF7D0',
+                  background: '#F3F6EE',
+                  border: '1px solid #C3D1AC',
                   borderRadius: '8px',
                   padding: '12px 14px',
                   marginBottom: '18px'
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <CheckCircle2 size={16} color="#15803D" />
-                      <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#15803D' }}>
+                      <CheckCircle2 size={16} color="#2F5219" />
+                      <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#2F5219' }}>
                         {selectedTemplate.name}
                       </span>
-                      <span style={{ fontSize: '0.72rem', color: '#64748B' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#67676B' }}>
                         (Meta ID: <code>{selectedTemplate.meta_id || selectedTemplate.id || 'N/A'}</code>)
                       </span>
                       {selectedTemplate.hasFlowButton && (
@@ -1912,12 +1912,12 @@ export default function BroadcastPage() {
                   {selectedTemplate.bodyText && (
                     <div style={{
                       fontSize: '0.78rem',
-                      color: '#334155',
+                      color: '#3A3A3E',
                       whiteSpace: 'pre-wrap',
                       background: '#FFFFFF',
                       padding: '10px',
                       borderRadius: '6px',
-                      border: '1px solid #E2E8F0',
+                      border: '1px solid #E5E5E8',
                       maxHeight: '120px',
                       overflowY: 'auto'
                     }}>
@@ -1948,23 +1948,23 @@ export default function BroadcastPage() {
               {/* Dynamic Variable Mappings */}
               {selectedTemplate && Object.keys(variableMappings).length > 0 && (
                 <div style={{
-                  background: '#F8FAFC',
+                  background: '#F5F5F6',
                   border: '1px solid var(--border-color)',
                   borderRadius: '10px',
                   padding: '18px',
                   marginBottom: '20px'
                 }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0F172A', marginBottom: '6px' }}>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#171719', marginBottom: '6px' }}>
                     Map Dynamic Personalization Variables
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748B', marginBottom: '14px' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#67676B', marginBottom: '14px' }}>
                     Match each template variable tag with a column from your uploaded contact sheet.
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
                     {Object.keys(variableMappings).map(varNum => (
                       <div key={varNum}>
-                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#334155', marginBottom: '4px' }}>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#3A3A3E', marginBottom: '4px' }}>
                           Variable &#123;&#123;{varNum}&#125;&#125;
                         </label>
                         <select
@@ -1992,7 +1992,7 @@ export default function BroadcastPage() {
                 return (
                   <div style={{ marginBottom: '20px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#3A3A3E', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <ImageIcon size={15} color="var(--brand-wa)" />
                         <span>Header Media URL ({mediaFormat})</span>
                         <span className="badge badge-success" style={{ fontSize: '0.65rem' }}>Meta Required</span>
@@ -2038,14 +2038,14 @@ export default function BroadcastPage() {
                     />
 
                     {headerMediaUrl && (
-                      <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '10px', background: '#F8FAFC', padding: '6px 10px', borderRadius: '6px', border: '1px solid #E2E8F0' }}>
+                      <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '10px', background: '#F5F5F6', padding: '6px 10px', borderRadius: '6px', border: '1px solid #E5E5E8' }}>
                         <img
                           src={headerMediaUrl}
                           alt="Header preview"
                           onError={e => { e.target.style.display = 'none'; }}
                           style={{ width: '40px', height: '30px', objectFit: 'cover', borderRadius: '4px' }}
                         />
-                        <span style={{ fontSize: '0.75rem', color: '#64748B', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ fontSize: '0.75rem', color: '#67676B', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {headerMediaId ? `Meta Media ID: ${headerMediaId}` : headerMediaUrl}
                         </span>
                         <button
@@ -2054,7 +2054,7 @@ export default function BroadcastPage() {
                             setHeaderMediaUrl('');
                             setHeaderMediaId('');
                           }}
-                          style={{ border: 'none', background: 'transparent', color: '#94A3B8', cursor: 'pointer', fontSize: '0.8rem' }}
+                          style={{ border: 'none', background: 'transparent', color: '#96969C', cursor: 'pointer', fontSize: '0.8rem' }}
                         >
                           ✕
                         </button>
@@ -2089,13 +2089,13 @@ export default function BroadcastPage() {
           {/* STEP 3: Review, Consent & Scheduling */}
           {currentStep === 3 && (
             <div className="saas-card" style={{ padding: '24px' }}>
-              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#171719', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Calendar size={18} color="var(--brand-wa)" /> Review, Consent & Scheduling
               </h2>
 
               {/* Campaign Summary Card */}
               <div style={{
-                background: '#F8FAFC',
+                background: '#F5F5F6',
                 border: '1px solid var(--border-color)',
                 borderRadius: '10px',
                 padding: '18px',
@@ -2105,27 +2105,27 @@ export default function BroadcastPage() {
                 gap: '10px',
                 fontSize: '0.85rem'
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E2E8F0', paddingBottom: '8px' }}>
-                  <span style={{ color: '#64748B' }}>Campaign Name:</span>
-                  <span style={{ fontWeight: 700, color: '#0F172A' }}>{campaignName || 'Unnamed Broadcast'}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E5E8', paddingBottom: '8px' }}>
+                  <span style={{ color: '#67676B' }}>Campaign Name:</span>
+                  <span style={{ fontWeight: 700, color: '#171719' }}>{campaignName || 'Unnamed Broadcast'}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E2E8F0', paddingBottom: '8px' }}>
-                  <span style={{ color: '#64748B' }}>Template:</span>
-                  <span style={{ fontWeight: 700, color: '#128C7E' }}>{selectedTemplate?.name}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E5E8', paddingBottom: '8px' }}>
+                  <span style={{ color: '#67676B' }}>Template:</span>
+                  <span style={{ fontWeight: 700, color: '#2876B8' }}>{selectedTemplate?.name}</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E2E8F0', paddingBottom: '8px' }}>
-                  <span style={{ color: '#64748B' }}>Valid Recipients:</span>
-                  <span style={{ fontWeight: 700, color: '#15803D' }}>{validationStats.valid || fileRows.length} Contacts</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E5E8', paddingBottom: '8px' }}>
+                  <span style={{ color: '#67676B' }}>Valid Recipients:</span>
+                  <span style={{ fontWeight: 700, color: '#2F5219' }}>{validationStats.valid || fileRows.length} Contacts</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E2E8F0', paddingBottom: '8px' }}>
-                  <span style={{ color: '#64748B' }}>Dispatch Throttle:</span>
-                  <span style={{ fontWeight: 700, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E5E8', paddingBottom: '8px' }}>
+                  <span style={{ color: '#67676B' }}>Dispatch Throttle:</span>
+                  <span style={{ fontWeight: 700, color: '#171719', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ color: 'var(--brand-wa)' }}>{throttleDelay} ms</span>
-                    <span style={{ fontSize: '0.75rem', color: '#16A34A', fontWeight: 600 }}>({msgsPerSecond} msg/s • Est. ~{estimatedBroadcastDuration})</span>
+                    <span style={{ fontSize: '0.75rem', color: '#2876B8', fontWeight: 600 }}>({msgsPerSecond} msg/s • Est. ~{estimatedBroadcastDuration})</span>
                   </span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#64748B' }}>Duplicates Suppressed:</span>
+                  <span style={{ color: '#67676B' }}>Duplicates Suppressed:</span>
                   <span style={{ fontWeight: 600, color: '#B45309' }}>{validationStats.duplicates} Contacts</span>
                 </div>
               </div>
@@ -2145,8 +2145,8 @@ export default function BroadcastPage() {
                       width: '36px',
                       height: '36px',
                       borderRadius: '8px',
-                      background: '#F0FDF4',
-                      border: '1px solid #BBF7D0',
+                      background: '#F3F6EE',
+                      border: '1px solid #C3D1AC',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -2155,10 +2155,10 @@ export default function BroadcastPage() {
                       <Sliders size={18} />
                     </div>
                     <div>
-                      <h3 style={{ fontSize: '0.975rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                      <h3 style={{ fontSize: '0.975rem', fontWeight: 700, color: '#171719', margin: 0 }}>
                         Dispatch Throttle Delay & Pacing Control
                       </h3>
-                      <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#67676B', marginTop: '2px' }}>
                         Set the spacing in milliseconds between each message before starting the broadcast
                       </div>
                     </div>
@@ -2179,7 +2179,7 @@ export default function BroadcastPage() {
 
                 {/* Preset Speed Buttons */}
                 <div style={{ marginBottom: '16px' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#67676B', marginBottom: '8px' }}>
                     Recommended Delay Presets:
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px' }}>
@@ -2193,16 +2193,16 @@ export default function BroadcastPage() {
                           style={{
                             padding: '10px 8px',
                             borderRadius: '8px',
-                            border: isSel ? '2px solid var(--brand-wa)' : '1px solid #CBD5E1',
-                            background: isSel ? '#F0FDF4' : '#F8FAFC',
-                            color: isSel ? '#15803D' : '#334155',
+                            border: isSel ? '2px solid var(--brand-wa)' : '1px solid #D4D4D9',
+                            background: isSel ? '#F3F6EE' : '#F5F5F6',
+                            color: isSel ? '#2F5219' : '#3A3A3E',
                             cursor: 'pointer',
                             textAlign: 'center',
                             transition: 'all 0.15s ease'
                           }}
                         >
                           <div style={{ fontSize: '0.8rem', fontWeight: 700 }}>{p.label}</div>
-                          <div style={{ fontSize: '0.675rem', color: isSel ? '#166534' : '#64748B', marginTop: '2px' }}>
+                          <div style={{ fontSize: '0.675rem', color: isSel ? '#2F5219' : '#67676B', marginTop: '2px' }}>
                             {p.ms} ms ({p.hint})
                           </div>
                         </button>
@@ -2213,8 +2213,8 @@ export default function BroadcastPage() {
 
                 {/* Interactive Dispatch Delay Slider with Clickable Milestone Points */}
                 <div style={{
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
+                  background: '#F5F5F6',
+                  border: '1px solid #E5E5E8',
                   borderRadius: '12px',
                   padding: '16px 18px',
                   marginBottom: '16px'
@@ -2222,10 +2222,10 @@ export default function BroadcastPage() {
                   {/* Top Row: Label, Safety Tier Badge, Manual Number Input */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
                     <div>
-                      <label htmlFor="step3ThrottleSlider" style={{ fontSize: '0.85rem', fontWeight: 700, color: '#1E293B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <label htmlFor="step3ThrottleSlider" style={{ fontSize: '0.85rem', fontWeight: 700, color: '#171719', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span>Adjust Dispatch Delay:</span>
                       </label>
-                      <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '2px' }}>
+                      <div style={{ fontSize: '0.72rem', color: '#67676B', marginTop: '2px' }}>
                         Click any point on the bar or drag to fine-tune pacing
                       </div>
                     </div>
@@ -2259,11 +2259,11 @@ export default function BroadcastPage() {
                             padding: '5px 8px',
                             fontSize: '0.9rem',
                             fontWeight: 800,
-                            color: '#0F172A',
+                            color: '#171719',
                             textAlign: 'right'
                           }}
                         />
-                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#64748B' }}>ms</span>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#67676B' }}>ms</span>
                       </div>
                     </div>
                   </div>
@@ -2297,10 +2297,10 @@ export default function BroadcastPage() {
                               style={{
                                 width: isCurrent ? '16px' : '12px',
                                 height: isCurrent ? '16px' : '12px',
-                                background: isCurrent ? '#128C7E' : (isPassed ? '#10B981' : '#FFFFFF'),
-                                border: isCurrent ? '3px solid #FFFFFF' : (isPassed ? '2px solid #FFFFFF' : '2px solid #94A3B8'),
+                                background: isCurrent ? '#2876B8' : (isPassed ? '#2876B8' : '#FFFFFF'),
+                                border: isCurrent ? '3px solid #FFFFFF' : (isPassed ? '2px solid #FFFFFF' : '2px solid #96969C'),
                                 boxShadow: isCurrent 
-                                  ? '0 0 0 3px #128C7E, 0 2px 8px rgba(18, 140, 126, 0.45)' 
+                                  ? '0 0 0 3px #2876B8, 0 2px 8px rgba(18, 140, 126, 0.45)' 
                                   : (isPassed ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.1)')
                               }}
                             >
@@ -2353,14 +2353,14 @@ export default function BroadcastPage() {
                             <div style={{
                               fontSize: '0.725rem',
                               fontWeight: isCurrent ? 800 : 700,
-                              color: isCurrent ? '#15803D' : '#334155'
+                              color: isCurrent ? '#2F5219' : '#3A3A3E'
                             }}>
                               {m.label}
                             </div>
                             <div style={{
                               fontSize: '0.625rem',
                               fontWeight: 600,
-                              color: isCurrent ? '#166534' : '#94A3B8'
+                              color: isCurrent ? '#2F5219' : '#96969C'
                             }}>
                               {m.tag}
                             </div>
@@ -2373,24 +2373,24 @@ export default function BroadcastPage() {
 
                 {/* Calculated Metrics Grid */}
                 <div className="grid-responsive-3col" style={{ marginBottom: '14px' }}>
-                  <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '10px 12px', borderRadius: '8px' }}>
-                    <div style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 600, textTransform: 'uppercase' }}>Dispatch Speed</div>
-                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0F172A', marginTop: '2px' }}>
-                      ~{msgsPerSecond} <span style={{ fontSize: '0.72rem', fontWeight: 500, color: '#64748B' }}>msgs/sec</span>
+                  <div style={{ background: '#F5F5F6', border: '1px solid #E5E5E8', padding: '10px 12px', borderRadius: '8px' }}>
+                    <div style={{ fontSize: '0.7rem', color: '#67676B', fontWeight: 600, textTransform: 'uppercase' }}>Dispatch Speed</div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#171719', marginTop: '2px' }}>
+                      ~{msgsPerSecond} <span style={{ fontSize: '0.72rem', fontWeight: 500, color: '#67676B' }}>msgs/sec</span>
                     </div>
                   </div>
 
-                  <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '10px 12px', borderRadius: '8px' }}>
-                    <div style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 600, textTransform: 'uppercase' }}>Est. Total Duration</div>
+                  <div style={{ background: '#F5F5F6', border: '1px solid #E5E5E8', padding: '10px 12px', borderRadius: '8px' }}>
+                    <div style={{ fontSize: '0.7rem', color: '#67676B', fontWeight: 600, textTransform: 'uppercase' }}>Est. Total Duration</div>
                     <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--brand-wa)', marginTop: '2px' }}>
                       ~{estimatedBroadcastDuration}
                     </div>
                   </div>
 
-                  <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '10px 12px', borderRadius: '8px' }}>
-                    <div style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 600, textTransform: 'uppercase' }}>Target Recipients</div>
-                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0F172A', marginTop: '2px' }}>
-                      {totalTargetRecipients} <span style={{ fontSize: '0.72rem', fontWeight: 500, color: '#64748B' }}>contacts</span>
+                  <div style={{ background: '#F5F5F6', border: '1px solid #E5E5E8', padding: '10px 12px', borderRadius: '8px' }}>
+                    <div style={{ fontSize: '0.7rem', color: '#67676B', fontWeight: 600, textTransform: 'uppercase' }}>Target Recipients</div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#171719', marginTop: '2px' }}>
+                      {totalTargetRecipients} <span style={{ fontSize: '0.72rem', fontWeight: 500, color: '#67676B' }}>contacts</span>
                     </div>
                   </div>
                 </div>
@@ -2428,7 +2428,7 @@ export default function BroadcastPage() {
                     onChange={e => setIsScheduled(e.target.checked)}
                     style={{ width: '18px', height: '18px', accentColor: 'var(--brand-wa)', cursor: 'pointer' }}
                   />
-                  <label htmlFor="scheduleToggle" style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0F172A', cursor: 'pointer' }}>
+                  <label htmlFor="scheduleToggle" style={{ fontSize: '0.9rem', fontWeight: 700, color: '#171719', cursor: 'pointer' }}>
                     Schedule for Future Dispatch
                   </label>
                 </div>
@@ -2436,10 +2436,10 @@ export default function BroadcastPage() {
                 {isScheduled && (
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#334155' }}>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#3A3A3E' }}>
                         Dispatch Date & Time (Indian Standard Time - IST)
                       </label>
-                      <span className="badge" style={{ background: '#EDE9FE', color: '#6D28D9', fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px' }}>
+                      <span className="badge" style={{ background: '#EDE9FE', color: '#7A2E83', fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px' }}>
                         🇮🇳 UTC+05:30 (Asia/Kolkata)
                       </span>
                     </div>
@@ -2450,7 +2450,7 @@ export default function BroadcastPage() {
                       min={getIndianCurrentInputString(2)}
                       onChange={e => setScheduledTime(e.target.value)}
                     />
-                    <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '6px' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#67676B', marginTop: '6px' }}>
                       Campaign will auto-launch when clock reaches this exact Indian Standard Time.
                     </div>
                   </div>
@@ -2505,7 +2505,7 @@ export default function BroadcastPage() {
         {/* Right Column: Live WhatsApp Smartphone Handset */}
         <div style={{ position: 'sticky', top: '90px' }}>
           <div style={{ marginBottom: '12px', textAlign: 'center' }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#67676B', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Live WhatsApp Handset Preview
             </span>
           </div>
@@ -2546,26 +2546,26 @@ export default function BroadcastPage() {
                   width: '36px',
                   height: '36px',
                   borderRadius: '10px',
-                  background: (isCampaignScheduled || progressStats.status === 'SCHEDULED') ? '#F3E8FF' : (progressStats.status === 'COMPLETED' ? '#DCFCE7' : '#F0FDF4'),
+                  background: (isCampaignScheduled || progressStats.status === 'SCHEDULED') ? '#F3E8FF' : (progressStats.status === 'COMPLETED' ? '#EDF4E6' : '#F3F6EE'),
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center'
                 }}>
                   {(isCampaignScheduled || progressStats.status === 'SCHEDULED') ? (
-                    <Clock size={18} color="#7C3AED" />
+                    <Clock size={18} color="#7A2E83" />
                   ) : (
-                    <Send size={18} color={progressStats.status === 'COMPLETED' ? '#15803D' : '#128C7E'} />
+                    <Send size={18} color={progressStats.status === 'COMPLETED' ? '#2F5219' : '#2876B8'} />
                   )}
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0F172A' }}>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#171719' }}>
                     {(isCampaignScheduled || progressStats.status === 'SCHEDULED')
                       ? 'Campaign Scheduled in Queue'
                       : progressStats.status === 'COMPLETED'
                       ? 'Broadcast Dispatched!'
                       : 'Broadcasting in Progress...'}
                   </h3>
-                  <div style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#67676B' }}>
                     Campaign #{activeCampaign} • {(isCampaignScheduled || progressStats.status === 'SCHEDULED') ? 'Scheduled Dispatch' : 'Live SSE Stream'}
                   </div>
                 </div>
@@ -2573,7 +2573,7 @@ export default function BroadcastPage() {
 
               <button
                 onClick={() => setShowProgressModal(false)}
-                style={{ background: 'none', border: 'none', color: '#64748B', cursor: 'pointer', padding: '4px' }}
+                style={{ background: 'none', border: 'none', color: '#67676B', cursor: 'pointer', padding: '4px' }}
               >
                 <X size={20} />
               </button>
@@ -2581,17 +2581,17 @@ export default function BroadcastPage() {
 
             {/* Counters */}
             <div className="grid-responsive-3col" style={{ marginBottom: '20px' }}>
-              <div style={{ background: '#F8FAFC', padding: '12px', borderRadius: '10px', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#0F172A' }}>{progressStats.total}</div>
-                <div style={{ fontSize: '0.72rem', color: '#64748B' }}>Total Targets</div>
+              <div style={{ background: '#F5F5F6', padding: '12px', borderRadius: '10px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#171719' }}>{progressStats.total}</div>
+                <div style={{ fontSize: '0.72rem', color: '#67676B' }}>Total Targets</div>
               </div>
-              <div style={{ background: '#DCFCE7', padding: '12px', borderRadius: '10px', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#15803D' }}>{progressStats.sent}</div>
-                <div style={{ fontSize: '0.72rem', color: '#15803D' }}>Dispatched</div>
+              <div style={{ background: '#EDF4E6', padding: '12px', borderRadius: '10px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#2F5219' }}>{progressStats.sent}</div>
+                <div style={{ fontSize: '0.72rem', color: '#2F5219' }}>Dispatched</div>
               </div>
-              <div style={{ background: '#FEE2E2', padding: '12px', borderRadius: '10px', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#DC2626' }}>{progressStats.failed}</div>
-                <div style={{ fontSize: '0.72rem', color: '#DC2626' }}>Failed</div>
+              <div style={{ background: '#FDF0F0', padding: '12px', borderRadius: '10px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#9B2C2C' }}>{progressStats.failed}</div>
+                <div style={{ fontSize: '0.72rem', color: '#9B2C2C' }}>Failed</div>
               </div>
             </div>
 
@@ -2601,7 +2601,7 @@ export default function BroadcastPage() {
                 width: '100%',
                 height: '8px',
                 borderRadius: '999px',
-                background: '#F1F5F9',
+                background: '#EEEEF0',
                 overflow: 'hidden'
               }}>
                 <div style={{
@@ -2617,8 +2617,8 @@ export default function BroadcastPage() {
             {/* Scheduled Information Card inside modal */}
             {(isCampaignScheduled || progressStats.status === 'SCHEDULED') && progressStats.status !== 'CANCELLED' && progressStats.status !== 'IN_PROGRESS' && (
               <div style={{
-                background: '#F5F3FF',
-                border: '1px solid #DDD6FE',
+                background: '#FCF2FE',
+                border: '1px solid #EFB0F6',
                 borderRadius: '10px',
                 padding: '14px 16px',
                 marginBottom: '16px',
@@ -2629,12 +2629,12 @@ export default function BroadcastPage() {
                 flexWrap: 'wrap'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <Clock size={22} color="#7C3AED" />
+                  <Clock size={22} color="#7A2E83" />
                   <div>
-                    <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#5B21B6' }}>
+                    <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#7A2E83' }}>
                       Scheduled for {scheduledTime ? `${formatIndianDateTime(scheduledTime)} (IST)` : 'Future Date/Time'}
                     </div>
-                    <div style={{ fontSize: '0.75rem', color: '#6D28D9' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#7A2E83' }}>
                       Waiting in queue. You can run it immediately or cancel this schedule.
                     </div>
                   </div>
@@ -2645,7 +2645,7 @@ export default function BroadcastPage() {
                     type="button"
                     onClick={() => handleRunScheduledNow(activeCampaign)}
                     className="btn btn-primary"
-                    style={{ fontSize: '0.78rem', padding: '6px 12px', background: '#16A34A', border: 'none', gap: '6px' }}
+                    style={{ fontSize: '0.78rem', padding: '6px 12px', background: '#2876B8', border: 'none', gap: '6px' }}
                   >
                     <Play size={13} />
                     <span>Run Now</span>
@@ -2665,7 +2665,7 @@ export default function BroadcastPage() {
 
             {/* Live Throttle & Pacing Adjuster */}
             <div style={{
-              background: '#F8FAFC',
+              background: '#F5F5F6',
               border: '1px solid var(--border-color)',
               borderRadius: '10px',
               padding: '12px 14px',
@@ -2674,13 +2674,13 @@ export default function BroadcastPage() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Zap size={15} color="var(--brand-wa)" />
-                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0F172A' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#171719' }}>
                     Active Dispatch Throttle:
                   </span>
                   <span style={{ fontSize: '0.825rem', fontWeight: 800, color: 'var(--brand-wa)' }}>
                     {liveDelay} ms
                   </span>
-                  <span style={{ fontSize: '0.72rem', color: '#64748B' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#67676B' }}>
                     (~{(1000 / (liveDelay || 1)).toFixed(1)} msgs/sec)
                   </span>
                   {updatingThrottle && (
@@ -2701,9 +2701,9 @@ export default function BroadcastPage() {
                         borderRadius: '4px',
                         fontSize: '0.7rem',
                         fontWeight: 600,
-                        border: liveDelay === ms ? '1px solid var(--brand-wa)' : '1px solid #CBD5E1',
-                        background: liveDelay === ms ? '#F0FDF4' : '#FFFFFF',
-                        color: liveDelay === ms ? '#15803D' : '#475569',
+                        border: liveDelay === ms ? '1px solid var(--brand-wa)' : '1px solid #D4D4D9',
+                        background: liveDelay === ms ? '#F3F6EE' : '#FFFFFF',
+                        color: liveDelay === ms ? '#2F5219' : '#67676B',
                         cursor: 'pointer'
                       }}
                     >
@@ -2746,9 +2746,9 @@ export default function BroadcastPage() {
                           style={{
                             width: isCurrent ? '14px' : '10px',
                             height: isCurrent ? '14px' : '10px',
-                            background: isCurrent ? '#128C7E' : (isPassed ? '#10B981' : '#FFFFFF'),
-                            border: isCurrent ? '2.5px solid #FFFFFF' : (isPassed ? '1.5px solid #FFFFFF' : '1.5px solid #94A3B8'),
-                            boxShadow: isCurrent ? '0 0 0 2.5px #128C7E' : '0 1px 2px rgba(0,0,0,0.1)'
+                            background: isCurrent ? '#2876B8' : (isPassed ? '#2876B8' : '#FFFFFF'),
+                            border: isCurrent ? '2.5px solid #FFFFFF' : (isPassed ? '1.5px solid #FFFFFF' : '1.5px solid #96969C'),
+                            boxShadow: isCurrent ? '0 0 0 2.5px #2876B8' : '0 1px 2px rgba(0,0,0,0.1)'
                           }}
                         />
                       </div>
@@ -2788,14 +2788,14 @@ export default function BroadcastPage() {
                           position: 'absolute',
                           left: `${m.pct}%`,
                           transform: transformAlign,
-                          background: isCurrent ? '#F0FDF4' : 'transparent',
-                          border: isCurrent ? '1px solid #86EFAC' : '1px solid transparent',
+                          background: isCurrent ? '#F3F6EE' : 'transparent',
+                          border: isCurrent ? '1px solid #C3D1AC' : '1px solid transparent',
                           borderRadius: '4px',
                           padding: '1px 4px',
                           cursor: (progressStats.status === 'COMPLETED' || progressStats.status === 'CANCELLED') ? 'not-allowed' : 'pointer',
                           fontSize: '0.675rem',
                           fontWeight: isCurrent ? 800 : 600,
-                          color: isCurrent ? '#15803D' : '#64748B'
+                          color: isCurrent ? '#2F5219' : '#67676B'
                         }}
                       >
                         {m.label}
@@ -2808,8 +2808,8 @@ export default function BroadcastPage() {
 
             {/* Real-time Log Box */}
             <div style={{
-              background: '#0F172A',
-              color: '#F8FAFC',
+              background: '#171719',
+              color: '#F5F5F6',
               fontFamily: 'var(--font-mono)',
               fontSize: '0.75rem',
               padding: '14px',
@@ -2820,7 +2820,7 @@ export default function BroadcastPage() {
             }}>
               {streamLogs.map((log, idx) => (
                 <div key={idx} style={{ marginBottom: '4px', opacity: 0.9 }}>
-                  <span style={{ color: '#64748B', marginRight: '8px' }}>[{log.time}]</span>
+                  <span style={{ color: '#67676B', marginRight: '8px' }}>[{log.time}]</span>
                   <span>{log.text}</span>
                 </div>
               ))}
@@ -2838,9 +2838,9 @@ export default function BroadcastPage() {
                         padding: '7px 14px',
                         fontSize: '0.78rem',
                         gap: '6px',
-                        background: '#DCFCE7',
-                        color: '#15803D',
-                        border: '1px solid #86EFAC',
+                        background: '#EDF4E6',
+                        color: '#2F5219',
+                        border: '1px solid #C3D1AC',
                         fontWeight: 700
                       }}
                     >
@@ -2866,7 +2866,7 @@ export default function BroadcastPage() {
                       className="btn btn-secondary"
                       style={{ padding: '7px 12px', fontSize: '0.78rem', gap: '6px' }}
                     >
-                      {campaignPaused ? <Play size={13} color="#16A34A" /> : <Pause size={13} color="#D97706" />}
+                      {campaignPaused ? <Play size={13} color="#2876B8" /> : <Pause size={13} color="#D97706" />}
                       <span>{campaignPaused ? 'Resume Broadcast' : 'Pause Broadcast'}</span>
                     </button>
 
@@ -2930,7 +2930,7 @@ export default function BroadcastPage() {
                   width: '36px',
                   height: '36px',
                   borderRadius: '10px',
-                  background: '#F0FDF4',
+                  background: '#F3F6EE',
                   color: 'var(--brand-wa)',
                   display: 'flex',
                   alignItems: 'center',
@@ -2939,10 +2939,10 @@ export default function BroadcastPage() {
                   <RefreshCw size={18} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#171719', margin: 0 }}>
                     Enter WhatsApp Business Account ID
                   </h3>
-                  <div style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#67676B' }}>
                     Required by Meta to fetch message templates
                   </div>
                 </div>
@@ -2950,19 +2950,19 @@ export default function BroadcastPage() {
               <button
                 type="button"
                 onClick={() => setShowWabaPromptModal(false)}
-                style={{ background: 'none', border: 'none', color: '#64748B', cursor: 'pointer' }}
+                style={{ background: 'none', border: 'none', color: '#67676B', cursor: 'pointer' }}
               >
                 <X size={18} />
               </button>
             </div>
 
-            <p style={{ fontSize: '0.8rem', color: '#475569', lineHeight: 1.45, marginBottom: '16px' }}>
+            <p style={{ fontSize: '0.8rem', color: '#67676B', lineHeight: 1.45, marginBottom: '16px' }}>
               To sync all approved templates from Meta directly into your workspace, please enter your <strong>WABA ID</strong> (WhatsApp Business Account ID). You can find this in your <a href="https://developers.facebook.com/apps/" target="_blank" rel="noreferrer" style={{ color: 'var(--brand-wa)', fontWeight: 600 }}>Meta App Dashboard</a> under <em>WhatsApp &gt; API Setup</em>.
             </p>
 
             <form onSubmit={handleSaveWabaAndSync}>
               <div style={{ marginBottom: '18px' }}>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 600, color: '#3A3A3E', marginBottom: '6px' }}>
                   WhatsApp Business Account ID (WABA ID) <span style={{ color: 'var(--error)' }}>*</span>
                 </label>
                 <input

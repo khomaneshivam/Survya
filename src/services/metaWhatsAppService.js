@@ -397,7 +397,7 @@ async function fetchWabaTemplates({ category = null, status = null, limit = 100,
     throw err;
   }
 
-  const fields = "id,name,status,category,language,components,parameter_format,quality_score";
+  const fields = "id,name,status,category,language,components,parameter_format,quality_score,rejected_reason";
   const url = new URL(`${META_BASE_URL}/${resolvedWabaId}/message_templates`);
   url.searchParams.set("fields", fields);
   url.searchParams.set("limit", String(Math.min(limit || 100, 250)));
@@ -437,7 +437,8 @@ async function fetchWabaTemplates({ category = null, status = null, limit = 100,
       variables: parsed.variables,
       components: tpl.components || [],
       buttons: parsed.buttons || [],
-      quality_score: tpl.quality_score || null
+      quality_score: tpl.quality_score || null,
+      rejection_reason: tpl.rejected_reason || null
     };
   });
 
@@ -1035,6 +1036,56 @@ async function sendFlowMessage({
   }
 }
 
+/**
+ * Creates / submits a custom message template to Meta Business Management API
+ * POST /{WABA_ID}/message_templates
+ */
+async function createWabaTemplate({ name, category = "MARKETING", language = "en_US", components = [], parameterFormat = "POSITIONAL", wabaId = null, customCredentials = null }) {
+  const creds = customCredentials || getActiveCredentials();
+  const resolvedWabaId = resolveWabaId(wabaId);
+
+  if (!resolvedWabaId) {
+    const err = new Error("WhatsApp Business Account ID (WABA ID) is required to submit templates to Meta.");
+    err.statusCode = 400;
+    err.code = "MISSING_WABA_ID";
+    throw err;
+  }
+
+  const url = `${META_BASE_URL}/${resolvedWabaId}/message_templates`;
+  const payload = {
+    name,
+    category: String(category || "MARKETING").toUpperCase(),
+    language: language || "en_US",
+    parameter_format: String(parameterFormat || "POSITIONAL").toUpperCase(),
+    components
+  };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${creds.token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(15000)
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw parseMetaError(data, res.status);
+  }
+
+  clearTemplateCache();
+
+  return {
+    success: true,
+    id: data.id || null,
+    status: data.status || "PENDING",
+    category: data.category || payload.category,
+    raw: data
+  };
+}
+
 module.exports = {
   getActiveCredentials,
   testConnection,
@@ -1042,6 +1093,7 @@ module.exports = {
   getTemplateDetails,
   resolveWabaId,
   fetchWabaTemplates,
+  createWabaTemplate,
   clearTemplateCache,
   sendTemplateMessage,
   sendTextMessage,

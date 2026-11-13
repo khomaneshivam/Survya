@@ -412,10 +412,10 @@ export default function ReportsPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '22px', flexWrap: 'wrap', gap: '14px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <h1 style={{ fontSize: 'clamp(1.35rem, 3vw, 1.65rem)', fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em', margin: 0 }}>
-              Analytics & Delivery Audit Reports
+            <h1 className="sarvya-page-title">
+              SARVYA Insights — Analytics &amp; Delivery Reports
             </h1>
-            <span className="badge" style={{ background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0', fontSize: '0.72rem', fontWeight: 700 }}>
+            <span className="badge" style={{ background: '#EDF4E6', color: '#2F5219', border: '1px solid #C3D1AC', fontSize: '0.72rem', fontWeight: 700 }}>
               Meta Cloud Telemetry
             </span>
           </div>
@@ -456,12 +456,12 @@ export default function ReportsPage() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <TrendingUp size={18} color="var(--brand-wa)" />
-            <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+            <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#171719', margin: 0 }}>
               End-to-End WhatsApp Delivery & Engagement Funnel
             </h2>
           </div>
-          <div style={{ fontSize: '0.75rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#16A34A', display: 'inline-block' }} />
+          <div style={{ fontSize: '0.75rem', color: '#67676B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#2876B8', display: 'inline-block' }} />
             <span>Live Meta Webhook Handshake Synchronization</span>
           </div>
         </div>
@@ -470,17 +470,17 @@ export default function ReportsPage() {
           {/* Step 1: Audience Targeted */}
           <div className="funnel-step-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748B' }}>1. Targeted Audience</span>
-              <Users size={14} color="#64748B" />
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#67676B' }}>1. Targeted Audience</span>
+              <Users size={14} color="#67676B" />
             </div>
-            <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
+            <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#171719', marginTop: '6px' }}>
               {totalTargeted.toLocaleString()}
             </div>
-            <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '2px' }}>
+            <div style={{ fontSize: '0.72rem', color: '#67676B', marginTop: '2px' }}>
               100% Verified Contacts
             </div>
             <div className="funnel-progress-track">
-              <div className="funnel-progress-fill" style={{ width: '100%', background: '#64748B' }} />
+              <div className="funnel-progress-fill" style={{ width: '100%', background: '#67676B' }} />
             </div>
           </div>
 
@@ -504,17 +504,17 @@ export default function ReportsPage() {
           {/* Step 3: Handset Delivered */}
           <div className="funnel-step-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#15803D' }}>3. Delivered to Device</span>
-              <CheckCircle2 size={14} color="#15803D" />
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#2F5219' }}>3. Delivered to Device</span>
+              <CheckCircle2 size={14} color="#2F5219" />
             </div>
-            <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#15803D', marginTop: '6px' }}>
+            <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#2F5219', marginTop: '6px' }}>
               {totalDelivered.toLocaleString()}
             </div>
-            <div style={{ fontSize: '0.72rem', color: '#15803D', marginTop: '2px', fontWeight: 600 }}>
+            <div style={{ fontSize: '0.72rem', color: '#2F5219', marginTop: '2px', fontWeight: 600 }}>
               {overview?.deliveryRate || `${deliveryPercent}%`} delivery rate
             </div>
             <div className="funnel-progress-track">
-              <div className="funnel-progress-fill" style={{ width: `${Math.min(deliveryPercent, 100)}%`, background: '#16A34A' }} />
+              <div className="funnel-progress-fill" style={{ width: `${Math.min(deliveryPercent, 100)}%`, background: '#2876B8' }} />
             </div>
           </div>
 
@@ -538,17 +538,17 @@ export default function ReportsPage() {
           {/* Step 5: Direct Replies */}
           <div className="funnel-step-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#7C3AED' }}>5. Inbound Replies</span>
-              <MessageSquare size={14} color="#7C3AED" />
+              <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#7A2E83' }}>5. Inbound Replies</span>
+              <MessageSquare size={14} color="#7A2E83" />
             </div>
-            <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#7C3AED', marginTop: '6px' }}>
+            <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#7A2E83', marginTop: '6px' }}>
               {totalReplies.toLocaleString()}
             </div>
-            <div style={{ fontSize: '0.72rem', color: '#7C3AED', marginTop: '2px', fontWeight: 600 }}>
+            <div style={{ fontSize: '0.72rem', color: '#7A2E83', marginTop: '2px', fontWeight: 600 }}>
               {overview?.replyRate || `${replyPercent}%`} response rate
             </div>
             <div className="funnel-progress-track">
-              <div className="funnel-progress-fill" style={{ width: `${Math.min(replyPercent * 5, 100)}%`, background: '#7C3AED' }} />
+              <div className="funnel-progress-fill" style={{ width: `${Math.min(replyPercent * 5, 100)}%`, background: '#7A2E83' }} />
             </div>
           </div>
         </div>
@@ -562,12 +562,12 @@ export default function ReportsPage() {
         <div className="saas-card" style={{ padding: '18px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Meta Quality Tier</span>
-            <ShieldCheck size={16} color="#15803D" />
+            <ShieldCheck size={16} color="#2F5219" />
           </div>
-          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#15803D', marginTop: '6px' }}>
+          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#2F5219', marginTop: '6px' }}>
             Tier 1 • High
           </div>
-          <div style={{ fontSize: '0.72rem', color: '#15803D', marginTop: '4px', fontWeight: 600 }}>
+          <div style={{ fontSize: '0.72rem', color: '#2F5219', marginTop: '4px', fontWeight: 600 }}>
             {overview?.deliveryRate || '100%'} Deliverability Health
           </div>
         </div>
@@ -578,10 +578,10 @@ export default function ReportsPage() {
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Broadcasts</span>
             <FolderOpen size={16} color="#2563EB" />
           </div>
-          <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
+          <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#171719', marginTop: '6px' }}>
             {overview?.totalBroadcasts || pastCampaigns.length || 0}
           </div>
-          <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '4px' }}>
+          <div style={{ fontSize: '0.72rem', color: '#67676B', marginTop: '4px' }}>
             {overview?.activeScheduled || 0} in scheduled queue
           </div>
         </div>
@@ -590,12 +590,12 @@ export default function ReportsPage() {
         <div className="saas-card" style={{ padding: '18px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Total Contacts</span>
-            <Users size={16} color="#475569" />
+            <Users size={16} color="#67676B" />
           </div>
-          <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#0F172A', marginTop: '6px' }}>
+          <div style={{ fontSize: '1.65rem', fontWeight: 800, color: '#171719', marginTop: '6px' }}>
             {totalTargeted.toLocaleString()}
           </div>
-          <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '4px' }}>
+          <div style={{ fontSize: '0.72rem', color: '#67676B', marginTop: '4px' }}>
             {totalSent.toLocaleString()} dispatched msgs
           </div>
         </div>
@@ -618,12 +618,12 @@ export default function ReportsPage() {
         <div className="saas-card" style={{ padding: '18px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Delivery Failures</span>
-            <AlertCircle size={16} color={totalFailed > 0 ? '#DC2626' : '#94A3B8'} />
+            <AlertCircle size={16} color={totalFailed > 0 ? '#9B2C2C' : '#96969C'} />
           </div>
-          <div style={{ fontSize: '1.65rem', fontWeight: 800, color: totalFailed > 0 ? '#DC2626' : '#64748B', marginTop: '6px' }}>
+          <div style={{ fontSize: '1.65rem', fontWeight: 800, color: totalFailed > 0 ? '#9B2C2C' : '#67676B', marginTop: '6px' }}>
             {totalFailed.toLocaleString()}
           </div>
-          <div style={{ fontSize: '0.72rem', color: totalFailed > 0 ? '#DC2626' : '#64748B', marginTop: '4px' }}>
+          <div style={{ fontSize: '0.72rem', color: totalFailed > 0 ? '#9B2C2C' : '#67676B', marginTop: '4px' }}>
             {overview?.failureRate || '0%'} rejection rate
           </div>
         </div>
@@ -681,7 +681,7 @@ export default function ReportsPage() {
 
           {/* Quick Date Presets */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '0.72rem', color: '#94A3B8', fontWeight: 600 }}>Period:</span>
+            <span style={{ fontSize: '0.72rem', color: '#96969C', fontWeight: 600 }}>Period:</span>
             {[
               { id: 'ALL', label: 'All Time' },
               { id: 'TODAY', label: 'Today' },
@@ -692,8 +692,8 @@ export default function ReportsPage() {
                 key={period.id}
                 onClick={() => setDateFilter(period.id)}
                 style={{
-                  background: dateFilter === period.id ? '#128C7E' : '#F1F5F9',
-                  color: dateFilter === period.id ? '#FFFFFF' : '#475569',
+                  background: dateFilter === period.id ? '#2876B8' : '#EEEEF0',
+                  color: dateFilter === period.id ? '#FFFFFF' : '#67676B',
                   border: 'none',
                   borderRadius: '6px',
                   padding: '4px 9px',
@@ -743,7 +743,7 @@ export default function ReportsPage() {
                   paddingBottom: '7px'
                 }}
               />
-              <Search size={14} color="#94A3B8" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
+              <Search size={14} color="#96969C" style={{ position: 'absolute', left: '11px', top: '50%', transform: 'translateY(-50%)' }} />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
@@ -754,7 +754,7 @@ export default function ReportsPage() {
                     transform: 'translateY(-50%)',
                     background: 'none',
                     border: 'none',
-                    color: '#94A3B8',
+                    color: '#96969C',
                     cursor: 'pointer',
                     padding: '2px'
                   }}
@@ -787,8 +787,8 @@ export default function ReportsPage() {
               <button
                 onClick={() => setSelectedStatus('ALL')}
                 style={{
-                  background: selectedStatus === 'ALL' ? '#0F172A' : '#F1F5F9',
-                  color: selectedStatus === 'ALL' ? '#FFFFFF' : '#475569',
+                  background: selectedStatus === 'ALL' ? '#171719' : '#EEEEF0',
+                  color: selectedStatus === 'ALL' ? '#FFFFFF' : '#67676B',
                   border: 'none',
                   borderRadius: '999px',
                   padding: '4px 10px',
@@ -802,9 +802,9 @@ export default function ReportsPage() {
               <button
                 onClick={() => setSelectedStatus('DELIVERED')}
                 style={{
-                  background: selectedStatus === 'DELIVERED' ? '#15803D' : '#DCFCE7',
-                  color: selectedStatus === 'DELIVERED' ? '#FFFFFF' : '#15803D',
-                  border: '1px solid #BBF7D0',
+                  background: selectedStatus === 'DELIVERED' ? '#2F5219' : '#EDF4E6',
+                  color: selectedStatus === 'DELIVERED' ? '#FFFFFF' : '#2F5219',
+                  border: '1px solid #C3D1AC',
                   borderRadius: '999px',
                   padding: '4px 10px',
                   fontSize: '0.74rem',
@@ -847,9 +847,9 @@ export default function ReportsPage() {
               <button
                 onClick={() => setSelectedStatus('FAILED')}
                 style={{
-                  background: selectedStatus === 'FAILED' ? '#DC2626' : '#FEE2E2',
-                  color: selectedStatus === 'FAILED' ? '#FFFFFF' : '#DC2626',
-                  border: '1px solid #FECACA',
+                  background: selectedStatus === 'FAILED' ? '#9B2C2C' : '#FDF0F0',
+                  color: selectedStatus === 'FAILED' ? '#FFFFFF' : '#9B2C2C',
+                  border: '1px solid #FDB1AF',
                   borderRadius: '999px',
                   padding: '4px 10px',
                   fontSize: '0.74rem',
@@ -871,8 +871,8 @@ export default function ReportsPage() {
         <div>
           {pastCampaigns.filter(c => c.status === 'SCHEDULED').length > 0 && (
             <div style={{
-              background: '#F5F3FF',
-              border: '1px solid #DDD6FE',
+              background: '#FCF2FE',
+              border: '1px solid #EFB0F6',
               borderRadius: '10px',
               padding: '14px 18px',
               marginBottom: '16px',
@@ -883,12 +883,12 @@ export default function ReportsPage() {
               gap: '12px'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <Clock size={20} color="#7C3AED" />
+                <Clock size={20} color="#7A2E83" />
                 <div>
-                  <div style={{ fontWeight: 800, color: '#5B21B6', fontSize: '0.875rem' }}>
+                  <div style={{ fontWeight: 800, color: '#7A2E83', fontSize: '0.875rem' }}>
                     {pastCampaigns.filter(c => c.status === 'SCHEDULED').length} Broadcast Campaign(s) Scheduled in Queue
                   </div>
-                  <div style={{ fontSize: '0.78rem', color: '#6D28D9', marginTop: '2px' }}>
+                  <div style={{ fontSize: '0.78rem', color: '#7A2E83', marginTop: '2px' }}>
                     Waiting for scheduled dispatch time. You can dispatch immediately with "Run Now" or cancel them before launch.
                   </div>
                 </div>
@@ -896,7 +896,7 @@ export default function ReportsPage() {
               <button
                 onClick={() => setSearchQuery('scheduled')}
                 className="btn btn-secondary"
-                style={{ fontSize: '0.75rem', padding: '6px 14px', background: '#FFFFFF', borderColor: '#DDD6FE', color: '#6D28D9', fontWeight: 700 }}
+                style={{ fontSize: '0.75rem', padding: '6px 14px', background: '#FFFFFF', borderColor: '#EFB0F6', color: '#7A2E83', fontWeight: 700 }}
               >
                 View Scheduled Only
               </button>
@@ -922,14 +922,14 @@ export default function ReportsPage() {
                 <tbody>
                   {loading && pastCampaigns.length === 0 ? (
                     <tr>
-                      <td colSpan="9" style={{ textAlign: 'center', padding: '36px', color: '#64748B' }}>
+                      <td colSpan="9" style={{ textAlign: 'center', padding: '36px', color: '#67676B' }}>
                         <RefreshCw size={20} className="pulse-glow" style={{ margin: '0 auto 8px auto' }} />
                         <div>Loading campaign audit logs...</div>
                       </td>
                     </tr>
                   ) : filteredPastCampaigns.length === 0 ? (
                     <tr>
-                      <td colSpan="9" style={{ textAlign: 'center', padding: '40px', color: '#94A3B8' }}>
+                      <td colSpan="9" style={{ textAlign: 'center', padding: '40px', color: '#96969C' }}>
                         No broadcast campaigns found matching the current period or search filter.
                       </td>
                     </tr>
@@ -942,16 +942,16 @@ export default function ReportsPage() {
                       return (
                         <tr key={camp.id}>
                           <td>
-                            <div style={{ fontWeight: 700, color: '#0F172A' }}>{camp.name}</div>
-                            <div style={{ fontSize: '0.7rem', color: '#94A3B8', fontFamily: 'var(--font-mono)' }}>
+                            <div style={{ fontWeight: 700, color: '#171719' }}>{camp.name}</div>
+                            <div style={{ fontSize: '0.7rem', color: '#96969C', fontFamily: 'var(--font-mono)' }}>
                               ID: #{camp.id}
                             </div>
                           </td>
-                          <td style={{ fontSize: '0.78rem', color: '#475569' }}>
+                          <td style={{ fontSize: '0.78rem', color: '#67676B' }}>
                             {camp.file_name || 'contacts.xlsx'}
                           </td>
                           <td>
-                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', background: '#F1F5F9', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', background: '#EEEEF0', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
                               {camp.template_name || 'Template'}
                             </span>
                           </td>
@@ -960,26 +960,26 @@ export default function ReportsPage() {
                           </td>
                           <td>
                             <div style={{ minWidth: '100px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: 600, color: '#15803D', marginBottom: '3px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: 600, color: '#2F5219', marginBottom: '3px' }}>
                                 <span>{sent} sent</span>
                                 <span>{progressPct}%</span>
                               </div>
-                              <div style={{ width: '100%', height: '6px', borderRadius: '999px', background: '#E2E8F0', overflow: 'hidden' }}>
-                                <div style={{ width: `${progressPct}%`, height: '100%', background: '#16A34A', borderRadius: '999px' }} />
+                              <div style={{ width: '100%', height: '6px', borderRadius: '999px', background: '#E5E5E8', overflow: 'hidden' }}>
+                                <div style={{ width: `${progressPct}%`, height: '100%', background: '#2876B8', borderRadius: '999px' }} />
                               </div>
                             </div>
                           </td>
-                          <td style={{ fontWeight: 700, color: camp.failed_count > 0 ? '#DC2626' : '#94A3B8' }}>
+                          <td style={{ fontWeight: 700, color: camp.failed_count > 0 ? '#9B2C2C' : '#96969C' }}>
                             {camp.failed_count || 0}
                           </td>
                           <td>
                             {camp.status === 'SCHEDULED' ? (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                <span className="badge" style={{ background: '#EDE9FE', color: '#6D28D9', border: '1px solid #DDD6FE', fontWeight: 800, fontSize: '0.72rem' }}>
+                                <span className="badge" style={{ background: '#EDE9FE', color: '#7A2E83', border: '1px solid #EFB0F6', fontWeight: 800, fontSize: '0.72rem' }}>
                                   ⏰ SCHEDULED
                                 </span>
                                 {camp.scheduled_at && (
-                                  <span style={{ fontSize: '0.68rem', color: '#6D28D9', fontWeight: 600 }}>
+                                  <span style={{ fontSize: '0.68rem', color: '#7A2E83', fontWeight: 600 }}>
                                     {formatIndianDateTime(camp.scheduled_at)}
                                   </span>
                                 )}
@@ -994,7 +994,7 @@ export default function ReportsPage() {
                                 ⏸ PAUSED
                               </span>
                             ) : camp.status === 'CANCELLED' ? (
-                              <span className="badge" style={{ background: '#F1F5F9', color: '#64748B', border: '1px solid #CBD5E1', fontWeight: 700 }}>
+                              <span className="badge" style={{ background: '#EEEEF0', color: '#67676B', border: '1px solid #D4D4D9', fontWeight: 700 }}>
                                 🛑 CANCELLED
                               </span>
                             ) : camp.status === 'FAILED' ? (
@@ -1007,11 +1007,11 @@ export default function ReportsPage() {
                               </span>
                             )}
                           </td>
-                          <td style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                          <td style={{ fontSize: '0.75rem', color: '#67676B' }}>
                             {camp.scheduled_at ? (
                               <div>
-                                <div style={{ fontWeight: 600, color: '#0F172A' }}>{formatIndianDateTime(camp.scheduled_at)}</div>
-                                <div style={{ fontSize: '0.68rem', color: '#94A3B8' }}>Created: {formatIndianDate(camp.created_at)}</div>
+                                <div style={{ fontWeight: 600, color: '#171719' }}>{formatIndianDateTime(camp.scheduled_at)}</div>
+                                <div style={{ fontSize: '0.68rem', color: '#96969C' }}>Created: {formatIndianDate(camp.created_at)}</div>
                               </div>
                             ) : (
                               camp.created_at ? formatIndianDateTime(camp.created_at) : 'N/A'
@@ -1029,9 +1029,9 @@ export default function ReportsPage() {
                                       padding: '4px 8px',
                                       fontSize: '0.72rem',
                                       gap: '4px',
-                                      background: '#DCFCE7',
-                                      color: '#15803D',
-                                      border: '1px solid #86EFAC',
+                                      background: '#EDF4E6',
+                                      color: '#2F5219',
+                                      border: '1px solid #C3D1AC',
                                       fontWeight: 700
                                     }}
                                     title="Run this scheduled campaign immediately"
@@ -1046,8 +1046,8 @@ export default function ReportsPage() {
                                       padding: '4px 8px',
                                       fontSize: '0.72rem',
                                       gap: '4px',
-                                      background: '#FEE2E2',
-                                      color: '#DC2626',
+                                      background: '#FDF0F0',
+                                      color: '#9B2C2C',
                                       border: '1px solid #FCA5A5',
                                       fontWeight: 700
                                     }}
@@ -1092,7 +1092,7 @@ export default function ReportsPage() {
                                     style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
                                     title="Resume broadcast"
                                   >
-                                    <Play size={12} color="#16A34A" />
+                                    <Play size={12} color="#2876B8" />
                                     <span>Resume</span>
                                   </button>
                                   <button
@@ -1134,7 +1134,7 @@ export default function ReportsPage() {
                                 <button
                                   onClick={() => handleDeleteCampaign(camp.id, camp.name)}
                                   className="btn btn-secondary"
-                                  style={{ padding: '4px 6px', fontSize: '0.72rem', color: '#94A3B8' }}
+                                  style={{ padding: '4px 6px', fontSize: '0.72rem', color: '#96969C' }}
                                   title="Delete campaign record"
                                 >
                                   <Trash2 size={12} />
@@ -1159,13 +1159,13 @@ export default function ReportsPage() {
       {activeTab === 'recipients' && (
         <div className="saas-card" style={{ overflow: 'hidden' }}>
           {selectedCampaignId !== 'ALL' && (
-            <div style={{ padding: '12px 16px', background: '#F0FDF4', borderBottom: '1px solid #BBF7D0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-              <div style={{ fontSize: '0.8rem', color: '#15803D', fontWeight: 600 }}>
+            <div style={{ padding: '12px 16px', background: '#F3F6EE', borderBottom: '1px solid #C3D1AC', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ fontSize: '0.8rem', color: '#2F5219', fontWeight: 600 }}>
                 Filtering recipient logs for campaign: <strong>{pastCampaigns.find(c => c.id === selectedCampaignId)?.name || selectedCampaignId}</strong>
               </div>
               <button
                 onClick={() => setSelectedCampaignId('ALL')}
-                style={{ border: 'none', background: 'transparent', color: '#15803D', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}
+                style={{ border: 'none', background: 'transparent', color: '#2F5219', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}
               >
                 ✕ Clear Campaign Filter (Show All)
               </button>
@@ -1191,7 +1191,7 @@ export default function ReportsPage() {
               <tbody>
                 {filteredCampaignReports.length === 0 ? (
                   <tr>
-                    <td colSpan="10" style={{ textAlign: 'center', padding: '36px', color: '#94A3B8' }}>
+                    <td colSpan="10" style={{ textAlign: 'center', padding: '36px', color: '#96969C' }}>
                       No recipient delivery logs matching current filter.
                     </td>
                   </tr>
@@ -1210,7 +1210,7 @@ export default function ReportsPage() {
                         style={{ cursor: 'pointer' }}
                         title="Click to inspect complete Message Audit Dossier"
                       >
-                        <td style={{ fontWeight: 700, color: '#0F172A' }}>
+                        <td style={{ fontWeight: 700, color: '#171719' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <span>{recipientName}</span>
                           </div>
@@ -1219,10 +1219,10 @@ export default function ReportsPage() {
                           +{item.clean_phone || item.phone_number}
                         </td>
                         <td>
-                          <div style={{ color: '#0F172A', fontWeight: 600, fontSize: '0.825rem' }}>
+                          <div style={{ color: '#171719', fontWeight: 600, fontSize: '0.825rem' }}>
                             {item.campaign_name || 'Campaign'}
                           </div>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', background: '#F1F5F9', padding: '1px 6px', borderRadius: '4px', color: '#64748B' }}>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', background: '#EEEEF0', padding: '1px 6px', borderRadius: '4px', color: '#67676B' }}>
                             {item.template_name || 'Template'}
                           </span>
                         </td>
@@ -1232,15 +1232,15 @@ export default function ReportsPage() {
                               <CheckCheck size={13} color="#2563EB" /> READ
                             </span>
                           ) : rawStatus === 'DELIVERED' ? (
-                            <span className="badge" style={{ background: '#F0FDF4', color: '#15803D', border: '1px solid #BBF7D0', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
-                              <CheckCheck size={13} color="#15803D" /> DELIVERED
+                            <span className="badge" style={{ background: '#F3F6EE', color: '#2F5219', border: '1px solid #C3D1AC', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
+                              <CheckCheck size={13} color="#2F5219" /> DELIVERED
                             </span>
                           ) : rawStatus === 'SENT' ? (
                             <span className="badge badge-warning" style={{ fontWeight: 700 }}>
                               DISPATCHED
                             </span>
                           ) : rawStatus === 'PENDING' ? (
-                            <span className="badge" style={{ background: '#F1F5F9', color: '#64748B', border: '1px solid #E2E8F0', fontWeight: 700 }}>
+                            <span className="badge" style={{ background: '#EEEEF0', color: '#67676B', border: '1px solid #E5E5E8', fontWeight: 700 }}>
                               PENDING
                             </span>
                           ) : (
@@ -1249,32 +1249,32 @@ export default function ReportsPage() {
                             </span>
                           )}
                         </td>
-                        <td style={{ fontSize: '0.75rem', color: deliveredTime ? '#15803D' : '#94A3B8', fontWeight: deliveredTime ? 600 : 400 }}>
+                        <td style={{ fontSize: '0.75rem', color: deliveredTime ? '#2F5219' : '#96969C', fontWeight: deliveredTime ? 600 : 400 }}>
                           {deliveredTime ? formatIndianTime(deliveredTime, true) : '—'}
                         </td>
-                        <td style={{ fontSize: '0.75rem', color: readTime ? '#2563EB' : '#94A3B8', fontWeight: readTime ? 700 : 400 }}>
+                        <td style={{ fontSize: '0.75rem', color: readTime ? '#2563EB' : '#96969C', fontWeight: readTime ? 700 : 400 }}>
                           {readTime ? formatIndianTime(readTime, true) : '—'}
                         </td>
-                        <td style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                        <td style={{ fontSize: '0.75rem', color: '#67676B' }}>
                           {sentTime ? formatIndianDateTime(sentTime) : 'N/A'}
                         </td>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: '#64748B', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.meta_message_id || ''}>
+                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: '#67676B', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.meta_message_id || ''}>
                           {item.meta_message_id || '—'}
                         </td>
                         <td>
                           {item.error_message || item.error_code ? (
                             <div style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {item.error_code && (
-                                <span className="badge" style={{ background: '#FEE2E2', color: '#DC2626', fontSize: '0.65rem', padding: '1px 5px', marginRight: '4px' }}>
+                                <span className="badge" style={{ background: '#FDF0F0', color: '#9B2C2C', fontSize: '0.65rem', padding: '1px 5px', marginRight: '4px' }}>
                                   #{item.error_code}
                                 </span>
                               )}
-                              <span style={{ color: '#DC2626', fontSize: '0.75rem' }}>
+                              <span style={{ color: '#9B2C2C', fontSize: '0.75rem' }}>
                                 {item.error_message || item.error_reason}
                               </span>
                             </div>
                           ) : (
-                            <span style={{ color: '#94A3B8', fontSize: '0.75rem' }}>—</span>
+                            <span style={{ color: '#96969C', fontSize: '0.75rem' }}>—</span>
                           )}
                         </td>
                         <td>
@@ -1324,7 +1324,7 @@ export default function ReportsPage() {
               <tbody>
                 {filteredAutomationReports.length === 0 ? (
                   <tr>
-                    <td colSpan="8" style={{ textAlign: 'center', padding: '36px', color: '#94A3B8' }}>
+                    <td colSpan="8" style={{ textAlign: 'center', padding: '36px', color: '#96969C' }}>
                       No automated lifecycle dispatches recorded matching current filter.
                     </td>
                   </tr>
@@ -1332,18 +1332,18 @@ export default function ReportsPage() {
                   filteredAutomationReports.map((item, idx) => (
                     <tr key={item.id || idx}>
                       <td>
-                        <div style={{ fontWeight: 700, color: '#0F172A' }}>{item.guest_name || item.customer_name || 'Guest'}</div>
-                        <div style={{ fontSize: '0.7rem', color: '#94A3B8', fontFamily: 'var(--font-mono)' }}>
+                        <div style={{ fontWeight: 700, color: '#171719' }}>{item.guest_name || item.customer_name || 'Guest'}</div>
+                        <div style={{ fontSize: '0.7rem', color: '#96969C', fontFamily: 'var(--font-mono)' }}>
                           {item.booking_id || `KT-AUTO-${idx + 1}`}
                         </div>
                       </td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.825rem' }}>
                         {item.clean_phone || item.phone_number}
                       </td>
-                      <td style={{ fontWeight: 600, color: '#334155' }}>
+                      <td style={{ fontWeight: 600, color: '#3A3A3E' }}>
                         {item.property_name || 'KonkanTrip Beach Resort'}
                       </td>
-                      <td style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                      <td style={{ fontSize: '0.75rem', color: '#67676B' }}>
                         {item.checkin_date || '—'} → {item.checkout_date || '—'}
                       </td>
                       <td>
@@ -1362,7 +1362,7 @@ export default function ReportsPage() {
                           {item.status || 'SENT'}
                         </span>
                       </td>
-                      <td style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                      <td style={{ fontSize: '0.75rem', color: '#67676B' }}>
                         {item.dispatched_at || item.created_at ? formatIndianDateTime(item.dispatched_at || item.created_at) : 'Just now'}
                       </td>
                     </tr>
@@ -1393,13 +1393,13 @@ export default function ReportsPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              background: '#F8FAFC'
+              background: '#F5F5F6'
             }}>
               <div>
-                <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                <div style={{ fontSize: '0.75rem', color: '#67676B', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                   Audited Message Delivery Dossier
                 </div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0F172A', marginTop: '2px' }}>
+                <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#171719', marginTop: '2px' }}>
                   {selectedRecipient.contact_name || selectedRecipient.recipient_name || 'Guest Contact'}
                 </div>
               </div>
@@ -1415,7 +1415,7 @@ export default function ReportsPage() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
-                  color: '#64748B'
+                  color: '#67676B'
                 }}
                 aria-label="Close dossier"
               >
@@ -1427,7 +1427,7 @@ export default function ReportsPage() {
             <div style={{ padding: '20px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {/* Recipient Quick Card with Direct WhatsApp Link */}
               <div style={{
-                background: '#F8FAFC',
+                background: '#F5F5F6',
                 border: '1px solid var(--border-color)',
                 borderRadius: '10px',
                 padding: '14px 16px',
@@ -1438,8 +1438,8 @@ export default function ReportsPage() {
                 gap: '10px'
               }}>
                 <div>
-                  <div style={{ fontSize: '0.72rem', color: '#64748B', fontWeight: 600 }}>VERIFIED PHONE NUMBER</div>
-                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0F172A', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#67676B', fontWeight: 600 }}>VERIFIED PHONE NUMBER</div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#171719', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
                     +{selectedRecipient.clean_phone || selectedRecipient.phone_number}
                   </div>
                 </div>
@@ -1459,14 +1459,14 @@ export default function ReportsPage() {
 
               {/* Meta WAMID with Copy Button */}
               <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#475569', marginBottom: '6px', textTransform: 'uppercase' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#67676B', marginBottom: '6px', textTransform: 'uppercase' }}>
                   Meta Cloud Message Identifier (WAMID)
                 </label>
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  background: '#F1F5F9',
+                  background: '#EEEEF0',
                   border: '1px solid var(--border-color)',
                   borderRadius: '8px',
                   padding: '8px 12px'
@@ -1474,7 +1474,7 @@ export default function ReportsPage() {
                   <span style={{
                     fontFamily: 'var(--font-mono)',
                     fontSize: '0.78rem',
-                    color: '#1E293B',
+                    color: '#171719',
                     wordBreak: 'break-all'
                   }}>
                     {selectedRecipient.meta_message_id || 'Pending Meta Handshake ACK'}
@@ -1486,7 +1486,7 @@ export default function ReportsPage() {
                       style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px', flexShrink: 0, marginLeft: '8px' }}
                       title="Copy wamid to clipboard"
                     >
-                      {copiedWamid ? <Check size={12} color="#15803D" /> : <Copy size={12} />}
+                      {copiedWamid ? <Check size={12} color="#2F5219" /> : <Copy size={12} />}
                       <span>{copiedWamid ? 'Copied' : 'Copy'}</span>
                     </button>
                   )}
@@ -1495,7 +1495,7 @@ export default function ReportsPage() {
 
               {/* Delivery Timeline Breakdown */}
               <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#475569', marginBottom: '12px', textTransform: 'uppercase' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#67676B', marginBottom: '12px', textTransform: 'uppercase' }}>
                   Audited Delivery Handshake Timeline
                 </label>
 
@@ -1506,10 +1506,10 @@ export default function ReportsPage() {
                       <Send size={11} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.825rem', color: '#0F172A' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.825rem', color: '#171719' }}>
                         Dispatched to Meta Cloud API
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#67676B' }}>
                         {selectedRecipient.sent_at || selectedRecipient.dispatched_at ? formatIndianDateTime(selectedRecipient.sent_at || selectedRecipient.dispatched_at) : 'Dispatched'}
                       </div>
                     </div>
@@ -1521,10 +1521,10 @@ export default function ReportsPage() {
                       <CheckCircle2 size={11} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.825rem', color: selectedRecipient.delivered_at ? '#15803D' : '#64748B' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.825rem', color: selectedRecipient.delivered_at ? '#2F5219' : '#67676B' }}>
                         {selectedRecipient.delivered_at ? 'Delivered to Recipient Device' : 'Awaiting Device Handshake'}
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#67676B' }}>
                         {selectedRecipient.delivered_at ? formatIndianDateTime(selectedRecipient.delivered_at) : 'Device may be offline or out of cell reception'}
                       </div>
                     </div>
@@ -1536,10 +1536,10 @@ export default function ReportsPage() {
                       <CheckCheck size={11} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.825rem', color: selectedRecipient.read_at ? '#2563EB' : '#64748B' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.825rem', color: selectedRecipient.read_at ? '#2563EB' : '#67676B' }}>
                         {selectedRecipient.read_at ? 'Read by Recipient (Blue Ticks)' : 'Unread'}
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#67676B' }}>
                         {selectedRecipient.read_at ? formatIndianDateTime(selectedRecipient.read_at) : 'Customer has not yet opened this WhatsApp message'}
                       </div>
                     </div>
@@ -1552,10 +1552,10 @@ export default function ReportsPage() {
                         <AlertCircle size={11} />
                       </div>
                       <div>
-                        <div style={{ fontWeight: 700, fontSize: '0.825rem', color: '#DC2626' }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.825rem', color: '#9B2C2C' }}>
                           Delivery Failed / Bounced
                         </div>
-                        <div style={{ fontSize: '0.75rem', color: '#DC2626' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#9B2C2C' }}>
                           {selectedRecipient.failed_at ? formatIndianDateTime(selectedRecipient.failed_at) : 'Meta Cloud API rejected transmission'}
                         </div>
                       </div>
@@ -1567,16 +1567,16 @@ export default function ReportsPage() {
               {/* Diagnostic Error Box (if failed) */}
               {(selectedRecipient.error_code || selectedRecipient.error_message || selectedRecipient.error_reason) && (
                 <div style={{
-                  background: '#FEF2F2',
-                  border: '1px solid #FECACA',
+                  background: '#FDF0F0',
+                  border: '1px solid #FDB1AF',
                   borderRadius: '10px',
                   padding: '14px 16px'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#DC2626', fontWeight: 800, fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#9B2C2C', fontWeight: 800, fontSize: '0.85rem' }}>
                     <AlertTriangle size={16} />
                     <span>Meta Cloud Diagnostic: {META_ERROR_GUIDE[selectedRecipient.error_code]?.title || `Error #${selectedRecipient.error_code || 'General'}`}</span>
                   </div>
-                  <p style={{ fontSize: '0.8rem', color: '#991B1B', marginTop: '6px', lineHeight: 1.45 }}>
+                  <p style={{ fontSize: '0.8rem', color: '#9B2C2C', marginTop: '6px', lineHeight: 1.45 }}>
                     {META_ERROR_GUIDE[selectedRecipient.error_code]?.desc || selectedRecipient.error_message || selectedRecipient.error_reason}
                   </p>
                   {META_ERROR_GUIDE[selectedRecipient.error_code]?.action && (
@@ -1596,16 +1596,16 @@ export default function ReportsPage() {
                 fontSize: '0.8rem'
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ color: '#64748B' }}>Campaign:</span>
-                  <span style={{ fontWeight: 700, color: '#0F172A' }}>{selectedRecipient.campaign_name || 'Broadcasting Campaign'}</span>
+                  <span style={{ color: '#67676B' }}>Campaign:</span>
+                  <span style={{ fontWeight: 700, color: '#171719' }}>{selectedRecipient.campaign_name || 'Broadcasting Campaign'}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ color: '#64748B' }}>Template Used:</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#0F172A' }}>{selectedRecipient.template_name || 'Template'}</span>
+                  <span style={{ color: '#67676B' }}>Template Used:</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#171719' }}>{selectedRecipient.template_name || 'Template'}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#64748B' }}>Audit Log ID:</span>
-                  <span style={{ fontFamily: 'var(--font-mono)', color: '#94A3B8' }}>#{selectedRecipient.id}</span>
+                  <span style={{ color: '#67676B' }}>Audit Log ID:</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', color: '#96969C' }}>#{selectedRecipient.id}</span>
                 </div>
               </div>
             </div>
@@ -1614,7 +1614,7 @@ export default function ReportsPage() {
             <div style={{
               padding: '14px 20px',
               borderTop: '1px solid var(--border-color)',
-              background: '#F8FAFC',
+              background: '#F5F5F6',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
@@ -1659,20 +1659,20 @@ export default function ReportsPage() {
                 width: '36px',
                 height: '36px',
                 borderRadius: '10px',
-                background: confirmDialog.confirmType === 'danger' ? '#FEE2E2' : '#DCFCE7',
+                background: confirmDialog.confirmType === 'danger' ? '#FDF0F0' : '#EDF4E6',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: confirmDialog.confirmType === 'danger' ? '#DC2626' : '#15803D'
+                color: confirmDialog.confirmType === 'danger' ? '#9B2C2C' : '#2F5219'
               }}>
                 {confirmDialog.confirmType === 'danger' ? <AlertTriangle size={20} /> : <CheckCircle2 size={20} />}
               </div>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0F172A', margin: 0 }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#171719', margin: 0 }}>
                 {confirmDialog.title}
               </h3>
             </div>
 
-            <p style={{ fontSize: '0.875rem', color: '#475569', lineHeight: 1.5, marginBottom: '20px' }}>
+            <p style={{ fontSize: '0.875rem', color: '#67676B', lineHeight: 1.5, marginBottom: '20px' }}>
               {confirmDialog.message}
             </p>
 

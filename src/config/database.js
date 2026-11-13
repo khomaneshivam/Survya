@@ -258,6 +258,146 @@ function initializeDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    /* PRD Phase 1: Tenants & Properties */
+    CREATE TABLE IF NOT EXISTS tenants (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      slug TEXT UNIQUE NOT NULL,
+      status TEXT DEFAULT 'ACTIVE',
+      timezone TEXT DEFAULT 'Asia/Kolkata',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS properties (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER NOT NULL DEFAULT 1,
+      name TEXT NOT NULL,
+      city TEXT,
+      timezone TEXT DEFAULT 'Asia/Kolkata',
+      inventory_mode TEXT DEFAULT 'MANUAL',
+      status TEXT DEFAULT 'ACTIVE',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+    );
+
+    /* PRD Phase 1: Contacts & Consent History */
+    CREATE TABLE IF NOT EXISTS contacts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER NOT NULL DEFAULT 1,
+      phone_e164 TEXT NOT NULL,
+      name TEXT,
+      email TEXT,
+      source TEXT DEFAULT 'WHATSAPP',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tenant_id, phone_e164)
+    );
+
+    CREATE TABLE IF NOT EXISTS contact_consents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER NOT NULL DEFAULT 1,
+      contact_id INTEGER NOT NULL,
+      purpose TEXT DEFAULT 'BOOKING',
+      status TEXT DEFAULT 'GRANTED',
+      source TEXT DEFAULT 'WHATSAPP_INBOUND',
+      captured_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      revoked_at DATETIME NULL,
+      FOREIGN KEY (contact_id) REFERENCES contacts(id)
+    );
+
+    /* PRD Phase 1: Room Types & Daily Manual Inventory */
+    CREATE TABLE IF NOT EXISTS room_types (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER NOT NULL DEFAULT 1,
+      property_id INTEGER NOT NULL DEFAULT 1,
+      name TEXT NOT NULL,
+      max_adults INTEGER DEFAULT 2,
+      max_children INTEGER DEFAULT 2,
+      base_rate REAL DEFAULT 3500.00,
+      description TEXT,
+      active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+      FOREIGN KEY (property_id) REFERENCES properties(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS room_inventory_daily (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER NOT NULL DEFAULT 1,
+      room_type_id INTEGER NOT NULL,
+      inventory_date TEXT NOT NULL,
+      available_qty INTEGER DEFAULT 5,
+      base_rate REAL DEFAULT 3500.00,
+      is_closed INTEGER DEFAULT 0,
+      updated_by TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(room_type_id, inventory_date),
+      FOREIGN KEY (room_type_id) REFERENCES room_types(id)
+    );
+
+    /* PRD Phase 1: Booking Enquiries Pipeline */
+    CREATE TABLE IF NOT EXISTS booking_enquiries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER NOT NULL DEFAULT 1,
+      property_id INTEGER NOT NULL DEFAULT 1,
+      contact_id INTEGER NOT NULL,
+      conversation_id INTEGER,
+      flow_session_id TEXT UNIQUE,
+      guest_name TEXT,
+      phone_e164 TEXT NOT NULL,
+      check_in TEXT NOT NULL,
+      check_out TEXT NOT NULL,
+      adults INTEGER DEFAULT 2,
+      children INTEGER DEFAULT 0,
+      rooms_requested INTEGER DEFAULT 1,
+      room_type_id INTEGER,
+      room_preference TEXT,
+      preferences_json TEXT,
+      status TEXT DEFAULT 'NEW',
+      assigned_to TEXT,
+      follow_up_at DATETIME,
+      notes TEXT,
+      lost_reason TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (contact_id) REFERENCES contacts(id),
+      FOREIGN KEY (room_type_id) REFERENCES room_types(id)
+    );
+
+    /* PRD Phase 1: Quotations & Itemized Lines */
+    CREATE TABLE IF NOT EXISTS quotes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER NOT NULL DEFAULT 1,
+      enquiry_id INTEGER NOT NULL,
+      quote_number TEXT NOT NULL,
+      currency TEXT DEFAULT 'INR',
+      subtotal REAL NOT NULL DEFAULT 0.00,
+      tax_total REAL NOT NULL DEFAULT 0.00,
+      total REAL NOT NULL DEFAULT 0.00,
+      valid_until TEXT NOT NULL,
+      status TEXT DEFAULT 'DRAFT',
+      created_by TEXT NOT NULL,
+      notes TEXT,
+      sent_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (enquiry_id) REFERENCES booking_enquiries(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS quote_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tenant_id INTEGER NOT NULL DEFAULT 1,
+      quote_id INTEGER NOT NULL,
+      room_type_id INTEGER,
+      description TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      nights INTEGER NOT NULL DEFAULT 1,
+      unit_rate REAL NOT NULL DEFAULT 0.00,
+      amount REAL NOT NULL DEFAULT 0.00,
+      FOREIGN KEY (quote_id) REFERENCES quotes(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_recipients_campaign ON campaign_recipients(campaign_id);
     CREATE INDEX IF NOT EXISTS idx_recipients_status ON campaign_recipients(campaign_id, status);
     CREATE INDEX IF NOT EXISTS idx_templates_name ON templates(name);
@@ -289,6 +429,13 @@ function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_flow_responses_phone ON flow_responses(clean_phone);
     CREATE INDEX IF NOT EXISTS idx_flow_responses_wa_msg ON flow_responses(wa_message_id);
     CREATE INDEX IF NOT EXISTS idx_flow_responses_user ON flow_responses(user_id);
+    CREATE INDEX IF NOT EXISTS idx_contacts_tenant_phone ON contacts(tenant_id, phone_e164);
+    CREATE INDEX IF NOT EXISTS idx_room_types_tenant_prop ON room_types(tenant_id, property_id);
+    CREATE INDEX IF NOT EXISTS idx_room_inventory_daily ON room_inventory_daily(room_type_id, inventory_date);
+    CREATE INDEX IF NOT EXISTS idx_enquiries_tenant_status ON booking_enquiries(tenant_id, status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_enquiries_assigned_follow ON booking_enquiries(tenant_id, assigned_to, follow_up_at);
+    CREATE INDEX IF NOT EXISTS idx_quotes_enquiry ON quotes(enquiry_id);
+    CREATE INDEX IF NOT EXISTS idx_quote_items_quote ON quote_items(quote_id);
   `);
 
   // Migrate existing databases: add scheduled_at, unknown_count, estimated_cost to campaigns
@@ -645,6 +792,144 @@ function initializeDatabase() {
     }
   } catch (flowSeedErr) {
     console.warn("[DB Seed] whatsapp_flows starter seed notice:", flowSeedErr.message);
+  }
+
+  // SARVYA Connect PRD: extend templates table + add whatsapp_messages & whatsapp_usage_ledger
+  try {
+    const tplTableInfo = db.prepare("PRAGMA table_info(templates)").all();
+    const tplCols = tplTableInfo.map(c => c.name);
+    if (!tplCols.includes("header_type")) db.exec("ALTER TABLE templates ADD COLUMN header_type TEXT DEFAULT 'NONE';");
+    if (!tplCols.includes("header_text")) db.exec("ALTER TABLE templates ADD COLUMN header_text TEXT;");
+    if (!tplCols.includes("header_media_url")) db.exec("ALTER TABLE templates ADD COLUMN header_media_url TEXT;");
+    if (!tplCols.includes("footer_text")) db.exec("ALTER TABLE templates ADD COLUMN footer_text TEXT;");
+    if (!tplCols.includes("rejection_reason")) db.exec("ALTER TABLE templates ADD COLUMN rejection_reason TEXT;");
+    if (!tplCols.includes("version")) db.exec("ALTER TABLE templates ADD COLUMN version INTEGER DEFAULT 1;");
+    if (!tplCols.includes("submitted_at")) db.exec("ALTER TABLE templates ADD COLUMN submitted_at DATETIME;");
+    if (!tplCols.includes("approved_at")) db.exec("ALTER TABLE templates ADD COLUMN approved_at DATETIME;");
+    if (!tplCols.includes("user_id")) db.exec("ALTER TABLE templates ADD COLUMN user_id TEXT;");
+    if (!tplCols.includes("tenant_id")) db.exec("ALTER TABLE templates ADD COLUMN tenant_id INTEGER DEFAULT 1;");
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS whatsapp_messages (
+        id TEXT PRIMARY KEY,
+        tenant_id INTEGER DEFAULT 1,
+        user_id TEXT,
+        phone_number_id TEXT,
+        campaign_id TEXT,
+        recipient_phone TEXT NOT NULL,
+        direction TEXT DEFAULT 'OUTBOUND',
+        message_type TEXT NOT NULL,
+        template_id TEXT,
+        template_name TEXT,
+        template_category TEXT,
+        message_body TEXT,
+        components_json TEXT,
+        status TEXT DEFAULT 'SENT',
+        meta_message_id TEXT,
+        error_code TEXT,
+        error_message TEXT,
+        estimated_cost REAL DEFAULT 0,
+        currency TEXT DEFAULT 'INR',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        delivered_at DATETIME,
+        read_at DATETIME,
+        failed_at DATETIME
+      );
+
+      CREATE TABLE IF NOT EXISTS whatsapp_usage_ledger (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tenant_id INTEGER DEFAULT 1,
+        user_id TEXT,
+        phone_number_id TEXT,
+        campaign_id TEXT,
+        message_id TEXT,
+        meta_message_id TEXT,
+        recipient_phone TEXT,
+        category TEXT DEFAULT 'MARKETING',
+        unit_cost REAL DEFAULT 0,
+        currency TEXT DEFAULT 'INR',
+        billing_status TEXT DEFAULT 'ESTIMATED',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_wa_messages_meta_id ON whatsapp_messages(meta_message_id);
+      CREATE INDEX IF NOT EXISTS idx_wa_messages_recipient ON whatsapp_messages(recipient_phone, created_at);
+      CREATE INDEX IF NOT EXISTS idx_wa_messages_campaign ON whatsapp_messages(campaign_id);
+      CREATE INDEX IF NOT EXISTS idx_wa_usage_campaign ON whatsapp_usage_ledger(campaign_id);
+      CREATE INDEX IF NOT EXISTS idx_wa_usage_category ON whatsapp_usage_ledger(category, created_at);
+    `);
+  } catch (connectMigErr) {
+    console.warn("[DB Migration] SARVYA Connect tables/columns notice:", connectMigErr.message);
+  }
+
+  // Migrate users and tables: add tenant_id column if not present
+  try {
+    const userTableInfo = db.prepare("PRAGMA table_info(users)").all();
+    const userCols = userTableInfo.map(c => c.name);
+    if (!userCols.includes("tenant_id")) {
+      db.exec("ALTER TABLE users ADD COLUMN tenant_id INTEGER DEFAULT 1;");
+    }
+
+    const auditTableInfo = db.prepare("PRAGMA table_info(audit_logs)").all();
+    const auditCols = auditTableInfo.map(c => c.name);
+    if (!auditCols.includes("tenant_id")) {
+      db.exec("ALTER TABLE audit_logs ADD COLUMN tenant_id INTEGER DEFAULT 1;");
+    }
+  } catch (migErrTenant) {
+    console.warn("[DB Migration] users/audit_logs tenant_id column check:", migErrTenant.message);
+  }
+
+  // Seed default tenant & property (PRD Section 7)
+  try {
+    const tenantCount = db.prepare("SELECT COUNT(*) as count FROM tenants").get()?.count || 0;
+    if (tenantCount === 0) {
+      db.prepare(`
+        INSERT INTO tenants (id, name, slug, status, timezone, created_at)
+        VALUES (1, 'KonkanTrip Beach Resort', 'konkantrip', 'ACTIVE', 'Asia/Kolkata', CURRENT_TIMESTAMP)
+      `).run();
+    }
+
+    const propCount = db.prepare("SELECT COUNT(*) as count FROM properties").get()?.count || 0;
+    if (propCount === 0) {
+      db.prepare(`
+        INSERT INTO properties (id, tenant_id, name, city, timezone, inventory_mode, status, created_at)
+        VALUES (1, 1, 'KonkanTrip Beach Resort & Spa', 'Alibaug, Maharashtra', 'Asia/Kolkata', 'MANUAL', 'ACTIVE', CURRENT_TIMESTAMP)
+      `).run();
+    }
+
+    // Seed room types if empty
+    const roomCount = db.prepare("SELECT COUNT(*) as count FROM room_types").get()?.count || 0;
+    if (roomCount === 0) {
+      const insertRoom = db.prepare(`
+        INSERT INTO room_types (id, tenant_id, property_id, name, max_adults, max_children, base_rate, description, active)
+        VALUES (?, 1, 1, ?, ?, ?, ?, ?, 1)
+      `);
+      insertRoom.run(1, "Deluxe Sea View Room", 2, 1, 4500.00, "King-sized bed with ocean view private balcony & breakfast");
+      insertRoom.run(2, "Luxury Coconut Cottage", 3, 2, 6500.00, "Spacious detached garden cottage with patio and open-air rain shower");
+      insertRoom.run(3, "Family Ocean Suite", 4, 2, 8500.00, "Two-bedroom inter-connected suite with panoramic sea terrace");
+
+      // Seed 30 days of manual room inventory
+      const insertInv = db.prepare(`
+        INSERT OR IGNORE INTO room_inventory_daily (tenant_id, room_type_id, inventory_date, available_qty, base_rate, is_closed)
+        VALUES (1, ?, ?, ?, ?, 0)
+      `);
+      const now = new Date();
+      for (let i = 0; i < 30; i++) {
+        const d = new Date(now);
+        d.setDate(d.getDate() + i);
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const dateStr = `${yyyy}-${mm}-${dd}`;
+
+        insertInv.run(1, dateStr, 6, 4500.00);
+        insertInv.run(2, dateStr, 4, 6500.00);
+        insertInv.run(3, dateStr, 3, 8500.00);
+      }
+    }
+  } catch (resortSeedErr) {
+    console.warn("[DB Seed] Resort PRD baseline seed notice:", resortSeedErr.message);
   }
 }
 
