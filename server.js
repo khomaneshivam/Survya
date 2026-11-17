@@ -119,16 +119,20 @@ app.get("/uploads/inbound/:filename", async (req, res, next) => {
 
 app.use("/uploads", express.static(uploadsPath));
 
-// 4. Direct Root-level Webhook & Flow Data-Exchange endpoints for Meta
+// 4. Comprehensive Root & API Webhook endpoints for Meta
 const flowController = require("./src/controllers/flowController");
-app.get("/webhook", webhookController.handleVerification);
-app.post("/webhook", webhookController.handleIncomingEvent);
-app.post("/flows/exchange", flowController.handleDataExchange);
-
-// PRD Section 8 Webhook Aliases
-app.get("/webhooks/meta/whatsapp", webhookController.handleVerification);
-app.post("/webhooks/meta/whatsapp", webhookController.handleIncomingEvent);
-app.post("/webhooks/meta/flows", flowController.handleDataExchange);
+const webhookAliases = [
+  "/webhook",
+  "/api/webhook",
+  "/api/v1/webhook",
+  "/v1/webhook",
+  "/webhooks",
+  "/webhooks/meta/whatsapp",
+  "/api/v1/webhooks/meta/whatsapp"
+];
+app.get(webhookAliases, webhookController.handleVerification);
+app.post(webhookAliases, webhookController.handleIncomingEvent);
+app.post(["/flows/exchange", "/webhooks/meta/flows", "/api/flows/exchange"], flowController.handleDataExchange);
 
 // Direct WhatsApp Link Redirect Helper (/c/:slug?redirect=whatsapp, /chat/:slug)
 app.get(["/c/:slug", "/chat/:slug"], (req, res, next) => {
@@ -142,7 +146,7 @@ app.get(["/c/:slug", "/chat/:slug"], (req, res, next) => {
       if (link && link.urls?.waMeUrl) {
         return res.redirect(link.urls.waMeUrl);
       }
-    } catch (e) {}
+    } catch (e) { }
   }
   next();
 });
@@ -182,7 +186,7 @@ let server = null;
 
 if (require.main === module) {
   const PORT = config.PORT || 5000;
-  server = app.listen(PORT, "0.0.0.0", () => {
+  server = app.listen(PORT, "127.0.0.1", () => {
     // Start background campaign scheduler
     schedulerService.initScheduler();
 

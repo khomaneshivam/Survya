@@ -16,8 +16,8 @@ function getMetaBaseUrl() {
  */
 function getActiveCredentials() {
   let token = getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN;
-  // If DB setting contains an ephemeral test placeholder, fall back to valid .env token
-  if (!token || token.startsWith("EAAX_") || token.includes("placeholder") || token === "your_whatsapp_cloud_api_access_token_here") {
+  // If DB setting contains an ephemeral test placeholder or invalid short mock token, fall back to valid .env token
+  if (!token || token.length < 50 || token.startsWith("EAAX_") || token.includes("placeholder") || token === "your_whatsapp_cloud_api_access_token_here") {
     token = config.WHATSAPP_API_TOKEN;
   }
   let phoneNumberId = getSetting("WHATSAPP_PHONE_NUMBER_ID") || config.WHATSAPP_PHONE_NUMBER_ID;
@@ -28,7 +28,7 @@ function getActiveCredentials() {
       if (defaultPhone?.phone_number_id) {
         phoneNumberId = defaultPhone.phone_number_id;
       } else {
-        const anyPhone = db.prepare("SELECT phone_number_id FROM waba_phone_numbers ORDER BY id ASC LIMIT 1").get();
+        const anyPhone = db.prepare("SELECT phone_number_id FROM waba_phone_numbers ORDER BY is_default DESC, id ASC LIMIT 1").get();
         if (anyPhone?.phone_number_id) {
           phoneNumberId = anyPhone.phone_number_id;
         }
@@ -38,8 +38,8 @@ function getActiveCredentials() {
     }
   }
 
-  if (!token) {
-    throw new Error("Meta WhatsApp API Token is missing. Configure it in Settings.");
+  if (!token || token.length < 50) {
+    throw new Error("Meta WhatsApp API Token is missing or invalid. Configure it in Settings.");
   }
   if (!phoneNumberId) {
     throw new Error("Meta WhatsApp Phone Number ID is missing. Please add a WhatsApp Phone Number in Settings or Topbar.");

@@ -196,6 +196,24 @@ function seedDefaults(db, config) {
         setSetting.run(k, v);
       }
     }
+
+    // Sync live Meta credentials from .env if DB has placeholder or short test token
+    const dbToken = getSetting.get("WHATSAPP_API_TOKEN")?.value;
+    if (config.WHATSAPP_API_TOKEN && config.WHATSAPP_API_TOKEN.length > 50) {
+      if (!dbToken || dbToken.length < 50 || dbToken.includes("placeholder") || dbToken.startsWith("EAAX_")) {
+        setSetting.run("WHATSAPP_API_TOKEN", config.WHATSAPP_API_TOKEN);
+      }
+    }
+
+    if (config.WHATSAPP_PHONE_NUMBER_ID) {
+      const dbPhoneId = getSetting.get("WHATSAPP_PHONE_NUMBER_ID")?.value;
+      if (!dbPhoneId || dbPhoneId === "your_phone_number_id") {
+        setSetting.run("WHATSAPP_PHONE_NUMBER_ID", config.WHATSAPP_PHONE_NUMBER_ID);
+      }
+      try {
+        db.prepare("UPDATE waba_phone_numbers SET is_default = 1 WHERE phone_number_id = ?").run(config.WHATSAPP_PHONE_NUMBER_ID);
+      } catch (e) {}
+    }
   } catch (e) {}
 
   // 2. Default Meta Templates
@@ -366,8 +384,8 @@ function seedDefaults(db, config) {
   try {
     const linkCount = db.prepare("SELECT COUNT(*) as count FROM chat_links").get()?.count || 0;
     if (linkCount === 0) {
-      let defaultPhone = "919307382030";
-      let defaultPhoneId = null;
+      let defaultPhone = "918766590634";
+      let defaultPhoneId = "1510764325447375";
       try {
         const ph = db.prepare("SELECT phone_number, phone_number_id FROM waba_phone_numbers WHERE is_default = 1 LIMIT 1").get();
         if (ph) {

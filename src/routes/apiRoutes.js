@@ -383,8 +383,8 @@ router.post("/flows/:flowId/send-test", authenticateToken, flowController.sendTe
 const webhookController = require("../controllers/webhookController");
 
 // Public Meta Webhook endpoints (Handshake GET + HMAC-verified POST)
-router.get("/webhook", webhookController.handleVerification);
-router.post("/webhook", webhookController.handleIncomingEvent);
+router.get(["/webhook", "/v1/webhook", "/webhooks", "/v1/webhooks/meta/whatsapp"], webhookController.handleVerification);
+router.post(["/webhook", "/v1/webhook", "/webhooks", "/v1/webhooks/meta/whatsapp"], webhookController.handleIncomingEvent);
 
 // Protected Webhook configuration & controls (Admin Only)
 router.get("/webhook/config", authenticateToken, requireAdmin, webhookController.getConfig);

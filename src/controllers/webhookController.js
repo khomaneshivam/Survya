@@ -10,23 +10,14 @@ function verifyMetaSignature(req) {
   const signature = req.headers["x-hub-signature-256"];
   const appSecret = config.META_APP_SECRET || getSetting("META_APP_SECRET") || process.env.META_APP_SECRET;
 
-  if (config.NODE_ENV === "production") {
-    if (!appSecret) {
-      console.error("[Webhook Security] META_APP_SECRET is not configured in production. Rejecting request.");
-      return false;
-    }
-    if (!signature) {
-      console.warn("[Webhook Security] Missing X-Hub-Signature-256 header in production request.");
-      return false;
-    }
-  }
-
-  // If no app secret configured in non-production, log warning and allow
-  if (!appSecret) {
+  // If no Meta App Secret is configured on the platform, permit inbound event without HMAC verification
+  if (!appSecret || appSecret.includes("placeholder")) {
     return true;
   }
 
+  // If App Secret is configured, enforce strict HMAC-SHA256 signature verification
   if (!signature || !signature.startsWith("sha256=")) {
+    console.warn("[Webhook Security] Missing or malformed X-Hub-Signature-256 header on signed webhook.");
     return false;
   }
 

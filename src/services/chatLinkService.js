@@ -257,7 +257,7 @@ function createLink({
     } catch (e) {}
   }
   if (!rawPhone || !String(rawPhone).trim()) {
-    rawPhone = "919307382030";
+    rawPhone = "918766590634";
   }
 
   const cleanTo = cleanPhone(rawPhone, defaultCountry);
