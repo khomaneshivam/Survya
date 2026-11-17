@@ -1220,7 +1220,6 @@ async function sendFlowMessage({
 
   if (footerText && String(footerText).trim()) {
     interactive.footer = {
-      type: "text",
       text: String(footerText).trim().substring(0, 60)
     };
   }
@@ -1385,7 +1384,6 @@ async function sendInteractiveButtons({
 
   if (footerText && String(footerText).trim()) {
     interactive.footer = {
-      type: "text",
       text: String(footerText).trim().substring(0, 60)
     };
   }
@@ -1518,7 +1516,6 @@ async function sendInteractiveList({
 
   if (footerText && String(footerText).trim()) {
     interactive.footer = {
-      type: "text",
       text: String(footerText).trim().substring(0, 60)
     };
   }

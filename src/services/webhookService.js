@@ -31,6 +31,21 @@ try {
   enquiryService = require("./enquiryService");
 } catch (e) {}
 
+/**
+ * Ensures button titles fit within Meta Cloud API's strict 20-character maximum
+ */
+function shortenButtonTitle(str) {
+  if (!str) return "Option";
+  let s = String(str).trim();
+  if (s.length <= 20) return s;
+  s = s.replace(/ Room$/i, "")
+       .replace(/ Cottage$/i, "")
+       .replace(/ Suite$/i, "")
+       .replace(/ Penthouse$/i, "");
+  if (s.length <= 20) return s;
+  return s.substring(0, 20).trim();
+}
+
 class WebhookService {
   constructor() {
     this.inFlightAutoReplies = new Set();
@@ -1473,12 +1488,22 @@ class WebhookService {
         effectiveText = "CONFIRM";
       } else if (interactiveActionId === "btn_rooms" || lower === "other rooms" || lower === "view other rooms" || lower === "room options") {
         effectiveText = "Show room options";
-      } else if (interactiveActionId === "btn_amenities" || lower === "resort facilities") {
+      } else if (interactiveActionId === "btn_check_avail" || lower === "check availability" || lower === "check rates") {
+        effectiveText = "Check availability";
+      } else if (interactiveActionId === "btn_dates_weekend" || lower === "this weekend") {
+        effectiveText = "Check availability for this weekend for 2 guests";
+      } else if (interactiveActionId === "btn_dates_tomorrow" || lower.includes("tomorrow")) {
+        effectiveText = "Check availability for tomorrow for 2 nights for 2 guests";
+      } else if (interactiveActionId === "btn_change_dates" || lower === "change dates" || lower === "modify dates") {
+        effectiveText = "Change dates";
+      } else if (interactiveActionId === "btn_amenities" || lower === "resort facilities" || lower === "facilities") {
         effectiveText = "resort facilities and amenities";
-      } else if (interactiveActionId === "btn_menu" || lower === "dining menu") {
+      } else if (interactiveActionId === "btn_menu" || lower === "dining menu" || lower === "menu") {
         effectiveText = "restaurant dining menu";
-      } else if (interactiveActionId === "btn_location" || lower === "location / map") {
+      } else if (interactiveActionId === "btn_location" || lower === "location / map" || lower === "location" || lower === "map") {
         effectiveText = "how to reach location directions";
+      } else if (interactiveActionId === "btn_table_order") {
+        effectiveText = "table order dining menu";
       } else if (interactiveActionId && interactiveActionId.startsWith("select_room_")) {
         const roomId = parseInt(interactiveActionId.replace("select_room_", ""), 10);
         try {
@@ -1654,24 +1679,39 @@ class WebhookService {
 
         // Try interactive payload if options or confirmation buttons are present
         const rawPayload = flowRes.raw_payload;
+
+        // 1. Availability / Room Selection step (rawPayload.step === "ROOM_SELECTION")
         if (rawPayload && rawPayload.interactive_type === "flow_step" && rawPayload.step === "ROOM_SELECTION") {
           // If a preferred room is selected and available
           if (rawPayload.selected_room) {
             try {
               const buttons = [
                 { id: "btn_confirm", title: "Confirm Booking" },
-                { id: "btn_rooms", title: "View Other Rooms" },
+                { id: "btn_rooms", title: "Other Rooms" },
                 { id: "btn_staff", title: "Talk to Staff" }
               ];
-              const btnRes = await sendInteractiveButtons({
-                to: cleanPhone,
-                bodyText: flowRes.text,
-                buttons,
-                headerText: "Availability & Rates",
-                footerText: "KonkanTrip Concierge",
-                customCredentials
-              });
-              sentMessageId = btnRes.messageId;
+              if (flowRes.text.length > 1000) {
+                await sendTextMessage({ to: cleanPhone, body: flowRes.text, customCredentials });
+                const btnRes = await sendInteractiveButtons({
+                  to: cleanPhone,
+                  bodyText: "👇 Ready to confirm your room or explore other options?",
+                  buttons,
+                  headerText: "Availability & Rates",
+                  footerText: "KonkanTrip Concierge",
+                  customCredentials
+                });
+                sentMessageId = btnRes.messageId;
+              } else {
+                const btnRes = await sendInteractiveButtons({
+                  to: cleanPhone,
+                  bodyText: flowRes.text,
+                  buttons,
+                  headerText: "Availability & Rates",
+                  footerText: "KonkanTrip Concierge",
+                  customCredentials
+                });
+                sentMessageId = btnRes.messageId;
+              }
               deliveredInteractive = true;
             } catch (e) {
               console.warn("[Webhook Flow] Buttons send fallback:", e.message);
@@ -1680,60 +1720,243 @@ class WebhookService {
             const availOpts = rawPayload.options.filter(o => o.available);
             if (availOpts.length >= 1 && availOpts.length <= 3) {
               try {
-                const buttons = availOpts.map((opt, i) => ({
+                const buttons = availOpts.map((opt) => ({
                   id: `select_room_${opt.id}`,
-                  title: opt.name.substring(0, 20)
+                  title: shortenButtonTitle(opt.name)
                 }));
-                const btnRes = await sendInteractiveButtons({
-                  to: cleanPhone,
-                  bodyText: flowRes.text,
-                  buttons,
-                  headerText: "Choose a Room Category",
-                  footerText: "KonkanTrip Concierge",
-                  customCredentials
-                });
-                sentMessageId = btnRes.messageId;
+                if (flowRes.text.length > 1000) {
+                  await sendTextMessage({ to: cleanPhone, body: flowRes.text, customCredentials });
+                  const btnRes = await sendInteractiveButtons({
+                    to: cleanPhone,
+                    bodyText: "👇 Tap an available category to get an itemized quote:",
+                    buttons,
+                    headerText: "Choose a Room",
+                    footerText: "KonkanTrip Concierge",
+                    customCredentials
+                  });
+                  sentMessageId = btnRes.messageId;
+                } else {
+                  const btnRes = await sendInteractiveButtons({
+                    to: cleanPhone,
+                    bodyText: flowRes.text,
+                    buttons,
+                    headerText: "Choose a Room",
+                    footerText: "KonkanTrip Concierge",
+                    customCredentials
+                  });
+                  sentMessageId = btnRes.messageId;
+                }
                 deliveredInteractive = true;
-              } catch (e) {}
+              } catch (e) {
+                console.warn("[Webhook Flow] Buttons send fallback:", e.message);
+              }
             } else if (availOpts.length > 3) {
               try {
-                const rows = availOpts.slice(0, 10).map(opt => ({
+                const rows = availOpts.slice(0, 9).map(opt => ({
                   id: `select_room_${opt.id}`,
-                  title: opt.name.substring(0, 24),
+                  title: String(opt.name).substring(0, 24),
                   description: (opt.total_price ? `₹${Number(opt.total_price).toLocaleString("en-IN")} total` : `₹${opt.nightly_rate}/night`).substring(0, 72)
                 }));
-                const listRes = await sendInteractiveList({
-                  to: cleanPhone,
-                  bodyText: flowRes.text,
-                  buttonText: "Select Room",
-                  sections: [{ title: "Available Rooms", rows }],
-                  headerText: "Available Categories",
-                  footerText: "KonkanTrip Concierge",
-                  customCredentials
+                rows.push({
+                  id: "btn_staff",
+                  title: "Talk to Concierge",
+                  description: "Connect with front desk reservations team"
                 });
-                sentMessageId = listRes.messageId;
+                if (flowRes.text.length > 1000) {
+                  await sendTextMessage({ to: cleanPhone, body: flowRes.text, customCredentials });
+                  const listRes = await sendInteractiveList({
+                    to: cleanPhone,
+                    bodyText: "👇 Please select a room category from the list to view exact pricing:",
+                    buttonText: "Choose Room",
+                    sections: [{ title: "Available Rooms", rows }],
+                    headerText: "Available Categories",
+                    footerText: "KonkanTrip Concierge",
+                    customCredentials
+                  });
+                  sentMessageId = listRes.messageId;
+                } else {
+                  const listRes = await sendInteractiveList({
+                    to: cleanPhone,
+                    bodyText: flowRes.text,
+                    buttonText: "Choose Room",
+                    sections: [{ title: "Available Rooms", rows }],
+                    headerText: "Available Categories",
+                    footerText: "KonkanTrip Concierge",
+                    customCredentials
+                  });
+                  sentMessageId = listRes.messageId;
+                }
                 deliveredInteractive = true;
-              } catch (e) {}
+              } catch (e) {
+                console.warn("[Webhook Flow] List send fallback:", e.message);
+              }
             }
           }
-        } else if (rawPayload && rawPayload.interactive_type === "enquiry_confirmed") {
+        } 
+        // 2. Quote Summary (Itemized Quote presented)
+        else if (rawPayload && rawPayload.interactive_type === "quote_summary") {
           try {
             const buttons = [
-              { id: "btn_amenities", title: "Resort Facilities" },
+              { id: "btn_confirm", title: "Confirm Booking" },
+              { id: "btn_change_dates", title: "Change Dates" },
+              { id: "btn_staff", title: "Talk to Staff" }
+            ];
+            if (flowRes.text.length > 1000) {
+              await sendTextMessage({ to: cleanPhone, body: flowRes.text, customCredentials });
+              const btnRes = await sendInteractiveButtons({
+                to: cleanPhone,
+                bodyText: "Ready to confirm your booking inquiry? Tap below:",
+                buttons,
+                headerText: "Estimated Price Quote",
+                footerText: "KonkanTrip Concierge",
+                customCredentials
+              });
+              sentMessageId = btnRes.messageId;
+            } else {
+              const btnRes = await sendInteractiveButtons({
+                to: cleanPhone,
+                bodyText: flowRes.text,
+                buttons,
+                headerText: "Estimated Price Quote",
+                footerText: "KonkanTrip Concierge",
+                customCredentials
+              });
+              sentMessageId = btnRes.messageId;
+            }
+            deliveredInteractive = true;
+          } catch (e) {
+            console.warn("[Webhook Flow] Quote buttons send fallback:", e.message);
+          }
+        }
+        // 3. Enquiry Confirmed
+        else if (rawPayload && rawPayload.interactive_type === "enquiry_confirmed") {
+          try {
+            const buttons = [
+              { id: "btn_amenities", title: "Facilities" },
               { id: "btn_menu", title: "Dining Menu" },
               { id: "btn_location", title: "Location / Map" }
             ];
+            if (flowRes.text.length > 1000) {
+              await sendTextMessage({ to: cleanPhone, body: flowRes.text, customCredentials });
+              const btnRes = await sendInteractiveButtons({
+                to: cleanPhone,
+                bodyText: "Explore more details about your stay below:",
+                buttons,
+                headerText: "Inquiry Submitted",
+                footerText: "KonkanTrip Front Desk",
+                customCredentials
+              });
+              sentMessageId = btnRes.messageId;
+            } else {
+              const btnRes = await sendInteractiveButtons({
+                to: cleanPhone,
+                bodyText: flowRes.text,
+                buttons,
+                headerText: "Inquiry Submitted",
+                footerText: "KonkanTrip Front Desk",
+                customCredentials
+              });
+              sentMessageId = btnRes.messageId;
+            }
+            deliveredInteractive = true;
+          } catch (e) {
+            console.warn("[Webhook Flow] Confirmed buttons send fallback:", e.message);
+          }
+        }
+        // 4. Room Sold Out
+        else if (rawPayload && rawPayload.interactive_type === "room_sold_out") {
+          try {
+            const buttons = [
+              { id: "btn_change_dates", title: "Change Dates" },
+              { id: "btn_rooms", title: "Other Rooms" },
+              { id: "btn_staff", title: "Talk to Staff" }
+            ];
             const btnRes = await sendInteractiveButtons({
               to: cleanPhone,
-              bodyText: flowRes.text,
+              bodyText: flowRes.text.substring(0, 1000),
               buttons,
-              headerText: "Inquiry Submitted",
-              footerText: "KonkanTrip Front Desk",
+              headerText: "Room Sold Out",
+              footerText: "KonkanTrip Concierge",
               customCredentials
             });
             sentMessageId = btnRes.messageId;
             deliveredInteractive = true;
-          } catch (e) {}
+          } catch (e) {
+            console.warn("[Webhook Flow] Sold out buttons send fallback:", e.message);
+          }
+        }
+        // 5. In-Chat Flow / General Welcome / Dates Intake
+        else if (rawPayload && rawPayload.interactive_type === "in_chat_flow") {
+          try {
+            const buttons = [
+              { id: "btn_dates_weekend", title: "This Weekend" },
+              { id: "btn_dates_tomorrow", title: "Tomorrow (2 N)" },
+              { id: "btn_staff", title: "Talk to Staff" }
+            ];
+            if (flowRes.text.length > 1000) {
+              await sendTextMessage({ to: cleanPhone, body: flowRes.text, customCredentials });
+              const btnRes = await sendInteractiveButtons({
+                to: cleanPhone,
+                bodyText: "👇 Choose a popular stay option or reply with your travel dates:",
+                buttons,
+                headerText: "Plan Your Stay",
+                footerText: "KonkanTrip Concierge",
+                customCredentials
+              });
+              sentMessageId = btnRes.messageId;
+            } else {
+              const btnRes = await sendInteractiveButtons({
+                to: cleanPhone,
+                bodyText: flowRes.text,
+                buttons,
+                headerText: "Plan Your Stay",
+                footerText: "KonkanTrip Concierge",
+                customCredentials
+              });
+              sentMessageId = btnRes.messageId;
+            }
+            deliveredInteractive = true;
+          } catch (e) {
+            console.warn("[Webhook Flow] Intake buttons send fallback:", e.message);
+          }
+        }
+        // 6. Amenities & Location inquiries (add buttons to continue the flow!)
+        else if (
+          /\b(amenities|facility|facilities|pool|beach|wifi|parking)\b/i.test(effectiveText) ||
+          /\b(location|reach|address|direction|directions|where|map|route)\b/i.test(effectiveText)
+        ) {
+          try {
+            const buttons = [
+              { id: "btn_check_avail", title: "Check Rates" },
+              { id: "btn_menu", title: "Dining Menu" },
+              { id: "btn_staff", title: "Talk to Staff" }
+            ];
+            if (flowRes.text.length > 1000) {
+              await sendTextMessage({ to: cleanPhone, body: flowRes.text, customCredentials });
+              const btnRes = await sendInteractiveButtons({
+                to: cleanPhone,
+                bodyText: "Plan your getaway at KonkanTrip Beach Resort & Spa:",
+                buttons,
+                headerText: "KonkanTrip Concierge",
+                footerText: "KonkanTrip Concierge",
+                customCredentials
+              });
+              sentMessageId = btnRes.messageId;
+            } else {
+              const btnRes = await sendInteractiveButtons({
+                to: cleanPhone,
+                bodyText: flowRes.text,
+                buttons,
+                headerText: "KonkanTrip Concierge",
+                footerText: "KonkanTrip Concierge",
+                customCredentials
+              });
+              sentMessageId = btnRes.messageId;
+            }
+            deliveredInteractive = true;
+          } catch (e) {
+            console.warn("[Webhook Flow] Info buttons fallback:", e.message);
+          }
         }
 
         // Fallback to text if interactive was not sent or threw
