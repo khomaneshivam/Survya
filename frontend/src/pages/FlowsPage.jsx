@@ -71,6 +71,9 @@ export default function FlowsPage() {
   const [loadingCrypto, setLoadingCrypto] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
   const [generatingKey, setGeneratingKey] = useState(false);
+  const [showPasteKey, setShowPasteKey] = useState(false);
+  const [pastedKeyText, setPastedKeyText] = useState('');
+  const [savingPastedKey, setSavingPastedKey] = useState(false);
 
   // Notification Banner
   const [notification, setNotification] = useState(null);
@@ -446,6 +449,35 @@ export default function FlowsPage() {
       showNotification(err.message, 'error');
     } finally {
       setGeneratingKey(false);
+    }
+  };
+
+  // Save Custom / Pasted RSA Private Key
+  const handleSavePastedKey = async () => {
+    if (!pastedKeyText.trim()) return;
+    setSavingPastedKey(true);
+    try {
+      const res = await fetch('/api/flows/crypto/save-private-key', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ privateKey: pastedKeyText.trim() })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showNotification(data.message || 'Private key saved and public key derived!');
+        setPastedKeyText('');
+        setShowPasteKey(false);
+        fetchCryptoConfig();
+      } else {
+        showNotification(data.message || 'Failed to save private key', 'error');
+      }
+    } catch (err) {
+      showNotification(err.message, 'error');
+    } finally {
+      setSavingPastedKey(false);
     }
   };
 
@@ -1269,23 +1301,102 @@ export default function FlowsPage() {
               </div>
 
               {isAdmin && (
-                <button
-                  onClick={handleGenerateKeypair}
-                  disabled={generatingKey}
-                  style={{
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    background: '#FFFFFF',
-                    border: '1px solid #D4D4D9',
-                    fontSize: '0.78rem',
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  {generatingKey ? 'Generating...' : (cryptoConfig?.hasPrivateKey ? 'Regenerate' : 'Generate Keypair')}
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowPasteKey(!showPasteKey)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      background: showPasteKey ? '#EEEEF0' : '#FFFFFF',
+                      border: '1px solid #D4D4D9',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      color: '#3A3A3E'
+                    }}
+                  >
+                    {showPasteKey ? 'Cancel' : 'Paste Key (RSA PEM)'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGenerateKeypair}
+                    disabled={generatingKey}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      background: '#2F5219',
+                      color: '#FFFFFF',
+                      border: 'none',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {generatingKey ? 'Generating...' : (cryptoConfig?.hasPrivateKey ? 'Regenerate' : 'Generate Keypair')}
+                  </button>
+                </div>
               )}
             </div>
+
+            {/* Custom Private Key Paste Panel */}
+            {showPasteKey && (
+              <div style={{
+                background: '#F8FAF5',
+                border: '1px solid #C3D1AC',
+                borderRadius: '10px',
+                padding: '16px',
+                marginBottom: '20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}>
+                <div>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 700, color: '#2F5219', display: 'block', marginBottom: '2px' }}>
+                    Paste Your RSA 2048-bit Private Key (PKCS#1 / PKCS#8 PEM):
+                  </label>
+                  <span style={{ fontSize: '0.72rem', color: '#67676B' }}>
+                    Must begin with <code>-----BEGIN PRIVATE KEY-----</code> or <code>-----BEGIN RSA PRIVATE KEY-----</code>
+                  </span>
+                </div>
+                <textarea
+                  rows={6}
+                  value={pastedKeyText}
+                  onChange={e => setPastedKeyText(e.target.value)}
+                  placeholder="-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...\n-----END PRIVATE KEY-----"
+                  style={{
+                    width: '100%',
+                    fontFamily: 'monospace',
+                    fontSize: '0.75rem',
+                    padding: '10px',
+                    borderRadius: '8px',
+                    border: '1px solid #C3D1AC',
+                    background: '#FFFFFF',
+                    color: '#171719'
+                  }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPasteKey(false);
+                      setPastedKeyText('');
+                    }}
+                    style={{ padding: '6px 12px', borderRadius: '6px', background: '#FFFFFF', border: '1px solid #D4D4D9', fontSize: '0.78rem', cursor: 'pointer' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingPastedKey || !pastedKeyText.trim()}
+                    onClick={handleSavePastedKey}
+                    style={{ padding: '6px 14px', borderRadius: '6px', background: '#2F5219', color: '#FFFFFF', border: 'none', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    {savingPastedKey ? 'Saving...' : 'Save & Derive Public Key'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Public Key Display */}
             {cryptoConfig?.publicKey ? (

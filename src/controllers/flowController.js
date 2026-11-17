@@ -734,6 +734,52 @@ async function generateKeyPair(req, res) {
 }
 
 /**
+ * POST /api/flows/crypto/save-private-key - Save custom RSA Private Key (Admin Only)
+ */
+async function savePrivateKey(req, res) {
+  try {
+    const userId = req.user.id;
+    const isAdmin = req.user.role === "ADMIN";
+
+    if (!isAdmin) {
+      return res.status(403).json({ success: false, message: "Access restricted: Only an Administrator can save encryption keys." });
+    }
+
+    const { privateKey } = req.body || {};
+    if (!privateKey || !String(privateKey).trim()) {
+      return res.status(400).json({ success: false, message: "Private key cannot be empty." });
+    }
+
+    const trimmedKey = String(privateKey).trim();
+    const crypto = require("crypto");
+    let pubPem = null;
+    try {
+      const pubKeyObj = crypto.createPublicKey(trimmedKey);
+      pubPem = pubKeyObj.export({ type: "spki", format: "pem" });
+    } catch (e) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid RSA Private Key format. Must be a valid PEM formatted RSA key (e.g., -----BEGIN PRIVATE KEY----- ... -----END PRIVATE KEY-----)."
+      });
+    }
+
+    setSetting("FLOWS_PRIVATE_KEY", trimmedKey);
+    setSetting("FLOWS_PUBLIC_KEY", pubPem);
+
+    logAudit(userId, "SAVE_FLOW_PRIVATE_KEY", null, "Saved custom RSA Flows private key", req);
+
+    return res.status(200).json({
+      success: true,
+      message: "Custom RSA Private Key saved successfully.",
+      publicKey: pubPem
+    });
+  } catch (error) {
+    console.error("[FlowController] savePrivateKey error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
  * POST /api/flows/exchange or /flows/exchange
  * Meta Flow Dynamic Data Exchange Endpoint (Called directly by Meta servers)
  */
@@ -787,5 +833,6 @@ module.exports = {
   listResponses,
   getCryptoConfig,
   generateKeyPair,
+  savePrivateKey,
   handleDataExchange
 };

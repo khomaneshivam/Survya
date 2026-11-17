@@ -367,6 +367,7 @@ router.get("/flows/starter-templates", authenticateToken, flowController.getStar
 router.get("/flows/responses", authenticateToken, flowController.listResponses);
 router.get("/flows/crypto/config", authenticateToken, flowController.getCryptoConfig);
 router.post("/flows/crypto/generate-keypair", authenticateToken, requireAdmin, flowController.generateKeyPair);
+router.post("/flows/crypto/save-private-key", authenticateToken, requireAdmin, flowController.savePrivateKey);
 router.post("/flows/sync", authenticateToken, requireAdmin, flowController.syncMeta);
 router.post("/flows", authenticateToken, flowController.createFlow);
 router.get("/flows/:flowId", authenticateToken, flowController.getFlow);
