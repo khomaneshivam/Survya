@@ -316,6 +316,34 @@ function seedDefaults(db, config) {
         }
       } catch (err) {}
     }
+
+    // Ensure default published hospitality booking flow is present and ready
+    try {
+      const existingBookingFlow = db.prepare("SELECT id FROM whatsapp_flows WHERE id = 'flow_hospitality_booking' OR name = 'KonkanTrip Stay & Booking Flow'").get();
+      if (!existingBookingFlow) {
+        const { RESORT_BOOKING_TEMPLATE } = require("../services/flowStarterTemplates");
+        db.prepare(`
+          INSERT INTO whatsapp_flows (
+            id, user_id, name, description, meta_flow_id, status, categories,
+            flow_json, json_version, data_api_version, sync_status, created_at, updated_at
+          ) VALUES (
+            'flow_hospitality_booking',
+            'system',
+            'KonkanTrip Stay & Booking Flow',
+            'Capture guest stay dates, party size, room preference, and contact details with instant quotation eligibility.',
+            '887766554433221',
+            'PUBLISHED',
+            '["LEAD_GENERATION", "APPOINTMENT_BOOKING"]',
+            ?,
+            '3.1',
+            '3.0',
+            'SYNCED',
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+          )
+        `).run(JSON.stringify(RESORT_BOOKING_TEMPLATE.flow_json));
+      }
+    } catch (bookingFlowErr) {}
   } catch (e) {}
 
   // 4. Default Tenant & Property

@@ -53,6 +53,11 @@ describe("Conversational Concierge & Auto-Reply Bot Customization Test Suite", (
     if (server) {
       server.close();
     }
+    // Clean up test settings to maintain complete test isolation
+    const { setSetting } = require("../src/config/database");
+    setSetting("AUTO_REPLY_ENGINE_MODE", "HOSPITALITY_FLOW");
+    setSetting("BOT_WELCOME_MESSAGE", "");
+    setSetting("BOT_BUSINESS_NAME", "KonkanTrip Beach Resort & Spa");
   });
 
   test("1. GET /api/replies/auto-reply-settings returns comprehensive bot configuration", async () => {

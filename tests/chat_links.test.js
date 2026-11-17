@@ -45,6 +45,13 @@ describe("SARVYA Chat Links & In-App Customer Messaging Module", () => {
       { expiresIn: "1h" }
     );
 
+    // Clean up test customer phone records to ensure complete test isolation
+    try {
+      db.prepare("DELETE FROM customer_replies WHERE from_phone = ?").run(customerPhone);
+      db.prepare("DELETE FROM booking_enquiries WHERE phone_e164 = ?").run(customerPhone);
+      db.prepare("DELETE FROM contacts WHERE phone_e164 = ?").run(customerPhone);
+    } catch (e) {}
+
     regularToken = jwt.sign(
       { id: regularUser.id, email: regularUser.email, role: regularUser.role, tenant_id: 1 },
       config.JWT_SECRET,
@@ -266,7 +273,7 @@ describe("SARVYA Chat Links & In-App Customer Messaging Module", () => {
     assert.equal(contact.name, "Aarav Sharma");
 
     // Verify Booking Enquiry created in CRM
-    const enquiry = db.prepare("SELECT * FROM booking_enquiries WHERE contact_id = ?").get(contact.id);
+    const enquiry = db.prepare("SELECT * FROM booking_enquiries WHERE contact_id = ? ORDER BY id DESC LIMIT 1").get(contact.id);
     assert.ok(enquiry, "Booking enquiry lead should be created directly in CRM");
     assert.equal(enquiry.guest_name, "Aarav Sharma");
     assert.equal(enquiry.status, "NEW");

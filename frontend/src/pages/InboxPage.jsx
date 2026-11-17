@@ -531,8 +531,10 @@ export default function InboxPage() {
     confirmedButton3: 'Location / Map',
     handoffPhone: '+91 87665 90634',
     handoffMessage: '🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at {{phone}}.',
+    selectedFlowId: 'flow_hospitality_booking',
     takeoverPauseMinutes: 60
   });
+  const [publishedFlows, setPublishedFlows] = useState([]);
   const [autoReplyActiveTab, setAutoReplyActiveTab] = useState('mode'); // 'mode' | 'welcome' | 'quote' | 'handoff'
   const [previewStage, setPreviewStage] = useState('welcome'); // 'welcome' | 'quote' | 'confirmed' | 'handoff'
   const [loadingAutoReply, setLoadingAutoReply] = useState(false);
@@ -560,6 +562,7 @@ export default function InboxPage() {
       confirmedButton3: 'Location / Map',
       handoffPhone: '+91 87665 90634',
       handoffMessage: '🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at {{phone}}.',
+      selectedFlowId: 'flow_hospitality_booking',
       takeoverPauseMinutes: 60
     }));
   }
@@ -584,6 +587,15 @@ export default function InboxPage() {
       if (data.success && data.data) {
         setAutoReplySettings(data.data);
       }
+      try {
+        const flowsRes = await fetch('/api/flows?status=PUBLISHED', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const flowsData = await flowsRes.json();
+        if (flowsData.success && Array.isArray(flowsData.data)) {
+          setPublishedFlows(flowsData.data);
+        }
+      } catch (fErr) {}
     } catch (err) {
       console.error('Failed to load auto-reply settings:', err);
     } finally {
@@ -2757,6 +2769,48 @@ export default function InboxPage() {
                         </div>
                       </div>
                     </div>
+
+                    {/* WhatsApp Flow Selection for Value Collection */}
+                    {autoReplySettings.engineMode === 'HOSPITALITY_FLOW' && (
+                      <div style={{ background: '#FFFFFF', border: '1px solid #E5E5E8', borderRadius: '12px', padding: '16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                          <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#171719', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>📱 WhatsApp Flow Screen for Customer Intake</span>
+                            <span style={{ fontSize: '0.675rem', fontWeight: 700, background: '#EDF4E6', color: '#2F5219', padding: '2px 8px', borderRadius: '6px', border: '1px solid #C3D1AC' }}>
+                              In-App Form
+                            </span>
+                          </label>
+                          <a href="/flows" target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: '#2F5219', textDecoration: 'none', fontWeight: 600 }}>
+                            Manage Flows ↗
+                          </a>
+                        </div>
+                        <p style={{ fontSize: '0.78rem', color: '#67676B', margin: '0 0 10px 0', lineHeight: 1.45 }}>
+                          When a customer inquires about availability, dates, or booking, the concierge bot dispatches this published WhatsApp Flow screen to collect stay dates, guest counts, and room choices natively in WhatsApp.
+                        </p>
+                        <select
+                          value={autoReplySettings.selectedFlowId || ''}
+                          onChange={e => setAutoReplySettings({ ...autoReplySettings, selectedFlowId: e.target.value })}
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            border: '1.5px solid #D4D4D9',
+                            fontSize: '0.85rem',
+                            color: '#171719',
+                            background: '#FFFFFF',
+                            outline: 'none',
+                            fontWeight: 500
+                          }}
+                        >
+                          <option value="">✨ Auto-Detect (Default Stay & Booking Flow)</option>
+                          {publishedFlows.map(f => (
+                            <option key={f.id} value={f.id}>
+                              {f.name} {f.meta_flow_id ? `(Meta ID: ${f.meta_flow_id})` : ''} - {f.status}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     {/* Frequency (Deduplication) */}
                     <div>

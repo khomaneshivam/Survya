@@ -203,14 +203,63 @@ class FlowCryptoService {
 
     // 3. Dynamic Data Exchange (Form step navigation or dynamic validation)
     if (action === "data_exchange") {
+      const responseData = {
+        ...data,
+        verified: true,
+        processed_at: new Date().toISOString()
+      };
+
+      const errorMessages = {};
+      const checkIn = data.check_in || data.preferred_date || data.start_date;
+      const checkOut = data.check_out || data.end_date;
+
+      if (checkIn && checkOut) {
+        const cin = new Date(checkIn);
+        const cout = new Date(checkOut);
+        if (!isNaN(cin.getTime()) && !isNaN(cout.getTime())) {
+          if (cout <= cin) {
+            errorMessages.check_out = "Check-out date must be strictly after check-in date";
+          }
+        }
+      }
+
+      if (checkIn) {
+        const cin = new Date(checkIn);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (!isNaN(cin.getTime()) && cin < today) {
+          errorMessages.check_in = "Check-in date cannot be in the past";
+        }
+      }
+
+      if (Object.keys(errorMessages).length > 0) {
+        responseData.error_messages = errorMessages;
+      } else if (checkIn && checkOut) {
+        // Dynamic room options & pricing calculation
+        try {
+          const { db } = require("../config/database");
+          const availabilityService = require("./hospitalityAvailabilityService");
+          const roomTypes = db.prepare("SELECT id, name, base_rate FROM room_types WHERE status = 'ACTIVE' LIMIT 6").all();
+          if (Array.isArray(roomTypes) && roomTypes.length > 0) {
+            responseData.dynamic_rooms = roomTypes.map(rt => {
+              let isAvail = true;
+              try {
+                const av = availabilityService.checkRoomAvailability(1, rt.id, checkIn, checkOut, 1, 1);
+                isAvail = Boolean(av.is_available ?? av.available);
+              } catch (e) {}
+              return {
+                id: String(rt.id),
+                title: isAvail ? `${rt.name} - ₹${Number(rt.base_rate).toLocaleString("en-IN")}/night` : `${rt.name} (Sold Out)`
+              };
+            });
+          }
+        } catch (e) {}
+      }
+
       return {
         version: "3.0",
         screen: screen,
-        data: {
-          ...data,
-          verified: true,
-          processed_at: new Date().toISOString()
-        }
+        data: responseData
       };
     }
 

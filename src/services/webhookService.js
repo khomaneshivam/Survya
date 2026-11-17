@@ -4,12 +4,14 @@ const crypto = require("crypto");
 const { db, getSetting, setSetting } = require("../config/database");
 const config = require("../config/env");
 const broadcastEngine = require("./broadcastEngine");
+const metaWhatsAppService = require("./metaWhatsAppService");
 const {
   sendTextMessage,
   sendInteractiveButtons,
   sendInteractiveList,
+  sendFlowMessage,
   downloadAndSaveInboundMedia
-} = require("./metaWhatsAppService");
+} = metaWhatsAppService;
 
 let hospitalityFlowEngine = null;
 try {
@@ -46,10 +48,141 @@ function shortenButtonTitle(str) {
   return s.substring(0, 20).trim();
 }
 
+/**
+ * Ensures header text fits within Meta Cloud API's 60-character maximum
+ */
+function shortenHeaderText(str, max = 60) {
+  if (!str) return "KonkanTrip Concierge";
+  const s = String(str).trim();
+  return s.length <= max ? s : s.substring(0, max).trim();
+}
+
 class WebhookService {
   constructor() {
     this.inFlightAutoReplies = new Set();
     this.botPausedUntil = new Map(); // cleanPhone -> expiryTimestamp (ms)
+  }
+
+  /**
+   * Validates and normalizes submitted WhatsApp Flow data from nfm_reply or interactive form
+   */
+  validateAndNormalizeFlowSubmission(rawData = {}, defaultGuestName = "Guest") {
+    if (!rawData || typeof rawData !== "object") {
+      return { isValid: false, intakeData: null, isBooking: false, isFeedback: false, isSupport: false, isLead: false, errors: ["Empty or invalid submission payload"] };
+    }
+
+    const errors = [];
+    const normalized = {};
+
+    // 1. Guest Name
+    const rawName = rawData.guest_name || rawData.full_name || rawData.name || rawData.contact_name;
+    normalized.guest_name = (rawName && String(rawName).trim()) ? String(rawName).trim() : defaultGuestName;
+
+    // 2. Dates extraction & normalization
+    let rawCheckIn = rawData.check_in || rawData.checkin || rawData.arrival_date || rawData.preferred_date || rawData.start_date || rawData.date;
+    let rawCheckOut = rawData.check_out || rawData.checkout || rawData.departure_date || rawData.end_date;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Normalize check-in date
+    if (rawCheckIn) {
+      const cinDate = new Date(rawCheckIn);
+      if (!isNaN(cinDate.getTime())) {
+        normalized.check_in = cinDate.toISOString().split("T")[0];
+      }
+    }
+
+    // Normalize check-out date
+    if (rawCheckOut) {
+      const coutDate = new Date(rawCheckOut);
+      if (!isNaN(coutDate.getTime())) {
+        normalized.check_out = coutDate.toISOString().split("T")[0];
+      }
+    }
+
+    // Default dates if missing: tomorrow to day after tomorrow (2 nights)
+    if (!normalized.check_in) {
+      const tmrw = new Date(today);
+      tmrw.setDate(today.getDate() + 1);
+      normalized.check_in = tmrw.toISOString().split("T")[0];
+      normalized.dates_defaulted = true;
+    }
+
+    if (!normalized.check_out) {
+      const cin = new Date(normalized.check_in);
+      const cout = new Date(cin);
+      cout.setDate(cin.getDate() + 2); // 2 nights default
+      normalized.check_out = cout.toISOString().split("T")[0];
+      normalized.dates_defaulted = true;
+    }
+
+    // Validate date sequence: check_out must be strictly after check_in
+    const dIn = new Date(normalized.check_in);
+    const dOut = new Date(normalized.check_out);
+    if (dOut <= dIn) {
+      // Auto-correct to check_in + 1 night
+      const corrected = new Date(dIn);
+      corrected.setDate(dIn.getDate() + 1);
+      normalized.check_out = corrected.toISOString().split("T")[0];
+      normalized.date_auto_corrected = true;
+    }
+
+    normalized.nights = Math.max(1, Math.round((new Date(normalized.check_out) - new Date(normalized.check_in)) / (1000 * 60 * 60 * 24)));
+
+    // 3. Guest counts (adults, children, total)
+    const rawAdults = rawData.adults || rawData.adult_count || rawData.total_guests || rawData.party_size || rawData.guests;
+    let adults = parseInt(rawAdults, 10);
+    if (isNaN(adults) || adults < 1) adults = 2; // Default 2 adults
+    normalized.adults = adults;
+
+    const rawChildren = rawData.children || rawData.child_count || rawData.kids;
+    let children = parseInt(rawChildren, 10);
+    if (isNaN(children) || children < 0) children = 0;
+    normalized.children = children;
+
+    normalized.total_guests = adults + children;
+
+    // 4. Room preference / category selection
+    const rawRoom = rawData.room_preference || rawData.room_type || rawData.selected_room || rawData.room;
+    if (rawRoom && String(rawRoom).trim() && String(rawRoom).trim() !== "Any Available Room") {
+      normalized.room_preference = String(rawRoom).trim();
+    } else {
+      normalized.room_preference = "Any Available Room";
+    }
+
+    // 5. Special requests / notes
+    const rawReq = rawData.special_requests || rawData.notes || rawData.comments || rawData.requests;
+    if (rawReq && String(rawReq).trim()) {
+      normalized.special_requests = String(rawReq).trim();
+    }
+
+    // 6. Contact info (email, phone if provided in flow)
+    if (rawData.email && String(rawData.email).trim()) {
+      normalized.email = String(rawData.email).trim().toLowerCase();
+    }
+    if (rawData.phone && String(rawData.phone).trim()) {
+      normalized.phone = String(rawData.phone).trim();
+    }
+
+    // Preserve raw fields
+    normalized.custom_fields = { ...rawData };
+
+    // Detect flow submission purpose
+    const isFeedback = Boolean(rawData.overall_rating || rawData.rating || rawData.suggestions);
+    const isSupport = Boolean(rawData.issue_category || rawData.issue_description || rawData.booking_id);
+    const isLead = Boolean(rawData.service_interest || rawData.lead_form);
+    const isBooking = !isFeedback && !isSupport && (Boolean(rawCheckIn) || Boolean(rawData.adults) || Boolean(rawRoom) || Boolean(rawData.enquiry_form) || !isLead);
+
+    return {
+      isValid: errors.length === 0,
+      intakeData: normalized,
+      isBooking,
+      isFeedback,
+      isSupport,
+      isLead,
+      errors
+    };
   }
 
   /**
@@ -650,6 +783,8 @@ class WebhookService {
 
       // Insert into flow_responses (idempotent by wa_message_id)
       try {
+        const flowValidation = this.validateAndNormalizeFlowSubmission(parsedResponse, customerName);
+        const normalizedData = flowValidation.intakeData || parsedResponse;
         const jsonString = typeof nfm.response_json === "string" ? nfm.response_json : JSON.stringify(nfm.response_json || {});
         const insertFlowResp = db.prepare(`
           INSERT OR IGNORE INTO flow_responses (
@@ -664,10 +799,10 @@ class WebhookService {
           fromPhone,
           fromPhone,
           cleanPhone,
-          customerName,
+          normalizedData.guest_name || customerName,
           jsonString,
           jsonString,
-          JSON.stringify(parsedResponse),
+          JSON.stringify(normalizedData),
           replyUserId,
           matchedCampaignId
         );
@@ -677,41 +812,36 @@ class WebhookService {
         broadcastEngine.emit("webhook:flow_response", {
           responseId: flowResponseId,
           flowId,
-          customerName,
+          customerName: normalizedData.guest_name || customerName,
           fromPhone,
           cleanPhone,
-          answers: parsedResponse
+          answers: normalizedData,
+          validation: {
+            isValid: flowValidation.isValid,
+            isBooking: flowValidation.isBooking,
+            isFeedback: flowValidation.isFeedback,
+            isSupport: flowValidation.isSupport
+          }
         });
 
         // PRD PR-007: Automatic Booking Enquiry Creation from Flow Submission
-        try {
-          const enquiryService = require("./enquiryService");
-          const checkIn = parsedResponse.check_in || parsedResponse.checkin || parsedResponse.preferred_date || parsedResponse.arrival_date;
-          let checkOut = parsedResponse.check_out || parsedResponse.checkout || parsedResponse.departure_date;
-          if (checkIn && !checkOut) {
-            const d = new Date(checkIn);
-            d.setDate(d.getDate() + 1);
-            checkOut = d.toISOString().split("T")[0];
+        if (flowValidation.isBooking && normalizedData.check_in && normalizedData.check_out) {
+          try {
+            const enquiryService = require("./enquiryService");
+            enquiryService.createEnquiry(1, {
+              phone: cleanPhone,
+              guest_name: normalizedData.guest_name || customerName,
+              check_in: normalizedData.check_in,
+              check_out: normalizedData.check_out,
+              adults: Number(normalizedData.adults || 2),
+              children: Number(normalizedData.children || 0),
+              room_preference: normalizedData.room_preference,
+              flow_session_id: waMessageId || clientToken || `flow_${Date.now()}`,
+              preferences: normalizedData
+            });
+          } catch (enquiryErr) {
+            console.warn("[WebhookService] Auto-enquiry creation notice:", enquiryErr.message);
           }
-          if (checkIn && checkOut) {
-            const cin = new Date(checkIn);
-            const cout = new Date(checkOut);
-            if (!isNaN(cin.getTime()) && !isNaN(cout.getTime()) && cout > cin) {
-              enquiryService.createEnquiry(1, {
-                phone: cleanPhone,
-                guest_name: parsedResponse.guest_name || parsedResponse.full_name || customerName,
-                check_in: checkIn,
-                check_out: checkOut,
-                adults: Number(parsedResponse.adults || parsedResponse.party_size || 2),
-                children: Number(parsedResponse.children || 0),
-                room_preference: parsedResponse.room_preference || parsedResponse.experience_type || parsedResponse.room_type,
-                flow_session_id: waMessageId || clientToken || `flow_${Date.now()}`,
-                preferences: parsedResponse
-              });
-            }
-          }
-        } catch (enquiryErr) {
-          console.warn("[WebhookService] Auto-enquiry creation notice:", enquiryErr.message);
         }
       } catch (respErr) {
         console.warn("[Webhook FlowResponse] Insert notice:", respErr.message);
@@ -1552,6 +1682,131 @@ class WebhookService {
         }
       }
 
+      // 5b. WhatsApp Flow Submission Handling (Customer completed a Flow Screen)
+      const isFlowReply = (rawMsg?.type === "interactive" && rawMsg.interactive?.type === "nfm_reply") ||
+                          Boolean(replyRecord.flow_response_id) ||
+                          Boolean(replyRecord.flow_id && (rawMsg?.interactive || rawText.includes("[Flow Completed]") || rawText.startsWith("[Flow:")));
+
+      let flowIntakeData = null;
+
+      if (isFlowReply) {
+        let flowSubmissionData = null;
+        if (rawMsg?.interactive?.nfm_reply?.response_json) {
+          try {
+            flowSubmissionData = typeof rawMsg.interactive.nfm_reply.response_json === "string"
+              ? JSON.parse(rawMsg.interactive.nfm_reply.response_json)
+              : rawMsg.interactive.nfm_reply.response_json;
+          } catch (e) {}
+        }
+
+        if (!flowSubmissionData && replyRecord.flow_response_id) {
+          try {
+            const respRow = db.prepare("SELECT * FROM flow_responses WHERE id = ? OR wa_message_id = ?").get(replyRecord.flow_response_id, replyRecord.wa_message_id);
+            if (respRow) {
+              flowSubmissionData = JSON.parse(respRow.parsed_data || respRow.response_json || "{}");
+            }
+          } catch (e) {}
+        }
+
+        if (flowSubmissionData) {
+          const flowValidation = this.validateAndNormalizeFlowSubmission(flowSubmissionData, replyRecord.customer_name);
+          flowIntakeData = flowValidation.intakeData;
+
+          // Case A: Customer Feedback Flow
+          if (flowValidation.isFeedback) {
+            const rating = flowSubmissionData.overall_rating || flowSubmissionData.rating || "5";
+            const ratingStars = "★".repeat(Math.min(5, Math.max(1, parseInt(rating, 10)))) + "☆".repeat(Math.max(0, 5 - parseInt(rating, 10)));
+            const bName = autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa";
+            let feedbackText = `🙏 *Thank You For Your Feedback, ${flowIntakeData.guest_name || "Valued Guest"}!*\n\n`;
+            feedbackText += `We have recorded your rating of *${ratingStars} (${rating}/5)*.\n`;
+            if (flowSubmissionData.favorite_aspect) {
+              feedbackText += `✨ We are thrilled that you enjoyed our *${String(flowSubmissionData.favorite_aspect).replace(/_/g, " ")}*!\n`;
+            }
+            if (flowSubmissionData.suggestions) {
+              feedbackText += `📝 Our management team has noted your suggestion: _"${flowSubmissionData.suggestions}"_.\n`;
+            }
+            feedbackText += `\nWe look forward to welcoming you back to *${bName}*! 🌊🏖️`;
+
+            const buttons = [
+              { id: "btn_rooms", title: shortenButtonTitle(autoReplySettings.quoteRooms || "Resort Rooms") },
+              { id: "btn_menu", title: shortenButtonTitle(autoReplySettings.confirmedButton2 || "Dining Menu") },
+              { id: "btn_staff", title: shortenButtonTitle(autoReplySettings.button3 || "Talk to Staff") }
+            ];
+
+            let sentMsgId = null;
+            try {
+              const bRes = await sendInteractiveButtons({
+                to: cleanPhone,
+                bodyText: feedbackText,
+                buttons,
+                headerText: "Review Received",
+                footerText: bName,
+                customCredentials
+              });
+              sentMsgId = bRes.messageId;
+            } catch (e) {
+              try {
+                const s = await sendTextMessage({ to: cleanPhone, body: feedbackText, customCredentials });
+                sentMsgId = s?.messageId || null;
+              } catch (err) {}
+            }
+
+            const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+            const botReplyId = `bot_feedback_${Date.now()}`;
+            db.prepare(`
+              INSERT INTO customer_replies (
+                wa_message_id, from_phone, customer_name, message_type,
+                message_body, reply_text, reply_sent_at, reply_status,
+                link_id, source, is_read, user_id, received_at
+              ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
+            `).run(botReplyId, cleanPhone, replyRecord.customer_name || "Guest", feedbackText, feedbackText, nowIso, replyRecord.link_id || null, nowIso);
+
+            const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
+            broadcastEngine.emit("webhook:reply", savedBot);
+            return { success: true, feedback: true, replyText: feedbackText, messageId: sentMsgId };
+          }
+
+          // Case B: Support / Concierge Ticket Flow
+          if (flowValidation.isSupport) {
+            const ticketId = `TKT-${Date.now().toString().slice(-5)}`;
+            const bName = autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa";
+            const cat = (flowSubmissionData.issue_category || "General Inquiry").replace(/_/g, " ").toUpperCase();
+            let ticketText = `🎫 *Concierge Ticket Created (#${ticketId})*\n\n`;
+            ticketText += `Thank you, *${flowIntakeData.guest_name || "Guest"}*. Your request regarding *${cat}* has been submitted to our front desk team.\n\n`;
+            if (flowSubmissionData.booking_id) ticketText += `📋 *Booking ID*: ${flowSubmissionData.booking_id}\n`;
+            if (flowSubmissionData.issue_description) ticketText += `📝 *Details*: _"${flowSubmissionData.issue_description}"_\n`;
+            ticketText += `\n📞 Our front desk executive will contact you on this chat shortly.`;
+
+            this.pauseBotForPhone(cleanPhone, (autoReplySettings.takeoverPauseMinutes || 60) * 60 * 1000);
+
+            let sentMsgId = null;
+            try {
+              const s = await sendTextMessage({ to: cleanPhone, body: ticketText, customCredentials });
+              sentMsgId = s?.messageId || null;
+            } catch (err) {}
+
+            const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+            const botReplyId = `bot_support_${Date.now()}`;
+            db.prepare(`
+              INSERT INTO customer_replies (
+                wa_message_id, from_phone, customer_name, message_type,
+                message_body, reply_text, reply_sent_at, reply_status,
+                link_id, source, is_read, user_id, received_at
+              ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
+            `).run(botReplyId, cleanPhone, replyRecord.customer_name || "Guest", ticketText, ticketText, nowIso, replyRecord.link_id || null, nowIso);
+
+            const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
+            broadcastEngine.emit("webhook:reply", savedBot);
+            broadcastEngine.emit("inbox:handoff", {
+              phone: cleanPhone,
+              customerName: flowIntakeData.guest_name,
+              message: ticketText
+            });
+            return { success: true, supportTicket: true, replyText: ticketText, messageId: sentMsgId };
+          }
+        }
+      }
+
       const lower = effectiveText.toLowerCase();
 
       // 6. Action ID Normalization (supports both standard action IDs and user-customized button labels)
@@ -1751,9 +2006,11 @@ class WebhookService {
           flowRes = hospitalityFlowEngine.handleCustomerInquiry({
             channel: "WHATSAPP",
             phone: cleanPhone,
-            guestName: replyRecord.customer_name || "Guest",
+            guestName: flowIntakeData?.guest_name || replyRecord.customer_name || "Guest",
             text: effectiveText,
             link: matchedLink,
+            intakeData: flowIntakeData,
+            flowSubmission: flowIntakeData ? { intake_data: flowIntakeData } : null,
             tenantId: 1
           });
         } catch (flowErr) {
@@ -1973,39 +2230,114 @@ class WebhookService {
             console.warn("[Webhook Flow] Sold out buttons send fallback:", e.message);
           }
         }
-        // 5. In-Chat Flow / General Welcome / Dates Intake
-        else if (rawPayload && rawPayload.interactive_type === "in_chat_flow") {
-          try {
-            const buttons = [
-              { id: "btn_dates_weekend", title: shortenButtonTitle(autoReplySettings.button1 || "This Weekend") },
-              { id: "btn_dates_tomorrow", title: shortenButtonTitle(autoReplySettings.button2 || "Tomorrow (2 N)") },
-              { id: "btn_staff", title: shortenButtonTitle(autoReplySettings.button3 || "Talk to Staff") }
-            ];
-            if (flowRes.text.length > 1000) {
-              await sendTextMessage({ to: cleanPhone, body: flowRes.text, customCredentials });
-              const btnRes = await sendInteractiveButtons({
-                to: cleanPhone,
-                bodyText: "👇 Choose a popular stay option or reply with your travel dates:",
-                buttons,
-                headerText: "Plan Your Stay",
-                footerText: "KonkanTrip Concierge",
-                customCredentials
-              });
-              sentMessageId = btnRes.messageId;
-            } else {
-              const btnRes = await sendInteractiveButtons({
-                to: cleanPhone,
-                bodyText: flowRes.text,
-                buttons,
-                headerText: "Plan Your Stay",
-                footerText: "KonkanTrip Concierge",
-                customCredentials
-              });
-              sentMessageId = btnRes.messageId;
+        // 5. In-Chat Flow / General Welcome / Dates & Values Intake
+        else if (rawPayload && (rawPayload.interactive_type === "in_chat_flow" || (rawPayload.interactive_type === "flow_step" && rawPayload.step === "DATE_SELECTION"))) {
+          let flowDispatched = false;
+          const flowsEnabled = getSetting("WHATSAPP_FLOWS_ENABLED") !== "false";
+
+          if (flowsEnabled) {
+            let effectiveFlow = null;
+            if (matchedLink?.flow_id) {
+              effectiveFlow = db.prepare("SELECT * FROM whatsapp_flows WHERE (id = ? OR meta_flow_id = ?) AND status = 'PUBLISHED'").get(matchedLink.flow_id, matchedLink.flow_id);
             }
-            deliveredInteractive = true;
-          } catch (e) {
-            console.warn("[Webhook Flow] Intake buttons send fallback:", e.message);
+            if (!effectiveFlow && autoReplySettings.selectedFlowId) {
+              effectiveFlow = db.prepare("SELECT * FROM whatsapp_flows WHERE (id = ? OR meta_flow_id = ?) AND status = 'PUBLISHED'").get(autoReplySettings.selectedFlowId, autoReplySettings.selectedFlowId);
+            }
+            if (!effectiveFlow) {
+              effectiveFlow = db.prepare("SELECT * FROM whatsapp_flows WHERE status = 'PUBLISHED' AND meta_flow_id IS NOT NULL ORDER BY (id = 'flow_hospitality_booking') DESC, updated_at DESC LIMIT 1").get();
+            }
+            if (!effectiveFlow) {
+              effectiveFlow = db.prepare("SELECT * FROM whatsapp_flows WHERE status = 'PUBLISHED' ORDER BY updated_at DESC LIMIT 1").get();
+            }
+
+            if (effectiveFlow && (effectiveFlow.meta_flow_id || effectiveFlow.id)) {
+              try {
+                const metaFlowId = effectiveFlow.meta_flow_id || effectiveFlow.id;
+                const flowService = require("./flowService");
+                const flowToken = flowService.createFlowToken({
+                  flowId: effectiveFlow.id,
+                  metaFlowId,
+                  recipientPhone: cleanPhone,
+                  contextMessageId: replyRecord.wa_message_id,
+                  campaignId: replyRecord.campaign_id,
+                  userId: replyRecord.user_id || "bot"
+                });
+
+                let initialScreen = null;
+                try {
+                  const fJson = typeof effectiveFlow.flow_json === "string" ? JSON.parse(effectiveFlow.flow_json) : (effectiveFlow.flow_json || {});
+                  initialScreen = fJson.screens?.[0]?.id || null;
+                } catch (e) {}
+
+                const flowCta = shortenButtonTitle("Select Dates & Guests");
+                const flowHeader = shortenHeaderText(autoReplySettings.businessName || "KonkanTrip Concierge");
+                const flowBody = flowRes.text || "Please select your stay dates and guest details using the form below to check live availability:";
+                const flowFooter = "Instant Live Availability & Rates";
+
+                const screenData = {};
+                if (rawPayload.selected_room?.name) {
+                  screenData.room_preference = rawPayload.selected_room.name;
+                }
+
+                const flowSendFn = metaWhatsAppService.sendFlowMessage || sendFlowMessage;
+                const flowSendRes = await flowSendFn({
+                  to: cleanPhone,
+                  flowId: metaFlowId,
+                  flowToken,
+                  headerText: flowHeader,
+                  bodyText: flowBody,
+                  footerText: flowFooter,
+                  ctaText: flowCta,
+                  screen: initialScreen,
+                  screenData,
+                  customCredentials
+                });
+
+                if (flowSendRes && (flowSendRes.success || flowSendRes.messageId)) {
+                  sentMessageId = flowSendRes.messageId;
+                  deliveredInteractive = true;
+                  flowDispatched = true;
+                }
+              } catch (flowErr) {
+                console.warn("[Webhook Flow] Flow send fallback to buttons:", flowErr.message);
+              }
+            }
+          }
+
+          // If no Flow was dispatched or if flow send failed, gracefully fallback to the 3 interactive quick buttons
+          if (!flowDispatched) {
+            try {
+              const buttons = [
+                { id: "btn_dates_weekend", title: shortenButtonTitle(autoReplySettings.button1 || "This Weekend") },
+                { id: "btn_dates_tomorrow", title: shortenButtonTitle(autoReplySettings.button2 || "Tomorrow (2 N)") },
+                { id: "btn_staff", title: shortenButtonTitle(autoReplySettings.button3 || "Talk to Staff") }
+              ];
+              if (flowRes.text.length > 1000) {
+                await sendTextMessage({ to: cleanPhone, body: flowRes.text, customCredentials });
+                const btnRes = await sendInteractiveButtons({
+                  to: cleanPhone,
+                  bodyText: "👇 Choose a popular stay option or reply with your travel dates:",
+                  buttons,
+                  headerText: "Plan Your Stay",
+                  footerText: "KonkanTrip Concierge",
+                  customCredentials
+                });
+                sentMessageId = btnRes.messageId;
+              } else {
+                const btnRes = await sendInteractiveButtons({
+                  to: cleanPhone,
+                  bodyText: flowRes.text,
+                  buttons,
+                  headerText: "Plan Your Stay",
+                  footerText: "KonkanTrip Concierge",
+                  customCredentials
+                });
+                sentMessageId = btnRes.messageId;
+              }
+              deliveredInteractive = true;
+            } catch (e) {
+              console.warn("[Webhook Flow] Intake buttons send fallback:", e.message);
+            }
           }
         }
         // 6. Amenities & Location inquiries (add buttons to continue the flow!)
@@ -2214,6 +2546,7 @@ class WebhookService {
       confirmedButton3: getSetting("BOT_CONFIRMED_BUTTON_3_LABEL") || "Location / Map",
       handoffPhone: getSetting("BOT_HANDOFF_PHONE") || "+91 87665 90634",
       handoffMessage: getSetting("BOT_HANDOFF_MESSAGE") || "🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at {{phone}}.",
+      selectedFlowId: getSetting("DEFAULT_WHATSAPP_FLOW_ID") || "flow_hospitality_booking",
       takeoverPauseMinutes: parseInt(getSetting("BOT_TAKEOVER_PAUSE_MINUTES") || "60", 10)
     };
   }
@@ -2289,6 +2622,9 @@ class WebhookService {
     const handoffMsg = payload.handoffMessage || payload.handoff_message;
     if (handoffMsg && String(handoffMsg).trim()) {
       setSetting("BOT_HANDOFF_MESSAGE", String(handoffMsg).trim());
+    }
+    if (payload.selectedFlowId !== undefined) {
+      setSetting("DEFAULT_WHATSAPP_FLOW_ID", payload.selectedFlowId ? String(payload.selectedFlowId).trim() : "");
     }
     const pauseMins = payload.takeoverPauseMinutes || payload.takeover_pause_minutes;
     if (pauseMins !== undefined) {
