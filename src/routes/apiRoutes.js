@@ -16,6 +16,7 @@ const { authenticateToken, requireAdmin, authenticateStreamToken, optionalAuth }
 const { authLimiter, broadcastLimiter, uploadLimiter, apiLimiter } = require("../middleware/rateLimiter");
 const broadcastEngine = require("../services/broadcastEngine");
 const metaWhatsAppService = require("../services/metaWhatsAppService");
+const webhookService = require("../services/webhookService");
 
 // Protect all API routes with general rate limiter (300 requests / min per client)
 router.use(apiLimiter);
@@ -45,18 +46,30 @@ router.post("/admin/users/:userId/claim-history", authenticateToken, requireAdmi
 router.get("/admin/unassigned-summary", authenticateToken, requireAdmin, adminController.getUnassignedSummary);
 router.post("/admin/impersonate/:userId", authenticateToken, requireAdmin, adminController.impersonateUser);
 router.get("/admin/overview", authenticateToken, requireAdmin, adminController.getSystemOverview);
+router.get("/admin/audit-logs", authenticateToken, requireAdmin, adminController.getAuditLogs);
+router.post("/admin/backup", authenticateToken, requireAdmin, adminController.exportBackup);
 
 // WhatsApp Phone Number Registry (Protected & Admin Only for mutations)
 router.get("/admin/phone-numbers", authenticateToken, adminController.listPhoneNumbers);
 router.post("/admin/phone-numbers", authenticateToken, requireAdmin, adminController.registerPhoneNumber);
+router.post("/admin/phone-numbers/register-meta", authenticateToken, requireAdmin, settingsController.registerMetaPhone);
+router.post("/admin/phone-numbers/:id/register-meta", authenticateToken, requireAdmin, settingsController.registerMetaPhone);
+router.post("/admin/phone-numbers/:id/deregister-meta", authenticateToken, requireAdmin, settingsController.deregisterMetaPhone);
 router.delete("/admin/phone-numbers/:id", authenticateToken, requireAdmin, adminController.deletePhoneNumber);
 router.post("/admin/phone-numbers/:id/default", authenticateToken, requireAdmin, adminController.setDefaultPhoneNumber);
+router.post("/admin/phone-numbers/:id/token", authenticateToken, requireAdmin, adminController.updatePhoneNumberToken);
+router.post("/admin/phone-numbers/:id/test", authenticateToken, requireAdmin, adminController.testPhoneNumber);
 
 // Top-level aliases for phone numbers
 router.get("/phone-numbers", authenticateToken, adminController.listPhoneNumbers);
 router.post("/phone-numbers", authenticateToken, requireAdmin, adminController.registerPhoneNumber);
+router.post("/phone-numbers/register-meta", authenticateToken, requireAdmin, settingsController.registerMetaPhone);
+router.post("/phone-numbers/:id/register-meta", authenticateToken, requireAdmin, settingsController.registerMetaPhone);
+router.post("/phone-numbers/:id/deregister-meta", authenticateToken, requireAdmin, settingsController.deregisterMetaPhone);
 router.delete("/phone-numbers/:id", authenticateToken, requireAdmin, adminController.deletePhoneNumber);
 router.post("/phone-numbers/:id/default", authenticateToken, requireAdmin, adminController.setDefaultPhoneNumber);
+router.post("/phone-numbers/:id/token", authenticateToken, requireAdmin, adminController.updatePhoneNumberToken);
+router.post("/phone-numbers/:id/test", authenticateToken, requireAdmin, adminController.testPhoneNumber);
 
 // =========================================================================
 // 3. REPORTS & ANALYTICS (Protected & Scoped)
@@ -307,9 +320,17 @@ router.post("/broadcast/stream-token", authenticateToken, broadcastController.ge
 // =========================================================================
 router.get("/settings", authenticateToken, settingsController.getSettings);
 router.post("/settings", authenticateToken, requireAdmin, settingsController.updateSettings);
-router.post("/settings/test-connection", authenticateToken, settingsController.handleTestConnection);
-router.get("/settings/verify-meta", authenticateToken, settingsController.handleTestConnection);
-router.post("/settings/verify-meta", authenticateToken, settingsController.handleTestConnection);
+router.post("/settings/test-connection", authenticateToken, requireAdmin, settingsController.handleTestConnection);
+router.get("/settings/verify-meta", authenticateToken, requireAdmin, settingsController.handleTestConnection);
+router.post("/settings/verify-meta", authenticateToken, requireAdmin, settingsController.handleTestConnection);
+router.post("/settings/register-phone", authenticateToken, requireAdmin, settingsController.registerMetaPhone);
+router.post("/settings/register-meta-phone", authenticateToken, requireAdmin, settingsController.registerMetaPhone);
+router.post("/settings/deregister-phone", authenticateToken, requireAdmin, settingsController.deregisterMetaPhone);
+
+// Direct Meta Graph Phone Registration endpoints (accepts { id, pin, token })
+router.post("/meta/register-phone", optionalAuth, settingsController.registerMetaPhone);
+router.post("/meta/phone-registration", optionalAuth, settingsController.registerMetaPhone);
+router.post("/meta/deregister-phone", optionalAuth, settingsController.deregisterMetaPhone);
 
 // System Time & Timezone (Deployments + Local)
 const systemController = require("../controllers/systemController");
@@ -363,12 +384,13 @@ const webhookController = require("../controllers/webhookController");
 router.get("/webhook", webhookController.handleVerification);
 router.post("/webhook", webhookController.handleIncomingEvent);
 
-// Protected Webhook configuration & controls
-router.get("/webhook/config", authenticateToken, webhookController.getConfig);
+// Protected Webhook configuration & controls (Admin Only)
+router.get("/webhook/config", authenticateToken, requireAdmin, webhookController.getConfig);
 router.post("/webhook/generate-token", authenticateToken, requireAdmin, webhookController.generateNewToken);
 router.post("/webhook/token", authenticateToken, requireAdmin, webhookController.saveToken);
-router.post("/webhook/test-simulate", authenticateToken, webhookController.simulateTestReply);
-router.get("/webhook/test-handshake", authenticateToken, webhookController.testHandshake);
+router.post("/webhook/test-simulate", authenticateToken, requireAdmin, webhookController.simulateTestReply);
+router.get("/webhook/test-handshake", authenticateToken, requireAdmin, webhookController.testHandshake);
+router.post("/webhook/test-handshake", authenticateToken, requireAdmin, webhookController.testHandshake);
 router.post("/webhook/tunnel/restart", authenticateToken, requireAdmin, webhookController.restartTunnel);
 
 // Customer Replies & Inbox (Protected & Scoped)
@@ -448,7 +470,18 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
     let finalMediaType = clientMediaType || null;
     let metaMessageId = null;
 
-    if (req.file) {
+    // Check if recipient conversation is an in-app Web Chat guest (virtual number 919000... or prior reply with source 'CHAT_LINK')
+    const recentWebMessage = db.prepare(`
+      SELECT id, source, link_id FROM customer_replies 
+      WHERE from_phone = ? AND (source = 'CHAT_LINK' OR from_phone LIKE '919000%')
+      ORDER BY id DESC LIMIT 1
+    `).get(targetPhone);
+
+    const isWebChat = Boolean(recentWebMessage || targetPhone.startsWith("919000"));
+
+    if (isWebChat) {
+      metaMessageId = `out_web_${Date.now()}`;
+    } else if (req.file) {
       const isVideo = req.file.mimetype.startsWith("video/");
       const isImage = req.file.mimetype.startsWith("image/");
       finalMediaType = isVideo ? "video" : (isImage ? "image" : (clientMediaType || "document"));
@@ -514,12 +547,21 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
       }
     } catch (e) {}
 
+    const replySource = isWebChat ? "CHAT_LINK" : "WHATSAPP";
+    const replyLinkId = recentWebMessage?.link_id || null;
+
+    // Staff Takeover: Automatically pause bot for 60 minutes for this contact
+    try {
+      webhookService.pauseBotForPhone(targetPhone, 60 * 60 * 1000);
+    } catch (e) {}
+
     db.prepare(`
       INSERT INTO customer_replies (
         wa_message_id, from_phone, customer_name, message_type,
         message_body, reply_text, media_url, media_type, media_caption,
-        reply_sent_at, reply_status, is_read, user_id, received_at
-      ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'SENT', 1, ?, CURRENT_TIMESTAMP)
+        reply_sent_at, reply_status, is_read, user_id, received_at,
+        source, link_id
+      ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'SENT', 1, ?, CURRENT_TIMESTAMP, ?, ?)
     `).run(
       assignedId,
       targetPhone,
@@ -529,7 +571,9 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
       finalMediaUrl,
       finalMediaType,
       text || null,
-      replyUserId
+      replyUserId,
+      replySource,
+      replyLinkId
     );
 
     try {
@@ -547,7 +591,8 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
 
     return res.status(200).json({
       success: true,
-      message: "Reply dispatched successfully via WhatsApp.",
+      channel: isWebChat ? "WEB" : "WHATSAPP",
+      message: isWebChat ? "Reply delivered to customer web chat." : "Reply dispatched successfully via WhatsApp.",
       messageId: assignedId,
       mediaUrl: finalMediaUrl,
       mediaType: finalMediaType
@@ -555,6 +600,35 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
   } catch (error) {
     console.error("Direct inbox reply error:", error);
     return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Get Bot Pause / Takeover status for a contact
+router.get("/inbox/bot-status/:phone", authenticateToken, (req, res) => {
+  try {
+    const phone = req.params.phone;
+    const status = webhookService.getBotStatus(phone);
+    return res.status(200).json({ success: true, data: status });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Set Bot Pause / Resume status for a contact
+router.post("/inbox/bot-status/:phone", authenticateToken, (req, res) => {
+  try {
+    const phone = req.params.phone;
+    const { paused, durationMinutes } = req.body || {};
+    if (paused === false || paused === "false") {
+      webhookService.resumeBotForPhone(phone);
+    } else {
+      const durationMs = Math.max(1, parseInt(durationMinutes, 10) || 60) * 60 * 1000;
+      webhookService.pauseBotForPhone(phone, durationMs);
+    }
+    const status = webhookService.getBotStatus(phone);
+    return res.status(200).json({ success: true, data: status });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -584,31 +658,51 @@ router.get("/broadcast/stream", authenticateStreamToken, (req, res) => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
+  const safeWrite = (data) => {
+    try {
+      if (!res.writableEnded && !res.destroyed) {
+        res.write(data);
+      }
+    } catch (e) {
+      // client disconnected
+    }
+  };
+
   // Initial connection heartbeat
-  res.write(`data: ${JSON.stringify({ type: "init", message: "SSE stream connected", userId: req.user.id })}\n\n`);
+  safeWrite(`data: ${JSON.stringify({ type: "init", message: "SSE stream connected", userId: req.user.id })}\n\n`);
 
   const onProgress = (data) => {
-    res.write(`data: ${JSON.stringify({ type: "progress", TYPE: "PROGRESS", ...data })}\n\n`);
+    safeWrite(`data: ${JSON.stringify({ type: "progress", TYPE: "PROGRESS", ...data })}\n\n`);
   };
 
   const onStatus = (data) => {
-    res.write(`data: ${JSON.stringify({ type: "status", TYPE: "STATUS", ...data })}\n\n`);
+    safeWrite(`data: ${JSON.stringify({ type: "status", TYPE: "STATUS", ...data })}\n\n`);
+    const statusUpper = String(data?.status || "").toUpperCase();
+    if (req.query?.campaignId && data?.campaignId === req.query.campaignId && ["COMPLETED", "FAILED", "CANCELLED"].includes(statusUpper)) {
+      setTimeout(() => {
+        try {
+          if (!res.writableEnded && !res.destroyed) {
+            res.end();
+          }
+        } catch (e) {}
+      }, 1500);
+    }
   };
 
   const onReply = (data) => {
-    res.write(`data: ${JSON.stringify({ type: "reply", TYPE: "REPLY", data })}\n\n`);
+    safeWrite(`data: ${JSON.stringify({ type: "reply", TYPE: "REPLY", data })}\n\n`);
   };
 
   const onWebhookStatus = (data) => {
-    res.write(`data: ${JSON.stringify({ type: "webhook_status", TYPE: "WEBHOOK_STATUS", data })}\n\n`);
+    safeWrite(`data: ${JSON.stringify({ type: "webhook_status", TYPE: "WEBHOOK_STATUS", data })}\n\n`);
   };
 
   const onReplyUpdated = (data) => {
-    res.write(`data: ${JSON.stringify({ type: "reply_updated", TYPE: "REPLY_UPDATED", data })}\n\n`);
+    safeWrite(`data: ${JSON.stringify({ type: "reply_updated", TYPE: "REPLY_UPDATED", data })}\n\n`);
   };
 
   const onThrottle = (data) => {
-    res.write(`data: ${JSON.stringify({ type: "throttle", TYPE: "THROTTLE", ...data })}\n\n`);
+    safeWrite(`data: ${JSON.stringify({ type: "throttle", TYPE: "THROTTLE", ...data })}\n\n`);
   };
 
   broadcastEngine.on("broadcast:progress", onProgress);
@@ -619,10 +713,10 @@ router.get("/broadcast/stream", authenticateStreamToken, (req, res) => {
   broadcastEngine.on("webhook:status", onWebhookStatus);
 
   const keepAliveTimer = setInterval(() => {
-    res.write(": ping\n\n");
+    safeWrite(": ping\n\n");
   }, 25000);
 
-  req.on("close", () => {
+  const cleanup = () => {
     clearInterval(keepAliveTimer);
     broadcastEngine.removeListener("broadcast:progress", onProgress);
     broadcastEngine.removeListener("campaign:status", onStatus);
@@ -630,7 +724,12 @@ router.get("/broadcast/stream", authenticateStreamToken, (req, res) => {
     broadcastEngine.removeListener("webhook:reply", onReply);
     broadcastEngine.removeListener("webhook:reply_updated", onReplyUpdated);
     broadcastEngine.removeListener("webhook:status", onWebhookStatus);
-  });
+  };
+
+  req.on("close", cleanup);
+  req.on("error", cleanup);
+  res.on("finish", cleanup);
+  res.on("close", cleanup);
 });
 
 // =========================================================================
@@ -710,5 +809,17 @@ router.get("/v1/whatsapp/usage", authenticateToken, sarvyaConnectController.getU
 // Public Meta Webhook v1 Alias
 router.get("/v1/webhooks/meta/whatsapp", webhookController.handleVerification);
 router.post("/v1/webhooks/meta/whatsapp", webhookController.handleIncomingEvent);
+
+// Click-to-Chat Links & In-App Customer Messaging
+router.use(require("./chatLinkRoutes"));
+
+// Multi-Industry Polymorphic Commerce & Catalog
+router.use(require("./commerceRoutes"));
+
+// Pay-In Checkout, Merchant Payouts & Settlements
+router.use(require("./payoutRoutes"));
+
+// Hospitality Inventory, Room & Rate Configuration Module
+router.use(require("./hospitalityRoutes"));
 
 module.exports = router;

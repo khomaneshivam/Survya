@@ -23,6 +23,7 @@ import {
   Plus,
   RefreshCw,
   Key,
+  KeyRound,
   Archive,
   ShieldCheck
 } from 'lucide-react';
@@ -39,6 +40,8 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [successMsg, setSuccessMsg] = useState(null);
   const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneModalData, setPhoneModalData] = useState(null);
+  const [testingPhoneId, setTestingPhoneId] = useState(null);
 
   const [resetPasswordModal, setResetPasswordModal] = useState({
     open: false,
@@ -227,6 +230,42 @@ export default function AdminPage() {
     }
   }
 
+  async function handleTestPhoneLine(id) {
+    setTestingPhoneId(id);
+    try {
+      const res = await fetch(`/api/admin/phone-numbers/${id}/test`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (data.success) {
+        flashSuccess(data.message || 'Line successfully verified with Meta Graph API!');
+        loadAllAdminData();
+      } else {
+        alert(data.message || 'Meta line verification failed.');
+      }
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setTestingPhoneId(null);
+    }
+  }
+
+  function handleOpenRegisterPinModal(phone) {
+    setPhoneModalData({
+      phone_number_id: phone.phone_number_id,
+      display_name: phone.display_name,
+      phone_number: phone.phone_number,
+      waba_id: phone.waba_id,
+      is_default: phone.is_default,
+      mode: 'meta_pin'
+    });
+    setShowPhoneModal(true);
+  }
+
   return (
     <div className="app-content-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <PageHeader
@@ -237,7 +276,7 @@ export default function AdminPage() {
             <Button variant="secondary" onClick={loadAllAdminData} disabled={loading}>
               <RefreshCw size={14} className={loading ? 'spin-slow' : ''} /> Refresh
             </Button>
-            <Button variant="primary" onClick={() => setShowPhoneModal(true)}>
+            <Button variant="primary" onClick={() => { setPhoneModalData(null); setShowPhoneModal(true); }}>
               <Plus size={14} /> Add Sender Line
             </Button>
           </>
@@ -398,22 +437,77 @@ export default function AdminPage() {
             { key: 'phone_number', label: 'Phone Number', render: (p) => <span className="font-mono">{p.phone_number}</span> },
             { key: 'phone_number_id', label: 'Meta Phone ID', render: (p) => <span className="font-mono" style={{ fontSize: '12px' }}>{p.phone_number_id}</span> },
             {
+              key: 'status',
+              label: 'Meta Status',
+              render: (p) => {
+                const st = (p.status || 'VERIFIED').toUpperCase();
+                const isConnected = st === 'CONNECTED' || st === 'VERIFIED' || st === 'REGISTERED';
+                return (
+                  <Badge tone={isConnected ? 'green' : 'amber'} dot>
+                    {st}
+                  </Badge>
+                );
+              }
+            },
+            {
+              key: 'quality_rating',
+              label: 'Quality',
+              render: (p) => {
+                const qr = (p.quality_rating || 'GREEN').toUpperCase();
+                const tone = qr === 'GREEN' ? 'green' : qr === 'YELLOW' ? 'amber' : 'red';
+                return <Badge tone={tone}>{qr}</Badge>;
+              }
+            },
+            {
               key: 'is_default',
               label: 'Priority',
-              render: (p) => p.is_default ? <Badge tone="blue" dot>Default</Badge> : <Badge tone="neutral">Secondary</Badge>
+              render: (p) => p.is_default ? <Badge tone="blue" dot>Default Line</Badge> : <Badge tone="neutral">Secondary</Badge>
+            },
+            {
+              key: 'access_token_preview',
+              label: 'Permanent Token',
+              render: (p) => p.has_token ? (
+                <span className="font-mono" style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
+                  🔒 {p.access_token_preview}
+                </span>
+              ) : (
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Global System Token</span>
+              )
             },
             {
               key: 'actions',
               label: 'Actions',
               align: 'end',
               render: (p) => (
-                <div style={{ display: 'inline-flex', gap: '6px' }}>
+                <div style={{ display: 'inline-flex', gap: '6px', flexWrap: 'wrap' }}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleTestPhoneLine(p.id)}
+                    disabled={testingPhoneId === p.id}
+                    title="Verify connection and live status with Meta Cloud API"
+                  >
+                    <RefreshCw size={12} className={testingPhoneId === p.id ? 'spin-slow' : ''} />
+                    <span>{testingPhoneId === p.id ? 'Verifying...' : 'Verify'}</span>
+                  </Button>
+
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleOpenRegisterPinModal(p)}
+                    title="Register 2-step verification PIN directly to Meta Graph API"
+                  >
+                    <KeyRound size={12} />
+                    <span>Register PIN</span>
+                  </Button>
+
                   {!p.is_default && (
-                    <Button variant="secondary" size="sm" onClick={() => handleSetDefaultPhone(p.id)}>
+                    <Button variant="secondary" size="sm" onClick={() => handleSetDefaultPhone(p.id)} title="Set as primary sending line">
                       <Star size={12} /> Default
                     </Button>
                   )}
-                  <Button variant="danger" size="sm" onClick={() => handleDeletePhone(p.id, p.display_name)}>
+
+                  <Button variant="danger" size="sm" onClick={() => handleDeletePhone(p.id, p.display_name)} title="Remove sender line">
                     <Trash2 size={12} />
                   </Button>
                 </div>
@@ -458,8 +552,12 @@ export default function AdminPage() {
 
       <AddPhoneNumberModal
         isOpen={showPhoneModal}
-        onClose={() => setShowPhoneModal(false)}
-        onSuccess={loadAllAdminData}
+        onClose={() => { setShowPhoneModal(false); setPhoneModalData(null); }}
+        onSuccess={() => {
+          flashSuccess('WhatsApp sender line updated and synced successfully.');
+          loadAllAdminData();
+        }}
+        initialData={phoneModalData}
       />
 
       <Modal

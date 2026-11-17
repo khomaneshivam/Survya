@@ -1,7 +1,7 @@
 import React from 'react';
 import { Search, Inbox } from 'lucide-react';
 
-export function Button({ variant = 'secondary', size = 'md', className = '', children, ...props }) {
+export function Button({ variant = 'secondary', size = 'md', className = '', children, loading, ...props }) {
   const variantClass = {
     primary: 'sarvya-btn-primary',
     secondary: 'sarvya-btn-secondary',
@@ -11,8 +11,27 @@ export function Button({ variant = 'secondary', size = 'md', className = '', chi
 
   const sizeClass = size === 'sm' ? 'sarvya-btn-sm' : '';
   return (
-    <button className={`sarvya-btn ${variantClass} ${sizeClass} ${className}`.trim()} {...props}>
-      {children}
+    <button
+      className={`sarvya-btn ${variantClass} ${sizeClass} ${className}`.trim()}
+      disabled={loading || props.disabled}
+      {...props}
+    >
+      {loading ? (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          <span
+            style={{
+              width: '12px',
+              height: '12px',
+              border: '2px solid currentColor',
+              borderTopColor: 'transparent',
+              borderRadius: '50%',
+              display: 'inline-block',
+              animation: 'spin 0.6s linear infinite'
+            }}
+          />
+          <span>{children}</span>
+        </span>
+      ) : children}
     </button>
   );
 }
@@ -93,7 +112,10 @@ export function PageHeader({ title, description, actions, children }) {
   );
 }
 
-export function KpiCard({ label, value, meta, icon: Icon, accentTone = 'blue', onClick }) {
+export function KpiCard({ label, title, value, meta, subtitle, icon: Icon, accentTone = 'blue', onClick }) {
+  const displayLabel = label || title;
+  const displayMeta = meta || subtitle;
+
   const pillStyles = {
     blue: { bg: '#EAF4FB', color: '#1B5886' },
     green: { bg: '#EDF4E6', color: '#2F5219' },
@@ -112,7 +134,7 @@ export function KpiCard({ label, value, meta, icon: Icon, accentTone = 'blue', o
       }}
     >
       <div className="sarvya-kpi-label">
-        <span>{label}</span>
+        <span>{displayLabel}</span>
         {Icon && (
           <span style={{
             width: '26px',
@@ -124,12 +146,12 @@ export function KpiCard({ label, value, meta, icon: Icon, accentTone = 'blue', o
             alignItems: 'center',
             justifyContent: 'center'
           }}>
-            <Icon size={14} />
+            {React.isValidElement(Icon) ? Icon : (typeof Icon === 'function' || typeof Icon === 'object') ? <Icon size={14} /> : null}
           </span>
         )}
       </div>
       <div className="sarvya-kpi-value">{value}</div>
-      {meta && <div className="sarvya-kpi-meta">{meta}</div>}
+      {displayMeta && <div className="sarvya-kpi-meta">{displayMeta}</div>}
     </div>
   );
 }

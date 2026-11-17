@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const config = require("../config/env");
 const { db } = require("../config/database");
+const timeUtil = require("../utils/timeUtil");
 
 /**
  * Generates signed JWT session token
@@ -281,7 +282,9 @@ async function forgotPassword(req, res) {
     // Generate 6-digit numeric recovery code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     const tokenHash = crypto.createHash("sha256").update(code).digest("hex");
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString().replace("T", " ").substring(0, 19);
+    const expiresAt = config.DB_CLIENT === "mysql"
+      ? timeUtil.getIndianTimestampString(new Date(Date.now() + 30 * 60 * 1000))
+      : new Date(Date.now() + 30 * 60 * 1000).toISOString().replace("T", " ").substring(0, 19);
 
     // Invalidate previous unused codes for this user
     db.prepare("UPDATE password_resets SET used = 1 WHERE user_id = ? AND used = 0").run(user.id);

@@ -62,9 +62,9 @@ async function listFlows(req, res) {
     `;
     const params = [];
 
-    // Access control: Admin sees all, non-admin sees flows they created or published flows
+    // Access control: Admin sees all, non-admin strictly sees only flows they created
     if (!isAdmin) {
-      sql += " AND (f.user_id = ? OR f.status = 'PUBLISHED')";
+      sql += " AND f.user_id = ?";
       params.push(userId);
     }
 
@@ -139,7 +139,7 @@ async function getFlow(req, res) {
       return res.status(404).json({ success: false, message: "Flow not found." });
     }
 
-    if (!isAdmin && flow.user_id !== userId && flow.status !== "PUBLISHED") {
+    if (!isAdmin && flow.user_id !== userId) {
       return res.status(403).json({ success: false, message: "Access denied to this flow." });
     }
 

@@ -138,6 +138,8 @@ function createEnquiry(tenantId = 1, data = {}, userId = "system") {
     }
   }
 
+  const assignedTo = data.assigned_to || (userId && userId !== "system" ? userId : null);
+
   const res = db.prepare(`
     INSERT INTO booking_enquiries (
       tenant_id, property_id, contact_id, conversation_id, flow_session_id,
@@ -148,7 +150,7 @@ function createEnquiry(tenantId = 1, data = {}, userId = "system") {
       ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
-      'NEW', NULL, NULL, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      'NEW', ?, NULL, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
     )
   `).run(
     tenantId,
@@ -166,6 +168,7 @@ function createEnquiry(tenantId = 1, data = {}, userId = "system") {
     validRoomTypeId,
     resolvedPref || null,
     preferences ? JSON.stringify(preferences) : null,
+    assignedTo,
     notes || null
   );
 
@@ -185,7 +188,7 @@ function createEnquiry(tenantId = 1, data = {}, userId = "system") {
  * List booking enquiries with filtering (PRD Section 8: GET /api/v1/enquiries)
  */
 function listEnquiries(tenantId = 1, filters = {}) {
-  const { status, search, assigned_to, date_from, date_to, limit = 50, offset = 0 } = filters;
+  const { status, search, assigned_to, date_from, date_to, limit = 50, offset = 0, scopedUserId, scopedUserName, isAdmin } = filters;
 
   let sql = `
     SELECT e.*, 
@@ -203,49 +206,60 @@ function listEnquiries(tenantId = 1, filters = {}) {
     WHERE e.tenant_id = ?
   `;
   const params = [tenantId];
+  let countSql = "SELECT COUNT(*) as total FROM booking_enquiries e WHERE e.tenant_id = ?";
+  const countParams = [tenantId];
+
+  // Enforce account isolation: non-admins strictly see only enquiries assigned to them
+  if (isAdmin === false || (scopedUserId && !isAdmin)) {
+    sql += " AND (e.assigned_to = ? OR e.assigned_to = ?)";
+    params.push(scopedUserId, scopedUserName || scopedUserId);
+    countSql += " AND (e.assigned_to = ? OR e.assigned_to = ?)";
+    countParams.push(scopedUserId, scopedUserName || scopedUserId);
+  } else if (assigned_to) {
+    if (assigned_to === "UNASSIGNED") {
+      sql += " AND (e.assigned_to IS NULL OR e.assigned_to = '')";
+      countSql += " AND (e.assigned_to IS NULL OR e.assigned_to = '')";
+    } else {
+      sql += " AND e.assigned_to = ?";
+      params.push(assigned_to);
+      countSql += " AND e.assigned_to = ?";
+      countParams.push(assigned_to);
+    }
+  }
 
   if (status && String(status).toUpperCase() !== "ALL") {
     sql += " AND e.status = ?";
     params.push(String(status).toUpperCase());
-  }
-
-  if (assigned_to) {
-    if (assigned_to === "UNASSIGNED") {
-      sql += " AND (e.assigned_to IS NULL OR e.assigned_to = '')";
-    } else {
-      sql += " AND e.assigned_to = ?";
-      params.push(assigned_to);
-    }
+    countSql += " AND e.status = ?";
+    countParams.push(String(status).toUpperCase());
   }
 
   if (date_from) {
     sql += " AND e.check_in >= ?";
     params.push(date_from);
+    countSql += " AND e.check_in >= ?";
+    countParams.push(date_from);
   }
 
   if (date_to) {
     sql += " AND e.check_in <= ?";
     params.push(date_to);
+    countSql += " AND e.check_in <= ?";
+    countParams.push(date_to);
   }
 
   if (search && String(search).trim()) {
     const term = `%${String(search).trim()}%`;
     sql += " AND (e.guest_name LIKE ? OR e.phone_e164 LIKE ? OR e.room_preference LIKE ?)";
     params.push(term, term, term);
+    countSql += " AND (e.guest_name LIKE ? OR e.phone_e164 LIKE ? OR e.room_preference LIKE ?)";
+    countParams.push(term, term, term);
   }
 
   sql += " ORDER BY e.id DESC LIMIT ? OFFSET ?";
   params.push(Number(limit) || 50, Number(offset) || 0);
 
   const enquiries = db.prepare(sql).all(...params);
-
-  // Total count for pagination
-  let countSql = "SELECT COUNT(*) as total FROM booking_enquiries WHERE tenant_id = ?";
-  const countParams = [tenantId];
-  if (status && String(status).toUpperCase() !== "ALL") {
-    countSql += " AND status = ?";
-    countParams.push(String(status).toUpperCase());
-  }
   const total = db.prepare(countSql).get(...countParams)?.total || 0;
 
   return { total, enquiries };
@@ -360,7 +374,11 @@ function updateEnquiry(tenantId = 1, id, data = {}, userId = "system") {
 /**
  * Tenant Dashboard Summary (PRD Section 8: GET /api/v1/dashboard/summary)
  */
-function getDashboardSummary(tenantId = 1) {
+function getDashboardSummary(tenantId = 1, user = null) {
+  const isNonAdmin = user && user.role !== "ADMIN";
+  const userFilterSql = isNonAdmin ? " AND (assigned_to = ? OR assigned_to = ?)" : "";
+  const userFilterParams = isNonAdmin ? [user.id, user.name || user.id] : [];
+
   // Counts by status
   const statuses = ["NEW", "QUALIFIED", "QUOTED", "WON", "LOST", "CANCELLED"];
   const counts = { TOTAL: 0 };
@@ -371,9 +389,9 @@ function getDashboardSummary(tenantId = 1) {
   const rows = db.prepare(`
     SELECT status, COUNT(*) as c 
     FROM booking_enquiries 
-    WHERE tenant_id = ?
+    WHERE tenant_id = ? ${userFilterSql}
     GROUP BY status
-  `).all(tenantId);
+  `).all(tenantId, ...userFilterParams);
 
   let total = 0;
   for (const r of rows) {
@@ -383,6 +401,8 @@ function getDashboardSummary(tenantId = 1) {
   counts.TOTAL = total;
 
   // Financial quotation metrics
+  const financialUserFilterSql = isNonAdmin ? " AND (e.assigned_to = ? OR e.assigned_to = ?)" : "";
+  const financialUserFilterParams = isNonAdmin ? [user.id, user.name || user.id] : [];
   const financial = db.prepare(`
     SELECT 
       COUNT(*) as total_quotes,
@@ -391,8 +411,8 @@ function getDashboardSummary(tenantId = 1) {
       COALESCE(AVG(q.total), 0) as avg_quote_value
     FROM quotes q
     JOIN booking_enquiries e ON q.enquiry_id = e.id
-    WHERE q.tenant_id = ?
-  `).get(tenantId);
+    WHERE q.tenant_id = ? ${financialUserFilterSql}
+  `).get(tenantId, ...financialUserFilterParams);
 
   // Conversion rate: Won / (Total - Cancelled) or 0
   const activeEnquiryBase = (counts.TOTAL - (counts.CANCELLED || 0));
@@ -407,10 +427,10 @@ function getDashboardSummary(tenantId = 1) {
            r.name as room_type_name
     FROM booking_enquiries e
     LEFT JOIN room_types r ON e.room_type_id = r.id
-    WHERE e.tenant_id = ? AND e.check_in >= ? AND e.status != 'CANCELLED'
+    WHERE e.tenant_id = ? AND e.check_in >= ? AND e.status != 'CANCELLED' ${financialUserFilterSql}
     ORDER BY e.check_in ASC
     LIMIT 6
-  `).all(tenantId, todayStr);
+  `).all(tenantId, todayStr, ...financialUserFilterParams);
 
   // Recent 6 enquiries
   const recentEnquiries = db.prepare(`
@@ -419,10 +439,10 @@ function getDashboardSummary(tenantId = 1) {
            (SELECT q.total FROM quotes q WHERE q.enquiry_id = e.id ORDER BY q.id DESC LIMIT 1) as quote_amount
     FROM booking_enquiries e
     LEFT JOIN room_types r ON e.room_type_id = r.id
-    WHERE e.tenant_id = ?
+    WHERE e.tenant_id = ? ${financialUserFilterSql}
     ORDER BY e.id DESC
     LIMIT 6
-  `).all(tenantId);
+  `).all(tenantId, ...financialUserFilterParams);
 
   // Today's room availability snapshot
   const roomTypes = db.prepare(`
@@ -437,10 +457,10 @@ function getDashboardSummary(tenantId = 1) {
   return {
     counts,
     financial: {
-      total_quotes: financial.total_quotes || 0,
-      pipeline_value: financial.quoted_pipeline_value || 0,
-      won_revenue: financial.won_revenue || 0,
-      avg_quote_value: Math.round(financial.avg_quote_value || 0)
+      total_quotes: financial?.total_quotes || 0,
+      pipeline_value: financial?.quoted_pipeline_value || 0,
+      won_revenue: financial?.won_revenue || 0,
+      avg_quote_value: Math.round(financial?.avg_quote_value || 0)
     },
     conversion_rate: conversionRate,
     upcoming_checkins: upcomingCheckins,

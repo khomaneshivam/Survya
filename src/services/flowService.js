@@ -3,8 +3,13 @@ const { db, getSetting } = require("../config/database");
 const config = require("../config/env");
 const { getActiveCredentials, resolveWabaId, cleanPhone } = require("./metaWhatsAppService");
 
-const META_GRAPH_VERSION = config.META_GRAPH_VERSION || "v21.0";
-const META_BASE_URL = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
+function getMetaGraphVersion() {
+  return getSetting("META_GRAPH_VERSION") || config.META_GRAPH_VERSION || "v21.0";
+}
+
+function getMetaBaseUrl() {
+  return `https://graph.facebook.com/${getMetaGraphVersion()}`;
+}
 
 class FlowService {
   /**
@@ -90,7 +95,7 @@ class FlowService {
       payload.endpoint_uri = String(endpoint_uri).trim();
     }
 
-    const res = await fetch(`${META_BASE_URL}/${resolvedWaba}/flows`, {
+    const res = await fetch(`${getMetaBaseUrl()}/${resolvedWaba}/flows`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${creds.token}`,
@@ -145,7 +150,7 @@ class FlowService {
     body += jsonString + crlf;
     body += `--${boundary}--${crlf}`;
 
-    const res = await fetch(`${META_BASE_URL}/${metaFlowId}/assets`, {
+    const res = await fetch(`${getMetaBaseUrl()}/${metaFlowId}/assets`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${creds.token}`,
@@ -178,7 +183,7 @@ class FlowService {
     const creds = customCredentials || getActiveCredentials();
 
     const fields = "id,name,status,categories,validation_errors,json_version,data_api_version,endpoint_uri,preview";
-    const res = await fetch(`${META_BASE_URL}/${metaFlowId}?fields=${fields}`, {
+    const res = await fetch(`${getMetaBaseUrl()}/${metaFlowId}?fields=${fields}`, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${creds.token}`,
@@ -204,7 +209,7 @@ class FlowService {
     if (!metaFlowId) throw new Error("Meta Flow ID is required to publish.");
     const creds = customCredentials || getActiveCredentials();
 
-    const res = await fetch(`${META_BASE_URL}/${metaFlowId}/publish`, {
+    const res = await fetch(`${getMetaBaseUrl()}/${metaFlowId}/publish`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${creds.token}`,
@@ -230,7 +235,7 @@ class FlowService {
     if (!metaFlowId) throw new Error("Meta Flow ID is required to deprecate.");
     const creds = customCredentials || getActiveCredentials();
 
-    const res = await fetch(`${META_BASE_URL}/${metaFlowId}/deprecate`, {
+    const res = await fetch(`${getMetaBaseUrl()}/${metaFlowId}/deprecate`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${creds.token}`,
@@ -256,7 +261,7 @@ class FlowService {
     if (!metaFlowId) throw new Error("Meta Flow ID is required to delete.");
     const creds = customCredentials || getActiveCredentials();
 
-    const res = await fetch(`${META_BASE_URL}/${metaFlowId}`, {
+    const res = await fetch(`${getMetaBaseUrl()}/${metaFlowId}`, {
       method: "DELETE",
       headers: {
         "Authorization": `Bearer ${creds.token}`,
@@ -290,7 +295,7 @@ class FlowService {
     }
 
     const fields = "id,name,status,categories,validation_errors,json_version,data_api_version,endpoint_uri,preview";
-    const res = await fetch(`${META_BASE_URL}/${resolvedWaba}/flows?fields=${fields}&limit=${Math.min(limit, 200)}`, {
+    const res = await fetch(`${getMetaBaseUrl()}/${resolvedWaba}/flows?fields=${fields}&limit=${Math.min(limit, 200)}`, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${creds.token}`,

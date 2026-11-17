@@ -46,8 +46,15 @@ function serializeTemplate(row) {
 /**
  * Computes template breakdown summary across all statuses
  */
-function getTemplateStatusSummary() {
-  const rows = db.prepare("SELECT UPPER(COALESCE(status, 'DRAFT')) as status, COUNT(*) as count FROM templates GROUP BY UPPER(COALESCE(status, 'DRAFT'))").all();
+function getTemplateStatusSummary(user = null) {
+  let query = "SELECT UPPER(COALESCE(status, 'DRAFT')) as status, COUNT(*) as count FROM templates";
+  const params = [];
+  if (user && user.role !== "ADMIN") {
+    query += " WHERE (status != 'DRAFT' OR user_id = ? OR user_id IS NULL)";
+    params.push(user.id);
+  }
+  query += " GROUP BY UPPER(COALESCE(status, 'DRAFT'))";
+  const rows = db.prepare(query).all(...params);
   const counts = {
     total: 0,
     approved: 0,
@@ -221,10 +228,15 @@ async function listWhatsAppAccounts(req, res) {
     `).all();
 
     const activeAccount = accounts.find(a => a.is_default === 1) || accounts[0] || null;
-    const templateSummary = getTemplateStatusSummary();
+    const templateSummary = getTemplateStatusSummary(req.user);
 
-    const campSent = db.prepare("SELECT COALESCE(SUM(sent_count), 0) as total FROM campaigns").get()?.total || 0;
-    const directSent = db.prepare("SELECT COUNT(*) as total FROM whatsapp_messages WHERE direction = 'OUTBOUND'").get()?.total || 0;
+    const isNonAdmin = req.user && req.user.role !== "ADMIN";
+    const campSent = isNonAdmin
+      ? (db.prepare("SELECT COALESCE(SUM(sent_count), 0) as total FROM campaigns WHERE user_id = ?").get(req.user.id)?.total || 0)
+      : (db.prepare("SELECT COALESCE(SUM(sent_count), 0) as total FROM campaigns").get()?.total || 0);
+    const directSent = isNonAdmin
+      ? (db.prepare("SELECT COUNT(*) as total FROM whatsapp_messages WHERE direction = 'OUTBOUND' AND user_id = ?").get(req.user.id)?.total || 0)
+      : (db.prepare("SELECT COUNT(*) as total FROM whatsapp_messages WHERE direction = 'OUTBOUND'").get()?.total || 0);
     const totalMessagesSent = Number(campSent) + Number(directSent);
 
     const hasToken = Boolean(getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN);
@@ -621,6 +633,11 @@ async function listCustomTemplates(req, res) {
     let sql = "SELECT * FROM templates WHERE 1=1";
     const params = [];
 
+    if (req.user?.role !== "ADMIN") {
+      sql += " AND (status != 'DRAFT' OR user_id = ? OR user_id IS NULL)";
+      params.push(req.user.id);
+    }
+
     if (statusParam && statusParam !== "ALL") {
       sql += " AND UPPER(COALESCE(status, 'DRAFT')) = ?";
       params.push(statusParam);
@@ -638,7 +655,7 @@ async function listCustomTemplates(req, res) {
     sql += " ORDER BY updated_at DESC, created_at DESC";
     const rows = db.prepare(sql).all(...params);
     const templates = rows.map(serializeTemplate);
-    const summary = getTemplateStatusSummary();
+    const summary = getTemplateStatusSummary(req.user);
 
     return res.status(200).json({
       success: true,
@@ -850,27 +867,34 @@ async function getMessageStatusById(req, res) {
  */
 async function getUsageAndBilling(req, res) {
   try {
+    const isNonAdmin = req.user && req.user.role !== "ADMIN";
+    const userFilterClause = isNonAdmin ? " WHERE user_id = ?" : "";
+    const userParams = isNonAdmin ? [req.user.id] : [];
+
     const byCategory = db.prepare(`
       SELECT
         UPPER(COALESCE(category, 'MARKETING')) as category,
         COUNT(*) as count,
         COALESCE(SUM(unit_cost), 0) as total_cost
       FROM whatsapp_usage_ledger
+      ${userFilterClause}
       GROUP BY UPPER(COALESCE(category, 'MARKETING'))
-    `).all();
+    `).all(...userParams);
 
     const ledger = db.prepare(`
       SELECT * FROM whatsapp_usage_ledger
+      ${userFilterClause}
       ORDER BY created_at DESC, id DESC
       LIMIT 50
-    `).all();
+    `).all(...userParams);
 
     const recentMessages = db.prepare(`
       SELECT id, recipient_phone, message_type, template_name, template_category, status, meta_message_id, estimated_cost, currency, created_at, delivered_at, read_at
       FROM whatsapp_messages
+      ${userFilterClause}
       ORDER BY created_at DESC
       LIMIT 30
-    `).all();
+    `).all(...userParams);
 
     const rates = {
       MARKETING: messagingService.getCategoryUnitRate("MARKETING"),

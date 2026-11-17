@@ -104,10 +104,10 @@ export default function TemplateBuilderModal({
       setHeaderType('NONE');
       setHeaderText('');
       setHeaderMediaUrl('');
-      setBodyText('Hi {{1}},\n\nYour booking confirmation for {{2}} is ready.\n\nReply if you need assistance.');
-      setFooterText('Sent via SARVYA Connect');
-      setButtons([{ type: 'QUICK_REPLY', text: 'Confirm Visit', url: '', phone_number: '' }]);
-      setSamples({ '1': 'Aarav', '2': 'KonkanTrip Beach Resort' });
+      setBodyText('');
+      setFooterText('');
+      setButtons([]);
+      setSamples({});
     }
   }, [open, template]);
 

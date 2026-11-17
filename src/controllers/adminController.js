@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const config = require("../config/env");
 const { db, getSetting, setSetting } = require("../config/database");
+const webhookService = require("../services/webhookService");
 
 /**
  * List all registered users with summary statistics (Admin Only)
@@ -217,10 +218,27 @@ async function impersonateUser(req, res) {
  */
 
 /**
- * List all registered WhatsApp numbers (Admin Only)
+ * List all registered WhatsApp numbers (Admin & Authenticated Users)
  */
 async function listPhoneNumbers(req, res) {
   try {
+    // Ensure at least one default line exists if registered numbers exist
+    const defaultCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers WHERE is_default = 1").get()?.count || 0;
+    const totalCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers").get()?.count || 0;
+    if (totalCount > 0 && defaultCount === 0) {
+      const activeSettingId = getSetting("WHATSAPP_PHONE_NUMBER_ID") || config.WHATSAPP_PHONE_NUMBER_ID;
+      if (activeSettingId) {
+        db.prepare("UPDATE waba_phone_numbers SET is_default = 1 WHERE phone_number_id = ?").run(activeSettingId);
+      }
+      const recheck = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers WHERE is_default = 1").get()?.count || 0;
+      if (recheck === 0) {
+        const first = db.prepare("SELECT id FROM waba_phone_numbers ORDER BY created_at ASC LIMIT 1").get();
+        if (first?.id) {
+          db.prepare("UPDATE waba_phone_numbers SET is_default = 1 WHERE id = ?").run(first.id);
+        }
+      }
+    }
+
     const numbers = db.prepare(`
       SELECT 
         p.*,
@@ -230,7 +248,17 @@ async function listPhoneNumbers(req, res) {
       FROM waba_phone_numbers p
       LEFT JOIN users u ON p.registered_by = u.id
       ORDER BY p.is_default DESC, p.created_at DESC
-    `).all();
+    `).all().map(n => {
+      const rawToken = n.access_token ? String(n.access_token).trim() : null;
+      return {
+        ...n,
+        has_token: !!rawToken,
+        access_token_preview: rawToken ? rawToken.substring(0, 8) + "••••••••" + rawToken.slice(-6) : null,
+        token_type: n.token_type || "PERMANENT",
+        // Do not leak raw token in listing
+        access_token: undefined
+      };
+    });
 
     return res.status(200).json({
       success: true,
@@ -243,7 +271,8 @@ async function listPhoneNumbers(req, res) {
 }
 
 /**
- * Register a new WhatsApp Phone Number in the platform (Admin Only)
+ * Register or update a WhatsApp Phone Number in the platform (Admin Only)
+ * Supports UPSERT, auto-fetch from Meta, optional token update, and optional PIN registration.
  */
 async function registerPhoneNumber(req, res) {
   try {
@@ -252,68 +281,156 @@ async function registerPhoneNumber(req, res) {
     const phoneNumberId = req.body?.phoneNumberId || req.body?.phone_number_id;
     const wabaId = req.body?.wabaId || req.body?.waba_id;
     const isDefault = req.body?.isDefault ?? req.body?.is_default;
+    const customToken = req.body?.token || req.body?.accessToken || req.body?.access_token;
+    const pin = req.body?.pin || req.body?.pinCode || req.body?.pin_code;
 
-    if (!displayName || !String(displayName).trim()) {
-      return res.status(400).json({ success: false, message: "Display Name (e.g. 'Customer Support' or 'Company Hotline') is required." });
-    }
-    if (!phoneNumber || !String(phoneNumber).trim()) {
-      return res.status(400).json({ success: false, message: "WhatsApp Phone Number with country code (e.g. '+1 234 567 8900') is required." });
-    }
     if (!phoneNumberId || !String(phoneNumberId).trim()) {
       return res.status(400).json({ success: false, message: "Meta WhatsApp Phone Number ID is required." });
     }
 
-    const cleanDisplay = String(displayName).trim();
-    const cleanPhone = String(phoneNumber).trim();
     const cleanPhoneId = String(phoneNumberId).trim();
+    let cleanDisplay = displayName ? String(displayName).trim() : "";
+    let cleanPhone = phoneNumber ? String(phoneNumber).trim() : "";
     const cleanWabaId = wabaId ? String(wabaId).trim() : null;
 
-    // Check if Phone Number ID already exists
-    const existing = db.prepare("SELECT id FROM waba_phone_numbers WHERE phone_number_id = ?").get(cleanPhoneId);
-    if (existing) {
-      return res.status(409).json({
-        success: false,
-        message: `Phone Number ID '${cleanPhoneId}' is already registered in the system.`
-      });
+    // If custom token is provided and non-dummy, save it to platform settings
+    if (customToken && String(customToken).trim() && !customToken.startsWith("EAAX_") && !customToken.includes("placeholder")) {
+      try {
+        setSetting("WHATSAPP_API_TOKEN", String(customToken).trim());
+      } catch (e) {
+        console.warn("[Admin Phone Register] Save token note:", e.message);
+      }
     }
 
-    // Verify against Meta Graph API if active token exists
+    // Determine active token to query Meta
+    const activeToken = (customToken && String(customToken).trim()) || getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN;
+
+    // Verify against Meta Graph API or auto-detect missing details
     let qualityRating = "GREEN";
     let metaStatus = "VERIFIED";
-    const activeToken = getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN;
 
-    if (activeToken) {
+    if (activeToken && !activeToken.startsWith("EAAX_") && !activeToken.includes("placeholder")) {
       try {
-        const verifyRes = await fetch(`https://graph.facebook.com/${config.META_GRAPH_VERSION || "v21.0"}/${cleanPhoneId}`, {
-          headers: { "Authorization": `Bearer ${activeToken}` }
+        const graphVer = getSetting("META_GRAPH_VERSION") || config.META_GRAPH_VERSION || "v21.0";
+        const verifyRes = await fetch(`https://graph.facebook.com/${graphVer}/${cleanPhoneId}?fields=id,verified_name,display_phone_number,quality_rating,code_verification_status,status`, {
+          headers: { "Authorization": `Bearer ${activeToken}` },
+          signal: AbortSignal.timeout(12000)
         });
         const metaData = await verifyRes.json();
         if (verifyRes.ok && metaData.id) {
-          qualityRating = metaData.quality_rating || "GREEN";
-          metaStatus = metaData.code_verification_status || "VERIFIED";
+          qualityRating = metaData.quality_rating || qualityRating;
+          metaStatus = metaData.code_verification_status || metaData.status || metaStatus;
+          if (!cleanDisplay && metaData.verified_name) {
+            cleanDisplay = metaData.verified_name;
+          }
+          if (!cleanPhone && metaData.display_phone_number) {
+            cleanPhone = metaData.display_phone_number;
+          }
         }
       } catch (e) {
         console.warn("[Admin Phone Register] Live Meta test check note:", e.message);
       }
     }
 
-    const newId = crypto.randomUUID();
+    // If still missing display name or phone number, provide sensible defaults
+    if (!cleanDisplay) {
+      cleanDisplay = `WhatsApp Line ${cleanPhoneId.slice(-4)}`;
+    }
+    if (!cleanPhone) {
+      cleanPhone = cleanPhoneId;
+    }
+
+    // If PIN is provided, execute direct Meta Cloud API registration
+    if (pin && String(pin).trim()) {
+      const cleanPin = String(pin).trim();
+      if (!/^\d{6}$/.test(cleanPin)) {
+        return res.status(400).json({
+          success: false,
+          message: "Meta two-step verification PIN must be a 6-digit numeric string (e.g. '123456')."
+        });
+      }
+      try {
+        const { registerPhoneNumberWithMeta } = require("../services/metaWhatsAppService");
+        await registerPhoneNumberWithMeta({
+          phoneNumberId: cleanPhoneId,
+          pin: cleanPin,
+          token: activeToken
+        });
+        metaStatus = "CONNECTED";
+      } catch (pinErr) {
+        return res.status(pinErr.statusCode || 400).json({
+          success: false,
+          message: `Failed to register PIN with Meta: ${pinErr.message}`,
+          metaCode: pinErr.metaCode,
+          hint: pinErr.hint
+        });
+      }
+    }
+
+    // Check if Phone Number ID already exists (UPSERT instead of 409)
+    const existing = db.prepare("SELECT * FROM waba_phone_numbers WHERE phone_number_id = ?").get(cleanPhoneId);
     const phoneCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers").get().count;
-    const shouldBeDefault = Boolean(isDefault) || phoneCount === 0;
+    const shouldBeDefault = isDefault !== undefined ? Boolean(isDefault) : (existing ? existing.is_default === 1 : phoneCount === 0);
 
     if (shouldBeDefault) {
       db.prepare("UPDATE waba_phone_numbers SET is_default = 0").run();
       setSetting("WHATSAPP_PHONE_NUMBER_ID", cleanPhoneId);
     }
 
+    const tokenToSave = (customToken && String(customToken).trim() && !customToken.startsWith("EAAX_") && !customToken.includes("placeholder"))
+      ? String(customToken).trim()
+      : null;
+
+    if (existing) {
+      // Update existing record
+      db.prepare(`
+        UPDATE waba_phone_numbers
+        SET display_name = ?,
+            phone_number = ?,
+            waba_id = COALESCE(?, waba_id),
+            quality_rating = ?,
+            status = ?,
+            is_default = ?,
+            access_token = COALESCE(?, access_token),
+            token_type = 'PERMANENT',
+            last_verified_at = CURRENT_TIMESTAMP,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(
+        cleanDisplay,
+        cleanPhone,
+        cleanWabaId,
+        qualityRating,
+        metaStatus,
+        shouldBeDefault ? 1 : 0,
+        tokenToSave,
+        existing.id
+      );
+
+      const updated = db.prepare("SELECT * FROM waba_phone_numbers WHERE id = ?").get(existing.id);
+
+      return res.status(200).json({
+        success: true,
+        message: `WhatsApp Phone Number '${cleanDisplay}' (${cleanPhone}) updated and synced successfully!`,
+        data: {
+          ...updated,
+          access_token: undefined,
+          has_token: !!(updated.access_token && updated.access_token.trim()),
+          access_token_preview: updated.access_token ? updated.access_token.substring(0, 8) + "••••••••" + updated.access_token.slice(-6) : null
+        }
+      });
+    }
+
+    // Insert new record
+    const newId = crypto.randomUUID();
     db.prepare(`
       INSERT INTO waba_phone_numbers (
         id, display_name, phone_number, phone_number_id, waba_id,
-        quality_rating, status, is_default, registered_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        quality_rating, status, is_default, registered_by, access_token, token_type, last_verified_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PERMANENT', CURRENT_TIMESTAMP)
     `).run(
       newId, cleanDisplay, cleanPhone, cleanPhoneId, cleanWabaId,
-      qualityRating, metaStatus, shouldBeDefault ? 1 : 0, req.user ? req.user.id : null
+      qualityRating, metaStatus, shouldBeDefault ? 1 : 0, req.user ? req.user.id : null, tokenToSave || activeToken
     );
 
     const saved = db.prepare("SELECT * FROM waba_phone_numbers WHERE id = ?").get(newId);
@@ -321,7 +438,12 @@ async function registerPhoneNumber(req, res) {
     return res.status(201).json({
       success: true,
       message: `WhatsApp Phone Number '${cleanDisplay}' (${cleanPhone}) registered successfully!`,
-      data: saved
+      data: {
+        ...saved,
+        access_token: undefined,
+        has_token: !!(saved.access_token && saved.access_token.trim()),
+        access_token_preview: saved.access_token ? saved.access_token.substring(0, 8) + "••••••••" + saved.access_token.slice(-6) : null
+      }
     });
   } catch (error) {
     console.error("Admin registerPhoneNumber error:", error);
@@ -383,6 +505,152 @@ async function setDefaultPhoneNumber(req, res) {
   } catch (error) {
     console.error("Admin setDefaultPhoneNumber error:", error);
     return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * Test / Verify a specific phone line against Meta Cloud API (Admin Only)
+ */
+async function testPhoneNumber(req, res) {
+  try {
+    const { id } = req.params;
+    const customToken = req.body?.token;
+
+    const phone = db.prepare("SELECT * FROM waba_phone_numbers WHERE id = ? OR phone_number_id = ?").get(id, id);
+    if (!phone) {
+      return res.status(404).json({ success: false, message: "Phone number not found in registry." });
+    }
+
+    const activeToken = (customToken && String(customToken).trim()) || phone.access_token || getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN;
+    if (!activeToken) {
+      return res.status(400).json({ success: false, message: "No WhatsApp Cloud API token configured or provided." });
+    }
+
+    const graphVer = getSetting("META_GRAPH_VERSION") || config.META_GRAPH_VERSION || "v21.0";
+    const resp = await fetch(`https://graph.facebook.com/${graphVer}/${phone.phone_number_id}?fields=id,verified_name,display_phone_number,quality_rating,code_verification_status,status`, {
+      headers: { Authorization: `Bearer ${activeToken}` },
+      signal: AbortSignal.timeout(12000)
+    });
+    const data = await resp.json();
+
+    if (!resp.ok || data.error) {
+      return res.status(resp.status || 400).json({
+        success: false,
+        message: data.error?.message || "Failed to verify phone number with Meta.",
+        error: data.error
+      });
+    }
+
+    const qualityRating = data.quality_rating || phone.quality_rating || "GREEN";
+    const status = data.code_verification_status || data.status || phone.status || "VERIFIED";
+    const verifiedName = data.verified_name || phone.display_name;
+    const displayPhone = data.display_phone_number || phone.phone_number;
+
+    db.prepare(`
+      UPDATE waba_phone_numbers
+      SET quality_rating = ?,
+          status = ?,
+          display_name = COALESCE(?, display_name),
+          phone_number = COALESCE(?, phone_number),
+          last_verified_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(qualityRating, status, verifiedName, displayPhone, phone.id);
+
+    const updated = db.prepare("SELECT * FROM waba_phone_numbers WHERE id = ?").get(phone.id);
+
+    return res.status(200).json({
+      success: true,
+      message: `Verified with Meta: ${verifiedName} (${displayPhone}) is ${status}.`,
+      data: {
+        ...updated,
+        access_token: undefined,
+        has_token: !!(updated.access_token && updated.access_token.trim()),
+        access_token_preview: updated.access_token ? updated.access_token.substring(0, 8) + "••••••••" + updated.access_token.slice(-6) : null
+      },
+      meta: data
+    });
+  } catch (err) {
+    console.error("testPhoneNumber error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+/**
+ * Update and verify permanent access token dedicated to a specific phone line (Admin Only)
+ */
+async function updatePhoneNumberToken(req, res) {
+  try {
+    const { id } = req.params;
+    const { token, tokenType = "PERMANENT" } = req.body || {};
+    if (!token || !String(token).trim()) {
+      return res.status(400).json({ success: false, message: "A valid Meta access token is required." });
+    }
+    const cleanToken = String(token).trim();
+    const phone = db.prepare("SELECT * FROM waba_phone_numbers WHERE id = ? OR phone_number_id = ?").get(id, id);
+    if (!phone) {
+      return res.status(404).json({ success: false, message: "Phone number not found in registry." });
+    }
+
+    // Live verification with Meta Graph API
+    const graphVer = getSetting("META_GRAPH_VERSION") || config.META_GRAPH_VERSION || "v21.0";
+    const resp = await fetch(`https://graph.facebook.com/${graphVer}/${phone.phone_number_id}?fields=id,verified_name,display_phone_number,quality_rating,code_verification_status,status`, {
+      headers: { Authorization: `Bearer ${cleanToken}` },
+      signal: AbortSignal.timeout(12000)
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.error) {
+      return res.status(resp.status || 400).json({
+        success: false,
+        message: data.error?.message || "Invalid token: Meta rejected authentication.",
+        error: data.error
+      });
+    }
+
+    const qualityRating = data.quality_rating || phone.quality_rating || "GREEN";
+    const status = data.code_verification_status || data.status || "VERIFIED";
+    const verifiedName = data.verified_name || phone.display_name;
+    const displayPhone = data.display_phone_number || phone.phone_number;
+
+    db.prepare(`
+      UPDATE waba_phone_numbers
+      SET access_token = ?,
+          token_type = ?,
+          quality_rating = ?,
+          status = ?,
+          display_name = COALESCE(?, display_name),
+          phone_number = COALESCE(?, phone_number),
+          last_verified_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(cleanToken, tokenType, qualityRating, status, verifiedName, displayPhone, phone.id);
+
+    // If this line is designated default, update settings WHATSAPP_API_TOKEN as well
+    if (phone.is_default === 1) {
+      try {
+        setSetting("WHATSAPP_API_TOKEN", cleanToken);
+      } catch (e) {}
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Permanent token verified and saved for '${verifiedName}' (${displayPhone})!`,
+      data: {
+        id: phone.id,
+        phone_number_id: phone.phone_number_id,
+        display_name: verifiedName,
+        phone_number: displayPhone,
+        status,
+        quality_rating: qualityRating,
+        token_type: tokenType,
+        has_token: true,
+        access_token_preview: cleanToken.substring(0, 8) + "••••••••" + cleanToken.slice(-6),
+        last_verified_at: new Date().toISOString()
+      }
+    });
+  } catch (err) {
+    console.error("updatePhoneNumberToken error:", err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 }
 
@@ -572,6 +840,242 @@ async function getUnassignedSummary(req, res) {
   }
 }
 
+/**
+ * Retrieve system audit logs with pagination (Admin Only)
+ */
+async function getAuditLogs(req, res) {
+  try {
+    const limit = Math.min(parseInt(req.query.limit || "50", 10), 200);
+    const offset = Math.max(parseInt(req.query.offset || "0", 10), 0);
+
+    const logs = db.prepare(`
+      SELECT a.*, u.name as user_name, u.email as user_email
+      FROM audit_logs a
+      LEFT JOIN users u ON a.user_id = u.id
+      ORDER BY a.created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(limit, offset);
+
+    const total = db.prepare("SELECT COUNT(*) as count FROM audit_logs").get()?.count || 0;
+
+    return res.status(200).json({
+      success: true,
+      data: logs,
+      total,
+      limit,
+      offset
+    });
+  } catch (error) {
+    console.error("Admin getAuditLogs error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * Export system configuration & entity overview (Admin Only)
+ */
+async function exportBackup(req, res) {
+  try {
+    const usersCount = db.prepare("SELECT COUNT(*) as count FROM users").get()?.count || 0;
+    const campaignsCount = db.prepare("SELECT COUNT(*) as count FROM campaigns").get()?.count || 0;
+    const contactsCount = db.prepare("SELECT COUNT(*) as count FROM contacts").get()?.count || 0;
+    const settingsCount = db.prepare("SELECT COUNT(*) as count FROM settings").get()?.count || 0;
+    const wabaCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers").get()?.count || 0;
+
+    return res.status(200).json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      summary: {
+        usersCount,
+        campaignsCount,
+        contactsCount,
+        settingsCount,
+        wabaCount
+      }
+    });
+  } catch (error) {
+    console.error("Admin exportBackup error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * Get comprehensive Meta Webhook configuration, URLs, and status (Admin Only)
+ */
+async function getWebhookConfig(req, res) {
+  try {
+    const urls = webhookService.resolveWebhookUrls(req);
+    const verifyToken = webhookService.getVerifyToken();
+    const appSecret = config.META_APP_SECRET || getSetting("META_APP_SECRET") || process.env.META_APP_SECRET;
+
+    // Get telemetry stats
+    let totalReplies = 0;
+    let lastEventAt = null;
+    try {
+      totalReplies = db.prepare("SELECT COUNT(*) as count FROM replies").get()?.count || 0;
+      const lastReply = db.prepare("SELECT created_at FROM replies ORDER BY created_at DESC LIMIT 1").get();
+      if (lastReply?.created_at) {
+        lastEventAt = lastReply.created_at;
+      }
+    } catch (e) {}
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        verifyToken,
+        primaryUrl: urls.primaryUrl,
+        altUrl: urls.altUrl,
+        baseUrl: urls.baseUrl,
+        isCustomOverride: urls.isCustomOverride,
+        isHttps: urls.isHttps,
+        metaAppSecretConfigured: Boolean(appSecret),
+        subscriptionFields: [
+          "messages",
+          "message_deliveries",
+          "messaging_postbacks",
+          "message_reactions"
+        ],
+        stats: {
+          totalReplies,
+          lastEventAt
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Admin getWebhookConfig error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * Generate a new cryptographically secure Meta Webhook verify token (Admin Only)
+ */
+async function generateNewVerifyToken(req, res) {
+  try {
+    const newToken = webhookService.generateVerifyToken();
+    const adminId = req.user?.id || req.user?.userId;
+    const ip = req.ip || req.connection?.remoteAddress;
+
+    try {
+      db.prepare(`
+        INSERT INTO audit_logs (user_id, action, target_id, details, ip_address)
+        VALUES (?, 'WEBHOOK_TOKEN_ROTATED', 'WEBHOOK_VERIFY_TOKEN', ?, ?)
+      `).run(adminId || null, `Generated new token: ${newToken.substring(0, 10)}••••`, ip || null);
+    } catch (e) {}
+
+    return res.status(200).json({
+      success: true,
+      message: "New Meta Webhook Verify Token generated successfully.",
+      data: {
+        verifyToken: newToken
+      }
+    });
+  } catch (error) {
+    console.error("Admin generateNewVerifyToken error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * Save custom Meta Webhook verify token (Admin Only)
+ */
+async function saveWebhookToken(req, res) {
+  try {
+    const { verifyToken } = req.body || {};
+    if (!verifyToken || typeof verifyToken !== "string" || !verifyToken.trim()) {
+      return res.status(400).json({ success: false, message: "Verify token cannot be empty." });
+    }
+    const cleanToken = verifyToken.trim();
+    if (cleanToken.length < 8) {
+      return res.status(400).json({ success: false, message: "Verify token must be at least 8 characters long." });
+    }
+
+    webhookService.saveVerifyToken(cleanToken);
+    const adminId = req.user?.id || req.user?.userId;
+    const ip = req.ip || req.connection?.remoteAddress;
+
+    try {
+      db.prepare(`
+        INSERT INTO audit_logs (user_id, action, target_id, details, ip_address)
+        VALUES (?, 'WEBHOOK_TOKEN_UPDATED', 'WEBHOOK_VERIFY_TOKEN', ?, ?)
+      `).run(adminId || null, `Updated custom token: ${cleanToken.substring(0, 8)}••••`, ip || null);
+    } catch (e) {}
+
+    return res.status(200).json({
+      success: true,
+      message: "Webhook verify token updated successfully.",
+      data: {
+        verifyToken: cleanToken
+      }
+    });
+  } catch (error) {
+    console.error("Admin saveWebhookToken error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * Test Meta Webhook handshake challenge verification (Admin Only)
+ */
+async function testWebhookHandshake(req, res) {
+  try {
+    const { token, challenge } = req.body || {};
+    const result = webhookService.testHandshake(token, challenge);
+
+    return res.status(200).json({
+      success: true,
+      message: result.success
+        ? "Meta Webhook handshake verified successfully!"
+        : "Handshake verification failed: Token mismatch.",
+      data: result
+    });
+  } catch (error) {
+    console.error("Admin testWebhookHandshake error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * Update public Webhook URL override (Admin Only)
+ */
+async function updateWebhookUrlOverride(req, res) {
+  try {
+    const { publicUrl } = req.body || {};
+    let cleanUrl = null;
+
+    if (publicUrl && String(publicUrl).trim()) {
+      cleanUrl = String(publicUrl).trim().replace(/\/+$/, "");
+      if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+        return res.status(400).json({
+          success: false,
+          message: "Public Webhook URL must start with http:// or https://"
+        });
+      }
+    }
+
+    setSetting("PUBLIC_WEBHOOK_URL", cleanUrl || "");
+    const adminId = req.user?.id || req.user?.userId;
+    const ip = req.ip || req.connection?.remoteAddress;
+
+    try {
+      db.prepare(`
+        INSERT INTO audit_logs (user_id, action, target_id, details, ip_address)
+        VALUES (?, 'WEBHOOK_URL_OVERRIDE_UPDATED', 'PUBLIC_WEBHOOK_URL', ?, ?)
+      `).run(adminId || null, cleanUrl ? `Set URL override to ${cleanUrl}` : "Cleared URL override", ip || null);
+    } catch (e) {}
+
+    const resolved = webhookService.resolveWebhookUrls(req);
+    return res.status(200).json({
+      success: true,
+      message: cleanUrl ? "Public Webhook URL override updated." : "Public Webhook URL reset to default host.",
+      data: resolved
+    });
+  } catch (error) {
+    console.error("Admin updateWebhookUrlOverride error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
 module.exports = {
   listUsers,
   getUserDetails,
@@ -583,8 +1087,19 @@ module.exports = {
   registerPhoneNumber,
   deletePhoneNumber,
   setDefaultPhoneNumber,
+  testPhoneNumber,
+  updatePhoneNumberToken,
   getSystemOverview,
   resetUserPassword,
   claimLegacyHistory,
-  getUnassignedSummary
+  getUnassignedSummary,
+  getAuditLogs,
+  exportBackup,
+  registerMetaPhoneNumber: (req, res) => require("./settingsController").registerMetaPhone(req, res),
+  deregisterMetaPhoneNumber: (req, res) => require("./settingsController").deregisterMetaPhone(req, res),
+  getWebhookConfig,
+  generateNewVerifyToken,
+  saveWebhookToken,
+  testWebhookHandshake,
+  updateWebhookUrlOverride
 };

@@ -5,8 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js",
-    "tunnel": "node tunnel.js",
+    "dev": "node --watch-path=server.js --watch-path=src server.js",
     "test": "node --test tests/**/*.test.js",
     "recovery": "node scripts/account-recovery.js"
   },
@@ -25,8 +24,8 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",
-    "localtunnel": "^2.0.2",
     "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.24.6",
     "uuid": "^11.0.5",
     "xlsx": "^0.18.5"
   }

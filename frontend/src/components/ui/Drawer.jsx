@@ -4,9 +4,21 @@ import { X } from 'lucide-react';
 /**
  * Slide-over detail drawer for CRM records, message dossiers, and node inspectors.
  */
-export default function Drawer({ isOpen, onClose, title, subtitle, headerActions, footer, width = '480px', children }) {
+export default function Drawer({
+  isOpen,
+  open,
+  onClose,
+  title,
+  subtitle,
+  headerActions,
+  footer,
+  width = '480px',
+  children
+}) {
+  const show = Boolean(isOpen !== undefined ? isOpen : open);
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (!show) return;
     function onKeyDown(e) {
       if (e.key === 'Escape' && onClose) {
         onClose();
@@ -14,9 +26,9 @@ export default function Drawer({ isOpen, onClose, title, subtitle, headerActions
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  }, [show, onClose]);
 
-  if (!isOpen) return null;
+  if (!show) return null;
 
   return (
     <div

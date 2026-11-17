@@ -3,14 +3,23 @@ const path = require("path");
 const { getSetting, db } = require("../config/database");
 const config = require("../config/env");
 
-const META_GRAPH_VERSION = config.META_GRAPH_VERSION || "v21.0";
-const META_BASE_URL = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
+function getMetaGraphVersion() {
+  return getSetting("META_GRAPH_VERSION") || config.META_GRAPH_VERSION || "v21.0";
+}
+
+function getMetaBaseUrl() {
+  return `https://graph.facebook.com/${getMetaGraphVersion()}`;
+}
 
 /**
  * Retrieves current active WhatsApp credentials from DB or environment
  */
 function getActiveCredentials() {
-  const token = getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN;
+  let token = getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN;
+  // If DB setting contains an ephemeral test placeholder, fall back to valid .env token
+  if (!token || token.startsWith("EAAX_") || token.includes("placeholder") || token === "your_whatsapp_cloud_api_access_token_here") {
+    token = config.WHATSAPP_API_TOKEN;
+  }
   let phoneNumberId = getSetting("WHATSAPP_PHONE_NUMBER_ID") || config.WHATSAPP_PHONE_NUMBER_ID;
 
   if (!phoneNumberId) {
@@ -31,6 +40,50 @@ function getActiveCredentials() {
 
   if (!token) {
     throw new Error("Meta WhatsApp API Token is missing. Configure it in Settings.");
+  }
+  if (!phoneNumberId) {
+    throw new Error("Meta WhatsApp Phone Number ID is missing. Please add a WhatsApp Phone Number in Settings or Topbar.");
+  }
+
+  return { token: token.trim(), phoneNumberId: phoneNumberId.trim() };
+}
+
+/**
+ * Resolves full credentials (token & phoneNumberId) by merging customCredentials,
+ * line-specific permanent tokens in waba_phone_numbers, and global active credentials.
+ * Guarantees that passing partial customCredentials (e.g. { phoneNumberId }) NEVER
+ * clobbers or loses the valid Bearer token.
+ */
+function resolveCredentials(customCredentials = null) {
+  let active = null;
+  try {
+    active = getActiveCredentials();
+  } catch (e) {
+    active = { token: "", phoneNumberId: "" };
+  }
+
+  let token = customCredentials?.token ? String(customCredentials.token).trim() : null;
+  let phoneNumberId = customCredentials?.phoneNumberId
+    ? String(customCredentials.phoneNumberId).trim()
+    : (active.phoneNumberId || "");
+
+  // 1. If line-specific token wasn't explicitly passed, look up in waba_phone_numbers table
+  if (!token && phoneNumberId && db) {
+    try {
+      const line = db.prepare("SELECT access_token FROM waba_phone_numbers WHERE phone_number_id = ? OR id = ? LIMIT 1").get(phoneNumberId, phoneNumberId);
+      if (line?.access_token && line.access_token.trim()) {
+        token = line.access_token.trim();
+      }
+    } catch (e) {}
+  }
+
+  // 2. Fall back to active global token from settings or .env
+  if (!token) {
+    token = active.token;
+  }
+
+  if (!token) {
+    throw new Error("Meta WhatsApp API Token is missing. Configure it in Settings or Sender Lines.");
   }
   if (!phoneNumberId) {
     throw new Error("Meta WhatsApp Phone Number ID is missing. Please add a WhatsApp Phone Number in Settings or Topbar.");
@@ -63,6 +116,16 @@ function parseMetaError(errorData, fallbackStatus = 500) {
     hint = "Invalid parameter supplied to Meta Graph API.";
   } else if (code === 80007) {
     hint = "Rate limit reached. Try increasing the delay between broadcasts.";
+  } else if (code === 133005) {
+    hint = "Two-step verification PIN is incorrect. Please check your 6-digit PIN.";
+  } else if (code === 133004) {
+    hint = "Phone number verification code expired or not requested yet.";
+  } else if (code === 133010) {
+    hint = "Phone number is already registered or rate limited.";
+  } else if (code === 133015) {
+    hint = "Two-step verification PIN is required.";
+  } else if (code === 133016) {
+    hint = "Too many failed PIN attempts. Please wait before retrying.";
   }
 
   const err = new Error(hint ? `${message} (${hint})` : message);
@@ -72,6 +135,44 @@ function parseMetaError(errorData, fallbackStatus = 500) {
   err.hint = hint;
   err.isTransient = fallbackStatus === 429 || fallbackStatus === 503 || code === 80007 || code === 1 || code === 2;
   return err;
+}
+
+/**
+ * Normalizes underlying network/DNS/timeout fetch errors into user-friendly errors
+ */
+function normalizeNetworkError(error, context = "Meta Cloud API") {
+  const cause = error?.cause || {};
+  const code = cause.code || error?.code;
+  const hostname = cause.hostname || "";
+
+  if (code === "ENOTFOUND" || error?.message?.includes("getaddrinfo ENOTFOUND")) {
+    const err = new Error(`Network connectivity error: Unable to reach Meta servers (${hostname || "graph.facebook.com"} DNS lookup failed). Please verify your internet connection.`);
+    err.statusCode = 503;
+    err.code = "NETWORK_DNS_ERROR";
+    err.hint = "Your machine is unable to resolve graph.facebook.com. Check your Wi-Fi, internet connection, or DNS settings.";
+    err.isTransient = true;
+    return err;
+  }
+
+  if (code === "ECONNREFUSED") {
+    const err = new Error(`Connection refused by ${hostname || context}. The service may be temporarily unavailable or blocked.`);
+    err.statusCode = 502;
+    err.code = "CONNECTION_REFUSED";
+    err.hint = "The connection was refused. Check your firewall or proxy settings.";
+    err.isTransient = true;
+    return err;
+  }
+
+  if (code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT" || error?.name === "TimeoutError") {
+    const err = new Error(`Network timeout connecting to ${context}. Request timed out.`);
+    err.statusCode = 504;
+    err.code = "NETWORK_TIMEOUT";
+    err.hint = "The network request timed out. Check network latency or bandwidth.";
+    err.isTransient = true;
+    return err;
+  }
+
+  return error;
 }
 
 /**
@@ -98,17 +199,30 @@ function cleanPhone(phone, defaultCountryCode = "91") {
  * Test Meta Cloud API connection and get phone details
  */
 async function testConnection(customCredentials = null) {
-  const creds = customCredentials || getActiveCredentials();
-  const fields = "id,display_phone_number,verified_name,quality_rating,code_verification_status,status";
-  const url = `${META_BASE_URL}/${creds.phoneNumberId}?fields=${fields}`;
+  const creds = resolveCredentials(customCredentials);
 
-  const res = await fetch(url, {
-    method: "GET",
-    headers: {
-      "Authorization": `Bearer ${creds.token}`,
-      "Content-Type": "application/json"
-    }
-  });
+  if (!creds.token) {
+    throw new Error("Meta WhatsApp API Token is missing. Configure it in Settings or provide an Access Token.");
+  }
+  if (!creds.phoneNumberId) {
+    throw new Error("Meta WhatsApp Phone Number ID is missing.");
+  }
+  const fields = "id,display_phone_number,verified_name,quality_rating,code_verification_status,status";
+  const url = `${getMetaBaseUrl()}/${creds.phoneNumberId}?fields=${fields}`;
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${creds.token}`,
+        "Content-Type": "application/json"
+      },
+      signal: AbortSignal.timeout(12000)
+    });
+  } catch (networkErr) {
+    throw normalizeNetworkError(networkErr, "Meta Graph API");
+  }
 
   const data = await res.json();
   if (!res.ok) {
@@ -124,6 +238,133 @@ async function testConnection(customCredentials = null) {
     codeVerificationStatus: data.code_verification_status,
     status: data.status,
     raw: data
+  };
+}
+
+/**
+ * Registers a phone number with Meta WhatsApp Cloud API using Phone Number ID, PIN, and Access Token
+ * Meta Cloud API: POST https://graph.facebook.com/{version}/{phoneNumberId}/register
+ * 
+ * Body: { "messaging_product": "whatsapp", "pin": "123456" }
+ */
+async function registerPhoneNumberWithMeta({ phoneNumberId, pin, token, dataLocalizationRegion = null }) {
+  if (!phoneNumberId || !String(phoneNumberId).trim()) {
+    const err = new Error("Phone Number ID is required to register with Meta Cloud API.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (pin === undefined || pin === null || !String(pin).trim()) {
+    const err = new Error("Two-step verification PIN is required to register with Meta Cloud API.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const cleanPin = String(pin).trim();
+  if (!/^\d{6}$/.test(cleanPin)) {
+    const err = new Error("Two-step verification PIN must be a 6-digit numeric string (e.g. '123456').");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  let resolvedToken = token;
+  if (!resolvedToken || resolvedToken.includes("••••") || resolvedToken.startsWith("EAAX_") || resolvedToken === "your_whatsapp_cloud_api_access_token_here") {
+    resolvedToken = getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN;
+  }
+  if (!resolvedToken || !String(resolvedToken).trim() || resolvedToken.startsWith("EAAX_")) {
+    const err = new Error("Meta WhatsApp API Token is required. Provide a valid Bearer token in request or Settings.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const cleanPhoneId = String(phoneNumberId).trim();
+  const url = `${getMetaBaseUrl()}/${encodeURIComponent(cleanPhoneId)}/register`;
+
+  const payload = {
+    messaging_product: "whatsapp",
+    pin: cleanPin
+  };
+  if (dataLocalizationRegion && String(dataLocalizationRegion).trim()) {
+    payload.data_localization_region = String(dataLocalizationRegion).trim();
+  }
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${resolvedToken.trim()}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000)
+    });
+  } catch (networkErr) {
+    throw normalizeNetworkError(networkErr, "Meta Graph API Phone Registration");
+  }
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw parseMetaError(data, res.status);
+  }
+
+  return {
+    success: true,
+    phoneNumberId: cleanPhoneId,
+    message: "Phone number registered successfully with Meta WhatsApp Cloud API.",
+    metaResponse: data
+  };
+}
+
+/**
+ * Deregisters a phone number from Meta WhatsApp Cloud API
+ * Meta Cloud API: POST https://graph.facebook.com/{version}/{phoneNumberId}/deregister
+ */
+async function deregisterPhoneNumberWithMeta({ phoneNumberId, token }) {
+  if (!phoneNumberId || !String(phoneNumberId).trim()) {
+    const err = new Error("Phone Number ID is required to deregister from Meta Cloud API.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  let resolvedToken = token;
+  if (!resolvedToken || resolvedToken.includes("••••") || resolvedToken.startsWith("EAAX_") || resolvedToken === "your_whatsapp_cloud_api_access_token_here") {
+    resolvedToken = getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN;
+  }
+  if (!resolvedToken || !String(resolvedToken).trim() || resolvedToken.startsWith("EAAX_")) {
+    const err = new Error("Meta WhatsApp API Token is required. Provide a valid Bearer token in request or Settings.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const cleanPhoneId = String(phoneNumberId).trim();
+  const url = `${getMetaBaseUrl()}/${encodeURIComponent(cleanPhoneId)}/deregister`;
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${resolvedToken.trim()}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ messaging_product: "whatsapp" }),
+      signal: AbortSignal.timeout(15000)
+    });
+  } catch (networkErr) {
+    throw normalizeNetworkError(networkErr, "Meta Graph API Phone Deregistration");
+  }
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw parseMetaError(data, res.status);
+  }
+
+  return {
+    success: true,
+    phoneNumberId: cleanPhoneId,
+    message: "Phone number deregistered successfully from Meta WhatsApp Cloud API.",
+    metaResponse: data
   };
 }
 
@@ -300,8 +541,8 @@ async function getTemplateDetails(templateIdOrName, customCredentials = null) {
   // If numeric ID, query Meta Graph API
   if (/^\d+$/.test(key)) {
     try {
-      const creds = customCredentials || getActiveCredentials();
-      const url = `${META_BASE_URL}/${key}?fields=id,name,components,language,status,category,parameter_format`;
+      const creds = resolveCredentials(customCredentials);
+      const url = `${getMetaBaseUrl()}/${key}?fields=id,name,components,language,status,category,parameter_format`;
       const res = await fetch(url, {
         headers: {
           "Authorization": `Bearer ${creds.token}`,
@@ -387,7 +628,7 @@ function clearTemplateCache() {
  * Supported categories: 'MARKETING', 'UTILITY', 'AUTHENTICATION' (or null / 'ALL' for all categories)
  */
 async function fetchWabaTemplates({ category = null, status = null, limit = 100, customCredentials = null, wabaId = null } = {}) {
-  const creds = customCredentials || getActiveCredentials();
+  const creds = resolveCredentials(customCredentials);
   const resolvedWabaId = resolveWabaId(wabaId);
 
   if (!resolvedWabaId) {
@@ -398,7 +639,7 @@ async function fetchWabaTemplates({ category = null, status = null, limit = 100,
   }
 
   const fields = "id,name,status,category,language,components,parameter_format,quality_score,rejected_reason";
-  const url = new URL(`${META_BASE_URL}/${resolvedWabaId}/message_templates`);
+  const url = new URL(`${getMetaBaseUrl()}/${resolvedWabaId}/message_templates`);
   url.searchParams.set("fields", fields);
   url.searchParams.set("limit", String(Math.min(limit || 100, 250)));
 
@@ -456,7 +697,7 @@ async function fetchWabaTemplates({ category = null, status = null, limit = 100,
  * Send a pre-approved template message via Meta Cloud API
  */
 async function sendTemplateMessage({ to, templateName, languageCode, components = [], customCredentials = null, flowActionData = null, campaignId = null, userId = "system" }) {
-  const creds = customCredentials || getActiveCredentials();
+  const creds = resolveCredentials(customCredentials);
   const defaultCountry = getSetting("DEFAULT_COUNTRY_CODE") || "91";
   const cleanTo = cleanPhone(to, defaultCountry);
 
@@ -546,7 +787,7 @@ async function sendTemplateMessage({ to, templateName, languageCode, components 
     // Non-blocking template button inspection fallback
   }
 
-  const url = `${META_BASE_URL}/${creds.phoneNumberId}/messages`;
+  const url = `${getMetaBaseUrl()}/${creds.phoneNumberId}/messages`;
   const templatePayload = {
     name: resolvedName,
     language: {
@@ -621,7 +862,7 @@ async function sendTemplateMessage({ to, templateName, languageCode, components 
  * Send a direct text message via Meta Cloud API (requires active 24-hr customer service window)
  */
 async function sendTextMessage({ to, body, previewUrl = false, customCredentials = null }) {
-  const creds = customCredentials || getActiveCredentials();
+  const creds = resolveCredentials(customCredentials);
   const defaultCountry = getSetting("DEFAULT_COUNTRY_CODE") || "91";
   const cleanTo = cleanPhone(to, defaultCountry);
 
@@ -629,7 +870,7 @@ async function sendTextMessage({ to, body, previewUrl = false, customCredentials
     throw new Error(`Invalid recipient phone number: '${to}'`);
   }
 
-  const url = `${META_BASE_URL}/${creds.phoneNumberId}/messages`;
+  const url = `${getMetaBaseUrl()}/${creds.phoneNumberId}/messages`;
   const payload = {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -679,8 +920,8 @@ async function sendTextMessage({ to, body, previewUrl = false, customCredentials
  * Uploads a media file directly to Meta Cloud API to obtain a permanent Meta Media ID
  */
 async function uploadMedia({ fileBuffer, fileName, mimeType, customCredentials = null }) {
-  const creds = customCredentials || getActiveCredentials();
-  const url = `${META_BASE_URL}/${creds.phoneNumberId}/media`;
+  const creds = resolveCredentials(customCredentials);
+  const url = `${getMetaBaseUrl()}/${creds.phoneNumberId}/media`;
 
   const formData = new FormData();
   formData.append("messaging_product", "whatsapp");
@@ -711,7 +952,7 @@ async function uploadMedia({ fileBuffer, fileName, mimeType, customCredentials =
  * Send an image, video, or document directly to a customer via Meta Cloud API
  */
 async function sendMediaMessage({ to, type = "image", mediaId, mediaUrl, caption = "", filename, customCredentials = null }) {
-  const creds = customCredentials || getActiveCredentials();
+  const creds = resolveCredentials(customCredentials);
   const defaultCountry = getSetting("DEFAULT_COUNTRY_CODE") || "91";
   const cleanTo = cleanPhone(to, defaultCountry);
 
@@ -736,7 +977,7 @@ async function sendMediaMessage({ to, type = "image", mediaId, mediaUrl, caption
     mediaObject.filename = filename;
   }
 
-  const url = `${META_BASE_URL}/${creds.phoneNumberId}/messages`;
+  const url = `${getMetaBaseUrl()}/${creds.phoneNumberId}/messages`;
   const payload = {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -775,8 +1016,8 @@ async function getMediaDetails(mediaId, customCredentials = null) {
   if (!mediaId) {
     throw new Error("Media ID is required to fetch media details from Meta.");
   }
-  const creds = customCredentials || getActiveCredentials();
-  const url = `${META_BASE_URL}/${mediaId}`;
+  const creds = resolveCredentials(customCredentials);
+  const url = `${getMetaBaseUrl()}/${mediaId}`;
 
   const res = await fetch(url, {
     method: "GET",
@@ -806,7 +1047,7 @@ async function downloadMediaBuffer(downloadUrl, customCredentials = null) {
   if (!downloadUrl) {
     throw new Error("Download URL is required to download media.");
   }
-  const creds = customCredentials || getActiveCredentials();
+  const creds = resolveCredentials(customCredentials);
 
   const res = await fetch(downloadUrl, {
     method: "GET",
@@ -923,7 +1164,7 @@ async function sendFlowMessage({
   screenData = {},
   customCredentials = null
 }) {
-  const creds = customCredentials || getActiveCredentials();
+  const creds = resolveCredentials(customCredentials);
   const defaultCountry = getSetting("DEFAULT_COUNTRY_CODE") || "91";
   const effectiveFlowId = flowId || metaFlowId;
   const effectiveScreen = screen || screenId;
@@ -945,7 +1186,7 @@ async function sendFlowMessage({
     return { success: false, error: "Message bodyText is required for Flow messages." };
   }
 
-  const url = `${META_BASE_URL}/${creds.phoneNumberId}/messages`;
+  const url = `${getMetaBaseUrl()}/${creds.phoneNumberId}/messages`;
 
   const flowActionPayload = {
     screen: effectiveScreen || undefined,
@@ -1041,7 +1282,7 @@ async function sendFlowMessage({
  * POST /{WABA_ID}/message_templates
  */
 async function createWabaTemplate({ name, category = "MARKETING", language = "en_US", components = [], parameterFormat = "POSITIONAL", wabaId = null, customCredentials = null }) {
-  const creds = customCredentials || getActiveCredentials();
+  const creds = resolveCredentials(customCredentials);
   const resolvedWabaId = resolveWabaId(wabaId);
 
   if (!resolvedWabaId) {
@@ -1051,7 +1292,7 @@ async function createWabaTemplate({ name, category = "MARKETING", language = "en
     throw err;
   }
 
-  const url = `${META_BASE_URL}/${resolvedWabaId}/message_templates`;
+  const url = `${getMetaBaseUrl()}/${resolvedWabaId}/message_templates`;
   const payload = {
     name,
     category: String(category || "MARKETING").toUpperCase(),
@@ -1086,9 +1327,252 @@ async function createWabaTemplate({ name, category = "MARKETING", language = "en
   };
 }
 
+/**
+ * Sends an Interactive WhatsApp Quick Reply Button Message (1 to 3 buttons)
+ * Meta Cloud API: POST https://graph.facebook.com/{version}/{phoneNumberId}/messages
+ */
+async function sendInteractiveButtons({
+  to,
+  bodyText,
+  buttons = [],
+  headerText = "",
+  footerText = "",
+  customCredentials = null
+}) {
+  const creds = resolveCredentials(customCredentials);
+  const defaultCountry = getSetting("DEFAULT_COUNTRY_CODE") || "91";
+  const cleanTo = cleanPhone(to, defaultCountry);
+
+  if (!cleanTo || cleanTo.length < 10) {
+    throw new Error(`Invalid recipient phone number: '${to}'`);
+  }
+  if (!bodyText || !String(bodyText).trim()) {
+    throw new Error("Message bodyText is required for Interactive Buttons.");
+  }
+  if (!Array.isArray(buttons) || buttons.length === 0) {
+    throw new Error("At least one button is required (up to 3 buttons).");
+  }
+
+  // Meta Cloud API enforces max 3 buttons, button title max 20 chars, button ID max 256 chars
+  const formattedButtons = buttons.slice(0, 3).map((btn, idx) => {
+    const btnId = String(btn.id || `btn_${idx + 1}`).trim().substring(0, 256);
+    const btnTitle = String(btn.title || btn.text || `Option ${idx + 1}`).trim().substring(0, 20);
+    return {
+      type: "reply",
+      reply: {
+        id: btnId,
+        title: btnTitle
+      }
+    };
+  });
+
+  const interactive = {
+    type: "button",
+    body: {
+      text: String(bodyText).trim().substring(0, 1024)
+    },
+    action: {
+      buttons: formattedButtons
+    }
+  };
+
+  if (headerText && String(headerText).trim()) {
+    interactive.header = {
+      type: "text",
+      text: String(headerText).trim().substring(0, 60)
+    };
+  }
+
+  if (footerText && String(footerText).trim()) {
+    interactive.footer = {
+      type: "text",
+      text: String(footerText).trim().substring(0, 60)
+    };
+  }
+
+  const url = `${getMetaBaseUrl()}/${creds.phoneNumberId}/messages`;
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: cleanTo,
+    type: "interactive",
+    interactive
+  };
+
+  let res, data;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${creds.token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000)
+    });
+    data = await res.json();
+  } catch (netErr) {
+    if (netErr.name === "TimeoutError" || netErr.name === "AbortError" || netErr.code === "ECONNRESET" || netErr.code === "ETIMEDOUT" || netErr.message?.includes("fetch failed")) {
+      const ambErr = new Error(`Ambiguous outcome: Meta request timed out or network dropped (${netErr.message})`);
+      ambErr.isAmbiguous = true;
+      ambErr.code = "NETWORK_AMBIGUOUS";
+      throw ambErr;
+    }
+    throw netErr;
+  }
+
+  if (!res.ok) {
+    throw parseMetaError(data, res.status);
+  }
+
+  return {
+    success: true,
+    messageId: data.messages?.[0]?.id,
+    recipient: cleanTo,
+    buttonsCount: formattedButtons.length,
+    data
+  };
+}
+
+/**
+ * Sends an Interactive WhatsApp List Message (up to 10 rows across sections)
+ * Meta Cloud API: POST https://graph.facebook.com/{version}/{phoneNumberId}/messages
+ */
+async function sendInteractiveList({
+  to,
+  bodyText,
+  buttonText = "View Options",
+  sections = [],
+  headerText = "",
+  footerText = "",
+  customCredentials = null
+}) {
+  const creds = resolveCredentials(customCredentials);
+  const defaultCountry = getSetting("DEFAULT_COUNTRY_CODE") || "91";
+  const cleanTo = cleanPhone(to, defaultCountry);
+
+  if (!cleanTo || cleanTo.length < 10) {
+    throw new Error(`Invalid recipient phone number: '${to}'`);
+  }
+  if (!bodyText || !String(bodyText).trim()) {
+    throw new Error("Message bodyText is required for Interactive List.");
+  }
+  if (!Array.isArray(sections) || sections.length === 0) {
+    throw new Error("At least one section with rows is required for Interactive List.");
+  }
+
+  // Meta Cloud API enforces total max 10 rows across all sections
+  let totalRowsCount = 0;
+  const formattedSections = [];
+
+  for (const sec of sections) {
+    if (totalRowsCount >= 10) break;
+    const secTitle = String(sec.title || "Options").trim().substring(0, 24);
+    const rawRows = Array.isArray(sec.rows) ? sec.rows : [];
+    const validRows = [];
+
+    for (const row of rawRows) {
+      if (totalRowsCount >= 10) break;
+      const rowId = String(row.id || `row_${totalRowsCount + 1}`).trim().substring(0, 200);
+      const rowTitle = String(row.title || row.name || `Option ${totalRowsCount + 1}`).trim().substring(0, 24);
+      const formattedRow = {
+        id: rowId,
+        title: rowTitle
+      };
+      if (row.description && String(row.description).trim()) {
+        formattedRow.description = String(row.description).trim().substring(0, 72);
+      }
+      validRows.push(formattedRow);
+      totalRowsCount++;
+    }
+
+    if (validRows.length > 0) {
+      formattedSections.push({
+        title: secTitle,
+        rows: validRows
+      });
+    }
+  }
+
+  if (totalRowsCount === 0) {
+    throw new Error("Interactive List must contain at least one valid row item.");
+  }
+
+  const interactive = {
+    type: "list",
+    body: {
+      text: String(bodyText).trim().substring(0, 1024)
+    },
+    action: {
+      button: String(buttonText || "View Options").trim().substring(0, 20),
+      sections: formattedSections
+    }
+  };
+
+  if (headerText && String(headerText).trim()) {
+    interactive.header = {
+      type: "text",
+      text: String(headerText).trim().substring(0, 60)
+    };
+  }
+
+  if (footerText && String(footerText).trim()) {
+    interactive.footer = {
+      type: "text",
+      text: String(footerText).trim().substring(0, 60)
+    };
+  }
+
+  const url = `${getMetaBaseUrl()}/${creds.phoneNumberId}/messages`;
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: cleanTo,
+    type: "interactive",
+    interactive
+  };
+
+  let res, data;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${creds.token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000)
+    });
+    data = await res.json();
+  } catch (netErr) {
+    if (netErr.name === "TimeoutError" || netErr.name === "AbortError" || netErr.code === "ECONNRESET" || netErr.code === "ETIMEDOUT" || netErr.message?.includes("fetch failed")) {
+      const ambErr = new Error(`Ambiguous outcome: Meta request timed out or network dropped (${netErr.message})`);
+      ambErr.isAmbiguous = true;
+      ambErr.code = "NETWORK_AMBIGUOUS";
+      throw ambErr;
+    }
+    throw netErr;
+  }
+
+  if (!res.ok) {
+    throw parseMetaError(data, res.status);
+  }
+
+  return {
+    success: true,
+    messageId: data.messages?.[0]?.id,
+    recipient: cleanTo,
+    totalRows: totalRowsCount,
+    data
+  };
+}
+
 module.exports = {
   getActiveCredentials,
+  resolveCredentials,
   testConnection,
+  registerPhoneNumberWithMeta,
+  deregisterPhoneNumberWithMeta,
   cleanPhone,
   getTemplateDetails,
   resolveWabaId,
@@ -1098,6 +1582,8 @@ module.exports = {
   sendTemplateMessage,
   sendTextMessage,
   sendMediaMessage,
+  sendInteractiveButtons,
+  sendInteractiveList,
   sendFlowMessage,
   uploadMedia,
   getMediaDetails,

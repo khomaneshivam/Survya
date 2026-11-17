@@ -349,21 +349,28 @@ describe("Security, Multi-Tenant Isolation & WhatsApp Broadcast Reliability Test
   // =========================================================================
   describe("3. Secrets Masking & Settings Protection", () => {
     test("GET /api/settings masks sensitive tokens and secrets as ••••••••", async () => {
-      setSetting("WHATSAPP_API_TOKEN", "EAAX_very_sensitive_live_token_12345");
-      setSetting("META_APP_SECRET", "super_secret_meta_app_secret_value");
-      setSetting("JWT_SECRET", "super_secret_jwt_signing_key_32chars");
+      const origAppSecret = getSetting("META_APP_SECRET");
+      const origJwt = getSetting("JWT_SECRET");
 
-      const res = await fetch(`${baseUrl}/api/settings`, {
-        headers: { Authorization: `Bearer ${userAToken}` }
-      });
-      assert.strictEqual(res.status, 200);
-      const data = await res.json();
-      assert.strictEqual(data.success, true);
+      try {
+        setSetting("META_APP_SECRET", "super_secret_meta_app_secret_value");
+        setSetting("JWT_SECRET", "super_secret_jwt_signing_key_32chars");
 
-      assert.ok(data.data.WHATSAPP_API_TOKEN.includes("••••••••"));
-      assert.ok(data.data.META_APP_SECRET.includes("••••••••"));
-      assert.ok(data.data.WEBHOOK_VERIFY_TOKEN.includes("••••••••"));
-      assert.ok(data.data.JWT_SECRET.includes("••••••••"));
+        const res = await fetch(`${baseUrl}/api/settings`, {
+          headers: { Authorization: `Bearer ${userAToken}` }
+        });
+        assert.strictEqual(res.status, 200);
+        const data = await res.json();
+        assert.strictEqual(data.success, true);
+
+        assert.ok(data.data.WHATSAPP_API_TOKEN.includes("••••••••"));
+        assert.ok(data.data.META_APP_SECRET.includes("••••••••"));
+        assert.ok(data.data.WEBHOOK_VERIFY_TOKEN.includes("••••••••"));
+        assert.ok(data.data.JWT_SECRET.includes("••••••••"));
+      } finally {
+        if (origAppSecret) setSetting("META_APP_SECRET", origAppSecret);
+        if (origJwt) setSetting("JWT_SECRET", origJwt);
+      }
     });
 
     test("Non-admin user cannot modify platform settings (403 Forbidden)", async () => {

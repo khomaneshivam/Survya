@@ -122,10 +122,13 @@ async function createCampaign(req, res) {
 
     // Enforce phone ownership / assignment
     let assignedPhoneId = null;
-    if (req.user?.role === "ADMIN" && phoneId) {
-      assignedPhoneId = phoneId;
+    const requestedPhone = phoneId ? String(phoneId).trim() : null;
+    if (requestedPhone) {
+      const match = db.prepare("SELECT phone_number_id FROM waba_phone_numbers WHERE id = ? OR phone_number_id = ?").get(requestedPhone, requestedPhone);
+      assignedPhoneId = match ? match.phone_number_id : requestedPhone;
     } else if (req.user?.assigned_phone_id) {
-      assignedPhoneId = req.user.assigned_phone_id;
+      const match = db.prepare("SELECT phone_number_id FROM waba_phone_numbers WHERE id = ? OR phone_number_id = ?").get(req.user.assigned_phone_id, req.user.assigned_phone_id);
+      assignedPhoneId = match ? match.phone_number_id : req.user.assigned_phone_id;
     } else {
       const defaultPhone = db.prepare("SELECT phone_number_id FROM waba_phone_numbers WHERE is_default = 1 LIMIT 1").get();
       assignedPhoneId = defaultPhone ? defaultPhone.phone_number_id : (config.WHATSAPP_PHONE_NUMBER_ID || null);

@@ -479,7 +479,12 @@ class BroadcastEngine extends EventEmitter {
             }
 
             if (fileBuffer) {
-              const uploadRes = await metaWhatsAppService.uploadMedia({ fileBuffer, fileName, mimeType });
+              const uploadRes = await metaWhatsAppService.uploadMedia({
+                fileBuffer,
+                fileName,
+                mimeType,
+                customCredentials: campaign.phone_number_id ? { phoneNumberId: campaign.phone_number_id } : null
+              });
               if (uploadRes && uploadRes.mediaId) {
                 mappingConfig.headerMediaId = uploadRes.mediaId;
                 db.prepare("UPDATE campaigns SET mapping_config = ? WHERE id = ?").run(
@@ -619,6 +624,7 @@ class BroadcastEngine extends EventEmitter {
                   templateName: tplName,
                   languageCode: tplLang || "en",
                   components: components,
+                  customCredentials: campaign.phone_number_id ? { phoneNumberId: campaign.phone_number_id } : null,
                   campaignId: campaign.id,
                   userId: campaign.user_id || "system"
                 });
@@ -661,7 +667,8 @@ class BroadcastEngine extends EventEmitter {
                   headerText: mappingConfig?.headerText || flowRecord?.name || "",
                   bodyText: interpolatedBody,
                   footerText: mappingConfig?.footerText || "",
-                  ctaText: mappingConfig?.ctaText || "Open Form"
+                  ctaText: mappingConfig?.ctaText || "Open Form",
+                  customCredentials: campaign.phone_number_id ? { phoneNumberId: campaign.phone_number_id } : null
                 });
 
                 if (sendResult?.messageId) {
@@ -675,7 +682,8 @@ class BroadcastEngine extends EventEmitter {
 
                 sendResult = await metaWhatsAppService.sendTextMessage({
                   to: recipient.clean_phone,
-                  body: renderedContent
+                  body: renderedContent,
+                  customCredentials: campaign.phone_number_id ? { phoneNumberId: campaign.phone_number_id } : null
                 });
               }
               isSuccess = true;

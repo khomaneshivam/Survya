@@ -8,7 +8,6 @@ const fs = require("fs");
 const config = require("./src/config/env");
 require("./src/config/database"); // Initializes local SQLite DB
 const schedulerService = require("./src/services/schedulerService");
-const tunnelService = require("./src/services/tunnelService");
 const apiRoutes = require("./src/routes/apiRoutes");
 const webhookController = require("./src/controllers/webhookController");
 const securityHeaders = require("./src/middleware/securityHeaders");
@@ -131,6 +130,28 @@ app.get("/webhooks/meta/whatsapp", webhookController.handleVerification);
 app.post("/webhooks/meta/whatsapp", webhookController.handleIncomingEvent);
 app.post("/webhooks/meta/flows", flowController.handleDataExchange);
 
+// Direct WhatsApp Link Redirect Helper (/c/:slug?redirect=whatsapp, /chat/:slug)
+app.get(["/c/:slug", "/chat/:slug"], (req, res, next) => {
+  if (req.query.redirect === "whatsapp" || req.query.wa === "1") {
+    try {
+      const chatLinkService = require("./src/services/chatLinkService");
+      const link = chatLinkService.getLinkByIdOrSlug(req.params.slug, {
+        incrementClicks: true,
+        queryParams: req.query
+      });
+      if (link && link.urls?.waMeUrl) {
+        return res.redirect(link.urls.waMeUrl);
+      }
+    } catch (e) {}
+  }
+  next();
+});
+
+// 4b. Health Check Endpoint
+app.get(["/api/health", "/health"], (req, res) => {
+  res.status(200).json({ status: "healthy", timestamp: new Date().toISOString() });
+});
+
 // 5. API routes
 app.use("/api", apiRoutes);
 
@@ -165,18 +186,15 @@ if (require.main === module) {
     // Start background campaign scheduler
     schedulerService.initScheduler();
 
-    // In non-production, start HTTPS tunnel for Meta Webhook testing
-    if (config.NODE_ENV !== "production") {
-      tunnelService.initTunnel(PORT).catch(err => {
-        console.warn("[Server] Note: Auto-tunnel initialization notice:", err.message);
-      });
-    }
+    const dbTarget = config.DB_CLIENT === "mysql"
+      ? `MySQL (${config.DB_NAME} on ${config.DB_HOST}:${config.DB_PORT})`
+      : `SQLite (${path.join(config.DATA_DIR, "whatsapp_bulk.db")})`;
 
     console.log(`
 ========================================================================
-🚀 WhatsApp Bulk Broadcast System (Isolated Project)
+🚀 WhatsApp Bulk Broadcast System
 📡 Server running on: http://localhost:${PORT}
-💾 Database: ${path.join(config.DATA_DIR, "whatsapp_bulk.db")}
+💾 Database: ${dbTarget}
 📱 Meta Phone ID: ${config.WHATSAPP_PHONE_NUMBER_ID || "Not Configured"}
 ⏰ Scheduler: Active (Auto-Dispatches Scheduled Campaigns)
 ========================================================================

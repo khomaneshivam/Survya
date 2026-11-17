@@ -6,6 +6,7 @@ import { X } from 'lucide-react';
  */
 export default function Modal({
   isOpen,
+  open,
   onClose,
   title,
   subtitle,
@@ -15,22 +16,23 @@ export default function Modal({
   children,
   closeOnBackdrop = true
 }) {
+  const show = Boolean(isOpen !== undefined ? isOpen : open);
   const dialogRef = useRef(null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
 
-    if (isOpen && !dialog.open) {
+    if (show && !dialog.open) {
       try {
         dialog.showModal();
       } catch {
         // Fallback if already open in edge React strict mode cycles
       }
-    } else if (!isOpen && dialog.open) {
+    } else if (!show && dialog.open) {
       dialog.close();
     }
-  }, [isOpen]);
+  }, [show]);
 
   function handleCancel(e) {
     e.preventDefault();
@@ -38,12 +40,22 @@ export default function Modal({
   }
 
   function handleBackdropClick(e) {
-    if (closeOnBackdrop && e.target === dialogRef.current && onClose) {
+    if (!closeOnBackdrop || !onClose || !dialogRef.current) return;
+    // Only close if click is directly on the dialog backdrop (outside its bounding box)
+    if (e.target !== dialogRef.current) return;
+    const rect = dialogRef.current.getBoundingClientRect();
+    const isInDialog = (
+      rect.top <= e.clientY &&
+      e.clientY <= rect.top + rect.height &&
+      rect.left <= e.clientX &&
+      e.clientX <= rect.left + rect.width
+    );
+    if (!isInDialog) {
       onClose();
     }
   }
 
-  if (!isOpen) {
+  if (!show) {
     return null;
   }
 

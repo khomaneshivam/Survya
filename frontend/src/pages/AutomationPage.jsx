@@ -16,6 +16,7 @@ import { formatIndianDate, formatIndianTime } from '../utils/indianTime';
 
 export default function AutomationPage() {
   const { token } = useAuth();
+  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
   const [templates, setTemplates] = useState([]);
@@ -37,26 +38,26 @@ export default function AutomationPage() {
       enabled: true,
       time: '11:00',
       daysOffset: 1,
-      templateName: 'kt_best_route_to_property',
+      templateName: '',
       variableMappings: {}
     },
     onCheckIn: {
       enabled: true,
       time: '09:00',
-      templateName: 'kt_invitation_',
+      templateName: '',
       variableMappings: {}
     },
     onCheckOut: {
       enabled: true,
       time: '10:00',
-      templateName: 'kt_checkout_belongings_reminder',
+      templateName: '',
       variableMappings: {}
     },
     afterCheckOut: {
       enabled: true,
       time: '14:00',
       daysOffset: 1,
-      templateName: 'kt_restaurant_invitation',
+      templateName: '',
       variableMappings: {}
     }
   });

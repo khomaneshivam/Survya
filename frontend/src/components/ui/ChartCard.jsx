@@ -85,7 +85,7 @@ export function PastelBarChart({
 
                 return (
                   <div
-                    key={row[labelKey] || idx}
+                    key={`${row.id != null ? row.id : (row[labelKey] || 'bar')}-${idx}`}
                     onMouseEnter={() => setHoveredIdx(idx)}
                     onMouseLeave={() => setHoveredIdx(null)}
                     style={{
@@ -201,7 +201,7 @@ export function PastelBreakdownCard({ title, subtitle, items = [], actions }) {
                 if (pct <= 0) return null;
                 return (
                   <div
-                    key={item.label}
+                    key={`segment-${item.id != null ? item.id : (item.label || 'item')}-${idx}`}
                     title={`${item.label}: ${item.value} (${pct.toFixed(1)}%)`}
                     style={{
                       width: `${pct}%`,
@@ -219,7 +219,7 @@ export function PastelBreakdownCard({ title, subtitle, items = [], actions }) {
                 const pct = ((item.value / total) * 100).toFixed(1);
                 return (
                   <div
-                    key={item.label}
+                    key={`row-${item.id != null ? item.id : (item.label || 'item')}-${idx}`}
                     style={{
                       display: 'flex',
                       alignItems: 'center',

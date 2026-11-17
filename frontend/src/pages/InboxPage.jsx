@@ -22,9 +22,39 @@ import {
   ZoomIn,
   ZoomOut,
   CheckCircle2,
-  Layers
+  Layers,
+  Link2,
+  Smartphone,
+  Globe,
+  MessageCircle
 } from 'lucide-react';
 import { formatIndianTime } from '../utils/indianTime';
+
+/**
+ * Parses key-value responses from WhatsApp Flows or Booking Enquiries into structured fields
+ */
+function parseFlowContent(raw) {
+  if (!raw) return [];
+  const parts = String(raw).split(/,\s*(?=[a-zA-Z0-9_-]+:)/);
+  const items = [];
+  for (const part of parts) {
+    const colonIdx = part.indexOf(':');
+    if (colonIdx !== -1) {
+      const k = part.substring(0, colonIdx).trim();
+      const v = part.substring(colonIdx + 1).trim();
+      let label = k;
+      if (k === 'in' || k === 'check_in') label = 'Check-in';
+      else if (k === 'out' || k === 'check_out') label = 'Check-out';
+      else if (k === 'name') label = 'Guest Name';
+      else if (k === 'adults') label = 'Adults';
+      else if (k === 'children' || k === 'kids') label = 'Children';
+      else if (k === 'room' || k === 'villa') label = 'Room / Villa';
+      else if (k === 'price') label = 'Total Price';
+      items.push({ label, value: v });
+    }
+  }
+  return items;
+}
 
 /**
  * WhatsApp-style image card with loading shimmer, automatic fallback to proxy,
@@ -262,6 +292,90 @@ function ChatImageBubble({
   );
 }
 
+/**
+ * Classifies a conversation into one of the 3 channels:
+ * 'whatsapp' | 'in_app' | 'website'
+ */
+function getConversationChannelType(convo) {
+  if (!convo) return 'whatsapp';
+  const phone = String(convo.phone || '');
+  const source = String(convo.source || '').toUpperCase();
+  const linkSlug = String(convo.linkSlug || '').toLowerCase();
+  const linkTitle = String(convo.linkTitle || '').toLowerCase();
+
+  // In-App Chat: Virtual visitors starting with 919000 or explicit IN_APP source or slug/title with app/mobile
+  if (
+    source === 'IN_APP' || 
+    convo.channel === 'IN_APP' ||
+    phone.startsWith('919000') || 
+    linkSlug.includes('inapp') || 
+    linkSlug.includes('in-app') || 
+    linkTitle.includes('in-app') ||
+    linkTitle.includes('in app')
+  ) {
+    return 'in_app';
+  }
+
+  // Website Chat: Direct website concierge / chat links / landing page widgets
+  if (
+    source === 'WEBSITE' || 
+    source === 'WEB' || 
+    source === 'CHAT_LINK' || 
+    convo.channel === 'WEBSITE' || 
+    convo.channel === 'WEB' ||
+    Boolean(convo.linkId) ||
+    Boolean(convo.linkTitle) ||
+    Boolean(convo.linkSlug)
+  ) {
+    return 'website';
+  }
+
+  // Default: Direct WhatsApp Cloud API
+  return 'whatsapp';
+}
+
+function getChannelMeta(channelType, convo) {
+  switch (channelType) {
+    case 'in_app':
+      return {
+        key: 'in_app',
+        label: 'In-App Chat',
+        shortLabel: 'In-App',
+        badgeColor: '#2876B8',
+        badgeBg: '#EFF6FF',
+        badgeBorder: '#BFDBFE',
+        icon: Smartphone,
+        description: 'In-App Mobile / Webview Guest Session',
+        origin: convo?.linkTitle ? `App: ${convo.linkTitle}` : 'Mobile App Session'
+      };
+    case 'website':
+      return {
+        key: 'website',
+        label: 'Website Chat',
+        shortLabel: 'Website',
+        badgeColor: '#7C3AED',
+        badgeBg: '#F5F3FF',
+        badgeBorder: '#DDD6FE',
+        icon: Globe,
+        description: 'Website Concierge / Direct Chat Link',
+        origin: convo?.linkTitle ? `Page: ${convo.linkTitle}` : (convo?.linkSlug ? `/c/${convo.linkSlug}` : 'Website Chat Link')
+      };
+    case 'whatsapp':
+    default:
+      return {
+        key: 'whatsapp',
+        label: 'WhatsApp Chats',
+        shortLabel: 'WhatsApp',
+        badgeColor: '#2F5219',
+        badgeBg: '#EDF4E6',
+        badgeBorder: '#C3D1AC',
+        icon: MessageCircle,
+        description: 'Direct Meta WhatsApp Cloud API',
+        origin: 'Direct WhatsApp Cloud API'
+      };
+  }
+}
+
 export default function InboxPage() {
   const { token } = useAuth();
   const [conversations, setConversations] = useState([]);
@@ -270,6 +384,7 @@ export default function InboxPage() {
   const [sendingReply, setSendingReply] = useState(false);
   const [search, setSearch] = useState('');
   const [convoFilter, setConvoFilter] = useState('replies'); // 'replies' | 'all' | 'unread'
+  const [channelFilter, setChannelFilter] = useState('all'); // 'all' | 'whatsapp' | 'in_app' | 'website'
   const [loading, setLoading] = useState(true);
 
   // Media attachment states (Images & Videos)
@@ -356,9 +471,11 @@ export default function InboxPage() {
 
   // DOM element and workflow references
   const messagesEndRef = useRef(null);
+  const chatCanvasRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const initialSelectionDone = useRef(false);
+  const previousPhoneRef = useRef(null);
 
   // Close lightbox on Escape key
   useEffect(() => {
@@ -460,10 +577,22 @@ export default function InboxPage() {
     }
   }
 
-  // Auto-scroll to bottom of chat when active conversation changes or new messages arrive
+  // Auto-scroll to bottom of chat canvas when active conversation changes or new messages arrive
   useEffect(() => {
     if (selectedConvo?.messages?.length) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      const isNewConversation = previousPhoneRef.current !== selectedConvo.phone;
+      previousPhoneRef.current = selectedConvo.phone;
+
+      const timer = setTimeout(() => {
+        if (chatCanvasRef.current) {
+          const container = chatCanvasRef.current;
+          const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 140;
+          if (isNearBottom || isNewConversation) {
+            container.scrollTop = container.scrollHeight;
+          }
+        }
+      }, 50);
+      return () => clearTimeout(timer);
     }
   }, [selectedConvo?.phone, selectedConvo?.messages?.length]);
 
@@ -502,10 +631,22 @@ export default function InboxPage() {
               lastMessage: '',
               lastTime: r.received_at,
               unreadCount: 0,
-              messages: []
+              messages: [],
+              linkId: r.link_id || null,
+              linkTitle: r.link_title || null,
+              linkSlug: r.link_slug || null,
+              source: r.source || null
             };
-          } else if (guestName && convos[phoneKey].name === 'Guest') {
-            convos[phoneKey].name = guestName;
+          } else {
+            if (guestName && convos[phoneKey].name === 'Guest') {
+              convos[phoneKey].name = guestName;
+            }
+            if (r.link_id && !convos[phoneKey].linkId) {
+              convos[phoneKey].linkId = r.link_id;
+              convos[phoneKey].linkTitle = r.link_title;
+              convos[phoneKey].linkSlug = r.link_slug;
+              convos[phoneKey].source = r.source;
+            }
           }
 
           if (r.is_read === 0) {
@@ -628,8 +769,8 @@ export default function InboxPage() {
             }
           }
 
-          // Initial load auto-select ONLY on desktop (window width >= 900px)
-          if (!initialSelectionDone.current && typeof window !== 'undefined' && window.innerWidth >= 900 && sortedConvos.length > 0) {
+          // Initial load auto-select ONLY on wider desktop screens (window width >= 1024px)
+          if (!initialSelectionDone.current && typeof window !== 'undefined' && window.innerWidth >= 1024 && sortedConvos.length > 0) {
             initialSelectionDone.current = true;
             try {
               sessionStorage.setItem('inbox_selected_phone', sortedConvos[0].phone);
@@ -875,11 +1016,39 @@ export default function InboxPage() {
     }
   }
 
-  const repliesCount = conversations.filter(c => c.messages.some(m => !m.is_outbound)).length;
-  const unreadCount = conversations.filter(c => c.unreadCount > 0).length;
-  const allCount = conversations.length;
+  function handleChannelChange(newChannel) {
+    setChannelFilter(newChannel);
+    if (newChannel !== 'all') {
+      const available = conversations.filter(c => getConversationChannelType(c) === newChannel);
+      if (available.length > 0 && selectedConvo && getConversationChannelType(selectedConvo) !== newChannel) {
+        if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+          setSelectedConvo(available[0]);
+          try { sessionStorage.setItem('inbox_selected_phone', available[0].phone); } catch (e) {}
+        }
+      }
+    }
+  }
 
-  const filteredConvos = conversations.filter(c => {
+  // Channel breakdown counts (across all conversations)
+  const channelCounts = {
+    all: conversations.length,
+    whatsapp: conversations.filter(c => getConversationChannelType(c) === 'whatsapp').length,
+    in_app: conversations.filter(c => getConversationChannelType(c) === 'in_app').length,
+    website: conversations.filter(c => getConversationChannelType(c) === 'website').length
+  };
+
+  // Filter conversations by active channel
+  const convosInActiveChannel = conversations.filter(c => {
+    if (channelFilter === 'all') return true;
+    return getConversationChannelType(c) === channelFilter;
+  });
+
+  // Secondary counts (Replies, Unread, All) scoped to the active channel
+  const repliesCount = convosInActiveChannel.filter(c => c.messages.some(m => !m.is_outbound)).length;
+  const unreadCount = convosInActiveChannel.filter(c => c.unreadCount > 0).length;
+  const allCount = convosInActiveChannel.length;
+
+  const filteredConvos = convosInActiveChannel.filter(c => {
     const matchesSearch = 
       (c.name || '').toLowerCase().includes(search.toLowerCase()) || 
       (c.phone || '').includes(search) ||
@@ -979,6 +1148,14 @@ export default function InboxPage() {
         <div className="inbox-list-pane">
           {/* Search Bar & Conversation Filters */}
           <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-color)', background: '#FFFFFF' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#171719' }}>
+                Conversations ({filteredConvos.length})
+              </span>
+              <span style={{ fontSize: '0.72rem', color: '#67676B' }}>
+                Live 2-Way Sync
+              </span>
+            </div>
             <div style={{ position: 'relative' }}>
               <input
                 type="text"
@@ -1012,8 +1189,69 @@ export default function InboxPage() {
               )}
             </div>
 
+            {/* 3 Channels Sub-Header Tabs */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '4px',
+              background: '#F5F5F6',
+              padding: '3px',
+              borderRadius: '8px',
+              marginTop: '10px',
+              border: '1px solid #E5E5E8'
+            }}>
+              {[
+                { id: 'all', label: 'All', icon: Layers, count: channelCounts.all },
+                { id: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, count: channelCounts.whatsapp },
+                { id: 'in_app', label: 'In-App', icon: Smartphone, count: channelCounts.in_app },
+                { id: 'website', label: 'Website', icon: Globe, count: channelCounts.website }
+              ].map(tab => {
+                const isActive = channelFilter === tab.id;
+                const TabIcon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => handleChannelChange(tab.id)}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '6px 2px',
+                      borderRadius: '6px',
+                      border: isActive ? '1px solid #C3D1AC' : '1px solid transparent',
+                      background: isActive ? '#FFFFFF' : 'transparent',
+                      color: isActive ? '#2F5219' : '#67676B',
+                      fontWeight: isActive ? 700 : 500,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                      boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+                      gap: '2px'
+                    }}
+                    title={`${tab.label} Chats (${tab.count})`}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                      <TabIcon size={12} color={isActive ? '#2F5219' : '#96969C'} />
+                      <span style={{ fontSize: '0.72rem', whiteSpace: 'nowrap' }}>{tab.label}</span>
+                    </div>
+                    <span style={{
+                      fontSize: '0.65rem',
+                      fontWeight: 700,
+                      padding: '0px 5px',
+                      borderRadius: '8px',
+                      background: isActive ? '#EDF4E6' : '#E5E5E8',
+                      color: isActive ? '#2F5219' : '#67676B'
+                    }}>
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
             {/* Conversation Mode Filter Pills */}
-            <div style={{ display: 'flex', gap: '6px', marginTop: '10px' }}>
+            <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
               <button
                 type="button"
                 onClick={() => setConvoFilter('replies')}
@@ -1127,12 +1365,25 @@ export default function InboxPage() {
               <div style={{ padding: '40px 20px', textAlign: 'center', color: '#96969C', fontSize: '0.85rem' }}>
                 <MessageSquare size={36} color="#D4D4D9" style={{ margin: '0 auto 12px auto' }} />
                 <div style={{ fontWeight: 600, color: '#67676B' }}>
-                  {loading ? 'Loading conversations...' : 'No conversations found'}
+                  {loading ? 'Loading conversations...' : (
+                    channelFilter === 'whatsapp' ? 'No WhatsApp conversations found' :
+                    channelFilter === 'in_app' ? 'No In-App chat sessions found' :
+                    channelFilter === 'website' ? 'No Website chat conversations found' :
+                    'No conversations found'
+                  )}
                 </div>
                 <div style={{ fontSize: '0.75rem', marginTop: '4px', lineHeight: 1.4 }}>
                   {loading 
-                    ? 'Syncing customer replies from WhatsApp...' 
-                    : 'When guests reply to your WhatsApp broadcasts or send messages to your WABA number, they appear here automatically.'}
+                    ? 'Syncing customer messages...' 
+                    : (
+                      channelFilter === 'whatsapp' 
+                        ? 'Incoming direct WhatsApp messages via Meta Cloud API will appear here.' :
+                      channelFilter === 'in_app'
+                        ? 'In-app guest sessions from mobile webviews will appear here.' :
+                      channelFilter === 'website'
+                        ? 'Conversations started via website concierge chat links will appear here.' :
+                        'When guests message your WhatsApp WABA number, mobile in-app link, or website chat, they appear here automatically.'
+                    )}
                 </div>
               </div>
             ) : (
@@ -1185,8 +1436,49 @@ export default function InboxPage() {
                         </span>
                       </div>
 
-                      <div style={{ fontSize: '0.74rem', fontFamily: 'var(--font-mono)', color: '#67676B', marginBottom: '2px' }}>
-                        +{c.phone}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.74rem', fontFamily: 'var(--font-mono)', color: '#67676B' }}>
+                          +{c.phone}
+                        </span>
+                        {/* Channel Badge Pill */}
+                        {(() => {
+                          const cType = getConversationChannelType(c);
+                          const meta = getChannelMeta(cType, c);
+                          const ChannelIcon = meta.icon;
+                          return (
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '3px',
+                              fontSize: '0.64rem',
+                              fontWeight: 700,
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              background: meta.badgeBg,
+                              color: meta.badgeColor,
+                              border: `1px solid ${meta.badgeBorder}`
+                            }}>
+                              <ChannelIcon size={10} />
+                              <span>{meta.shortLabel}</span>
+                            </span>
+                          );
+                        })()}
+                        {(c.linkTitle || c.source === 'CHAT_LINK') && (
+                          <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            fontSize: '0.65rem',
+                            fontWeight: 600,
+                            padding: '1px 5px',
+                            borderRadius: '4px',
+                            background: '#EDF4E6',
+                            color: '#2F5219',
+                            border: '1px solid #C3D1AC'
+                          }}>
+                            <Link2 size={9} /> {c.linkTitle ? `via ${c.linkTitle}` : 'via Chat Link'}
+                          </span>
+                        )}
                       </div>
 
                       <div style={{
@@ -1264,7 +1556,11 @@ export default function InboxPage() {
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 background: '#FFFFFF',
-                gap: '12px'
+                gap: '12px',
+                flexShrink: 0,
+                position: 'sticky',
+                top: 0,
+                zIndex: 5
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
                   {/* Dedicated Back Button */}
@@ -1306,9 +1602,66 @@ export default function InboxPage() {
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                  <span className="badge badge-success" style={{ fontSize: '0.7rem', gap: '4px' }}>
-                    <ShieldCheck size={12} /> WhatsApp Verified
-                  </span>
+                  {(selectedConvo.linkTitle || selectedConvo.source === 'CHAT_LINK') && (
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      background: '#EDF4E6',
+                      color: '#2F5219',
+                      border: '1px solid #C3D1AC'
+                    }}>
+                      <Link2 size={11} /> {selectedConvo.linkTitle ? `Link: ${selectedConvo.linkTitle}` : 'via Chat Link'}
+                    </span>
+                  )}
+                  {(() => {
+                    const cType = getConversationChannelType(selectedConvo);
+                    if (cType === 'in_app') {
+                      return (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '0.7rem',
+                          fontWeight: 600,
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          background: '#EFF6FF',
+                          color: '#2876B8',
+                          border: '1px solid #BFDBFE'
+                        }}>
+                          <Smartphone size={12} /> In-App Session
+                        </span>
+                      );
+                    }
+                    if (cType === 'website') {
+                      return (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '0.7rem',
+                          fontWeight: 600,
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          background: '#F5F3FF',
+                          color: '#7C3AED',
+                          border: '1px solid #DDD6FE'
+                        }}>
+                          <Globe size={12} /> Website Concierge
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="badge badge-success" style={{ fontSize: '0.7rem', gap: '4px' }}>
+                        <ShieldCheck size={12} /> WhatsApp Verified
+                      </span>
+                    );
+                  })()}
                   <button
                     type="button"
                     onClick={() => handleDeleteConversation(selectedConvo)}
@@ -1359,16 +1712,70 @@ export default function InboxPage() {
                 </div>
               </div>
 
+              {/* Active Conversation Channel Sub-Header Strip */}
+              {(() => {
+                const activeChannelType = getConversationChannelType(selectedConvo);
+                const activeMeta = getChannelMeta(activeChannelType, selectedConvo);
+                const ActiveChannelIcon = activeMeta.icon;
+
+                return (
+                  <div style={{
+                    padding: '8px 18px',
+                    background: '#FAFAFA',
+                    borderBottom: '1px solid #E5E5E8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    flexWrap: 'wrap'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        fontSize: '0.725rem',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        background: activeMeta.badgeBg,
+                        color: activeMeta.badgeColor,
+                        border: `1px solid ${activeMeta.badgeBorder}`,
+                        flexShrink: 0
+                      }}>
+                        <ActiveChannelIcon size={12} />
+                        <span>{activeMeta.label}</span>
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: '#67676B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {activeMeta.description}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.74rem', color: '#67676B', flexShrink: 0 }}>
+                      <span>Source: <strong style={{ color: '#171719' }}>{activeMeta.origin}</strong></span>
+                      <span style={{ color: '#D4D4D9' }}>|</span>
+                      <span>Total: <strong style={{ color: '#171719' }}>{selectedConvo.messages.length} msgs</strong></span>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Chat Messages Canvas */}
-              <div style={{
-                flex: 1,
-                padding: '20px',
-                overflowY: 'auto',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-                background: '#F5F5F6'
-              }}>
+              <div 
+                ref={chatCanvasRef}
+                style={{
+                  flex: 1,
+                  minHeight: 0,
+                  overscrollBehaviorY: 'contain',
+                  scrollBehavior: 'smooth',
+                  padding: '20px',
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  background: '#F5F5F6'
+                }}
+              >
                 {selectedConvo.messages.map((m, idx) => {
                   const isOutbound = m.is_outbound;
                   const displayTime = m.time ? formatIndianTime(m.time) : '';
@@ -1470,35 +1877,51 @@ export default function InboxPage() {
 
                       {/* Preserved Formatted Text with Linebreaks and Spaces */}
                       {shouldShowTextBlock && (
-                        msgText?.startsWith('[Flow') ? (
-                          <div style={{
-                            background: isOutbound ? 'rgba(255,255,255,0.2)' : '#F3F6EE',
-                            border: `1px solid ${isOutbound ? 'rgba(255,255,255,0.3)' : '#C3D1AC'}`,
-                            borderRadius: '8px',
-                            padding: '8px 10px',
-                            margin: '2px 0',
-                            fontSize: '0.82rem'
-                          }}>
+                        msgText?.startsWith('[Flow') ? (() => {
+                          const title = msgText.split(']')[0].replace('[', '').trim();
+                          const body = msgText.includes(']') ? msgText.split(']').slice(1).join(']').trim() : '';
+                          const parsed = parseFlowContent(body);
+
+                          return (
                             <div style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              fontWeight: 700,
-                              color: isOutbound ? '#FFFFFF' : '#2F5219',
-                              marginBottom: '4px'
+                              background: '#FFFFFF',
+                              border: '1px solid #C3D1AC',
+                              borderRadius: '10px',
+                              overflow: 'hidden',
+                              minWidth: '240px',
+                              maxWidth: '360px',
+                              boxShadow: 'var(--shadow-xs)',
+                              margin: '2px 0'
                             }}>
-                              <Layers size={14} />
-                              <span>{msgText.split(']')[0].replace('[', '')}</span>
+                              <div style={{
+                                background: '#EDF4E6',
+                                padding: '8px 12px',
+                                borderBottom: '1px solid #C3D1AC',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                color: '#2F5219'
+                              }}>
+                                <Layers size={14} color="#2F5219" />
+                                <span>{title}</span>
+                              </div>
+                              <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                {parsed.length > 0 ? (
+                                  parsed.map((row, i) => (
+                                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', gap: '8px' }}>
+                                      <span style={{ color: '#67676B', fontWeight: 500 }}>{row.label}</span>
+                                      <span style={{ color: '#171719', fontWeight: 700, textAlign: 'right' }}>{row.value}</span>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div style={{ fontSize: '0.8rem', color: '#171719', lineHeight: 1.45 }}>{body}</div>
+                                )}
+                              </div>
                             </div>
-                            <div style={{
-                              color: isOutbound ? '#EEEEF0' : '#2F5219',
-                              fontSize: '0.78rem',
-                              lineHeight: 1.4
-                            }}>
-                              {msgText.includes(']') ? msgText.split(']').slice(1).join(']').trim() : msgText}
-                            </div>
-                          </div>
-                        ) : (
+                          );
+                        })() : (
                           <div style={{ 
                             fontSize: '0.875rem', 
                             lineHeight: 1.5, 

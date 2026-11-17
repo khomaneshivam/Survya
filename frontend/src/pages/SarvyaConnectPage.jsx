@@ -11,6 +11,7 @@ import {
   GitBranch,
   IndianRupee,
   Layers,
+  Link2,
   MessageSquare,
   Phone,
   Plus,
@@ -530,6 +531,9 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
             <Button type="button" variant="secondary" size="sm" icon={MessageSquare} onClick={() => setActiveSubTab('compose')}>
               One-to-one
             </Button>
+            <Button type="button" variant="secondary" size="sm" icon={Link2} onClick={() => onNavigate && onNavigate('links')}>
+              Chat Links (wa.me)
+            </Button>
             <Button type="button" variant="secondary" size="sm" icon={Users} onClick={() => onNavigate && onNavigate('broadcast')}>
               Bulk campaigns
             </Button>
@@ -703,7 +707,7 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
           <Card>
             <CardBody className="p-0">
               {filteredTemplates.length > 0 ? (
-                <DataTable columns={templateColumns} rows={filteredTemplates} keyField="id" />
+                <DataTable columns={templateColumns} data={filteredTemplates} rows={filteredTemplates} keyField="id" />
               ) : (
                 <EmptyState
                   icon={Layers}
@@ -984,7 +988,7 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
             <CardHeader title="Recent Usage & Billing Ledger" subtitle="Tracks estimated vs. webhook-confirmed conversation costs" />
             <CardBody className="p-0">
               {usageData.ledger?.length > 0 ? (
-                <DataTable columns={ledgerColumns} rows={usageData.ledger} keyField="id" />
+                <DataTable columns={ledgerColumns} data={usageData.ledger} rows={usageData.ledger} keyField="id" />
               ) : (
                 <EmptyState
                   icon={IndianRupee}

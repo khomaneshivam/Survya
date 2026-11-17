@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import PhoneMockup from '../components/PhoneMockup';
 import { 
@@ -52,8 +52,11 @@ export default function BroadcastPage() {
   const [headerMediaUrl, setHeaderMediaUrl] = useState('');
   const [headerMediaId, setHeaderMediaId] = useState('');
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [mediaUploadSuccess, setMediaUploadSuccess] = useState(false);
+  const [mediaSourceTab, setMediaSourceTab] = useState('upload'); // 'upload' | 'default' | 'url'
 
   // Multi-Template Categories & Meta Sync State
+  const [categoriesSummary, setCategoriesSummary] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [syncingMeta, setSyncingMeta] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState(null);
@@ -98,6 +101,17 @@ export default function BroadcastPage() {
   const [progressStats, setProgressStats] = useState({ total: 0, sent: 0, failed: 0, status: 'IDLE' });
   const [streamLogs, setStreamLogs] = useState([]);
   const [showProgressModal, setShowProgressModal] = useState(false);
+  const sseRef = useRef(null);
+
+  // Close SSE stream on component unmount
+  useEffect(() => {
+    return () => {
+      if (sseRef.current) {
+        try { sseRef.current.close(); } catch (e) {}
+        sseRef.current = null;
+      }
+    };
+  }, []);
 
   // Preset Configurations for Dispatch Throttle Delay
   const THROTTLE_PRESETS = [
@@ -235,12 +249,29 @@ export default function BroadcastPage() {
       }
 
       // Load registered sender phones
-      const phonesRes = await fetch('/api/admin/phone-numbers', { headers });
-      const phonesData = await phonesRes.json();
-      if (phonesData.success && phonesData.data) {
+      let phonesData = null;
+      try {
+        let phonesRes = await fetch('/api/phone-numbers', { headers });
+        if (!phonesRes.ok) phonesRes = await fetch('/api/admin/phone-numbers', { headers });
+        if (phonesRes.ok) phonesData = await phonesRes.json();
+      } catch (pErr) {
+        console.warn('Phone fetch error:', pErr);
+      }
+      if (phonesData?.success && phonesData?.data) {
         setPhoneNumbers(phonesData.data);
         const def = phonesData.data.find(p => p.is_default) || phonesData.data[0];
-        if (def && !selectedPhoneId) setSelectedPhoneId(def.id);
+        if (def && !selectedPhoneId) setSelectedPhoneId(def.phone_number_id || def.id);
+      }
+
+      // Load template categories summary breakdown
+      try {
+        const catRes = await fetch('/api/broadcast/templates/categories', { headers });
+        const catData = await catRes.json();
+        if (catData?.categories) {
+          setCategoriesSummary(catData.categories);
+        }
+      } catch (catErr) {
+        console.warn('Failed to load template categories summary:', catErr.message);
       }
 
       // Load default throttle delay from settings
@@ -282,15 +313,16 @@ export default function BroadcastPage() {
   async function handlePhoneAdded(newPhone) {
     try {
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-      const phonesRes = await fetch('/api/admin/phone-numbers', { headers });
+      let phonesRes = await fetch('/api/phone-numbers', { headers });
+      if (!phonesRes.ok) phonesRes = await fetch('/api/admin/phone-numbers', { headers });
       const phonesData = await phonesRes.json();
-      if (phonesData.success && phonesData.data) {
+      if (phonesData?.success && phonesData?.data) {
         setPhoneNumbers(phonesData.data);
-        if (newPhone?.id) {
-          setSelectedPhoneId(newPhone.id);
+        if (newPhone?.phone_number_id || newPhone?.id) {
+          setSelectedPhoneId(newPhone.phone_number_id || newPhone.id);
         } else if (phonesData.data.length > 0) {
           const def = phonesData.data.find(p => p.is_default) || phonesData.data[0];
-          setSelectedPhoneId(def.id);
+          setSelectedPhoneId(def.phone_number_id || def.id);
         }
       }
     } catch (err) {
@@ -453,6 +485,13 @@ export default function BroadcastPage() {
         }
       }
 
+      // Reload category breakdown
+      try {
+        const catRes = await fetch('/api/broadcast/templates/categories', { headers });
+        const catData = await catRes.json();
+        if (catData?.categories) setCategoriesSummary(catData.categories);
+      } catch (e) {}
+
       setSyncFeedback({
         type: 'success',
         text: data.message || `✓ Synced ${data.syncedCount || 0} templates successfully from Meta.`
@@ -559,19 +598,28 @@ export default function BroadcastPage() {
     }
   }
 
-  // Prepare sample data for smartphone mockup
+  // Prepare sample data for smartphone mockup from uploaded records or backend template variables
   const sampleDataForMockup = {};
   if (validationStats.parsedRecords.length > 0) {
     const firstRow = validationStats.parsedRecords[0];
     const rowData = firstRow.data || firstRow;
     Object.keys(variableMappings).forEach(varNum => {
       const col = variableMappings[varNum];
-      sampleDataForMockup[varNum] = col && rowData[col] ? rowData[col] : `Sample ${varNum}`;
+      sampleDataForMockup[varNum] = col && rowData[col] ? rowData[col] : `[${varNum}]`;
     });
-  } else {
-    sampleDataForMockup['1'] = 'Rahul Sharma';
-    sampleDataForMockup['2'] = 'Konkan Luxury Villa';
-    sampleDataForMockup['3'] = '15 Oct 2026';
+  } else if (selectedTemplate && Array.isArray(selectedTemplate.variables) && selectedTemplate.variables.length > 0) {
+    selectedTemplate.variables.forEach((v, idx) => {
+      const k = String(v.key || v.index || idx + 1);
+      sampleDataForMockup[k] = v.example || `[${k}]`;
+    });
+  } else if (selectedTemplate) {
+    const bodyComp = selectedTemplate.components?.find(c => c.type === 'BODY');
+    const textToScan = bodyComp?.text || selectedTemplate.bodyText || selectedTemplate.body_text || '';
+    const matches = textToScan.match(/\{\{([a-zA-Z0-9_-]+)\}\}/g) || [];
+    matches.forEach(m => {
+      const num = m.replace(/[{}]/g, '');
+      sampleDataForMockup[num] = `[${num}]`;
+    });
   }
 
   // Execute or schedule campaign
@@ -661,6 +709,12 @@ export default function BroadcastPage() {
 
   async function connectSSEStream(campaignId) {
     try {
+      // Cleanly terminate any prior SSE stream before opening a new one
+      if (sseRef.current) {
+        try { sseRef.current.close(); } catch (e) {}
+        sseRef.current = null;
+      }
+
       let streamToken = token;
       try {
         const tokenRes = await fetch('/api/broadcast/stream-token', {
@@ -681,6 +735,7 @@ export default function BroadcastPage() {
       }
 
       const eventSource = new EventSource(`/api/broadcast/stream?campaignId=${campaignId}&streamToken=${encodeURIComponent(streamToken)}`);
+      sseRef.current = eventSource;
       
       eventSource.onmessage = (event) => {
         try {
@@ -722,6 +777,7 @@ export default function BroadcastPage() {
             }
           } else if (type === 'STATUS') {
             if (payload.status) {
+              const statusUpper = String(payload.status).toUpperCase();
               setProgressStats(prev => ({
                 ...prev,
                 status: payload.status,
@@ -729,11 +785,25 @@ export default function BroadcastPage() {
                 failed: payload.failed !== undefined ? payload.failed : prev.failed,
                 total: payload.total !== undefined ? payload.total : prev.total
               }));
-              setCampaignPaused(payload.status === 'PAUSED');
+              setCampaignPaused(statusUpper === 'PAUSED');
               setStreamLogs(prev => [
                 { time: new Date().toLocaleTimeString(), text: `Status update: ${payload.status} - ${payload.message || ''}` },
                 ...prev.slice(0, 50)
               ]);
+
+              // Gracefully close stream when campaign reaches terminal status
+              if (['COMPLETED', 'FAILED', 'CANCELLED'].includes(statusUpper)) {
+                if (statusUpper === 'COMPLETED') {
+                  setStreamLogs(prev => [
+                    { time: new Date().toLocaleTimeString(), text: '🎉 All messages dispatched to Meta Cloud API successfully!' },
+                    ...prev
+                  ]);
+                }
+                try { eventSource.close(); } catch (e) {}
+                if (sseRef.current === eventSource) {
+                  sseRef.current = null;
+                }
+              }
             }
           } else if (type === 'COMPLETED') {
             setProgressStats(prev => ({
@@ -746,13 +816,19 @@ export default function BroadcastPage() {
               { time: new Date().toLocaleTimeString(), text: '🎉 All messages dispatched to Meta Cloud API successfully!' },
               ...prev
             ]);
-            eventSource.close();
+            try { eventSource.close(); } catch (e) {}
+            if (sseRef.current === eventSource) {
+              sseRef.current = null;
+            }
           }
         } catch (e) {}
       };
 
       eventSource.onerror = () => {
-        eventSource.close();
+        try { eventSource.close(); } catch (e) {}
+        if (sseRef.current === eventSource) {
+          sseRef.current = null;
+        }
       };
     } catch (e) {
       console.warn('SSE stream fallback:', e);
@@ -1139,11 +1215,14 @@ export default function BroadcastPage() {
                       value={selectedPhoneId}
                       onChange={e => setSelectedPhoneId(e.target.value)}
                     >
-                      {phoneNumbers.map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.display_name} ({p.phone_number}) {p.is_default ? '★ Primary' : ''}
-                        </option>
-                      ))}
+                      {phoneNumbers.map(p => {
+                        const val = p.phone_number_id || p.id;
+                        return (
+                          <option key={p.id} value={val}>
+                            {p.display_name} ({p.phone_number}) {p.is_default ? '★ Primary' : ''}
+                          </option>
+                        );
+                      })}
                     </select>
                   )}
                 </div>
@@ -2110,6 +2189,15 @@ export default function BroadcastPage() {
                   <span style={{ fontWeight: 700, color: '#171719' }}>{campaignName || 'Unnamed Broadcast'}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E5E8', paddingBottom: '8px' }}>
+                  <span style={{ color: '#67676B' }}>Sender Line:</span>
+                  <span style={{ fontWeight: 700, color: '#171719' }}>
+                    {(() => {
+                      const activePhone = phoneNumbers.find(p => (p.phone_number_id === selectedPhoneId || p.id === selectedPhoneId));
+                      return activePhone ? `${activePhone.display_name} (${activePhone.phone_number})` : (selectedPhoneId || 'Default WhatsApp Line');
+                    })()}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #E5E5E8', paddingBottom: '8px' }}>
                   <span style={{ color: '#67676B' }}>Template:</span>
                   <span style={{ fontWeight: 700, color: '#2876B8' }}>{selectedTemplate?.name}</span>
                 </div>
@@ -2900,6 +2988,8 @@ export default function BroadcastPage() {
         isOpen={showAddPhoneModal}
         onClose={() => setShowAddPhoneModal(false)}
         onPhoneAdded={handlePhoneAdded}
+        onSuccess={handlePhoneAdded}
+        onAdded={handlePhoneAdded}
       />
 
       {/* WABA ID Prompt Modal for Syncing Templates */}

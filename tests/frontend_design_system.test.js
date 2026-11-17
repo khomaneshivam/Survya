@@ -60,11 +60,11 @@ describe('SARVYA Master UI/UX Design System Verification', () => {
     const sidebar = fs.readFileSync(path.join(FRONTEND, 'components', 'Sidebar.jsx'), 'utf8');
     const app = fs.readFileSync(path.join(FRONTEND, 'App.jsx'), 'utf8');
 
-    for (const label of ['Overview', 'CRM', 'Forms', 'Workflows', 'Conversations', 'Campaigns', 'SARVYA AI', 'Insights', 'Connect', 'Hospitality']) {
+    for (const label of ['Overview', 'CRM', 'Forms', 'Workflows', 'Conversations', 'Campaigns', 'Chat Links', 'SARVYA AI', 'Insights', 'Connect', 'Hospitality']) {
       assert.ok(sidebar.includes(label), `Sidebar must expose "${label}"`);
     }
 
-    for (const tabId of ['dashboard', 'enquiries', 'flows', 'automation', 'inbox', 'broadcast', 'ai', 'reports', 'connect', 'settings', 'inventory']) {
+    for (const tabId of ['dashboard', 'enquiries', 'flows', 'automation', 'inbox', 'broadcast', 'links', 'ai', 'reports', 'connect', 'settings', 'inventory']) {
       assert.ok(app.includes(`activeTab === '${tabId}'`), `App must render module view for "${tabId}"`);
     }
     assert.ok(fs.existsSync(path.join(ROOT, 'docs', 'SARVYA_CONNECT_PRD.md')), 'SARVYA_CONNECT_PRD.md must exist in docs/');
@@ -76,6 +76,7 @@ describe('SARVYA Master UI/UX Design System Verification', () => {
       'components/Sidebar.jsx',
       'components/Topbar.jsx',
       'components/TemplateBuilderModal.jsx',
+      'pages/ChatLinksPage.jsx',
       'pages/SarvyaConnectPage.jsx',
       'pages/DashboardPage.jsx',
       'pages/EnquiriesPage.jsx',

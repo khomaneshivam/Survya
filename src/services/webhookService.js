@@ -4,11 +4,140 @@ const crypto = require("crypto");
 const { db, getSetting, setSetting } = require("../config/database");
 const config = require("../config/env");
 const broadcastEngine = require("./broadcastEngine");
-const { sendTextMessage, downloadAndSaveInboundMedia } = require("./metaWhatsAppService");
+const {
+  sendTextMessage,
+  sendInteractiveButtons,
+  sendInteractiveList,
+  downloadAndSaveInboundMedia
+} = require("./metaWhatsAppService");
+
+let hospitalityFlowEngine = null;
+try {
+  hospitalityFlowEngine = require("./hospitalityFlowEngine");
+} catch (e) {}
+
+let hospitalityChatService = null;
+try {
+  hospitalityChatService = require("./hospitalityChatService");
+} catch (e) {}
+
+let chatLinkService = null;
+try {
+  chatLinkService = require("./chatLinkService");
+} catch (e) {}
+
+let enquiryService = null;
+try {
+  enquiryService = require("./enquiryService");
+} catch (e) {}
 
 class WebhookService {
   constructor() {
     this.inFlightAutoReplies = new Set();
+    this.botPausedUntil = new Map(); // cleanPhone -> expiryTimestamp (ms)
+  }
+
+  /**
+   * Pauses automated bot responses for a specific phone number (Staff Takeover)
+   */
+  pauseBotForPhone(phone, durationMs = 3600000) {
+    const clean = String(phone || "").replace(/\D/g, "");
+    if (!clean) return 0;
+    const expiresAt = Date.now() + durationMs;
+    this.botPausedUntil.set(clean, expiresAt);
+    console.log(`[Webhook Flow] Bot paused for ${clean} for ${Math.round(durationMs / 60000)} minutes.`);
+    return expiresAt;
+  }
+
+  /**
+   * Resumes automated bot responses for a specific phone number
+   */
+  resumeBotForPhone(phone) {
+    const clean = String(phone || "").replace(/\D/g, "");
+    if (!clean) return false;
+    this.botPausedUntil.delete(clean);
+    console.log(`[Webhook Flow] Bot resumed for ${clean}.`);
+    return true;
+  }
+
+  /**
+   * Checks whether the bot is currently paused for a phone number
+   */
+  isBotPausedForPhone(phone) {
+    const clean = String(phone || "").replace(/\D/g, "");
+    if (!clean) return false;
+    const expiry = this.botPausedUntil.get(clean);
+    if (!expiry) return false;
+    if (Date.now() > expiry) {
+      this.botPausedUntil.delete(clean);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Retrieves bot status and pause expiry for a phone number
+   */
+  getBotStatus(phone) {
+    const clean = String(phone || "").replace(/\D/g, "");
+    const isPaused = this.isBotPausedForPhone(clean);
+    const expiresAt = this.botPausedUntil.get(clean) || null;
+    return {
+      phone: clean,
+      isPaused,
+      expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+      remainingMinutes: expiresAt ? Math.max(0, Math.round((expiresAt - Date.now()) / 60000)) : 0
+    };
+  }
+
+  /**
+   * Automatically detects and attributes Click-to-Chat Link or Table QR from incoming WhatsApp message
+   */
+  detectChatLinkAttribution(messageBody = "", cleanPhone = "") {
+    if (!messageBody && !cleanPhone) return null;
+    const text = String(messageBody || "").trim();
+
+    // 1. Explicit slug or link ID pattern: ref:slug, link:id, or [slug]
+    const refMatch = text.match(/\b(?:ref|link):\s*([a-z0-9_-]+)\b/i) || text.match(/\[([a-z0-9_-]+)\]/);
+    if (refMatch && refMatch[1]) {
+      const slugOrId = refMatch[1].trim();
+      const link = db.prepare("SELECT * FROM chat_links WHERE (slug = ? OR id = ?) AND status = 'ACTIVE' LIMIT 1").get(slugOrId, slugOrId);
+      if (link) return link;
+    }
+
+    // 2. Table QR match: "Table 4" or "tab:4"
+    const tableMatch = text.match(/\b(?:table|tab)\s*([0-9a-zA-Z]+)\b/i);
+    if (tableMatch) {
+      const tableLink = db.prepare("SELECT * FROM chat_links WHERE (category = 'DINING' OR category = 'RESTAURANT' OR title LIKE '%Table%' OR slug LIKE '%table%') AND status = 'ACTIVE' LIMIT 1").get();
+      return tableLink ? { ...tableLink, detectedTable: tableMatch[1] } : { id: null, title: `Table ${tableMatch[1]} Order`, category: "DINING", detectedTable: tableMatch[1] };
+    }
+
+    // 3. Match against active chat_links.default_message or slug in text
+    if (text.length >= 10) {
+      const activeLinks = db.prepare("SELECT * FROM chat_links WHERE status = 'ACTIVE'").all();
+      for (const lk of activeLinks) {
+        if (lk.default_message && text.includes(lk.default_message.trim())) {
+          return lk;
+        }
+        if (lk.slug && text.toLowerCase().includes(lk.slug.toLowerCase())) {
+          return lk;
+        }
+      }
+    }
+
+    // 4. Fallback to existing session or past conversation link for this contact
+    if (cleanPhone) {
+      const pastLink = db.prepare(`
+        SELECT cl.* 
+        FROM customer_replies cr
+        JOIN chat_links cl ON cr.link_id = cl.id
+        WHERE cr.from_phone = ? AND cr.link_id IS NOT NULL
+        ORDER BY cr.id DESC LIMIT 1
+      `).get(cleanPhone);
+      if (pastLink) return pastLink;
+    }
+
+    return null;
   }
 
   /**
@@ -41,17 +170,79 @@ class WebhookService {
   }
 
   /**
-   * Generates a new secure random verify token, updates DB and .env
+   * Generates a new cryptographically secure verify token and updates DB settings
    */
   generateVerifyToken() {
-    const randomHex = crypto.randomBytes(16).toString("hex");
-    const newToken = `wb_verify_${randomHex}`;
+    const randomBytes = crypto.randomBytes(24).toString("base64url");
+    const newToken = `wb_live_${randomBytes}`;
     this.saveVerifyToken(newToken);
     return newToken;
   }
 
   /**
-   * Saves verify token to DB settings and attempts to update .env
+   * Ensures a valid system-generated verify token exists on initial startup
+   */
+  ensureDefaultVerifyToken() {
+    const current = getSetting("WEBHOOK_VERIFY_TOKEN");
+    if (!current || current === "wb_verify_konkantrip_7f3a9e2c4b810d56" || current.startsWith("EAAX_") || current.includes("placeholder")) {
+      const initialToken = this.generateVerifyToken();
+      console.log(`[WebhookService] Auto-provisioned secure system webhook verify token: ${initialToken}`);
+      return initialToken;
+    }
+    return current;
+  }
+
+  /**
+   * Resolves primary and secondary Webhook URLs with proxy and custom domain support
+   */
+  resolveWebhookUrls(req = null) {
+    const publicUrl = getSetting("PUBLIC_WEBHOOK_URL") || process.env.PUBLIC_WEBHOOK_URL || null;
+    let host = null;
+    let protocol = "https";
+
+    if (req) {
+      host = req.get("x-forwarded-host") || req.get("host") || `localhost:${config.PORT || 5000}`;
+      protocol = req.protocol === "https" || req.get("x-forwarded-proto") === "https" ? "https" : "http";
+    } else {
+      host = `localhost:${config.PORT || 5000}`;
+      protocol = config.NODE_ENV === "production" ? "https" : "http";
+    }
+
+    const cleanBaseUrl = publicUrl ? publicUrl.replace(/\/+$/, "") : `${protocol}://${host}`;
+    return {
+      primaryUrl: `${cleanBaseUrl}/webhook`,
+      altUrl: `${cleanBaseUrl}/api/webhook`,
+      baseUrl: cleanBaseUrl,
+      isCustomOverride: Boolean(publicUrl),
+      isHttps: cleanBaseUrl.startsWith("https://")
+    };
+  }
+
+  /**
+   * Performs an instant in-memory verification handshake test
+   */
+  testHandshake(token = null, challenge = "meta_test_challenge_11582012") {
+    const start = Date.now();
+    const testToken = token || this.getVerifyToken();
+    const result = this.verifyHandshake({
+      "hub.mode": "subscribe",
+      "hub.verify_token": testToken,
+      "hub.challenge": challenge
+    });
+    const latencyMs = Math.max(1, Date.now() - start);
+
+    return {
+      success: result.verified,
+      challengeEchoed: result.challenge === challenge,
+      challenge,
+      tokenUsedPreview: testToken ? `${testToken.substring(0, 8)}••••` : null,
+      latencyMs,
+      verifiedAt: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Saves verify token to DB settings table (fully managed inside system)
    */
   saveVerifyToken(token) {
     if (!token || !String(token).trim()) {
@@ -59,23 +250,6 @@ class WebhookService {
     }
     const cleanToken = String(token).trim();
     setSetting("WEBHOOK_VERIFY_TOKEN", cleanToken);
-
-    // Update .env file if accessible
-    try {
-      const envPath = path.resolve(__dirname, "../../.env");
-      if (fs.existsSync(envPath)) {
-        let envContent = fs.readFileSync(envPath, "utf8");
-        if (/^WEBHOOK_VERIFY_TOKEN=/m.test(envContent)) {
-          envContent = envContent.replace(/^WEBHOOK_VERIFY_TOKEN=.*$/m, `WEBHOOK_VERIFY_TOKEN=${cleanToken}`);
-        } else {
-          envContent += `\nWEBHOOK_VERIFY_TOKEN=${cleanToken}\n`;
-        }
-        fs.writeFileSync(envPath, envContent, "utf8");
-      }
-    } catch (err) {
-      console.warn("[WebhookService] Warning: Could not update .env file:", err.message);
-    }
-
     return cleanToken;
   }
 
@@ -148,9 +322,9 @@ class WebhookService {
                 // Emit real-time event for SSE clients
                 broadcastEngine.emit("webhook:reply", result.reply);
 
-                // Auto-reply trigger (asynchronous)
-                this.triggerAutoReply(result.reply).catch(arErr => {
-                  console.error("[Webhook AutoReply] Error:", arErr.message);
+                // Conversational Flow Engine & Auto-Reply trigger (asynchronous)
+                this.triggerAutoReply(result.reply, msg, val).catch(arErr => {
+                  console.error("[Webhook Flow] Error:", arErr.message);
                 });
               }
             } catch (err) {
@@ -508,13 +682,47 @@ class WebhookService {
       }
     }
 
+    // PRD Attribution: Automatically detect and associate Click-to-Chat Link or Table QR
+    let matchedLinkId = null;
+    let matchedLink = null;
+    try {
+      matchedLink = this.detectChatLinkAttribution(messageBody, cleanPhone);
+      if (matchedLink) {
+        matchedLinkId = matchedLink.id;
+        if (!replyUserId && matchedLink.user_id && matchedLink.user_id !== "bot") {
+          replyUserId = matchedLink.user_id;
+        }
+        // Increment conversations counter on chat_links
+        try {
+          db.prepare("UPDATE chat_links SET conversations_count = conversations_count + 1 WHERE id = ?").run(matchedLink.id);
+        } catch (e) {}
+
+        // PRD: Upsert contact and capture consent for chat link lead
+        if (enquiryService) {
+          try {
+            const contact = enquiryService.upsertContact(matchedLink.tenant_id || 1, cleanPhone, customerName, null, "CHAT_LINK");
+            if (contact?.id) {
+              db.prepare(`
+                INSERT INTO contact_consents (tenant_id, contact_id, purpose, status, source)
+                VALUES (?, ?, 'CHAT_LINK', 'GRANTED', 'WHATSAPP_INBOUND')
+              `).run(matchedLink.tenant_id || 1, contact.id);
+            }
+          } catch (e) {}
+        }
+      }
+    } catch (attrErr) {
+      console.warn("[Webhook Attribution] Match warning:", attrErr.message);
+    }
+
+    const replySource = matchedLinkId ? "CHAT_LINK" : "WHATSAPP";
+
     const insertStmt = db.prepare(`
       INSERT INTO customer_replies (
         wa_message_id, from_phone, customer_name, message_type,
         message_body, raw_payload, context_message_id, campaign_id,
         media_url, media_type, media_caption, flow_id, flow_response_id,
-        is_read, user_id, received_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+        link_id, source, is_read, user_id, received_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
     `);
 
     const runResult = insertStmt.run(
@@ -531,12 +739,14 @@ class WebhookService {
       incomingMediaCaption,
       flowId,
       flowResponseId,
+      matchedLinkId,
+      replySource,
       replyUserId,
       receivedAt
     );
 
     const maskedSender = cleanPhone.length > 4 ? `***${cleanPhone.slice(-4)}` : "***";
-    console.log(`[Webhook] Saved customer reply #${runResult.lastInsertRowid} from ${maskedSender} (type: ${msgType})`);
+    console.log(`[Webhook] Saved customer reply #${runResult.lastInsertRowid} from ${maskedSender} (type: ${msgType}, link: ${matchedLinkId || 'direct'})`);
 
     // PRD PR-004: Upsert contact for incoming guest message
     try {
@@ -829,7 +1039,11 @@ class WebhookService {
           r.media_url as media_url,
           r.media_type as media_type,
           r.media_caption as media_caption,
-          r.user_id as user_id,
+          COALESCE(r.user_id, l.user_id) as user_id,
+          r.link_id as link_id,
+          r.source as source,
+          l.title as link_title,
+          l.slug as link_slug,
           c.name as campaign_name,
           c.user_id as campaign_user_id,
           c.template_name as template_name,
@@ -837,6 +1051,7 @@ class WebhookService {
           NULL as recipient_raw_data
         FROM customer_replies r
         LEFT JOIN campaigns c ON r.campaign_id = c.id
+        LEFT JOIN chat_links l ON r.link_id = l.id
 
         UNION ALL
 
@@ -859,6 +1074,10 @@ class WebhookService {
           NULL as media_type,
           NULL as media_caption,
           c.user_id as user_id,
+          NULL as link_id,
+          NULL as source,
+          NULL as link_title,
+          NULL as link_slug,
           c.name as campaign_name,
           c.user_id as campaign_user_id,
           c.template_name as template_name,
@@ -1170,103 +1389,422 @@ class WebhookService {
    * Automatically sends an automated WhatsApp reply to incoming customer message
    * Ensures automated message is sent ONLY ONCE per contact (not on every subsequent message).
    */
-  async triggerAutoReply(replyRecord) {
-    if (!replyRecord || !replyRecord.from_phone) return null;
+  /**
+   * Unified Conversational Flow Engine & Automated WhatsApp Handler
+   * Bridges in-app web chat intelligence to real WhatsApp messages on the connected number.
+   */
+  async triggerAutoReply(replyRecord, rawMsg = {}, rawValue = {}) {
+    return this.processConversationalFlow(replyRecord, rawMsg, rawValue);
+  }
 
-    const enabled = getSetting("AUTO_REPLY_ENABLED");
-    if (enabled !== "true" && enabled !== true) {
-      return null;
-    }
+  /**
+   * Processes incoming customer message through hospitality flow engine, interactive messages, or auto-reply
+   */
+  async processConversationalFlow(replyRecord, rawMsg = {}, rawValue = {}) {
+    if (!replyRecord || !replyRecord.from_phone) return null;
 
     const rawPhone = String(replyRecord.from_phone).trim();
     const cleanPhone = rawPhone.replace(/\D/g, "");
     if (!cleanPhone || cleanPhone.length < 10) return null;
 
-    // Concurrency Lock: Prevent rapid burst incoming messages from the same phone from racing
+    // 1. Concurrency Lock: Prevent rapid burst incoming messages from the same phone from racing
     if (this.inFlightAutoReplies.has(cleanPhone)) {
-      console.log(`[Webhook AutoReply] Concurrency: Auto-reply already in-flight for ${cleanPhone}. Skipping duplicate webhook.`);
+      console.log(`[Webhook Flow] Concurrency: Flow already in-flight for ${cleanPhone}. Skipping race condition.`);
       return null;
     }
-
     this.inFlightAutoReplies.add(cleanPhone);
 
     try {
-      const mode = getSetting("AUTO_REPLY_MODE") || "ONCE_PER_CONTACT";
-      const phoneVars = this.getPhoneVariations(rawPhone);
-      const placeholders = phoneVars.map(() => "?").join(",");
+      // 2. Check Staff Takeover / Bot Pause
+      if (this.isBotPausedForPhone(cleanPhone)) {
+        console.log(`[Webhook Flow] Bot is currently paused for ${cleanPhone} (Staff Takeover active). Skipping automated response.`);
+        return null;
+      }
 
-      // Check whether this contact already received an auto-reply or had an outbound reply/conversation
-      if (mode === "ONCE_PER_24_HOURS") {
-        const priorRecent = db.prepare(`
-          SELECT id, reply_status, message_type, reply_sent_at 
-          FROM customer_replies 
-          WHERE (from_phone IN (${placeholders}) OR REPLACE(REPLACE(REPLACE(from_phone, '+', ''), ' ', ''), '-', '') = ?)
-            AND (reply_status = 'AUTO_REPLIED' OR message_type = 'outbound' OR reply_status = 'SENT')
-            AND reply_sent_at > datetime('now', '-24 hours')
-          LIMIT 1
-        `).get(...phoneVars, cleanPhone);
+      // 3. Auto-opt-out suppression check
+      const rawText = String(replyRecord.message_body || "").trim();
+      const upper = rawText.toUpperCase();
+      if (["STOP", "UNSUBSCRIBE", "OPT OUT", "OPTOUT", "CANCEL"].includes(upper)) {
+        return null;
+      }
 
-        if (priorRecent) {
-          console.log(`[Webhook AutoReply] Throttled: Already replied to ${cleanPhone} in the last 24 hours (Reply #${priorRecent.id}, sent: ${priorRecent.reply_sent_at}).`);
-          return null;
-        }
-      } else {
-        // Default mode: ONCE_PER_CONTACT (Send only once ever per contact)
-        const priorReply = db.prepare(`
-          SELECT id, reply_status, message_type, reply_sent_at 
-          FROM customer_replies 
-          WHERE (from_phone IN (${placeholders}) OR REPLACE(REPLACE(REPLACE(from_phone, '+', ''), ' ', ''), '-', '') = ?)
-            AND (reply_status = 'AUTO_REPLIED' OR message_type = 'outbound' OR reply_status = 'SENT')
-          LIMIT 1
-        `).get(...phoneVars, cleanPhone);
+      // 4. Resolve multi-line sender phone ID (from incoming webhook metadata or link configuration)
+      const incomingPhoneId = rawValue?.metadata?.phone_number_id || null;
+      const customCredentials = incomingPhoneId ? { phoneNumberId: incomingPhoneId } : null;
 
-        if (priorReply) {
-          console.log(`[Webhook AutoReply] Suppressed: Contact ${cleanPhone} has already received automated reply or active conversation exists (Reply #${priorReply.id}, status: ${priorReply.reply_status}). Mode: ONCE_PER_CONTACT.`);
-          return null;
+      // 5. Extract interactive action or button selection
+      let effectiveText = rawText;
+      let interactiveActionId = null;
+
+      if (rawMsg?.type === "interactive") {
+        if (rawMsg.interactive?.button_reply) {
+          interactiveActionId = rawMsg.interactive.button_reply.id;
+          effectiveText = rawMsg.interactive.button_reply.title || interactiveActionId;
+        } else if (rawMsg.interactive?.list_reply) {
+          interactiveActionId = rawMsg.interactive.list_reply.id;
+          effectiveText = rawMsg.interactive.list_reply.title || interactiveActionId;
         }
       }
 
-      // Format auto-reply template message
-      let templateMsg = getSetting("AUTO_REPLY_MESSAGE") || 
-        "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message. Our team will get back to you shortly.";
-      
-      const customerName = replyRecord.customer_name ? replyRecord.customer_name.trim() : "there";
-      const finalMsg = templateMsg.replace(/\{\{name\}\}/gi, customerName);
+      const lower = effectiveText.toLowerCase();
 
-      console.log(`[Webhook AutoReply] Sending auto-reply (Mode: ${mode}) to ${cleanPhone} (${customerName}): "${finalMsg}"`);
+      // 6. Action ID Normalization
+      if (interactiveActionId === "btn_confirm" || lower === "confirm booking" || lower === "confirm") {
+        effectiveText = "CONFIRM";
+      } else if (interactiveActionId === "btn_rooms" || lower === "other rooms" || lower === "view other rooms" || lower === "room options") {
+        effectiveText = "Show room options";
+      } else if (interactiveActionId === "btn_amenities" || lower === "resort facilities") {
+        effectiveText = "resort facilities and amenities";
+      } else if (interactiveActionId === "btn_menu" || lower === "dining menu") {
+        effectiveText = "restaurant dining menu";
+      } else if (interactiveActionId === "btn_location" || lower === "location / map") {
+        effectiveText = "how to reach location directions";
+      } else if (interactiveActionId && interactiveActionId.startsWith("select_room_")) {
+        const roomId = parseInt(interactiveActionId.replace("select_room_", ""), 10);
+        try {
+          const rm = db.prepare("SELECT name FROM room_types WHERE id = ?").get(roomId);
+          if (rm?.name) effectiveText = rm.name;
+        } catch (e) {}
+      }
 
-      const sendResult = await sendTextMessage({
-        to: cleanPhone,
-        body: finalMsg
-      });
+      // 7. Human Handoff Keyword / Staff Request
+      if (
+        interactiveActionId === "btn_staff" ||
+        /\b(call|phone|speak|talk|agent|human|manager|executive|desk|staff|someone|person|call back|help me|reception)\b/i.test(lower)
+      ) {
+        // Pause bot for 60 minutes for this contact
+        this.pauseBotForPhone(cleanPhone, 60 * 60 * 1000);
 
-      const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
-      db.prepare(`
-        UPDATE customer_replies 
-        SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
-        WHERE id = ?
-      `).run(finalMsg, nowIso, replyRecord.id);
+        let handoffText = "🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at +91 87665 90634.";
+        if (hospitalityChatService) {
+          try {
+            const hRes = hospitalityChatService.requestHumanHandoff({
+              propertyId: 1,
+              customerName: replyRecord.customer_name || "Guest",
+              customerPhone: cleanPhone,
+              inquiryDetails: effectiveText,
+              tenantId: 1
+            });
+            if (hRes && hRes.whatsapp_text) {
+              handoffText = hRes.whatsapp_text;
+            }
+          } catch (e) {}
+        }
 
-      const updatedRecord = {
-        ...replyRecord,
-        reply_text: finalMsg,
-        reply_sent_at: nowIso,
-        reply_status: 'AUTO_REPLIED'
-      };
+        let sentMsgId = null;
+        try {
+          const sent = await sendTextMessage({
+            to: cleanPhone,
+            body: handoffText,
+            customCredentials
+          });
+          sentMsgId = sent?.messageId || null;
+        } catch (err) {
+          console.warn("[Webhook Flow] Handoff send notice:", err.message);
+        }
 
-      broadcastEngine.emit("webhook:reply_updated", updatedRecord);
-      console.log(`[Webhook AutoReply] ✓ Auto-reply delivered to ${cleanPhone}. Message ID: ${sendResult.messageId || 'OK'}`);
+        const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+        const botReplyId = `bot_handoff_${Date.now()}`;
+        db.prepare(`
+          INSERT INTO customer_replies (
+            wa_message_id, from_phone, customer_name, message_type,
+            message_body, reply_text, reply_sent_at, reply_status,
+            link_id, source, is_read, user_id, received_at
+          ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
+        `).run(
+          botReplyId,
+          cleanPhone,
+          replyRecord.customer_name || "Guest",
+          handoffText,
+          handoffText,
+          nowIso,
+          replyRecord.link_id || null,
+          nowIso
+        );
 
-      return {
-        success: true,
-        messageId: sendResult.messageId,
-        replyText: finalMsg
-      };
+        const savedBotReply = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
+        broadcastEngine.emit("webhook:reply", savedBotReply);
+        broadcastEngine.emit("inbox:handoff", {
+          phone: cleanPhone,
+          customerName: replyRecord.customer_name,
+          message: effectiveText
+        });
+
+        return { success: true, handoff: true, replyText: handoffText };
+      }
+
+      // 8. Dining & Food Menu Request Parity
+      if (/\b(dining|food|restaurant|breakfast|dinner|lunch|menu|meals|cuisine|eat)\b/i.test(lower)) {
+        let foodItems = [];
+        try {
+          foodItems = db.prepare("SELECT * FROM catalog_items WHERE item_type = 'FOOD' AND is_active = 1 LIMIT 8").all();
+        } catch (e) {}
+
+        if (foodItems && foodItems.length > 0) {
+          let menuText = "🍽️ *Konkan Wave Cafe & Beach Bar Menu*\n\n";
+          foodItems.forEach((f, idx) => {
+            menuText += `*${idx + 1}. ${f.title}* - ₹${Number(f.base_price).toLocaleString("en-IN")}\n`;
+            if (f.short_description || f.description) {
+              menuText += `   _${f.short_description || f.description}_\n`;
+            }
+          });
+          menuText += "\n_Reply with the dish name or table number to place an order, or tap below:_";
+
+          const buttons = [
+            { id: "btn_table_order", title: "Order at Table" },
+            { id: "btn_rooms", title: "Resort Rooms" },
+            { id: "btn_staff", title: "Talk to Staff" }
+          ];
+
+          let sentMsgId = null;
+          try {
+            const btnRes = await sendInteractiveButtons({
+              to: cleanPhone,
+              bodyText: menuText,
+              buttons,
+              headerText: "Resort Dining Menu",
+              footerText: "Konkan Wave Beach Bar",
+              customCredentials
+            });
+            sentMsgId = btnRes.messageId;
+          } catch (btnErr) {
+            // Fallback to text
+            try {
+              const sent = await sendTextMessage({
+                to: cleanPhone,
+                body: menuText,
+                customCredentials
+              });
+              sentMsgId = sent?.messageId || null;
+            } catch (e) {}
+          }
+
+          const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+          const botReplyId = `bot_menu_${Date.now()}`;
+          db.prepare(`
+            INSERT INTO customer_replies (
+              wa_message_id, from_phone, customer_name, message_type,
+              message_body, reply_text, reply_sent_at, reply_status,
+              link_id, source, is_read, user_id, received_at
+            ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
+          `).run(
+            botReplyId,
+            cleanPhone,
+            replyRecord.customer_name || "Guest",
+            menuText,
+            menuText,
+            nowIso,
+            replyRecord.link_id || null,
+            nowIso
+          );
+
+          const savedBotReply = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
+          broadcastEngine.emit("webhook:reply", savedBotReply);
+          return { success: true, menu: true, replyText: menuText };
+        }
+      }
+
+      // 9. Execute Hospitality Conversational Flow Engine
+      let flowRes = null;
+      let matchedLink = null;
+      if (replyRecord.link_id) {
+        try {
+          matchedLink = db.prepare("SELECT * FROM chat_links WHERE id = ?").get(replyRecord.link_id);
+        } catch (e) {}
+      }
+
+      if (hospitalityFlowEngine) {
+        try {
+          flowRes = hospitalityFlowEngine.handleCustomerInquiry({
+            channel: "WHATSAPP",
+            phone: cleanPhone,
+            guestName: replyRecord.customer_name || "Guest",
+            text: effectiveText,
+            link: matchedLink,
+            tenantId: 1
+          });
+        } catch (flowErr) {
+          console.warn("[Webhook Flow] Engine execution warning:", flowErr.message);
+        }
+      }
+
+      if (flowRes && flowRes.text) {
+        let sentMessageId = null;
+        let deliveredInteractive = false;
+
+        // Try interactive payload if options or confirmation buttons are present
+        const rawPayload = flowRes.raw_payload;
+        if (rawPayload && rawPayload.interactive_type === "flow_step" && rawPayload.step === "ROOM_SELECTION") {
+          // If a preferred room is selected and available
+          if (rawPayload.selected_room) {
+            try {
+              const buttons = [
+                { id: "btn_confirm", title: "Confirm Booking" },
+                { id: "btn_rooms", title: "View Other Rooms" },
+                { id: "btn_staff", title: "Talk to Staff" }
+              ];
+              const btnRes = await sendInteractiveButtons({
+                to: cleanPhone,
+                bodyText: flowRes.text,
+                buttons,
+                headerText: "Availability & Rates",
+                footerText: "KonkanTrip Concierge",
+                customCredentials
+              });
+              sentMessageId = btnRes.messageId;
+              deliveredInteractive = true;
+            } catch (e) {
+              console.warn("[Webhook Flow] Buttons send fallback:", e.message);
+            }
+          } else if (Array.isArray(rawPayload.options)) {
+            const availOpts = rawPayload.options.filter(o => o.available);
+            if (availOpts.length >= 1 && availOpts.length <= 3) {
+              try {
+                const buttons = availOpts.map((opt, i) => ({
+                  id: `select_room_${opt.id}`,
+                  title: opt.name.substring(0, 20)
+                }));
+                const btnRes = await sendInteractiveButtons({
+                  to: cleanPhone,
+                  bodyText: flowRes.text,
+                  buttons,
+                  headerText: "Choose a Room Category",
+                  footerText: "KonkanTrip Concierge",
+                  customCredentials
+                });
+                sentMessageId = btnRes.messageId;
+                deliveredInteractive = true;
+              } catch (e) {}
+            } else if (availOpts.length > 3) {
+              try {
+                const rows = availOpts.slice(0, 10).map(opt => ({
+                  id: `select_room_${opt.id}`,
+                  title: opt.name.substring(0, 24),
+                  description: (opt.total_price ? `₹${Number(opt.total_price).toLocaleString("en-IN")} total` : `₹${opt.nightly_rate}/night`).substring(0, 72)
+                }));
+                const listRes = await sendInteractiveList({
+                  to: cleanPhone,
+                  bodyText: flowRes.text,
+                  buttonText: "Select Room",
+                  sections: [{ title: "Available Rooms", rows }],
+                  headerText: "Available Categories",
+                  footerText: "KonkanTrip Concierge",
+                  customCredentials
+                });
+                sentMessageId = listRes.messageId;
+                deliveredInteractive = true;
+              } catch (e) {}
+            }
+          }
+        } else if (rawPayload && rawPayload.interactive_type === "enquiry_confirmed") {
+          try {
+            const buttons = [
+              { id: "btn_amenities", title: "Resort Facilities" },
+              { id: "btn_menu", title: "Dining Menu" },
+              { id: "btn_location", title: "Location / Map" }
+            ];
+            const btnRes = await sendInteractiveButtons({
+              to: cleanPhone,
+              bodyText: flowRes.text,
+              buttons,
+              headerText: "Inquiry Submitted",
+              footerText: "KonkanTrip Front Desk",
+              customCredentials
+            });
+            sentMessageId = btnRes.messageId;
+            deliveredInteractive = true;
+          } catch (e) {}
+        }
+
+        // Fallback to text if interactive was not sent or threw
+        if (!deliveredInteractive) {
+          try {
+            const textRes = await sendTextMessage({
+              to: cleanPhone,
+              body: flowRes.text,
+              customCredentials
+            });
+            sentMessageId = textRes?.messageId || null;
+          } catch (sendErr) {
+            console.warn("[Webhook Flow] Text dispatch note:", sendErr.message);
+          }
+        }
+
+        const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+        const botReplyId = `bot_flow_${Date.now()}`;
+        db.prepare(`
+          INSERT INTO customer_replies (
+            wa_message_id, from_phone, customer_name, message_type,
+            message_body, reply_text, reply_sent_at, reply_status,
+            link_id, source, is_read, user_id, received_at, raw_payload
+          ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?, ?)
+        `).run(
+          botReplyId,
+          cleanPhone,
+          replyRecord.customer_name || "Guest",
+          flowRes.text,
+          flowRes.text,
+          nowIso,
+          replyRecord.link_id || null,
+          nowIso,
+          rawPayload ? JSON.stringify(rawPayload) : null
+        );
+
+        const savedBotReply = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
+        broadcastEngine.emit("webhook:reply", savedBotReply);
+
+        console.log(`[Webhook Flow] ✓ Flow reply delivered to ${cleanPhone} (Interactive: ${deliveredInteractive})`);
+        return {
+          success: true,
+          flow: true,
+          interactive: deliveredInteractive,
+          replyText: flowRes.text,
+          messageId: sentMessageId
+        };
+      }
+
+      // 10. Fallback: Standard Auto-Reply (if enabled in settings)
+      const autoReplyEnabled = getSetting("AUTO_REPLY_ENABLED");
+      if (autoReplyEnabled === "true" || autoReplyEnabled === true) {
+        const templateMsg = getSetting("AUTO_REPLY_MESSAGE") ||
+          "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message. Our team will get back to you shortly.";
+        const customerName = replyRecord.customer_name ? replyRecord.customer_name.trim() : "there";
+        const finalMsg = templateMsg.replace(/\{\{name\}\}/gi, customerName);
+
+        let sentRes = null;
+        try {
+          sentRes = await sendTextMessage({
+            to: cleanPhone,
+            body: finalMsg,
+            customCredentials
+          });
+        } catch (e) {}
+
+        const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+        db.prepare(`
+          UPDATE customer_replies 
+          SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
+          WHERE id = ?
+        `).run(finalMsg, nowIso, replyRecord.id);
+
+        const updatedRecord = {
+          ...replyRecord,
+          reply_text: finalMsg,
+          reply_sent_at: nowIso,
+          reply_status: 'AUTO_REPLIED'
+        };
+
+        broadcastEngine.emit("webhook:reply_updated", updatedRecord);
+        return {
+          success: true,
+          messageId: sentRes?.messageId,
+          replyText: finalMsg
+        };
+      }
+
+      return null;
     } catch (err) {
-      console.error(`[Webhook AutoReply] ✗ Failed to send auto-reply to ${cleanPhone}:`, err.message);
-      try {
-        db.prepare(`UPDATE customer_replies SET reply_status = 'FAILED' WHERE id = ?`).run(replyRecord.id);
-      } catch (e) {}
+      console.error(`[Webhook Flow] ✗ Error processing flow for ${cleanPhone}:`, err.message);
       return { success: false, error: err.message };
     } finally {
       this.inFlightAutoReplies.delete(cleanPhone);
@@ -1274,9 +1812,9 @@ class WebhookService {
   }
 
   /**
-   * Manually sends a custom reply from the dashboard to a customer
+   * Manually sends a custom reply from the dashboard to a customer (Staff Takeover)
    */
-  async sendManualReply({ replyId, replyText }) {
+  async sendManualReply({ replyId, replyText, userId = null }) {
     if (!replyId) throw new Error("Reply ID is required.");
     if (!replyText || !String(replyText).trim()) throw new Error("Reply message cannot be empty.");
 
@@ -1287,7 +1825,10 @@ class WebhookService {
     }
 
     const cleanPhone = String(record.from_phone).replace(/\D/g, "");
-    console.log(`[Webhook Reply] Sending manual reply to ${cleanPhone}: "${cleanText}"`);
+    console.log(`[Webhook Reply] Staff sending manual reply to ${cleanPhone}: "${cleanText}"`);
+
+    // Staff Takeover: Automatically pause automated bot responses for 60 minutes for this contact
+    this.pauseBotForPhone(cleanPhone, 60 * 60 * 1000);
 
     const sendResult = await sendTextMessage({
       to: cleanPhone,
@@ -1295,18 +1836,21 @@ class WebhookService {
     });
 
     const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+    const assignedUserId = userId || record.user_id || "staff";
+
     db.prepare(`
       UPDATE customer_replies 
-      SET reply_text = ?, reply_sent_at = ?, reply_status = 'SENT', is_read = 1 
+      SET reply_text = ?, reply_sent_at = ?, reply_status = 'SENT', is_read = 1, user_id = ?
       WHERE id = ?
-    `).run(cleanText, nowIso, replyId);
+    `).run(cleanText, nowIso, assignedUserId, replyId);
 
     const updatedRecord = {
       ...record,
       reply_text: cleanText,
       reply_sent_at: nowIso,
       reply_status: 'SENT',
-      is_read: 1
+      is_read: 1,
+      user_id: assignedUserId
     };
 
     broadcastEngine.emit("webhook:reply_updated", updatedRecord);

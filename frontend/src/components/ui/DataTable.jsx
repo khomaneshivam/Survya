@@ -6,8 +6,10 @@ import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Inbox } fro
  */
 export default function DataTable({
   columns,
-  data = [],
-  rowKey = (row, idx) => row.id ?? idx,
+  data,
+  rows,
+  rowKey,
+  keyField,
   onRowClick,
   selectedKey,
   loading = false,
@@ -22,12 +24,27 @@ export default function DataTable({
   const [sortDir, setSortDir] = useState('asc');
   const [page, setPage] = useState(1);
 
+  // Support both `data` and `rows` props seamlessly
+  const resolvedData = useMemo(() => {
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(rows)) return rows;
+    return [];
+  }, [data, rows]);
+
+  // Support function rowKey, string rowKey, or keyField prop
+  const getRowKey = useMemo(() => {
+    if (typeof rowKey === 'function') return rowKey;
+    if (typeof rowKey === 'string') return (row, idx) => row[rowKey] ?? idx;
+    if (keyField) return (row, idx) => row[keyField] ?? idx;
+    return (row, idx) => row.id ?? row.key ?? idx;
+  }, [rowKey, keyField]);
+
   const sortedData = useMemo(() => {
-    if (!sortKey) return data;
+    if (!sortKey) return resolvedData;
     const col = columns.find((c) => c.key === sortKey);
     const getValue = col?.sortValue || ((row) => row[sortKey]);
 
-    return [...data].sort((a, b) => {
+    return [...resolvedData].sort((a, b) => {
       const av = getValue(a);
       const bv = getValue(b);
       if (av === bv) return 0;
@@ -40,7 +57,7 @@ export default function DataTable({
         ? String(av).localeCompare(String(bv))
         : String(bv).localeCompare(String(av));
     });
-  }, [data, columns, sortKey, sortDir]);
+  }, [resolvedData, columns, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(sortedData.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -71,7 +88,7 @@ export default function DataTable({
     );
   }
 
-  if (!data.length) {
+  if (!resolvedData.length) {
     return (
       <div className="sarvya-card">
         <div className="sarvya-empty-state">
@@ -98,6 +115,7 @@ export default function DataTable({
             <tr>
               {columns.map((col) => {
                 const isSorted = sortKey === col.key;
+                const columnLabel = col.label || col.header || '';
                 return (
                   <th
                     key={col.key}
@@ -122,7 +140,7 @@ export default function DataTable({
                           letterSpacing: 'inherit'
                         }}
                       >
-                        <span>{col.label}</span>
+                        <span>{columnLabel}</span>
                         {isSorted ? (
                           sortDir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
                         ) : (
@@ -130,7 +148,7 @@ export default function DataTable({
                         )}
                       </button>
                     ) : (
-                      col.label
+                      columnLabel
                     )}
                   </th>
                 );
@@ -139,7 +157,7 @@ export default function DataTable({
           </thead>
           <tbody>
             {paginatedRows.map((row, idx) => {
-              const key = typeof rowKey === 'function' ? rowKey(row, idx) : row[rowKey];
+              const key = getRowKey(row, idx);
               const isSelected = selectedKey !== undefined && key === selectedKey;
               return (
                 <tr
@@ -151,7 +169,7 @@ export default function DataTable({
                   {columns.map((col) => (
                     <td
                       key={col.key}
-                      data-label={col.label}
+                      data-label={col.label || col.header || ''}
                       style={{ textAlign: col.align || 'start' }}
                     >
                       {col.render ? col.render(row) : row[col.key]}

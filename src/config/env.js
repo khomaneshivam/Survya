@@ -1,3 +1,4 @@
+// SARVYA WhatsApp Bulk Configuration & Environment Loader
 const crypto = require("crypto");
 const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, "../../.env") });
@@ -31,23 +32,19 @@ if (isProduction) {
   jwtSecret = process.env.DEV_JWT_SECRET || "dev_secret_" + crypto.randomBytes(32).toString("hex");
 }
 
-let webhookVerifyToken = process.env.WEBHOOK_VERIFY_TOKEN;
-if (!webhookVerifyToken || !webhookVerifyToken.trim() || webhookVerifyToken === "your_custom_webhook_verify_token_here") {
-  if (isProduction) {
-    console.warn("[Security Warning] WEBHOOK_VERIFY_TOKEN is missing or set to placeholder in production environment.");
-  }
-  webhookVerifyToken = "wb_verify_" + crypto.randomBytes(16).toString("hex");
-}
-
-let metaAppSecret = process.env.META_APP_SECRET || "";
-if (isProduction && metaAppSecret === "your_meta_app_secret_here") {
-  console.warn("[Security Warning] META_APP_SECRET is set to placeholder in production. Webhooks cannot be securely verified.");
-  metaAppSecret = "";
-}
+// Webhook verify token & Meta App Secret (primarily stored & managed in database settings table)
+const webhookVerifyToken = process.env.WEBHOOK_VERIFY_TOKEN || "";
+const metaAppSecret = process.env.META_APP_SECRET || "";
 
 const config = {
   PORT: process.env.PORT || 5000,
   NODE_ENV,
+  DB_CLIENT: (process.env.DB_CLIENT || "mysql").toLowerCase(),
+  DB_HOST: process.env.DB_HOST || "localhost",
+  DB_PORT: parseInt(process.env.DB_PORT || "3306", 10),
+  DB_USER: process.env.DB_USER || "root",
+  DB_PASSWORD: process.env.DB_PASSWORD || "",
+  DB_NAME: process.env.DB_NAME || "whatsapp_bulk_db",
   WHATSAPP_API_TOKEN: process.env.WHATSAPP_API_TOKEN || "",
   WHATSAPP_PHONE_NUMBER_ID: process.env.WHATSAPP_PHONE_NUMBER_ID || "",
   META_APP_SECRET: metaAppSecret,
@@ -62,6 +59,7 @@ const config = {
   UPLOADS_DIR: path.resolve(__dirname, "../../uploads"),
   APP_TIMEZONE: process.env.APP_TIMEZONE || "Asia/Kolkata",
   JWT_SECRET: jwtSecret,
+  PUBLIC_APP_URL: process.env.PUBLIC_APP_URL || "",
   CORS_ORIGIN: process.env.CORS_ORIGIN || "",
   WHATSAPP_BUSINESS_ACCOUNT_ID: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
   WHATSAPP_FLOWS_ENABLED: process.env.WHATSAPP_FLOWS_ENABLED === "true",

@@ -36,6 +36,18 @@ describe("SARVYA Connect — WhatsApp Campaign, Custom Template Management & Rul
     setSetting("META_APP_SECRET", "test_meta_app_secret_32_characters_long!");
     config.META_APP_SECRET = "test_meta_app_secret_32_characters_long!";
 
+    // Clean up test phone records before running tests to ensure clean state
+    for (const ph of createdPhones) {
+      db.prepare("DELETE FROM contact_suppressions WHERE clean_phone = ?").run(ph);
+      db.prepare("DELETE FROM customer_replies WHERE from_phone = ?").run(ph);
+      const c = db.prepare("SELECT id FROM contacts WHERE phone_e164 = ?").get(ph);
+      if (c) {
+        db.prepare("DELETE FROM contact_consents WHERE contact_id = ?").run(c.id);
+        db.prepare("DELETE FROM booking_enquiries WHERE contact_id = ?").run(c.id);
+        db.prepare("DELETE FROM contacts WHERE id = ?").run(c.id);
+      }
+    }
+
     server = app.listen(0);
     const port = server.address().port;
     baseUrl = `http://127.0.0.1:${port}`;
@@ -116,7 +128,12 @@ describe("SARVYA Connect — WhatsApp Campaign, Custom Template Management & Rul
     for (const ph of createdPhones) {
       db.prepare("DELETE FROM contact_suppressions WHERE clean_phone = ?").run(ph);
       db.prepare("DELETE FROM customer_replies WHERE from_phone = ?").run(ph);
-      db.prepare("DELETE FROM contacts WHERE phone_e164 = ?").run(ph);
+      const c = db.prepare("SELECT id FROM contacts WHERE phone_e164 = ?").get(ph);
+      if (c) {
+        db.prepare("DELETE FROM contact_consents WHERE contact_id = ?").run(c.id);
+        db.prepare("DELETE FROM booking_enquiries WHERE contact_id = ?").run(c.id);
+        db.prepare("DELETE FROM contacts WHERE id = ?").run(c.id);
+      }
     }
     if (adminUser?.id) {
       db.prepare("DELETE FROM users WHERE id = ?").run(adminUser.id);

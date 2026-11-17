@@ -9,14 +9,19 @@ import {
   Send,
   Bot,
   BarChart3,
-  Plug,
   BedDouble,
   CreditCard,
   ShieldCheck,
   PanelLeftClose,
   PanelLeftOpen,
   LogOut,
-  X
+  X,
+  Link2,
+  Layers,
+  Landmark,
+  UserCheck,
+  Settings,
+  Plug
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -29,9 +34,10 @@ export default function Sidebar({
 }) {
   const { user, isAdmin, logout } = useAuth();
 
+  // Role-based segmented navigation
   const sections = [
     {
-      title: 'Platform',
+      title: 'Operations & Messaging',
       items: [
         { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
         { id: 'enquiries', label: 'CRM', icon: Users },
@@ -39,18 +45,33 @@ export default function Sidebar({
         { id: 'automation', label: 'Workflows', icon: GitBranch },
         { id: 'inbox', label: 'Conversations', icon: MessageSquare },
         { id: 'broadcast', label: 'Campaigns', icon: Send },
+        { id: 'links', label: 'Chat Links', icon: Link2 },
         { id: 'ai', label: 'SARVYA AI', icon: Bot },
-        { id: 'reports', label: 'Insights', icon: BarChart3 },
-        { id: 'connect', label: 'Connect', icon: Plug },
-        { id: 'settings', label: 'Settings', icon: Plug }
+        { id: 'reports', label: 'Insights', icon: BarChart3 }
       ]
     },
     {
-      title: 'Industry & Core',
+      title: 'Industry Solutions',
       items: [
-        { id: 'inventory', label: 'Hospitality', icon: BedDouble },
-        { id: 'pricing', label: 'Plans', icon: CreditCard },
-        ...(isAdmin ? [{ id: 'admin', label: 'Core Admin', icon: ShieldCheck }] : [])
+        { id: 'catalog', label: 'Catalog & Menu', icon: Layers },
+        { id: 'inventory', label: 'Hospitality', icon: BedDouble }
+      ]
+    },
+    ...(isAdmin ? [
+      {
+        title: 'System Administration',
+        isAdminSection: true,
+        items: [
+          { id: 'admin', label: 'System Admin Panel', icon: ShieldCheck, highlight: true },
+          { id: 'payouts', label: 'Payouts & Settlements', icon: Landmark },
+          { id: 'connect', label: 'Connect', icon: Plug }
+        ]
+      }
+    ] : []),
+    {
+      title: 'Account',
+      items: [
+        { id: 'settings', label: 'My Account', icon: Settings }
       ]
     }
   ];
@@ -122,7 +143,7 @@ export default function Sidebar({
                   overflow: 'hidden',
                   textOverflow: 'ellipsis'
                 }}>
-                  Engagement OS
+                  {isAdmin ? 'System Admin Console' : 'Engagement Workspace'}
                 </div>
               </div>
             )}
@@ -173,14 +194,29 @@ export default function Sidebar({
             <div key={section.title}>
               {!collapsed && (
                 <div style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
+                  fontSize: '10.5px',
+                  fontWeight: 700,
                   textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  color: 'var(--text-muted)',
-                  padding: '0 10px 6px 10px'
+                  letterSpacing: '0.06em',
+                  color: section.isAdminSection ? 'var(--sarvya-blue)' : 'var(--text-muted)',
+                  padding: '0 10px 6px 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
                 }}>
-                  {section.title}
+                  <span>{section.title}</span>
+                  {section.isAdminSection && (
+                    <span style={{
+                      fontSize: '9px',
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                      background: 'var(--sarvya-blue-soft)',
+                      color: 'var(--sarvya-blue)',
+                      fontWeight: 800
+                    }}>
+                      ADMIN
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -196,10 +232,18 @@ export default function Sidebar({
                       aria-current={isActive ? 'page' : undefined}
                       data-tooltip={collapsed ? item.label : undefined}
                       className={`sidebar-nav-btn ${isActive ? 'is-active' : ''}`}
+                      style={item.highlight && !isActive ? {
+                        color: 'var(--sarvya-blue)',
+                        fontWeight: 600
+                      } : undefined}
                     >
                       <span style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
                         <Icon size={17} strokeWidth={isActive ? 2.1 : 1.75} style={{ flexShrink: 0 }} />
-                        {!collapsed && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.label}</span>}
+                        {!collapsed && (
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {item.label}
+                          </span>
+                        )}
                       </span>
                     </button>
                   );
@@ -222,16 +266,16 @@ export default function Sidebar({
           {!collapsed && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '9px', minWidth: 0 }}>
               <div style={{
-                width: '30px',
-                height: '30px',
+                width: '32px',
+                height: '32px',
                 borderRadius: '50%',
-                background: 'var(--sarvya-blue-soft)',
-                border: '1px solid var(--sarvya-blue-border)',
-                color: 'var(--sarvya-blue)',
+                background: isAdmin ? 'var(--sarvya-blue)' : 'var(--sarvya-blue-soft)',
+                border: isAdmin ? '1px solid var(--sarvya-blue)' : '1px solid var(--sarvya-blue-border)',
+                color: isAdmin ? '#FFFFFF' : 'var(--sarvya-blue)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '12px',
+                fontSize: '12.5px',
                 fontWeight: 700,
                 flexShrink: 0
               }}>
@@ -248,8 +292,12 @@ export default function Sidebar({
                 }}>
                   {user?.name || 'Operator'}
                 </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {user?.role === 'ADMIN' ? 'Admin' : 'Operator'}
+                <div style={{
+                  fontSize: '11px',
+                  color: isAdmin ? 'var(--sarvya-blue)' : 'var(--text-muted)',
+                  fontWeight: isAdmin ? 600 : 400
+                }}>
+                  {isAdmin ? 'System Administrator' : 'Workspace Operator'}
                 </div>
               </div>
             </div>

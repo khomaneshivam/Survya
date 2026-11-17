@@ -29,10 +29,13 @@ const MODULE_SEARCH_INDEX = [
   { id: 'broadcast', label: 'Campaigns Studio', group: 'SARVYA Connect', keywords: 'campaigns broadcast bulk template send' },
   { id: 'ai', label: 'AI Assistant & Guardrails', group: 'SARVYA AI', keywords: 'ai assistant auto reply rules prompts safety' },
   { id: 'reports', label: 'Insights & Telemetry', group: 'SARVYA Insights', keywords: 'insights analytics reports export logs' },
+  { id: 'catalog', label: 'Catalog, Menu & Inventory', group: 'Industry Module', keywords: 'catalog menu dishes rooms items 86 stock inventory' },
   { id: 'inventory', label: 'Hospitality Inventory', group: 'Industry Module', keywords: 'hospitality rooms inventory calendar rates' },
-  { id: 'settings', label: 'Connect & API Integrations', group: 'SARVYA Connect', keywords: 'connect settings api waba phone lines webhook' },
+  { id: 'links', label: 'Chat Links & In-App Chat', group: 'SARVYA Connect', keywords: 'chat links qr codes customer landing conversations' },
+  { id: 'settings', label: 'My Account & Preferences', group: 'Account', keywords: 'profile settings password waba line greeting auto-reply' },
+  { id: 'payouts', label: 'Payouts & Bank Settlements', group: 'System Governance', keywords: 'payouts bank settlements imps utr balance penny drop', adminOnly: true },
   { id: 'pricing', label: 'Enterprise Plans', group: 'SARVYA Core', keywords: 'plans pricing tiers billing' },
-  { id: 'admin', label: 'Core Admin', group: 'SARVYA Core', keywords: 'admin users roles tenants system', adminOnly: true }
+  { id: 'admin', label: 'System Admin Panel', group: 'System Governance', keywords: 'admin users roles tokens meta waba audit logs system', adminOnly: true }
 ];
 
 const TAB_META = {
@@ -44,10 +47,14 @@ const TAB_META = {
   broadcast: { module: 'Connect', title: 'Campaigns' },
   ai: { module: 'AI', title: 'Assistant & Safety' },
   reports: { module: 'Insights', title: 'Analytics & Reports' },
+  catalog: { module: 'Industry', title: 'Catalog, Menu & Inventory' },
   inventory: { module: 'Industry', title: 'Hospitality Inventory' },
+  payouts: { module: 'Governance', title: 'Payouts & Settlements' },
+  links: { module: 'Connect', title: 'Chat Links' },
   pricing: { module: 'Core', title: 'Plans & Modules' },
-  admin: { module: 'Core', title: 'Workspace Admin' },
-  settings: { module: 'Connect', title: 'Integrations & Settings' }
+  admin: { module: 'Governance', title: 'System Admin Panel' },
+  settings: { module: 'Account', title: 'My Account & Preferences' },
+  connect: { module: 'Connect', title: 'Integrations & Settings' }
 };
 
 export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
@@ -168,67 +175,90 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
           <Menu size={18} />
         </button>
 
-        {/* Workspace / Channel Switcher */}
-        <div style={{ position: 'relative' }}>
-          <button
-            type="button"
-            className="sarvya-btn sarvya-btn-secondary sarvya-btn-sm"
-            onClick={() => setOpenMenu(openMenu === 'workspace' ? null : 'workspace')}
-            aria-expanded={openMenu === 'workspace'}
-            style={{ maxWidth: '210px', justifyContent: 'space-between' }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-              <Smartphone size={14} color="var(--sarvya-blue)" style={{ flexShrink: 0 }} />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {activeNumber ? activeNumber.display_name : 'SARVYA Workspace'}
+        {/* Workspace / Channel Switcher: Interactive for Admin, Clean Read-Only Badge for Users */}
+        {isAdmin ? (
+          <div style={{ position: 'relative' }}>
+            <button
+              type="button"
+              className="sarvya-btn sarvya-btn-secondary sarvya-btn-sm"
+              onClick={() => setOpenMenu(openMenu === 'workspace' ? null : 'workspace')}
+              aria-expanded={openMenu === 'workspace'}
+              style={{ maxWidth: '210px', justifyContent: 'space-between' }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                <Smartphone size={14} color="var(--sarvya-blue)" style={{ flexShrink: 0 }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {activeNumber ? activeNumber.display_name : 'SARVYA Workspace'}
+                </span>
               </span>
-            </span>
-            <ChevronDown size={13} color="var(--text-muted)" />
-          </button>
+              <ChevronDown size={13} color="var(--text-muted)" />
+            </button>
 
-          {openMenu === 'workspace' && (
-            <div className="sarvya-popover" style={{ insetInlineStart: 0, insetInlineEnd: 'auto', minWidth: '260px' }}>
-              <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)', fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                Connected Channels
-              </div>
-              {phoneNumbers.length === 0 ? (
-                <div style={{ padding: '12px 14px', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
-                  No WhatsApp channels configured yet.
+            {openMenu === 'workspace' && (
+              <div className="sarvya-popover" style={{ insetInlineStart: 0, insetInlineEnd: 'auto', minWidth: '260px' }}>
+                <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)', fontSize: '11.5px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  Connected Channels
                 </div>
-              ) : (
-                phoneNumbers.map((line) => (
+                {phoneNumbers.length === 0 ? (
+                  <div style={{ padding: '12px 14px', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                    No WhatsApp channels configured yet.
+                  </div>
+                ) : (
+                  phoneNumbers.map((line) => (
+                    <button
+                      key={line.id}
+                      type="button"
+                      className="sarvya-menu-item"
+                      onClick={() => switchDefaultLine(line.id)}
+                      style={{ justifyContent: 'space-between' }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600 }}>{line.display_name}</div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{line.phone_number}</div>
+                      </div>
+                      {line.is_default && <span className="sarvya-badge sarvya-badge-blue">Primary</span>}
+                    </button>
+                  ))
+                )}
+                <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '6px' }}>
                   <button
-                    key={line.id}
                     type="button"
                     className="sarvya-menu-item"
-                    onClick={() => switchDefaultLine(line.id)}
-                    style={{ justifyContent: 'space-between' }}
+                    onClick={() => {
+                      setOpenMenu(null);
+                      setShowAddPhoneModal(true);
+                    }}
+                    style={{ color: 'var(--sarvya-blue)' }}
                   >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600 }}>{line.display_name}</div>
-                      <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{line.phone_number}</div>
-                    </div>
-                    {line.is_default && <span className="sarvya-badge sarvya-badge-blue">Primary</span>}
+                    <Plus size={14} />
+                    <span>Connect WhatsApp Line</span>
                   </button>
-                ))
-              )}
-              <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '6px' }}>
-                <button
-                  type="button"
-                  className="sarvya-menu-item"
-                  onClick={() => {
-                    setOpenMenu(null);
-                    setShowAddPhoneModal(true);
-                  }}
-                  style={{ color: 'var(--sarvya-blue)' }}
-                >
-                  <Plus size={14} />
-                  <span>Connect WhatsApp Line</span>
-                </button>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        ) : (
+          <div
+            className="sarvya-badge sarvya-badge-neutral"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '5px 10px',
+              fontSize: '12px',
+              fontWeight: 500,
+              maxWidth: '220px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border-subtle)'
+            }}
+            title={activeNumber ? `Assigned Line: ${activeNumber.phone_number}` : 'Default Platform WhatsApp Line'}
+          >
+            <Smartphone size={13} color="var(--sarvya-blue)" style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {activeNumber ? activeNumber.display_name : 'SARVYA Line'}
+            </span>
+          </div>
+        )}
 
         {/* Breadcrumb */}
         <div className="topbar-sender-chip" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12.5px', color: 'var(--text-secondary)', minWidth: 0 }}>
@@ -275,21 +305,54 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
           )}
         </div>
 
-        {/* Meta API Health */}
-        <button
-          type="button"
-          onClick={checkMetaHealth}
-          className={`sarvya-badge ${metaStatus.connected ? 'sarvya-badge-green' : 'sarvya-badge-coral'}`}
-          title={metaStatus.connected ? 'Meta Cloud API connected' : (metaStatus.message || 'Check Meta connection')}
-          style={{ cursor: 'pointer', padding: '4px 10px' }}
-        >
-          <span
-            className="sarvya-status-dot"
-            style={{ background: metaStatus.connected ? '#4C7A2B' : '#C9403D' }}
-          />
-          <span>{metaStatus.loading ? 'Checking' : (metaStatus.connected ? 'Meta Live' : 'Offline')}</span>
-          <RefreshCw size={11} className={isVerifying ? 'spin-slow' : ''} />
-        </button>
+        {/* Meta API Health: Full Controls for Admin, Subtle Indicator for Non-Admin */}
+        {isAdmin ? (
+          <button
+            type="button"
+            onClick={checkMetaHealth}
+            className={`sarvya-badge ${metaStatus.connected ? 'sarvya-badge-green' : 'sarvya-badge-coral'}`}
+            title={metaStatus.connected ? 'Meta Cloud API connected' : (metaStatus.message || 'Check Meta connection')}
+            style={{ cursor: 'pointer', padding: '4px 10px' }}
+          >
+            <span
+              className="sarvya-status-dot"
+              style={{ background: metaStatus.connected ? '#4C7A2B' : '#C9403D' }}
+            />
+            <span>{metaStatus.loading ? 'Checking' : (metaStatus.connected ? 'Meta Live' : 'Offline')}</span>
+            <RefreshCw size={11} className={isVerifying ? 'spin-slow' : ''} />
+          </button>
+        ) : (
+          <div
+            className={`sarvya-badge ${metaStatus.connected ? 'sarvya-badge-green' : 'sarvya-badge-neutral'}`}
+            style={{ padding: '4px 9px', fontSize: '11.5px' }}
+            title={metaStatus.connected ? 'WhatsApp service ready' : 'WhatsApp service connecting'}
+          >
+            <span
+              className="sarvya-status-dot"
+              style={{ background: metaStatus.connected ? '#4C7A2B' : '#8C8C8C' }}
+            />
+            <span>{metaStatus.connected ? 'WhatsApp Ready' : 'Standby'}</span>
+          </div>
+        )}
+
+        {/* Dedicated Admin Panel Quick Access Button for Admins */}
+        {isAdmin && (
+          <button
+            type="button"
+            className="sarvya-btn sarvya-btn-secondary sarvya-btn-sm"
+            onClick={() => setActiveTab('admin')}
+            title="Open System Admin Panel"
+            style={{
+              color: 'var(--sarvya-blue)',
+              borderColor: 'var(--sarvya-blue-border)',
+              background: 'var(--sarvya-blue-soft)',
+              fontWeight: 600
+            }}
+          >
+            <ShieldCheck size={14} />
+            <span className="topbar-action-text">Admin Panel</span>
+          </button>
+        )}
 
         {/* Quick Create */}
         <div style={{ position: 'relative' }}>
@@ -332,14 +395,16 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
                 <FileSpreadsheet size={14} color="var(--sarvya-blue)" />
                 <span>Interactive Form / Flow</span>
               </button>
-              <button
-                type="button"
-                className="sarvya-menu-item"
-                onClick={() => { setOpenMenu(null); setShowAddPhoneModal(true); }}
-              >
-                <Smartphone size={14} color="var(--sarvya-blue)" />
-                <span>Connect WhatsApp Line</span>
-              </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  className="sarvya-menu-item"
+                  onClick={() => { setOpenMenu(null); setShowAddPhoneModal(true); }}
+                >
+                  <Smartphone size={14} color="var(--sarvya-blue)" />
+                  <span>Connect WhatsApp Line</span>
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -416,7 +481,7 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
             <div className="sarvya-popover" style={{ minWidth: '260px', padding: '14px' }}>
               <div style={{ fontWeight: 600, fontSize: '13px', marginBottom: '6px' }}>SARVYA Quick Guide</div>
               <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '10px' }}>
-                Configure Meta WABA credentials in <strong>Connect</strong>, build data collection schemas in <strong>Forms</strong>, and manage enquiries in <strong>CRM</strong>.
+                Manage conversations in <strong>Inbox</strong>, collect structured data in <strong>Forms</strong>, and track leads in <strong>CRM</strong>.
               </p>
               <button
                 type="button"
@@ -424,7 +489,7 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
                 style={{ width: '100%' }}
                 onClick={() => { setOpenMenu(null); setActiveTab('settings'); }}
               >
-                Open Connect Settings
+                View Account Settings
               </button>
             </div>
           )}
@@ -461,6 +526,11 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
               <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)' }}>
                 <div style={{ fontWeight: 600, fontSize: '13px' }}>{user?.name || 'Authorized User'}</div>
                 <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{user?.email || ''}</div>
+                <div style={{ marginTop: '4px' }}>
+                  <span className={`sarvya-badge ${isAdmin ? 'sarvya-badge-blue' : 'sarvya-badge-neutral'}`} style={{ fontSize: '10.5px' }}>
+                    {isAdmin ? 'System Administrator' : 'Operator'}
+                  </span>
+                </div>
               </div>
               <button
                 type="button"
@@ -468,16 +538,17 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
                 onClick={() => { setOpenMenu(null); setActiveTab('settings'); }}
               >
                 <Settings size={14} />
-                <span>Account &amp; Connect Settings</span>
+                <span>My Account &amp; Preferences</span>
               </button>
               {isAdmin && (
                 <button
                   type="button"
                   className="sarvya-menu-item"
                   onClick={() => { setOpenMenu(null); setActiveTab('admin'); }}
+                  style={{ color: 'var(--sarvya-blue)', fontWeight: 600 }}
                 >
                   <ShieldCheck size={14} />
-                  <span>Workspace Admin Core</span>
+                  <span>System Admin Panel</span>
                 </button>
               )}
               <div style={{ borderTop: '1px solid var(--border-subtle)' }}>
