@@ -9,27 +9,51 @@ const encoder = new TextEncoder();
 let pool;
 
 async function init() {
+  const host = dbConfig.host || 'localhost';
+  const port = dbConfig.port || 3306;
+  const user = dbConfig.user || 'root';
+  const password = dbConfig.password || '';
+  const database = dbConfig.database || 'whatsapp_bulk_db';
+
+  // 1. Ensure the MySQL database exists if permissions permit
   try {
-    pool = mysql.createPool({
-      host: dbConfig.host || 'localhost',
-      port: dbConfig.port || 3306,
-      user: dbConfig.user || 'root',
-      password: dbConfig.password || '',
-      database: dbConfig.database || 'whatsapp_bulk_db',
-      waitForConnections: true,
-      connectionLimit: 15,
-      multipleStatements: true,
-      timezone: '+05:30',
-      dateStrings: true
+    const initConn = await mysql.createConnection({
+      host,
+      port,
+      user,
+      password
     });
-    parentPort.postMessage({ type: 'ready' });
-  } catch (err) {
-    parentPort.postMessage({ type: 'error', error: err.message });
+    await initConn.query(`CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+    await initConn.end();
+  } catch (dbInitErr) {
+    // If user lacks global CREATE DATABASE privilege or database already exists, proceed to connect
   }
+
+  // 2. Initialize connection pool
+  pool = mysql.createPool({
+    host,
+    port,
+    user,
+    password,
+    database,
+    waitForConnections: true,
+    connectionLimit: 15,
+    multipleStatements: true,
+    timezone: '+05:30',
+    dateStrings: true
+  });
+  parentPort.postMessage({ type: 'ready' });
+  return pool;
 }
+
+const poolPromise = init().catch(err => {
+  parentPort.postMessage({ type: 'error', error: err.message });
+  throw err;
+});
 
 parentPort.on('message', async (task) => {
   try {
+    await poolPromise;
     let sql = task.sql;
     let params = task.params || [];
 
@@ -77,6 +101,9 @@ parentPort.on('message', async (task) => {
     if (sql.includes('CREATE INDEX IF NOT EXISTS')) {
       sql = sql.replace(/CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS/gi, 'CREATE INDEX');
     }
+    // DDL dialect translations for MySQL strict mode
+    sql = sql.replace(/\bTEXT(\s+NOT\s+NULL)?\s+DEFAULT\b/gi, 'VARCHAR(255)$1 DEFAULT');
+    sql = sql.replace(/\bTEXT\s+PRIMARY\s+KEY\b/gi, 'VARCHAR(255) PRIMARY KEY');
     if (sql.includes("date(?, '-1 day')")) {
       sql = sql.replace(/date\(\?,\s*'-1 day'\)/gi, 'DATE_SUB(?, INTERVAL 1 DAY)');
     }
@@ -134,7 +161,7 @@ parentPort.on('message', async (task) => {
       status[0] = 1; // success
     } else {
       const [rows] = await pool.query(sql, sanitizedParams);
-      
+
       let payload;
       if (task.mode === 'run') {
         payload = {
