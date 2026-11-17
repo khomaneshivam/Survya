@@ -186,9 +186,16 @@ let server = null;
 
 if (require.main === module) {
   const PORT = config.PORT || 5000;
-  server = app.listen(PORT, "127.0.0.1", () => {
+  const HOST = process.env.HOST || "0.0.0.0";
+  server = app.listen(PORT, HOST, () => {
     // Start background campaign scheduler
     schedulerService.initScheduler();
+
+    // Auto-subscribe Meta Webhooks for WABA if credentials are valid
+    try {
+      const metaService = require("./src/services/metaWhatsAppService");
+      metaService.ensureWabaSubscribedApp().catch(() => {});
+    } catch (e) {}
 
     const dbTarget = config.DB_CLIENT === "mysql"
       ? `MySQL (${config.DB_NAME} on ${config.DB_HOST}:${config.DB_PORT})`
@@ -197,7 +204,7 @@ if (require.main === module) {
     console.log(`
 ========================================================================
 🚀 WhatsApp Bulk Broadcast System
-📡 Server running on: http://localhost:${PORT}
+📡 Server running on: http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}
 💾 Database: ${dbTarget}
 📱 Meta Phone ID: ${config.WHATSAPP_PHONE_NUMBER_ID || "Not Configured"}
 ⏰ Scheduler: Active (Auto-Dispatches Scheduled Campaigns)

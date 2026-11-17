@@ -316,21 +316,17 @@ function getConversationChannelType(convo) {
     return 'in_app';
   }
 
-  // Website Chat: Direct website concierge / chat links / landing page widgets
+  // Website Chat: Direct website concierge live widget
   if (
     source === 'WEBSITE' || 
     source === 'WEB' || 
-    source === 'CHAT_LINK' || 
     convo.channel === 'WEBSITE' || 
-    convo.channel === 'WEB' ||
-    Boolean(convo.linkId) ||
-    Boolean(convo.linkTitle) ||
-    Boolean(convo.linkSlug)
+    convo.channel === 'WEB'
   ) {
     return 'website';
   }
 
-  // Default: Direct WhatsApp Cloud API
+  // Default: WhatsApp Cloud API & Click-to-Chat WhatsApp links
   return 'whatsapp';
 }
 

@@ -1567,10 +1567,41 @@ async function sendInteractiveList({
   };
 }
 
+/**
+ * Subscribes this Meta App to receive webhook notifications for the active WABA
+ */
+async function ensureWabaSubscribedApp(customCredentials = null) {
+  try {
+    const creds = resolveCredentials(customCredentials);
+    const wabaId = resolveWabaId(creds.wabaId);
+    if (!wabaId || !creds.token || creds.token.length < 50) return false;
+
+    const url = `${getMetaBaseUrl()}/${wabaId}/subscribed_apps`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${creds.token}`,
+        "Content-Type": "application/json"
+      }
+    });
+    const data = await res.json();
+    if (data.success) {
+      console.log(`[Meta API] ✓ Webhooks subscribed for WABA ${wabaId}`);
+      return true;
+    } else {
+      console.warn(`[Meta API] Notice: Webhook subscription for WABA ${wabaId}:`, data.error?.message || data);
+    }
+  } catch (e) {
+    console.warn(`[Meta API] Notice: Webhooks auto-subscription for WABA:`, e.message);
+  }
+  return false;
+}
+
 module.exports = {
   getActiveCredentials,
   resolveCredentials,
   testConnection,
+  ensureWabaSubscribedApp,
   registerPhoneNumberWithMeta,
   deregisterPhoneNumberWithMeta,
   cleanPhone,

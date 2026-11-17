@@ -554,6 +554,18 @@ class WebhookService {
       `).get(cleanPhone);
       if (pastCamp?.user_id) replyUserId = pastCamp.user_id;
     }
+    if (!replyUserId) {
+      try {
+        const ph = db.prepare("SELECT registered_by FROM waba_phone_numbers WHERE is_default = 1").get();
+        if (ph?.registered_by) replyUserId = ph.registered_by;
+      } catch (e) {}
+    }
+    if (!replyUserId) {
+      try {
+        const primaryAdmin = db.prepare("SELECT id FROM users WHERE role = 'ADMIN' ORDER BY created_at ASC LIMIT 1").get();
+        if (primaryAdmin?.id) replyUserId = primaryAdmin.id;
+      } catch (e) {}
+    }
 
     // Auto-opt-out detection (Suppression handling)
     const normalizedBody = String(messageBody || "").trim().toUpperCase();
@@ -1064,7 +1076,7 @@ class WebhookService {
         UNION ALL
 
         SELECT 
-          ('cr_' || cr.id) as id,
+          CONCAT('cr_', cr.id) as id,
           cr.meta_message_id as wa_message_id,
           cr.clean_phone as from_phone,
           cr.contact_name as customer_name,
