@@ -26,7 +26,11 @@ import {
   Link2,
   Smartphone,
   Globe,
-  MessageCircle
+  MessageCircle,
+  Bot,
+  Sliders,
+  Phone,
+  RotateCcw
 } from 'lucide-react';
 import { formatIndianTime } from '../utils/indianTime';
 
@@ -507,16 +511,58 @@ export default function InboxPage() {
     }
   }
 
-  // Auto-Reply Bot configuration modal state
+  // Auto-Reply Bot & Conversational Concierge configuration modal state
   const [showAutoReplyModal, setShowAutoReplyModal] = useState(false);
   const [autoReplySettings, setAutoReplySettings] = useState({
     enabled: true,
     mode: 'ONCE_PER_CONTACT',
-    message: ''
+    engineMode: 'HOSPITALITY_FLOW',
+    businessName: 'KonkanTrip Beach Resort & Spa',
+    welcomeMessage: '👋 Hello {{name}}! Welcome to *{{business_name}}*.\n\nHow can we help you today? Select an option below or reply with your travel dates to check real-time availability and live rates! 👇',
+    fallbackMessage: 'Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message and our team will get back to you shortly.',
+    button1: 'This Weekend',
+    button2: 'Tomorrow (2 N)',
+    button3: 'Talk to Staff',
+    quoteConfirm: 'Confirm Booking',
+    quoteModify: 'Change Dates',
+    quoteRooms: 'Other Rooms',
+    confirmedButton1: 'Facilities',
+    confirmedButton2: 'Dining Menu',
+    confirmedButton3: 'Location / Map',
+    handoffPhone: '+91 87665 90634',
+    handoffMessage: '🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at {{phone}}.',
+    takeoverPauseMinutes: 60
   });
+  const [autoReplyActiveTab, setAutoReplyActiveTab] = useState('mode'); // 'mode' | 'welcome' | 'quote' | 'handoff'
+  const [previewStage, setPreviewStage] = useState('welcome'); // 'welcome' | 'quote' | 'confirmed' | 'handoff'
   const [loadingAutoReply, setLoadingAutoReply] = useState(false);
   const [savingAutoReply, setSavingAutoReply] = useState(false);
   const [autoReplySaveSuccess, setAutoReplySaveSuccess] = useState(false);
+
+  function handleResetAutoReplyDefaults() {
+    if (!window.confirm("Reset all bot messages and button labels to recommended hospitality defaults?")) return;
+    setAutoReplySettings(prev => ({
+      ...prev,
+      enabled: true,
+      mode: 'ONCE_PER_CONTACT',
+      engineMode: 'HOSPITALITY_FLOW',
+      businessName: 'KonkanTrip Beach Resort & Spa',
+      welcomeMessage: '👋 Hello {{name}}! Welcome to *{{business_name}}*.\n\nHow can we help you today? Select an option below or reply with your travel dates to check real-time availability and live rates! 👇',
+      fallbackMessage: 'Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message and our team will get back to you shortly.',
+      button1: 'This Weekend',
+      button2: 'Tomorrow (2 N)',
+      button3: 'Talk to Staff',
+      quoteConfirm: 'Confirm Booking',
+      quoteModify: 'Change Dates',
+      quoteRooms: 'Other Rooms',
+      confirmedButton1: 'Facilities',
+      confirmedButton2: 'Dining Menu',
+      confirmedButton3: 'Location / Map',
+      handoffPhone: '+91 87665 90634',
+      handoffMessage: '🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at {{phone}}.',
+      takeoverPauseMinutes: 60
+    }));
+  }
 
   useEffect(() => {
     loadInbox(false, convoFilter);
@@ -1096,8 +1142,8 @@ export default function InboxPage() {
             }}
             title="Configure Automated Message Settings"
           >
-            <Sparkles size={14} color={autoReplySettings.enabled ? '#2876B8' : '#96969C'} />
-            <span>Auto-Reply Bot</span>
+            <Bot size={15} color={autoReplySettings.enabled ? '#2F5219' : '#96969C'} />
+            <span>{autoReplySettings.engineMode === 'HOSPITALITY_FLOW' ? 'Concierge Bot' : 'Auto-Reply Bot'}</span>
             {autoReplySettings.enabled ? (
               <span style={{
                 fontSize: '0.68rem',
@@ -1108,7 +1154,7 @@ export default function InboxPage() {
                 border: '1px solid #C3D1AC',
                 fontWeight: 700
               }}>
-                {autoReplySettings.mode === 'ONCE_PER_24_HOURS' ? '24h Window' : 'Once Only'}
+                {autoReplySettings.engineMode === 'HOSPITALITY_FLOW' ? 'Concierge Active' : (autoReplySettings.mode === 'ONCE_PER_24_HOURS' ? '24h Window' : 'Once Only')}
               </span>
             ) : (
               <span style={{
@@ -2443,9 +2489,9 @@ export default function InboxPage() {
             style={{
               background: '#FFFFFF',
               borderRadius: '16px',
-              maxWidth: '560px',
+              maxWidth: '840px',
               width: '100%',
-              maxHeight: '90vh',
+              maxHeight: '92vh',
               overflowY: 'auto',
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
               border: '1px solid #E5E5E8',
@@ -2455,34 +2501,40 @@ export default function InboxPage() {
           >
             {/* Modal Header */}
             <div style={{
-              padding: '18px 22px',
+              padding: '18px 24px',
               borderBottom: '1px solid #E5E5E8',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              background: '#F5F5F6',
+              background: '#F8FAF5',
               borderTopLeftRadius: '16px',
               borderTopRightRadius: '16px'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{
-                  width: '36px',
-                  height: '36px',
+                  width: '40px',
+                  height: '40px',
                   borderRadius: '10px',
                   background: '#EDF4E6',
                   color: '#2F5219',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
+                  justifyContent: 'center',
+                  border: '1px solid #C3D1AC'
                 }}>
-                  <Sparkles size={18} />
+                  <Bot size={22} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#171719', margin: 0 }}>
-                    Automated Message Settings
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#171719', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>Conversational Concierge & Auto-Reply Bot</span>
+                    {autoReplySettings.enabled && (
+                      <span style={{ fontSize: '0.7rem', color: '#2F5219', background: '#EDF4E6', padding: '1px 8px', borderRadius: '10px', fontWeight: 700, border: '1px solid #C3D1AC' }}>
+                        Active
+                      </span>
+                    )}
                   </h3>
                   <p style={{ fontSize: '0.78rem', color: '#67676B', margin: '2px 0 0 0' }}>
-                    Control automated greeting replies for incoming WhatsApp customer messages
+                    Customize interactive buttons, stay intake prompts, welcome greetings, and staff handoff for your property
                   </p>
                 </div>
               </div>
@@ -2494,7 +2546,7 @@ export default function InboxPage() {
                   border: 'none',
                   color: '#96969C',
                   cursor: 'pointer',
-                  padding: '4px',
+                  padding: '6px',
                   borderRadius: '6px'
                 }}
               >
@@ -2502,269 +2554,934 @@ export default function InboxPage() {
               </button>
             </div>
 
+            {/* Navigation Tabs Bar */}
+            <div style={{
+              display: 'flex',
+              borderBottom: '1px solid #E5E5E8',
+              background: '#FAFAFA',
+              padding: '4px 16px 0 16px',
+              gap: '6px',
+              overflowX: 'auto'
+            }}>
+              {[
+                { id: 'mode', label: 'Engine & Mode', icon: Sliders },
+                { id: 'welcome', label: 'Greeting & Quick Buttons', icon: Sparkles },
+                { id: 'quote', label: 'Quote & Actions', icon: Layers },
+                { id: 'handoff', label: 'Front Desk & Handoff', icon: Phone }
+              ].map(tab => {
+                const Icon = tab.icon;
+                const isActive = autoReplyActiveTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setAutoReplyActiveTab(tab.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '7px',
+                      padding: '10px 14px',
+                      fontSize: '0.825rem',
+                      fontWeight: isActive ? 700 : 500,
+                      color: isActive ? '#2F5219' : '#67676B',
+                      borderBottom: isActive ? '2px solid #2F5219' : '2px solid transparent',
+                      background: 'none',
+                      borderTop: 'none',
+                      borderLeft: 'none',
+                      borderRight: 'none',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <Icon size={14} color={isActive ? '#2F5219' : '#96969C'} />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
             {/* Modal Body / Form */}
             {loadingAutoReply ? (
-              <div style={{ padding: '40px 24px', textAlign: 'center', color: '#67676B' }}>
-                <RefreshCw size={24} className="pulse-glow" style={{ margin: '0 auto 10px auto', color: 'var(--brand-wa)' }} />
-                <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>Loading auto-reply configuration...</div>
+              <div style={{ padding: '50px 24px', textAlign: 'center', color: '#67676B' }}>
+                <RefreshCw size={26} className="pulse-glow" style={{ margin: '0 auto 12px auto', color: '#2F5219' }} />
+                <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>Loading bot configuration...</div>
               </div>
             ) : (
-              <form onSubmit={handleSaveAutoReplySettings} style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              {/* 1. Master Toggle */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '14px 16px',
-                borderRadius: '12px',
-                background: autoReplySettings.enabled ? '#F3F6EE' : '#F5F5F6',
-                border: `1.5px solid ${autoReplySettings.enabled ? '#C3D1AC' : '#E5E5E8'}`
-              }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#171719', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span>Enable Auto-Reply Bot</span>
-                    {autoReplySettings.enabled && (
-                      <span style={{ fontSize: '0.7rem', color: '#2F5219', background: '#EDF4E6', padding: '1px 8px', borderRadius: '10px', fontWeight: 700 }}>
-                        Active
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: '#67676B', marginTop: '2px' }}>
-                    Automatically reply to incoming customer messages via WhatsApp Cloud API
-                  </div>
-                </div>
+              <form onSubmit={handleSaveAutoReplySettings} style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                
+                {/* TAB 1: Engine & Mode */}
+                {autoReplyActiveTab === 'mode' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                    {/* Master Switch */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '14px 16px',
+                      borderRadius: '12px',
+                      background: autoReplySettings.enabled ? '#F3F6EE' : '#F5F5F6',
+                      border: `1.5px solid ${autoReplySettings.enabled ? '#C3D1AC' : '#E5E5E8'}`
+                    }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#171719', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span>Enable Automated Concierge / Auto-Reply</span>
+                          {autoReplySettings.enabled && (
+                            <span style={{ fontSize: '0.7rem', color: '#2F5219', background: '#EDF4E6', padding: '1px 8px', borderRadius: '10px', fontWeight: 700 }}>
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: '#67676B', marginTop: '2px' }}>
+                          Automatically reply to incoming customer messages via WhatsApp Cloud API & In-App Web Chat
+                        </div>
+                      </div>
 
-                <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={autoReplySettings.enabled}
-                    onChange={e => setAutoReplySettings({ ...autoReplySettings, enabled: e.target.checked })}
-                    style={{ opacity: 0, width: 0, height: 0 }}
-                  />
-                  <span style={{
-                    position: 'absolute',
-                    cursor: 'pointer',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: autoReplySettings.enabled ? '#2876B8' : '#D4D4D9',
-                    transition: '0.2s',
-                    borderRadius: '24px'
-                  }}>
-                    <span style={{
-                      position: 'absolute',
-                      height: '18px',
-                      width: '18px',
-                      left: autoReplySettings.enabled ? '23px' : '3px',
-                      bottom: '3px',
-                      backgroundColor: 'white',
-                      transition: '0.2s',
-                      borderRadius: '50%',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
-                    }} />
-                  </span>
-                </label>
-              </div>
-
-              {/* 2. Message Frequency Selection (Only Once vs 24 Hours) */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '6px' }}>
-                  Auto-Reply Frequency (Deduplication)
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px' }}>
-                  {/* Option A: ONCE_PER_CONTACT (Recommended) */}
-                  <div
-                    onClick={() => setAutoReplySettings({ ...autoReplySettings, mode: 'ONCE_PER_CONTACT' })}
-                    style={{
-                      border: autoReplySettings.mode === 'ONCE_PER_CONTACT' ? '2px solid #2876B8' : '1px solid #E5E5E8',
-                      background: autoReplySettings.mode === 'ONCE_PER_CONTACT' ? '#F3F6EE' : '#FFFFFF',
-                      borderRadius: '10px',
-                      padding: '12px 14px',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px', cursor: 'pointer' }}>
                         <input
-                          type="radio"
-                          name="autoReplyMode"
-                          checked={autoReplySettings.mode === 'ONCE_PER_CONTACT'}
-                          onChange={() => setAutoReplySettings({ ...autoReplySettings, mode: 'ONCE_PER_CONTACT' })}
-                          style={{ accentColor: '#2876B8' }}
+                          type="checkbox"
+                          checked={autoReplySettings.enabled}
+                          onChange={e => setAutoReplySettings({ ...autoReplySettings, enabled: e.target.checked })}
+                          style={{ opacity: 0, width: 0, height: 0 }}
                         />
-                        <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#171719' }}>
-                          Send Only Once Ever per Contact
+                        <span style={{
+                          position: 'absolute',
+                          cursor: 'pointer',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          backgroundColor: autoReplySettings.enabled ? '#2F5219' : '#D4D4D9',
+                          transition: '0.2s',
+                          borderRadius: '24px'
+                        }}>
+                          <span style={{
+                            position: 'absolute',
+                            height: '18px',
+                            width: '18px',
+                            left: autoReplySettings.enabled ? '23px' : '3px',
+                            bottom: '3px',
+                            backgroundColor: 'white',
+                            transition: '0.2s',
+                            borderRadius: '50%',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+                          }} />
+                        </span>
+                      </label>
+                    </div>
+
+                    {/* Bot Engine Mode Selector */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '8px' }}>
+                        Bot Intelligence Engine Mode
+                      </label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        {/* Option 1: Hospitality Flow */}
+                        <div
+                          onClick={() => setAutoReplySettings({ ...autoReplySettings, engineMode: 'HOSPITALITY_FLOW' })}
+                          style={{
+                            border: autoReplySettings.engineMode === 'HOSPITALITY_FLOW' ? '2px solid #2F5219' : '1px solid #E5E5E8',
+                            background: autoReplySettings.engineMode === 'HOSPITALITY_FLOW' ? '#F8FAF5' : '#FFFFFF',
+                            borderRadius: '12px',
+                            padding: '14px',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between'
+                          }}
+                        >
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <input
+                                  type="radio"
+                                  name="botEngineMode"
+                                  checked={autoReplySettings.engineMode === 'HOSPITALITY_FLOW'}
+                                  onChange={() => setAutoReplySettings({ ...autoReplySettings, engineMode: 'HOSPITALITY_FLOW' })}
+                                  style={{ accentColor: '#2F5219' }}
+                                />
+                                <span style={{ fontWeight: 800, fontSize: '0.875rem', color: '#171719' }}>
+                                  🌟 Hospitality Concierge (Interactive Flow)
+                                </span>
+                              </div>
+                            </div>
+                            <p style={{ fontSize: '0.78rem', color: '#67676B', margin: '4px 0 0 24px', lineHeight: 1.45 }}>
+                              Full conversational flow: checks real-time room availability, presents live quotes, interactive buttons, dining menu, location map, and automatically creates CRM bookings.
+                            </p>
+                          </div>
+                          <div style={{ marginTop: '10px', marginLeft: '24px' }}>
+                            <span style={{ fontSize: '0.675rem', fontWeight: 700, background: '#EDF4E6', color: '#2F5219', padding: '2px 8px', borderRadius: '6px', border: '1px solid #C3D1AC' }}>
+                              RECOMMENDED FOR RESORTS & HOTELS
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Option 2: Simple Greeting */}
+                        <div
+                          onClick={() => setAutoReplySettings({ ...autoReplySettings, engineMode: 'SIMPLE_GREETING' })}
+                          style={{
+                            border: autoReplySettings.engineMode === 'SIMPLE_GREETING' ? '2px solid #2F5219' : '1px solid #E5E5E8',
+                            background: autoReplySettings.engineMode === 'SIMPLE_GREETING' ? '#F8FAF5' : '#FFFFFF',
+                            borderRadius: '12px',
+                            padding: '14px',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between'
+                          }}
+                        >
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                              <input
+                                type="radio"
+                                name="botEngineMode"
+                                checked={autoReplySettings.engineMode === 'SIMPLE_GREETING'}
+                                onChange={() => setAutoReplySettings({ ...autoReplySettings, engineMode: 'SIMPLE_GREETING' })}
+                                style={{ accentColor: '#2F5219' }}
+                              />
+                              <span style={{ fontWeight: 800, fontSize: '0.875rem', color: '#171719' }}>
+                                💬 Simple Auto-Reply Greeting
+                              </span>
+                            </div>
+                            <p style={{ fontSize: '0.78rem', color: '#67676B', margin: '4px 0 0 24px', lineHeight: 1.45 }}>
+                              Standard away/welcome message sent to customers without running booking engine calculations or sending interactive stay options.
+                            </p>
+                          </div>
+                          <div style={{ marginTop: '10px', marginLeft: '24px' }}>
+                            <span style={{ fontSize: '0.675rem', fontWeight: 600, background: '#F1F5F9', color: '#64748B', padding: '2px 8px', borderRadius: '6px' }}>
+                              BASIC AUTO-REPLY
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Frequency (Deduplication) */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '8px' }}>
+                        Automated Reply Frequency (Deduplication)
+                      </label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <div
+                          onClick={() => setAutoReplySettings({ ...autoReplySettings, mode: 'ONCE_PER_CONTACT' })}
+                          style={{
+                            border: autoReplySettings.mode === 'ONCE_PER_CONTACT' ? '2px solid #2F5219' : '1px solid #E5E5E8',
+                            background: autoReplySettings.mode === 'ONCE_PER_CONTACT' ? '#F8FAF5' : '#FFFFFF',
+                            borderRadius: '10px',
+                            padding: '12px 14px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
+                            <input
+                              type="radio"
+                              name="autoReplyFreq"
+                              checked={autoReplySettings.mode === 'ONCE_PER_CONTACT'}
+                              onChange={() => setAutoReplySettings({ ...autoReplySettings, mode: 'ONCE_PER_CONTACT' })}
+                              style={{ accentColor: '#2F5219' }}
+                            />
+                            <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#171719' }}>
+                              Once Ever per Contact
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '0.75rem', color: '#67676B', margin: '0 0 0 22px' }}>
+                            Sends strictly once when a new contact reaches out for the first time.
+                          </p>
+                        </div>
+
+                        <div
+                          onClick={() => setAutoReplySettings({ ...autoReplySettings, mode: 'ONCE_PER_24_HOURS' })}
+                          style={{
+                            border: autoReplySettings.mode === 'ONCE_PER_24_HOURS' ? '2px solid #2F5219' : '1px solid #E5E5E8',
+                            background: autoReplySettings.mode === 'ONCE_PER_24_HOURS' ? '#F8FAF5' : '#FFFFFF',
+                            borderRadius: '10px',
+                            padding: '12px 14px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
+                            <input
+                              type="radio"
+                              name="autoReplyFreq"
+                              checked={autoReplySettings.mode === 'ONCE_PER_24_HOURS'}
+                              onChange={() => setAutoReplySettings({ ...autoReplySettings, mode: 'ONCE_PER_24_HOURS' })}
+                              style={{ accentColor: '#2F5219' }}
+                            />
+                            <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#171719' }}>
+                              At Most Once per 24 Hours
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '0.75rem', color: '#67676B', margin: '0 0 0 22px' }}>
+                            Resends greeting if customer messages on another day after 24h.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 2: Welcome Greeting & Quick Buttons */}
+                {autoReplyActiveTab === 'welcome' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                    {/* Business Name */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '6px' }}>
+                        Business / Property Display Name
+                      </label>
+                      <input
+                        type="text"
+                        className="saas-input"
+                        value={autoReplySettings.businessName || ''}
+                        onChange={e => setAutoReplySettings({ ...autoReplySettings, businessName: e.target.value })}
+                        placeholder="KonkanTrip Beach Resort & Spa"
+                        style={{ width: '100%', fontSize: '0.85rem', padding: '9px 12px' }}
+                      />
+                      <span style={{ fontSize: '0.72rem', color: '#96969C', marginTop: '4px', display: 'block' }}>
+                        Inserted into customer messages via <code>{`{{business_name}}`}</code>.
+                      </span>
+                    </div>
+
+                    {/* Welcome Greeting Template */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
+                        <label style={{ fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E' }}>
+                          Welcome Greeting Message
+                        </label>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const cur = autoReplySettings.welcomeMessage || '';
+                              setAutoReplySettings({ ...autoReplySettings, welcomeMessage: cur + ' {{name}} ' });
+                            }}
+                            className="btn btn-secondary"
+                            style={{ padding: '2px 8px', fontSize: '0.72rem', fontWeight: 600 }}
+                          >
+                            + <code>{`{{name}}`}</code>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const cur = autoReplySettings.welcomeMessage || '';
+                              setAutoReplySettings({ ...autoReplySettings, welcomeMessage: cur + ' *{{business_name}}* ' });
+                            }}
+                            className="btn btn-secondary"
+                            style={{ padding: '2px 8px', fontSize: '0.72rem', fontWeight: 600 }}
+                          >
+                            + <code>{`{{business_name}}`}</code>
+                          </button>
+                        </div>
+                      </div>
+
+                      <textarea
+                        rows={3}
+                        className="saas-input"
+                        value={autoReplySettings.welcomeMessage || ''}
+                        onChange={e => setAutoReplySettings({ ...autoReplySettings, welcomeMessage: e.target.value })}
+                        placeholder="👋 Hello {{name}}! Welcome to *{{business_name}}*.\n\nHow can we help you today? Select an option below or reply with your travel dates to check real-time availability and live rates! 👇"
+                        style={{ width: '100%', resize: 'vertical', fontSize: '0.85rem', lineHeight: 1.45, padding: '10px 12px' }}
+                      />
+                      <span style={{ fontSize: '0.72rem', color: '#96969C', marginTop: '4px', display: 'block' }}>
+                        Dispatched when a guest says &ldquo;Hi&rdquo;, clicks a Click-to-Chat link, or visits the booking concierge.
+                      </span>
+                    </div>
+
+                    {/* The 3 Welcome Interactive Quick Buttons */}
+                    <div style={{
+                      background: '#F8FAF5',
+                      border: '1px solid #C3D1AC',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontWeight: 800, fontSize: '0.875rem', color: '#2F5219' }}>
+                            WhatsApp Interactive Quick Buttons (Max 3 Buttons, 20 Chars Limit)
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: '#67676B', marginTop: '2px' }}>
+                            Shown immediately below the welcome greeting on WhatsApp for instant one-tap responses
+                          </div>
+                        </div>
+                        <span style={{ fontSize: '0.68rem', fontWeight: 700, background: '#EDF4E6', color: '#2F5219', padding: '2px 8px', borderRadius: '6px' }}>
+                          META COMPLIANT
                         </span>
                       </div>
-                      <span style={{
-                        fontSize: '0.675rem',
-                        fontWeight: 700,
-                        background: '#EDF4E6',
-                        color: '#2F5219',
-                        padding: '2px 8px',
-                        borderRadius: '6px',
-                        border: '1px solid #C3D1AC'
-                      }}>
-                        RECOMMENDED
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                        {/* Button 1 */}
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#3A3A3E' }}>Button 1 (Weekend)</label>
+                            <span style={{
+                              fontSize: '0.675rem',
+                              fontWeight: 700,
+                              padding: '1px 6px',
+                              borderRadius: '6px',
+                              background: String(autoReplySettings.button1 || '').length > 20 ? '#FEE2E2' : '#F1F5F9',
+                              color: String(autoReplySettings.button1 || '').length > 20 ? '#B91C1C' : '#64748B'
+                            }}>
+                              {String(autoReplySettings.button1 || '').length}/20 chars
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            maxLength={20}
+                            className="saas-input"
+                            value={autoReplySettings.button1 || ''}
+                            onChange={e => setAutoReplySettings({ ...autoReplySettings, button1: e.target.value })}
+                            placeholder="This Weekend"
+                            style={{ width: '100%', fontSize: '0.825rem', padding: '8px 10px' }}
+                          />
+                          <span style={{ fontSize: '0.7rem', color: '#96969C', marginTop: '3px', display: 'block' }}>
+                            Triggers weekend stay rates
+                          </span>
+                        </div>
+
+                        {/* Button 2 */}
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#3A3A3E' }}>Button 2 (Tomorrow)</label>
+                            <span style={{
+                              fontSize: '0.675rem',
+                              fontWeight: 700,
+                              padding: '1px 6px',
+                              borderRadius: '6px',
+                              background: String(autoReplySettings.button2 || '').length > 20 ? '#FEE2E2' : '#F1F5F9',
+                              color: String(autoReplySettings.button2 || '').length > 20 ? '#B91C1C' : '#64748B'
+                            }}>
+                              {String(autoReplySettings.button2 || '').length}/20 chars
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            maxLength={20}
+                            className="saas-input"
+                            value={autoReplySettings.button2 || ''}
+                            onChange={e => setAutoReplySettings({ ...autoReplySettings, button2: e.target.value })}
+                            placeholder="Tomorrow (2 N)"
+                            style={{ width: '100%', fontSize: '0.825rem', padding: '8px 10px' }}
+                          />
+                          <span style={{ fontSize: '0.7rem', color: '#96969C', marginTop: '3px', display: 'block' }}>
+                            Triggers 2-night stay rates
+                          </span>
+                        </div>
+
+                        {/* Button 3 */}
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#3A3A3E' }}>Button 3 (Handoff)</label>
+                            <span style={{
+                              fontSize: '0.675rem',
+                              fontWeight: 700,
+                              padding: '1px 6px',
+                              borderRadius: '6px',
+                              background: String(autoReplySettings.button3 || '').length > 20 ? '#FEE2E2' : '#F1F5F9',
+                              color: String(autoReplySettings.button3 || '').length > 20 ? '#B91C1C' : '#64748B'
+                            }}>
+                              {String(autoReplySettings.button3 || '').length}/20 chars
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            maxLength={20}
+                            className="saas-input"
+                            value={autoReplySettings.button3 || ''}
+                            onChange={e => setAutoReplySettings({ ...autoReplySettings, button3: e.target.value })}
+                            placeholder="Talk to Staff"
+                            style={{ width: '100%', fontSize: '0.825rem', padding: '8px 10px' }}
+                          />
+                          <span style={{ fontSize: '0.7rem', color: '#96969C', marginTop: '3px', display: 'block' }}>
+                            Triggers staff takeover
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 3: Quote & Booking Actions */}
+                {autoReplyActiveTab === 'quote' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                    {/* Section 1: Itemized Quote Buttons */}
+                    <div style={{
+                      background: '#FFFFFF',
+                      border: '1px solid #E5E5E8',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px'
+                    }}>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: '0.875rem', color: '#171719' }}>
+                          Quote Presentation Stage Buttons
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#67676B', marginTop: '2px' }}>
+                          Buttons attached when the bot calculates and presents estimated stay rates (max 20 chars per Meta API)
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#3A3A3E' }}>Confirm Button</label>
+                            <span style={{ fontSize: '0.675rem', fontWeight: 700, color: '#64748B' }}>
+                              {String(autoReplySettings.quoteConfirm || '').length}/20
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            maxLength={20}
+                            className="saas-input"
+                            value={autoReplySettings.quoteConfirm || ''}
+                            onChange={e => setAutoReplySettings({ ...autoReplySettings, quoteConfirm: e.target.value })}
+                            placeholder="Confirm Booking"
+                            style={{ width: '100%', fontSize: '0.825rem', padding: '8px 10px' }}
+                          />
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#3A3A3E' }}>Change Dates Button</label>
+                            <span style={{ fontSize: '0.675rem', fontWeight: 700, color: '#64748B' }}>
+                              {String(autoReplySettings.quoteModify || '').length}/20
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            maxLength={20}
+                            className="saas-input"
+                            value={autoReplySettings.quoteModify || ''}
+                            onChange={e => setAutoReplySettings({ ...autoReplySettings, quoteModify: e.target.value })}
+                            placeholder="Change Dates"
+                            style={{ width: '100%', fontSize: '0.825rem', padding: '8px 10px' }}
+                          />
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#3A3A3E' }}>Other Rooms Button</label>
+                            <span style={{ fontSize: '0.675rem', fontWeight: 700, color: '#64748B' }}>
+                              {String(autoReplySettings.quoteRooms || '').length}/20
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            maxLength={20}
+                            className="saas-input"
+                            value={autoReplySettings.quoteRooms || ''}
+                            onChange={e => setAutoReplySettings({ ...autoReplySettings, quoteRooms: e.target.value })}
+                            placeholder="Other Rooms"
+                            style={{ width: '100%', fontSize: '0.825rem', padding: '8px 10px' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section 2: Post-Confirmation Follow-Up Buttons */}
+                    <div style={{
+                      background: '#F8FAF5',
+                      border: '1px solid #C3D1AC',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px'
+                    }}>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: '0.875rem', color: '#2F5219' }}>
+                          Post-Confirmation Exploration Buttons
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#67676B', marginTop: '2px' }}>
+                          Buttons shown right after booking enquiry is created so guests can explore resort amenities, food menu, and directions
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#3A3A3E' }}>Follow-up 1 (Amenities)</label>
+                            <span style={{ fontSize: '0.675rem', fontWeight: 700, color: '#64748B' }}>
+                              {String(autoReplySettings.confirmedButton1 || '').length}/20
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            maxLength={20}
+                            className="saas-input"
+                            value={autoReplySettings.confirmedButton1 || ''}
+                            onChange={e => setAutoReplySettings({ ...autoReplySettings, confirmedButton1: e.target.value })}
+                            placeholder="Facilities"
+                            style={{ width: '100%', fontSize: '0.825rem', padding: '8px 10px' }}
+                          />
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#3A3A3E' }}>Follow-up 2 (Dining)</label>
+                            <span style={{ fontSize: '0.675rem', fontWeight: 700, color: '#64748B' }}>
+                              {String(autoReplySettings.confirmedButton2 || '').length}/20
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            maxLength={20}
+                            className="saas-input"
+                            value={autoReplySettings.confirmedButton2 || ''}
+                            onChange={e => setAutoReplySettings({ ...autoReplySettings, confirmedButton2: e.target.value })}
+                            placeholder="Dining Menu"
+                            style={{ width: '100%', fontSize: '0.825rem', padding: '8px 10px' }}
+                          />
+                        </div>
+
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#3A3A3E' }}>Follow-up 3 (Directions)</label>
+                            <span style={{ fontSize: '0.675rem', fontWeight: 700, color: '#64748B' }}>
+                              {String(autoReplySettings.confirmedButton3 || '').length}/20
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            maxLength={20}
+                            className="saas-input"
+                            value={autoReplySettings.confirmedButton3 || ''}
+                            onChange={e => setAutoReplySettings({ ...autoReplySettings, confirmedButton3: e.target.value })}
+                            placeholder="Location / Map"
+                            style={{ width: '100%', fontSize: '0.825rem', padding: '8px 10px' }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 4: Front Desk & Staff Handoff */}
+                {autoReplyActiveTab === 'handoff' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                    {/* Front Desk Phone */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '6px' }}>
+                        Front Desk Reception Phone Number
+                      </label>
+                      <input
+                        type="text"
+                        className="saas-input"
+                        value={autoReplySettings.handoffPhone || ''}
+                        onChange={e => setAutoReplySettings({ ...autoReplySettings, handoffPhone: e.target.value })}
+                        placeholder="+91 87665 90634"
+                        style={{ width: '100%', fontSize: '0.85rem', padding: '9px 12px' }}
+                      />
+                      <span style={{ fontSize: '0.72rem', color: '#96969C', marginTop: '4px', display: 'block' }}>
+                        Customer can tap to dial directly when requesting human concierge or urgent assistance.
                       </span>
                     </div>
-                    <p style={{ fontSize: '0.78rem', color: '#67676B', margin: '0 0 0 24px', lineHeight: 1.4 }}>
-                      Sends the automated message <strong>strictly once</strong> when a new contact reaches out for the first time. Will <strong>never repeat</strong> on subsequent messages from that customer.
-                    </p>
+
+                    {/* Staff Handoff Message Template */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
+                        <label style={{ fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E' }}>
+                          Staff Handoff Message
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const cur = autoReplySettings.handoffMessage || '';
+                            setAutoReplySettings({ ...autoReplySettings, handoffMessage: cur + ' {{phone}} ' });
+                          }}
+                          className="btn btn-secondary"
+                          style={{ padding: '2px 8px', fontSize: '0.72rem', fontWeight: 600 }}
+                        >
+                          + <code>{`{{phone}}`}</code>
+                        </button>
+                      </div>
+
+                      <textarea
+                        rows={3}
+                        className="saas-input"
+                        value={autoReplySettings.handoffMessage || ''}
+                        onChange={e => setAutoReplySettings({ ...autoReplySettings, handoffMessage: e.target.value })}
+                        placeholder="🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at {{phone}}."
+                        style={{ width: '100%', resize: 'vertical', fontSize: '0.85rem', lineHeight: 1.45, padding: '10px 12px' }}
+                      />
+                    </div>
+
+                    {/* Bot Pause Duration on Staff Reply */}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '6px' }}>
+                        Staff Takeover Bot Pause Duration
+                      </label>
+                      <select
+                        className="saas-input"
+                        value={autoReplySettings.takeoverPauseMinutes || 60}
+                        onChange={e => setAutoReplySettings({ ...autoReplySettings, takeoverPauseMinutes: parseInt(e.target.value, 10) })}
+                        style={{ width: '100%', fontSize: '0.85rem', padding: '9px 12px' }}
+                      >
+                        <option value={15}>15 Minutes</option>
+                        <option value={30}>30 Minutes</option>
+                        <option value={60}>60 Minutes (1 Hour - Recommended)</option>
+                        <option value={120}>120 Minutes (2 Hours)</option>
+                        <option value={1440}>24 Hours (Full Day)</option>
+                      </select>
+                      <span style={{ fontSize: '0.72rem', color: '#96969C', marginTop: '4px', display: 'block' }}>
+                        When a staff member replies manually or the guest clicks &ldquo;Talk to Staff&rdquo;, automated bot replies are paused for this duration.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* REAL-TIME WHATSAPP & WEB LIVE PREVIEW */}
+                <div style={{
+                  borderTop: '1px solid #EEEEF0',
+                  paddingTop: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Smartphone size={14} color="#2F5219" />
+                      <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#3A3A3E', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Live WhatsApp & Web Preview
+                      </span>
+                    </div>
+
+                    {/* Stage Switcher Pills */}
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {[
+                        { id: 'welcome', label: '👋 Greeting' },
+                        { id: 'quote', label: '💰 Quote' },
+                        { id: 'confirmed', label: '🎉 Confirmed' },
+                        { id: 'handoff', label: '📞 Handoff' }
+                      ].map(st => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => setPreviewStage(st.id)}
+                          style={{
+                            padding: '3px 8px',
+                            fontSize: '0.72rem',
+                            fontWeight: previewStage === st.id ? 700 : 500,
+                            borderRadius: '6px',
+                            border: previewStage === st.id ? '1px solid #2F5219' : '1px solid #E5E5E8',
+                            background: previewStage === st.id ? '#EDF4E6' : '#FFFFFF',
+                            color: previewStage === st.id ? '#2F5219' : '#67676B',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {st.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
-                  {/* Option B: ONCE_PER_24_HOURS */}
-                  <div
-                    onClick={() => setAutoReplySettings({ ...autoReplySettings, mode: 'ONCE_PER_24_HOURS' })}
-                    style={{
-                      border: autoReplySettings.mode === 'ONCE_PER_24_HOURS' ? '2px solid #2876B8' : '1px solid #E5E5E8',
-                      background: autoReplySettings.mode === 'ONCE_PER_24_HOURS' ? '#F3F6EE' : '#FFFFFF',
-                      borderRadius: '10px',
+                  {/* WhatsApp Message Bubble Simulation */}
+                  <div style={{
+                    background: '#ECE5DD',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    border: '1px solid #E5E5E8',
+                    display: 'flex',
+                    justifyContent: 'flex-start'
+                  }}>
+                    <div style={{
+                      background: '#FFFFFF',
+                      borderRadius: '0 10px 10px 10px',
                       padding: '12px 14px',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <input
-                        type="radio"
-                        name="autoReplyMode"
-                        checked={autoReplySettings.mode === 'ONCE_PER_24_HOURS'}
-                        onChange={() => setAutoReplySettings({ ...autoReplySettings, mode: 'ONCE_PER_24_HOURS' })}
-                        style={{ accentColor: '#2876B8' }}
-                      />
-                      <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#171719' }}>
-                        At Most Once per 24 Hours
-                      </span>
+                      maxWidth: '92%',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.12)',
+                      position: 'relative',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px'
+                    }}>
+                      {/* Header */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #F1F5F9', paddingBottom: '4px' }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#2F5219' }}>
+                          {previewStage === 'welcome' && 'Plan Your Stay'}
+                          {previewStage === 'quote' && 'Estimated Price Quote'}
+                          {previewStage === 'confirmed' && 'Inquiry Submitted'}
+                          {previewStage === 'handoff' && 'Connecting to Front Desk'}
+                        </span>
+                        <span style={{ fontSize: '0.675rem', color: '#94A3B8' }}>WhatsApp Verified</span>
+                      </div>
+
+                      {/* Body */}
+                      <div style={{ fontSize: '0.825rem', color: '#171719', whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>
+                        {previewStage === 'welcome' && (
+                          (autoReplySettings.welcomeMessage || '')
+                            .replace(/\{\{name\}\}/gi, 'Shivam')
+                            .replace(/\{\{business_name\}\}/gi, autoReplySettings.businessName || 'KonkanTrip Beach Resort & Spa')
+                        )}
+                        {previewStage === 'quote' && (
+                          `🏷️ *Deluxe Sea View Room* - 2 Nights Stay\n📅 *Dates*: 21 Nov - 23 Nov (2 Nights)\n👥 *Guests*: 2 Adults\n💰 *Total Quote*: ₹9,000 (Incl. Taxes & Breakfast)\n\n👇 Ready to confirm your room or explore other options?`
+                        )}
+                        {previewStage === 'confirmed' && (
+                          `🎉 *Stay Inquiry Submitted!*\n\nEnquiry ID: *#ENQ-1236*\nGuest: *Shivam*\nRoom: *Deluxe Sea View Room*\n\nOur team is reviewing your dates. Explore more details below:`
+                        )}
+                        {previewStage === 'handoff' && (
+                          (autoReplySettings.handoffMessage || '')
+                            .replace(/\{\{phone\}\}/gi, autoReplySettings.handoffPhone || '+91 87665 90634')
+                            .replace(/\{\{business_name\}\}/gi, autoReplySettings.businessName || 'KonkanTrip Beach Resort & Spa')
+                        )}
+                      </div>
+
+                      {/* Footer */}
+                      <div style={{ fontSize: '0.68rem', color: '#96969C' }}>
+                        {autoReplySettings.businessName || 'KonkanTrip Concierge'} • 10:30 AM
+                      </div>
+
+                      {/* Interactive Buttons Mockup */}
+                      {previewStage !== 'handoff' && (
+                        <div style={{
+                          borderTop: '1px solid #F1F5F9',
+                          paddingTop: '8px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px'
+                        }}>
+                          {previewStage === 'welcome' && [
+                            autoReplySettings.button1 || 'This Weekend',
+                            autoReplySettings.button2 || 'Tomorrow (2 N)',
+                            autoReplySettings.button3 || 'Talk to Staff'
+                          ].map((btnText, bIdx) => (
+                            <div
+                              key={bIdx}
+                              style={{
+                                background: '#F8FAF5',
+                                border: '1px solid #C3D1AC',
+                                color: '#2F5219',
+                                textAlign: 'center',
+                                padding: '6px 12px',
+                                borderRadius: '8px',
+                                fontSize: '0.78rem',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px'
+                              }}
+                            >
+                              <span>{btnText}</span>
+                            </div>
+                          ))}
+
+                          {previewStage === 'quote' && [
+                            autoReplySettings.quoteConfirm || 'Confirm Booking',
+                            autoReplySettings.quoteModify || 'Change Dates',
+                            autoReplySettings.quoteRooms || 'Other Rooms'
+                          ].map((btnText, bIdx) => (
+                            <div
+                              key={bIdx}
+                              style={{
+                                background: bIdx === 0 ? '#2F5219' : '#F8FAF5',
+                                border: '1px solid #C3D1AC',
+                                color: bIdx === 0 ? '#FFFFFF' : '#2F5219',
+                                textAlign: 'center',
+                                padding: '6px 12px',
+                                borderRadius: '8px',
+                                fontSize: '0.78rem',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px'
+                              }}
+                            >
+                              <span>{btnText}</span>
+                            </div>
+                          ))}
+
+                          {previewStage === 'confirmed' && [
+                            autoReplySettings.confirmedButton1 || 'Facilities',
+                            autoReplySettings.confirmedButton2 || 'Dining Menu',
+                            autoReplySettings.confirmedButton3 || 'Location / Map'
+                          ].map((btnText, bIdx) => (
+                            <div
+                              key={bIdx}
+                              style={{
+                                background: '#F8FAF5',
+                                border: '1px solid #C3D1AC',
+                                color: '#2F5219',
+                                textAlign: 'center',
+                                padding: '6px 12px',
+                                borderRadius: '8px',
+                                fontSize: '0.78rem',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px'
+                              }}
+                            >
+                              <span>{btnText}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <p style={{ fontSize: '0.78rem', color: '#67676B', margin: '0 0 0 24px', lineHeight: 1.4 }}>
-                      Sends at most once every 24 hours. If the customer messages on a different day, they receive an updated greeting.
-                    </p>
                   </div>
                 </div>
-              </div>
 
-              {/* 3. Message Template Textarea */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '6px' }}>
-                  <label style={{ fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E' }}>
-                    Auto-Reply Message Template
-                  </label>
+                {/* Save Success Alert */}
+                {autoReplySaveSuccess && (
+                  <div style={{
+                    background: '#EDF4E6',
+                    border: '1px solid #C3D1AC',
+                    color: '#2F5219',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    fontSize: '0.825rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <CheckCircle2 size={16} />
+                    <span>Bot configuration saved successfully! WhatsApp and Website Concierge are now using your custom wording and buttons.</span>
+                  </div>
+                )}
+
+                {/* Modal Footer Buttons */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', borderTop: '1px solid #EEEEF0', paddingTop: '16px' }}>
                   <button
                     type="button"
-                    onClick={() => {
-                      const cur = autoReplySettings.message || '';
-                      setAutoReplySettings({
-                        ...autoReplySettings,
-                        message: cur + (cur.endsWith(' ') || cur === '' ? '{{name}} ' : ' {{name}} ')
-                      });
-                    }}
-                    style={{
-                      background: '#EEEEF0',
-                      border: '1px solid #E5E5E8',
-                      borderRadius: '6px',
-                      padding: '2px 8px',
-                      fontSize: '0.72rem',
-                      fontWeight: 600,
-                      color: '#67676B',
-                      cursor: 'pointer'
-                    }}
-                    title="Insert dynamic customer name variable"
+                    onClick={handleResetAutoReplyDefaults}
+                    className="btn btn-secondary"
+                    style={{ padding: '8px 14px', fontSize: '0.8rem', gap: '6px', color: '#67676B' }}
+                    title="Reset all messages and buttons to recommended defaults"
                   >
-                    + Insert <code>{`{{name}}`}</code>
+                    <RotateCcw size={13} />
+                    <span>Reset Defaults</span>
                   </button>
-                </div>
 
-                <textarea
-                  rows={3}
-                  className="saas-input"
-                  value={autoReplySettings.message || ''}
-                  onChange={e => setAutoReplySettings({ ...autoReplySettings, message: e.target.value })}
-                  placeholder="Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message. Our team will get back to you shortly."
-                  style={{ width: '100%', resize: 'vertical', fontSize: '0.85rem', lineHeight: 1.45, padding: '10px 12px' }}
-                />
-                <span style={{ fontSize: '0.72rem', color: '#96969C', marginTop: '4px', display: 'block' }}>
-                  <code>{`{{name}}`}</code> will be replaced with the customer's WhatsApp profile name (e.g. &ldquo;Shivam&rdquo;).
-                </span>
-              </div>
-
-              {/* 4. Live WhatsApp Preview Bubble */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: '#67676B', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '6px' }}>
-                  Customer WhatsApp Preview
-                </label>
-                <div style={{
-                  background: '#ECE5DD',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  border: '1px solid #E5E5E8',
-                  display: 'flex',
-                  justifyContent: 'flex-start'
-                }}>
-                  <div style={{
-                    background: '#FFFFFF',
-                    borderRadius: '0 10px 10px 10px',
-                    padding: '10px 14px',
-                    maxWidth: '85%',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
-                    position: 'relative'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.68rem', fontWeight: 700, color: '#2876B8', marginBottom: '4px' }}>
-                      <Sparkles size={11} /> Auto-Reply Bot
-                    </div>
-                    <div style={{ fontSize: '0.85rem', color: '#171719', whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>
-                      {(autoReplySettings.message || 'Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message. Our team will get back to you shortly.').replace(/\{\{name\}\}/gi, 'Shivam')}
-                    </div>
-                    <div style={{ textAlign: 'right', fontSize: '0.675rem', color: '#96969C', marginTop: '4px' }}>
-                      10:30 AM
-                    </div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowAutoReplyModal(false)}
+                      className="btn btn-secondary"
+                      style={{ padding: '8px 16px', fontSize: '0.825rem' }}
+                    >
+                      Close
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingAutoReply}
+                      className="btn btn-action-green"
+                      style={{ padding: '8px 20px', fontSize: '0.825rem', gap: '6px' }}
+                    >
+                      <CheckCircle2 size={15} />
+                      <span>{savingAutoReply ? 'Saving...' : 'Save Configuration'}</span>
+                    </button>
                   </div>
                 </div>
-              </div>
-
-              {/* Save Success Alert */}
-              {autoReplySaveSuccess && (
-                <div style={{
-                  background: '#EDF4E6',
-                  border: '1px solid #C3D1AC',
-                  color: '#2F5219',
-                  padding: '10px 14px',
-                  borderRadius: '8px',
-                  fontSize: '0.825rem',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}>
-                  <CheckCircle2 size={16} />
-                  <span>Auto-reply settings saved successfully! Automated messages will now be sent once only.</span>
-                </div>
-              )}
-
-              {/* Modal Footer Buttons */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '8px', borderTop: '1px solid #EEEEF0', paddingTop: '16px' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowAutoReplyModal(false)}
-                  className="btn btn-secondary"
-                  style={{ padding: '8px 16px', fontSize: '0.825rem' }}
-                >
-                  Close
-                </button>
-                <button
-                  type="submit"
-                  disabled={savingAutoReply}
-                  className="btn btn-action-green"
-                  style={{ padding: '8px 18px', fontSize: '0.825rem', gap: '6px' }}
-                >
-                  <CheckCircle2 size={15} />
-                  <span>{savingAutoReply ? 'Saving...' : 'Save Settings'}</span>
-                </button>
-              </div>
-            </form>
-          )}
+              </form>
+            )}
           </div>
         </div>
       )}

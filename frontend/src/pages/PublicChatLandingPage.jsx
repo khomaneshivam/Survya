@@ -2157,21 +2157,51 @@ export default function PublicChatLandingPage({ slug }) {
 
                         if (payload.interactive_type === 'enquiry_confirmed') {
                           return (
-                            <div style={{
-                              marginTop: '10px',
-                              background: '#EDF4E6',
-                              color: '#2F5219',
-                              border: '1px solid #C3D1AC',
-                              borderRadius: '8px',
-                              padding: '8px 12px',
-                              fontSize: '0.75rem',
-                              fontWeight: 700,
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px'
-                            }}>
-                              <CheckCircle2 size={14} />
-                              <span>Enquiry #{payload.enquiry_id} submitted to Front Desk Concierge</span>
+                            <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <div style={{
+                                background: '#EDF4E6',
+                                color: '#2F5219',
+                                border: '1px solid #C3D1AC',
+                                borderRadius: '8px',
+                                padding: '8px 12px',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px'
+                              }}>
+                                <CheckCircle2 size={14} />
+                                <span>Enquiry #{payload.enquiry_id} submitted to Front Desk Concierge</span>
+                              </div>
+                              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendMessage('resort facilities and amenities')}
+                                  disabled={sendingFollowUp}
+                                  className="public-chat-chip"
+                                  style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+                                >
+                                  🏨 Facilities
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendMessage('restaurant dining menu')}
+                                  disabled={sendingFollowUp}
+                                  className="public-chat-chip"
+                                  style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+                                >
+                                  🍽️ Dining Menu
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendMessage('how to reach location directions')}
+                                  disabled={sendingFollowUp}
+                                  className="public-chat-chip"
+                                  style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+                                >
+                                  📍 Location / Map
+                                </button>
+                              </div>
                             </div>
                           );
                         }

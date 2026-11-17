@@ -1,4 +1,4 @@
-const { db } = require("../config/database");
+const { db, getSetting } = require("../config/database");
 const configService = require("./hospitalityConfigService");
 const availabilityService = require("./hospitalityAvailabilityService");
 const pricingService = require("./hospitalityPricingService");
@@ -517,10 +517,15 @@ function requestHumanHandoff({ propertyId = 1, customerName = "", customerPhone 
     enquiryId = res.lastInsertRowid;
   } catch (e) {}
 
+  const configuredPhone = getSetting ? getSetting("BOT_HANDOFF_PHONE") : null;
+  const configuredName = getSetting ? getSetting("BOT_BUSINESS_NAME") : null;
+  const displayName = configuredName || (prop ? prop.name : "our property");
+  const directPhone = configuredPhone || prop?.phone;
+
   let waText = `🤝 *Connecting You with Our Reservations Desk*\n\n`;
-  waText += `Thank you for your inquiry regarding *${prop ? prop.name : "our property"}*.\n\n`;
+  waText += `Thank you for your inquiry regarding *${displayName}*.\n\n`;
   waText += `Our reservations staff has been alerted and will assist you directly with room availability, custom packages, and booking confirmation.\n\n`;
-  if (prop?.phone) waText += `📞 *Direct Call*: ${prop.phone}\n`;
+  if (directPhone) waText += `📞 *Direct Call*: ${directPhone}\n`;
   if (prop?.email) waText += `✉️ *Email*: ${prop.email}\n`;
   waText += `\nWe will get back to you shortly!`;
 

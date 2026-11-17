@@ -100,6 +100,7 @@ class WebhookService {
     return {
       phone: clean,
       isPaused,
+      paused: isPaused,
       expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
       remainingMinutes: expiresAt ? Math.max(0, Math.round((expiresAt - Date.now()) / 60000)) : 0
     };
@@ -1456,11 +1457,81 @@ class WebhookService {
         return null;
       }
 
+      // 2b. Check Auto-Reply Master Settings
+      const autoReplySettings = this.getAutoReplySettings();
+      if (!autoReplySettings.enabled) {
+        console.log(`[Webhook Flow] Auto-Reply Bot is disabled in settings. Skipping automated response.`);
+        return null;
+      }
+
       // 3. Auto-opt-out suppression check
       const rawText = String(replyRecord.message_body || "").trim();
       const upper = rawText.toUpperCase();
       if (["STOP", "UNSUBSCRIBE", "OPT OUT", "OPTOUT", "CANCEL"].includes(upper)) {
         return null;
+      }
+
+      // 3b. Simple Greeting Engine Mode (if business client configured simple greeting instead of interactive flow)
+      if (autoReplySettings.engineMode === "SIMPLE_GREETING") {
+        if (autoReplySettings.mode === "ONCE_PER_CONTACT") {
+          const prior = db.prepare(`
+            SELECT id FROM customer_replies 
+            WHERE from_phone = ? AND id != ? AND (reply_status = 'AUTO_REPLIED' OR message_type = 'outbound')
+            LIMIT 1
+          `).get(cleanPhone, replyRecord.id);
+          if (prior) {
+            console.log(`[Webhook Flow] Simple Greeting: contact ${cleanPhone} already replied once. Skipping.`);
+            return null;
+          }
+        } else if (autoReplySettings.mode === "ONCE_PER_24_HOURS") {
+          const prior = db.prepare(`
+            SELECT id FROM customer_replies 
+            WHERE from_phone = ? AND id != ? AND (reply_status = 'AUTO_REPLIED' OR message_type = 'outbound')
+              AND received_at > datetime('now', '-24 hours')
+            LIMIT 1
+          `).get(cleanPhone, replyRecord.id);
+          if (prior) {
+            console.log(`[Webhook Flow] Simple Greeting: contact ${cleanPhone} already replied in last 24h. Skipping.`);
+            return null;
+          }
+        }
+
+        const templateMsg = autoReplySettings.fallbackMessage || autoReplySettings.message ||
+          "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message. Our team will get back to you shortly.";
+        const customerName = replyRecord.customer_name ? replyRecord.customer_name.trim() : "there";
+        const finalMsg = templateMsg
+          .replace(/\{\{name\}\}/gi, customerName)
+          .replace(/\{\{business_name\}\}/gi, autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa");
+
+        let sentRes = null;
+        try {
+          sentRes = await sendTextMessage({
+            to: cleanPhone,
+            body: finalMsg,
+            customCredentials
+          });
+        } catch (e) {}
+
+        const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+        db.prepare(`
+          UPDATE customer_replies 
+          SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
+          WHERE id = ?
+        `).run(finalMsg, nowIso, replyRecord.id);
+
+        const updatedRecord = {
+          ...replyRecord,
+          reply_text: finalMsg,
+          reply_sent_at: nowIso,
+          reply_status: 'AUTO_REPLIED'
+        };
+
+        broadcastEngine.emit("webhook:reply_updated", updatedRecord);
+        return {
+          success: true,
+          messageId: sentRes?.messageId,
+          replyText: finalMsg
+        };
       }
 
       // 4. Resolve multi-line sender phone ID (from incoming webhook metadata or link configuration)
@@ -1483,24 +1554,34 @@ class WebhookService {
 
       const lower = effectiveText.toLowerCase();
 
-      // 6. Action ID Normalization
-      if (interactiveActionId === "btn_confirm" || lower === "confirm booking" || lower === "confirm") {
+      // 6. Action ID Normalization (supports both standard action IDs and user-customized button labels)
+      const customConfirm = (autoReplySettings.quoteConfirm || "").toLowerCase();
+      const customModify = (autoReplySettings.quoteModify || "").toLowerCase();
+      const customRooms = (autoReplySettings.quoteRooms || "").toLowerCase();
+      const customBtn1 = (autoReplySettings.button1 || "").toLowerCase();
+      const customBtn2 = (autoReplySettings.button2 || "").toLowerCase();
+      const customBtn3 = (autoReplySettings.button3 || "").toLowerCase();
+      const customConf1 = (autoReplySettings.confirmedButton1 || "").toLowerCase();
+      const customConf2 = (autoReplySettings.confirmedButton2 || "").toLowerCase();
+      const customConf3 = (autoReplySettings.confirmedButton3 || "").toLowerCase();
+
+      if (interactiveActionId === "btn_confirm" || lower === "confirm booking" || lower === "confirm" || (customConfirm && lower === customConfirm)) {
         effectiveText = "CONFIRM";
-      } else if (interactiveActionId === "btn_rooms" || lower === "other rooms" || lower === "view other rooms" || lower === "room options") {
+      } else if (interactiveActionId === "btn_rooms" || lower === "other rooms" || lower === "view other rooms" || lower === "room options" || (customRooms && lower === customRooms)) {
         effectiveText = "Show room options";
       } else if (interactiveActionId === "btn_check_avail" || lower === "check availability" || lower === "check rates") {
         effectiveText = "Check availability";
-      } else if (interactiveActionId === "btn_dates_weekend" || lower === "this weekend") {
+      } else if (interactiveActionId === "btn_dates_weekend" || lower === "this weekend" || (customBtn1 && lower === customBtn1)) {
         effectiveText = "Check availability for this weekend for 2 guests";
-      } else if (interactiveActionId === "btn_dates_tomorrow" || lower.includes("tomorrow")) {
+      } else if (interactiveActionId === "btn_dates_tomorrow" || lower.includes("tomorrow") || (customBtn2 && lower === customBtn2)) {
         effectiveText = "Check availability for tomorrow for 2 nights for 2 guests";
-      } else if (interactiveActionId === "btn_change_dates" || lower === "change dates" || lower === "modify dates") {
+      } else if (interactiveActionId === "btn_change_dates" || lower === "change dates" || lower === "modify dates" || (customModify && lower === customModify)) {
         effectiveText = "Change dates";
-      } else if (interactiveActionId === "btn_amenities" || lower === "resort facilities" || lower === "facilities") {
+      } else if (interactiveActionId === "btn_amenities" || lower === "resort facilities" || lower === "facilities" || (customConf1 && lower === customConf1)) {
         effectiveText = "resort facilities and amenities";
-      } else if (interactiveActionId === "btn_menu" || lower === "dining menu" || lower === "menu") {
+      } else if (interactiveActionId === "btn_menu" || lower === "dining menu" || lower === "menu" || (customConf2 && lower === customConf2)) {
         effectiveText = "restaurant dining menu";
-      } else if (interactiveActionId === "btn_location" || lower === "location / map" || lower === "location" || lower === "map") {
+      } else if (interactiveActionId === "btn_location" || lower === "location / map" || lower === "location" || lower === "map" || (customConf3 && lower === customConf3)) {
         effectiveText = "how to reach location directions";
       } else if (interactiveActionId === "btn_table_order") {
         effectiveText = "table order dining menu";
@@ -1515,12 +1596,19 @@ class WebhookService {
       // 7. Human Handoff Keyword / Staff Request
       if (
         interactiveActionId === "btn_staff" ||
+        (customBtn3 && lower === customBtn3) ||
         /\b(call|phone|speak|talk|agent|human|manager|executive|desk|staff|someone|person|call back|help me|reception)\b/i.test(lower)
       ) {
-        // Pause bot for 60 minutes for this contact
-        this.pauseBotForPhone(cleanPhone, 60 * 60 * 1000);
+        // Pause bot for configured duration for this contact
+        const pauseMins = autoReplySettings.takeoverPauseMinutes || 60;
+        this.pauseBotForPhone(cleanPhone, pauseMins * 60 * 1000);
 
-        let handoffText = "🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at +91 87665 90634.";
+        const handoffPhone = autoReplySettings.handoffPhone || "+91 87665 90634";
+        const bName = autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa";
+        let handoffText = (autoReplySettings.handoffMessage ||
+          "🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at {{phone}}.")
+          .replace(/\{\{phone\}\}/gi, handoffPhone)
+          .replace(/\{\{business_name\}\}/gi, bName);
         if (hospitalityChatService) {
           try {
             const hRes = hospitalityChatService.requestHumanHandoff({
@@ -1530,7 +1618,7 @@ class WebhookService {
               inquiryDetails: effectiveText,
               tenantId: 1
             });
-            if (hRes && hRes.whatsapp_text) {
+            if (!getSetting("BOT_HANDOFF_MESSAGE") && hRes && hRes.whatsapp_text) {
               handoffText = hRes.whatsapp_text;
             }
           } catch (e) {}
@@ -1596,9 +1684,9 @@ class WebhookService {
           menuText += "\n_Reply with the dish name or table number to place an order, or tap below:_";
 
           const buttons = [
-            { id: "btn_table_order", title: "Order at Table" },
-            { id: "btn_rooms", title: "Resort Rooms" },
-            { id: "btn_staff", title: "Talk to Staff" }
+            { id: "btn_table_order", title: shortenButtonTitle("Order at Table") },
+            { id: "btn_rooms", title: shortenButtonTitle(autoReplySettings.quoteRooms || "Resort Rooms") },
+            { id: "btn_staff", title: shortenButtonTitle(autoReplySettings.button3 || "Talk to Staff") }
           ];
 
           let sentMsgId = null;
@@ -1686,9 +1774,9 @@ class WebhookService {
           if (rawPayload.selected_room) {
             try {
               const buttons = [
-                { id: "btn_confirm", title: "Confirm Booking" },
-                { id: "btn_rooms", title: "Other Rooms" },
-                { id: "btn_staff", title: "Talk to Staff" }
+                { id: "btn_confirm", title: shortenButtonTitle(autoReplySettings.quoteConfirm || "Confirm Booking") },
+                { id: "btn_rooms", title: shortenButtonTitle(autoReplySettings.quoteRooms || "Other Rooms") },
+                { id: "btn_staff", title: shortenButtonTitle(autoReplySettings.button3 || "Talk to Staff") }
               ];
               if (flowRes.text.length > 1000) {
                 await sendTextMessage({ to: cleanPhone, body: flowRes.text, customCredentials });
@@ -1759,7 +1847,7 @@ class WebhookService {
                 }));
                 rows.push({
                   id: "btn_staff",
-                  title: "Talk to Concierge",
+                  title: shortenButtonTitle(autoReplySettings.button3 || "Talk to Concierge"),
                   description: "Connect with front desk reservations team"
                 });
                 if (flowRes.text.length > 1000) {
@@ -1797,9 +1885,9 @@ class WebhookService {
         else if (rawPayload && rawPayload.interactive_type === "quote_summary") {
           try {
             const buttons = [
-              { id: "btn_confirm", title: "Confirm Booking" },
-              { id: "btn_change_dates", title: "Change Dates" },
-              { id: "btn_staff", title: "Talk to Staff" }
+              { id: "btn_confirm", title: shortenButtonTitle(autoReplySettings.quoteConfirm || "Confirm Booking") },
+              { id: "btn_change_dates", title: shortenButtonTitle(autoReplySettings.quoteModify || "Change Dates") },
+              { id: "btn_staff", title: shortenButtonTitle(autoReplySettings.button3 || "Talk to Staff") }
             ];
             if (flowRes.text.length > 1000) {
               await sendTextMessage({ to: cleanPhone, body: flowRes.text, customCredentials });
@@ -1832,9 +1920,9 @@ class WebhookService {
         else if (rawPayload && rawPayload.interactive_type === "enquiry_confirmed") {
           try {
             const buttons = [
-              { id: "btn_amenities", title: "Facilities" },
-              { id: "btn_menu", title: "Dining Menu" },
-              { id: "btn_location", title: "Location / Map" }
+              { id: "btn_amenities", title: shortenButtonTitle(autoReplySettings.confirmedButton1 || "Facilities") },
+              { id: "btn_menu", title: shortenButtonTitle(autoReplySettings.confirmedButton2 || "Dining Menu") },
+              { id: "btn_location", title: shortenButtonTitle(autoReplySettings.confirmedButton3 || "Location / Map") }
             ];
             if (flowRes.text.length > 1000) {
               await sendTextMessage({ to: cleanPhone, body: flowRes.text, customCredentials });
@@ -1867,9 +1955,9 @@ class WebhookService {
         else if (rawPayload && rawPayload.interactive_type === "room_sold_out") {
           try {
             const buttons = [
-              { id: "btn_change_dates", title: "Change Dates" },
-              { id: "btn_rooms", title: "Other Rooms" },
-              { id: "btn_staff", title: "Talk to Staff" }
+              { id: "btn_change_dates", title: shortenButtonTitle(autoReplySettings.quoteModify || "Change Dates") },
+              { id: "btn_rooms", title: shortenButtonTitle(autoReplySettings.quoteRooms || "Other Rooms") },
+              { id: "btn_staff", title: shortenButtonTitle(autoReplySettings.button3 || "Talk to Staff") }
             ];
             const btnRes = await sendInteractiveButtons({
               to: cleanPhone,
@@ -1889,9 +1977,9 @@ class WebhookService {
         else if (rawPayload && rawPayload.interactive_type === "in_chat_flow") {
           try {
             const buttons = [
-              { id: "btn_dates_weekend", title: "This Weekend" },
-              { id: "btn_dates_tomorrow", title: "Tomorrow (2 N)" },
-              { id: "btn_staff", title: "Talk to Staff" }
+              { id: "btn_dates_weekend", title: shortenButtonTitle(autoReplySettings.button1 || "This Weekend") },
+              { id: "btn_dates_tomorrow", title: shortenButtonTitle(autoReplySettings.button2 || "Tomorrow (2 N)") },
+              { id: "btn_staff", title: shortenButtonTitle(autoReplySettings.button3 || "Talk to Staff") }
             ];
             if (flowRes.text.length > 1000) {
               await sendTextMessage({ to: cleanPhone, body: flowRes.text, customCredentials });
@@ -1928,8 +2016,8 @@ class WebhookService {
           try {
             const buttons = [
               { id: "btn_check_avail", title: "Check Rates" },
-              { id: "btn_menu", title: "Dining Menu" },
-              { id: "btn_staff", title: "Talk to Staff" }
+              { id: "btn_menu", title: shortenButtonTitle(autoReplySettings.confirmedButton2 || "Dining Menu") },
+              { id: "btn_staff", title: shortenButtonTitle(autoReplySettings.button3 || "Talk to Staff") }
             ];
             if (flowRes.text.length > 1000) {
               await sendTextMessage({ to: cleanPhone, body: flowRes.text, customCredentials });
@@ -2070,8 +2158,9 @@ class WebhookService {
     const cleanPhone = String(record.from_phone).replace(/\D/g, "");
     console.log(`[Webhook Reply] Staff sending manual reply to ${cleanPhone}: "${cleanText}"`);
 
-    // Staff Takeover: Automatically pause automated bot responses for 60 minutes for this contact
-    this.pauseBotForPhone(cleanPhone, 60 * 60 * 1000);
+    // Staff Takeover: Automatically pause automated bot responses for configured duration for this contact
+    const pauseMins = parseInt(getSetting("BOT_TAKEOVER_PAUSE_MINUTES") || "60", 10);
+    this.pauseBotForPhone(cleanPhone, pauseMins * 60 * 1000);
 
     const sendResult = await sendTextMessage({
       to: cleanPhone,
@@ -2107,25 +2196,106 @@ class WebhookService {
    */
   getAutoReplySettings() {
     return {
-      enabled: getSetting("AUTO_REPLY_ENABLED") === "true",
+      enabled: getSetting("AUTO_REPLY_ENABLED") !== "false",
       mode: getSetting("AUTO_REPLY_MODE") || "ONCE_PER_CONTACT",
-      message: getSetting("AUTO_REPLY_MESSAGE") || "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message and our team will get back to you shortly."
+      engineMode: getSetting("AUTO_REPLY_ENGINE_MODE") || "HOSPITALITY_FLOW",
+      message: getSetting("AUTO_REPLY_MESSAGE") || "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message and our team will get back to you shortly.",
+      fallbackMessage: getSetting("AUTO_REPLY_MESSAGE") || "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message and our team will get back to you shortly.",
+      businessName: getSetting("BOT_BUSINESS_NAME") || "KonkanTrip Beach Resort & Spa",
+      welcomeMessage: getSetting("BOT_WELCOME_MESSAGE") || "👋 Hello {{name}}! Welcome to *{{business_name}}*.\n\nHow can we help you today? Select an option below or reply with your travel dates to check real-time availability and live rates! 👇",
+      button1: getSetting("BOT_WELCOME_BUTTON_1_LABEL") || "This Weekend",
+      button2: getSetting("BOT_WELCOME_BUTTON_2_LABEL") || "Tomorrow (2 N)",
+      button3: getSetting("BOT_WELCOME_BUTTON_3_LABEL") || "Talk to Staff",
+      quoteConfirm: getSetting("BOT_QUOTE_CONFIRM_LABEL") || "Confirm Booking",
+      quoteModify: getSetting("BOT_QUOTE_MODIFY_LABEL") || "Change Dates",
+      quoteRooms: getSetting("BOT_QUOTE_ROOMS_LABEL") || "Other Rooms",
+      confirmedButton1: getSetting("BOT_CONFIRMED_BUTTON_1_LABEL") || "Facilities",
+      confirmedButton2: getSetting("BOT_CONFIRMED_BUTTON_2_LABEL") || "Dining Menu",
+      confirmedButton3: getSetting("BOT_CONFIRMED_BUTTON_3_LABEL") || "Location / Map",
+      handoffPhone: getSetting("BOT_HANDOFF_PHONE") || "+91 87665 90634",
+      handoffMessage: getSetting("BOT_HANDOFF_MESSAGE") || "🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at {{phone}}.",
+      takeoverPauseMinutes: parseInt(getSetting("BOT_TAKEOVER_PAUSE_MINUTES") || "60", 10)
     };
   }
 
   /**
    * Updates auto-reply settings
    */
-  saveAutoReplySettings({ enabled, mode, message }) {
-    if (enabled !== undefined) {
-      const isEnabled = enabled === true || enabled === "true";
+  saveAutoReplySettings(payload = {}) {
+    if (payload.enabled !== undefined) {
+      const isEnabled = payload.enabled === true || payload.enabled === "true";
       setSetting("AUTO_REPLY_ENABLED", isEnabled ? "true" : "false");
     }
+    const mode = payload.mode || payload.auto_reply_mode;
     if (mode && (mode === "ONCE_PER_CONTACT" || mode === "ONCE_PER_24_HOURS")) {
       setSetting("AUTO_REPLY_MODE", mode);
     }
-    if (message && String(message).trim()) {
-      setSetting("AUTO_REPLY_MESSAGE", String(message).trim());
+    const engineMode = payload.engineMode || payload.engine_mode;
+    if (engineMode && (engineMode === "HOSPITALITY_FLOW" || engineMode === "SIMPLE_GREETING")) {
+      setSetting("AUTO_REPLY_ENGINE_MODE", engineMode);
+    }
+    const msg = payload.message || payload.fallbackMessage || payload.auto_reply_message;
+    if (msg && String(msg).trim()) {
+      setSetting("AUTO_REPLY_MESSAGE", String(msg).trim());
+    }
+    const bName = payload.businessName || payload.business_name;
+    if (bName && String(bName).trim()) {
+      setSetting("BOT_BUSINESS_NAME", String(bName).trim().substring(0, 100));
+    }
+    const welcome = payload.welcomeMessage || payload.welcome_message;
+    if (welcome && String(welcome).trim()) {
+      setSetting("BOT_WELCOME_MESSAGE", String(welcome).trim());
+    }
+    const b1 = payload.button1 || payload.button_1 || payload.welcomeButton1;
+    if (b1 && String(b1).trim()) {
+      setSetting("BOT_WELCOME_BUTTON_1_LABEL", shortenButtonTitle(String(b1).trim()));
+    }
+    const b2 = payload.button2 || payload.button_2 || payload.welcomeButton2;
+    if (b2 && String(b2).trim()) {
+      setSetting("BOT_WELCOME_BUTTON_2_LABEL", shortenButtonTitle(String(b2).trim()));
+    }
+    const b3 = payload.button3 || payload.button_3 || payload.welcomeButton3;
+    if (b3 && String(b3).trim()) {
+      setSetting("BOT_WELCOME_BUTTON_3_LABEL", shortenButtonTitle(String(b3).trim()));
+    }
+    const qc = payload.quoteConfirm || payload.quote_confirm;
+    if (qc && String(qc).trim()) {
+      setSetting("BOT_QUOTE_CONFIRM_LABEL", shortenButtonTitle(String(qc).trim()));
+    }
+    const qm = payload.quoteModify || payload.quote_modify;
+    if (qm && String(qm).trim()) {
+      setSetting("BOT_QUOTE_MODIFY_LABEL", shortenButtonTitle(String(qm).trim()));
+    }
+    const qr = payload.quoteRooms || payload.quote_rooms;
+    if (qr && String(qr).trim()) {
+      setSetting("BOT_QUOTE_ROOMS_LABEL", shortenButtonTitle(String(qr).trim()));
+    }
+    const cb1 = payload.confirmedButton1 || payload.confirmed_button_1;
+    if (cb1 && String(cb1).trim()) {
+      setSetting("BOT_CONFIRMED_BUTTON_1_LABEL", shortenButtonTitle(String(cb1).trim()));
+    }
+    const cb2 = payload.confirmedButton2 || payload.confirmed_button_2;
+    if (cb2 && String(cb2).trim()) {
+      setSetting("BOT_CONFIRMED_BUTTON_2_LABEL", shortenButtonTitle(String(cb2).trim()));
+    }
+    const cb3 = payload.confirmedButton3 || payload.confirmed_button_3;
+    if (cb3 && String(cb3).trim()) {
+      setSetting("BOT_CONFIRMED_BUTTON_3_LABEL", shortenButtonTitle(String(cb3).trim()));
+    }
+    const phone = payload.handoffPhone || payload.handoff_phone;
+    if (phone && String(phone).trim()) {
+      setSetting("BOT_HANDOFF_PHONE", String(phone).trim());
+    }
+    const handoffMsg = payload.handoffMessage || payload.handoff_message;
+    if (handoffMsg && String(handoffMsg).trim()) {
+      setSetting("BOT_HANDOFF_MESSAGE", String(handoffMsg).trim());
+    }
+    const pauseMins = payload.takeoverPauseMinutes || payload.takeover_pause_minutes;
+    if (pauseMins !== undefined) {
+      const parsed = parseInt(pauseMins, 10);
+      if (!isNaN(parsed) && parsed >= 1) {
+        setSetting("BOT_TAKEOVER_PAUSE_MINUTES", String(parsed));
+      }
     }
     return this.getAutoReplySettings();
   }

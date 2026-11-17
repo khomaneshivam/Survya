@@ -442,8 +442,7 @@ function getAutoReplySettings(req, res) {
  */
 function updateAutoReplySettings(req, res) {
   try {
-    const { enabled, mode, message } = req.body || {};
-    const updated = webhookService.saveAutoReplySettings({ enabled, mode, message });
+    const updated = webhookService.saveAutoReplySettings(req.body || {});
     return res.status(200).json({
       success: true,
       message: "Auto-reply settings updated successfully.",

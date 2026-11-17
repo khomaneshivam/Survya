@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { db } = require("../config/database");
+const { db, getSetting } = require("../config/database");
 const configService = require("./hospitalityConfigService");
 const availabilityService = require("./hospitalityAvailabilityService");
 const pricingService = require("./hospitalityPricingService");
@@ -443,7 +443,8 @@ function handleCustomerInquiry({
 
   // Load published property and rooms
   const property = configService.getPublishedProperty(tenantId, propertyId);
-  const propName = property?.name || link?.welcome_title || link?.title || "KonkanTrip Beach Resort & Spa";
+  const configuredName = getSetting ? getSetting("BOT_BUSINESS_NAME") : null;
+  const propName = configuredName || property?.name || link?.welcome_title || link?.title || "KonkanTrip Beach Resort & Spa";
   const roomTypes = (configService.listRoomCategories ? configService.listRoomCategories(propertyId, tenantId) : []).filter(r => r.status === "ACTIVE" || r.active === 1);
 
   let session = getSession(sessionKey);
@@ -1179,8 +1180,10 @@ function handleCustomerInquiry({
     sessionData: session?.sessionData || {}
   });
 
-  let fallbackText = `👋 Hello ${guestName}! Welcome to *${propName}*.\n\n`;
-  fallbackText += `Please share your stay details below (dates & guests) to check real-time availability and get an instant itemized price quote! 👇`;
+  const customWelcome = getSetting ? getSetting("BOT_WELCOME_MESSAGE") : null;
+  let fallbackText = customWelcome
+    ? customWelcome.replace(/\{\{name\}\}/gi, guestName).replace(/\{\{business_name\}\}/gi, propName)
+    : `👋 Hello ${guestName}! Welcome to *${propName}*.\n\nPlease share your stay details below (dates & guests) to check real-time availability and get an instant itemized price quote! 👇`;
 
   return {
     text: fallbackText,
