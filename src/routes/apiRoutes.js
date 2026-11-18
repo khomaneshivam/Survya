@@ -401,6 +401,8 @@ router.get("/replies", authenticateToken, webhookController.listReplies);
 router.get("/inbox/replies", authenticateToken, webhookController.listReplies);
 router.get("/replies/auto-reply-settings", authenticateToken, webhookController.getAutoReplySettings);
 router.post("/replies/auto-reply-settings", authenticateToken, webhookController.updateAutoReplySettings);
+router.get("/replies/dynamic-options", authenticateToken, webhookController.getDynamicOptions);
+router.post("/replies/dynamic-options", authenticateToken, webhookController.saveDynamicOptions);
 router.post("/replies/:id/reply", authenticateToken, webhookController.sendManualReply);
 router.post("/replies/:id/mark-read", authenticateToken, webhookController.markAsRead);
 router.post("/replies/mark-all-read", authenticateToken, webhookController.markAllAsRead);

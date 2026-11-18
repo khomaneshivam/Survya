@@ -1889,6 +1889,241 @@ class WebhookService {
 
       const lower = effectiveText.toLowerCase();
 
+      // 5c. Dynamic Bot Options & Rules Engine (Admin Programmable Solutions)
+      const dynamicOptions = autoReplySettings.dynamicOptions || [];
+      let matchedDyn = null;
+
+      // A) Direct interactive button click
+      if (interactiveActionId && (interactiveActionId.startsWith("dyn_") || interactiveActionId.startsWith("opt_"))) {
+        const cleanOptId = interactiveActionId.replace(/^dyn_/, "").replace(/^opt_/, "");
+        matchedDyn = dynamicOptions.find(d => 
+          (d.id === cleanOptId || d.id === `opt_${cleanOptId}` || String(d.id) === String(interactiveActionId)) && 
+          d.active !== false
+        );
+      }
+
+      // B) Trigger keyword or title match
+      if (!matchedDyn && lower) {
+        for (const opt of dynamicOptions) {
+          if (opt.active === false) continue;
+
+          // Check if button title matches
+          if (opt.title && lower === opt.title.toLowerCase()) {
+            matchedDyn = opt;
+            break;
+          }
+          if (opt.buttonLabel && lower === opt.buttonLabel.toLowerCase()) {
+            matchedDyn = opt;
+            break;
+          }
+
+          // Check triggers
+          const triggers = String(opt.triggers || "")
+            .split(",")
+            .map(t => t.trim().toLowerCase())
+            .filter(Boolean);
+
+          if (triggers.length === 0) continue;
+
+          const matchType = opt.matchType || "CONTAINS";
+          let matched = false;
+
+          if (matchType === "EXACT") {
+            matched = triggers.some(t => lower === t);
+          } else if (matchType === "REGEX") {
+            matched = triggers.some(t => {
+              try { return new RegExp(t, "i").test(lower); } catch (e) { return false; }
+            });
+          } else { // CONTAINS / WORD BOUNDARY
+            matched = triggers.some(t => {
+              if (t.length <= 3) {
+                return new RegExp(`\\b${t}\\b`, "i").test(lower);
+              }
+              return lower.includes(t);
+            });
+          }
+
+          if (matched) {
+            matchedDyn = opt;
+            break;
+          }
+        }
+      }
+
+      if (matchedDyn) {
+        console.log(`[Webhook Flow] Executing Dynamic Bot Option: '${matchedDyn.title}' (${matchedDyn.actionType}) for ${cleanPhone}`);
+        const bName = autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa";
+        const cName = replyRecord.customer_name || "Guest";
+        const hPhone = autoReplySettings.handoffPhone || "+91 87665 90634";
+        const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+
+        if (matchedDyn.actionType === "STAFF_TAKEOVER") {
+          const pauseMins = autoReplySettings.takeoverPauseMinutes || 60;
+          this.pauseBotForPhone(cleanPhone, pauseMins * 60 * 1000);
+          const customStaffMsg = (matchedDyn.responseText || autoReplySettings.handoffMessage || "Connecting with our staff...")
+            .replace(/\{\{phone\}\}/gi, hPhone)
+            .replace(/\{\{business_name\}\}/gi, bName)
+            .replace(/\{\{name\}\}/gi, cName);
+
+          let sentMsgId = null;
+          try {
+            const s = await sendTextMessage({ to: cleanPhone, body: customStaffMsg, customCredentials });
+            sentMsgId = s?.messageId || null;
+          } catch (e) {}
+
+          db.prepare(`
+            UPDATE customer_replies 
+            SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
+            WHERE id = ?
+          `).run(customStaffMsg, nowIso, replyRecord.id);
+
+          const botReplyId = `bot_dyn_staff_${Date.now()}`;
+          try {
+            db.prepare(`
+              INSERT INTO customer_replies (
+                wa_message_id, from_phone, customer_name, message_type,
+                message_body, reply_text, reply_sent_at, reply_status,
+                link_id, source, is_read, user_id, received_at
+              ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
+            `).run(
+              botReplyId, cleanPhone, cName, customStaffMsg, customStaffMsg, nowIso, replyRecord.link_id || null, nowIso
+            );
+            const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
+            broadcastEngine.emit("webhook:reply", savedBot);
+          } catch (e) {}
+
+          broadcastEngine.emit("inbox:reply", {
+            replyId: replyRecord.id,
+            replyText: customStaffMsg,
+            replyStatus: "AUTO_REPLIED"
+          });
+          return { success: true, handledBy: "DYNAMIC_OPTION_STAFF", replyText: customStaffMsg, messageId: sentMsgId };
+        }
+
+        if (matchedDyn.actionType === "DISPATCH_FLOW" && matchedDyn.flowId) {
+          const flow = db.prepare("SELECT * FROM whatsapp_flows WHERE (id = ? OR meta_flow_id = ?)").get(matchedDyn.flowId, matchedDyn.flowId);
+          if (flow) {
+            const flowCta = shortenButtonTitle(matchedDyn.buttonLabel || flow.name || "Open Form");
+            const flowHeader = shortenHeaderText(bName);
+            const flowBody = matchedDyn.responseText
+              ? matchedDyn.responseText.replace(/\{\{name\}\}/gi, cName).replace(/\{\{business_name\}\}/gi, bName)
+              : `Hi ${cName}, please tap below to complete our ${flow.name} form:`;
+
+            let sentFlowRes = null;
+            try {
+              sentFlowRes = await sendFlowMessage({
+                to: cleanPhone,
+                flowId: flow.meta_flow_id || flow.id,
+                flowToken: `flow_${flow.id}_${cleanPhone}_${Date.now()}`,
+                headerText: flowHeader,
+                bodyText: flowBody,
+                footerText: "Official Resort Concierge",
+                ctaText: flowCta,
+                customCredentials
+              });
+            } catch (e) {}
+
+            const sentSummary = `[Dispatched Flow: ${flow.name}]`;
+            db.prepare(`
+              UPDATE customer_replies 
+              SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
+              WHERE id = ?
+            `).run(sentSummary, nowIso, replyRecord.id);
+
+            const botReplyId = `bot_dyn_flow_${Date.now()}`;
+            try {
+              db.prepare(`
+                INSERT INTO customer_replies (
+                  wa_message_id, from_phone, customer_name, message_type,
+                  message_body, reply_text, reply_sent_at, reply_status,
+                  link_id, source, is_read, user_id, received_at
+                ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
+              `).run(
+                botReplyId, cleanPhone, cName, sentSummary, sentSummary, nowIso, replyRecord.link_id || null, nowIso
+              );
+              const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
+              broadcastEngine.emit("webhook:reply", savedBot);
+            } catch (e) {}
+
+            broadcastEngine.emit("inbox:reply", {
+              replyId: replyRecord.id,
+              replyText: sentSummary,
+              replyStatus: "AUTO_REPLIED"
+            });
+            return { success: true, handledBy: "DYNAMIC_OPTION_FLOW", flowId: flow.id, messageId: sentFlowRes?.messageId };
+          }
+        }
+
+        let replyMsg = (matchedDyn.responseText || `Thank you for asking about ${matchedDyn.title}! Our team is delighted to assist you.`)
+          .replace(/\{\{name\}\}/gi, cName)
+          .replace(/\{\{business_name\}\}/gi, bName)
+          .replace(/\{\{phone\}\}/gi, hPhone);
+
+        if (matchedDyn.actionType === "OPEN_URL" && matchedDyn.url) {
+          replyMsg += `\n\n🌐 *Explore Link*: ${matchedDyn.url}`;
+        }
+
+        let buttons = [];
+        if (Array.isArray(matchedDyn.followUpButtons) && matchedDyn.followUpButtons.length > 0) {
+          buttons = matchedDyn.followUpButtons.slice(0, 3).map((b, idx) => ({
+            id: b.id || `dyn_btn_${idx}`,
+            title: shortenButtonTitle(b.title || b.label || "More Info")
+          }));
+        } else {
+          buttons = [
+            { id: "btn_check_avail", title: shortenButtonTitle("Check Rates") },
+            { id: "btn_staff", title: shortenButtonTitle(autoReplySettings.button3 || "Talk to Staff") }
+          ];
+        }
+
+        let sentRes = null;
+        try {
+          if (replyMsg.length <= 1000 && buttons.length > 0) {
+            sentRes = await sendInteractiveButtons({
+              to: cleanPhone,
+              bodyText: replyMsg,
+              buttons,
+              footerText: bName,
+              customCredentials
+            });
+          } else {
+            sentRes = await sendTextMessage({
+              to: cleanPhone,
+              body: replyMsg,
+              customCredentials
+            });
+          }
+        } catch (e) {}
+
+        db.prepare(`
+          UPDATE customer_replies 
+          SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
+          WHERE id = ?
+        `).run(replyMsg, nowIso, replyRecord.id);
+
+        const botReplyId = `bot_dyn_opt_${Date.now()}`;
+        try {
+          db.prepare(`
+            INSERT INTO customer_replies (
+              wa_message_id, from_phone, customer_name, message_type,
+              message_body, reply_text, reply_sent_at, reply_status,
+              link_id, source, is_read, user_id, received_at
+            ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
+          `).run(
+            botReplyId, cleanPhone, cName, replyMsg, replyMsg, nowIso, replyRecord.link_id || null, nowIso
+          );
+          const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
+          broadcastEngine.emit("webhook:reply", savedBot);
+        } catch (e) {}
+
+        broadcastEngine.emit("inbox:reply", {
+          replyId: replyRecord.id,
+          replyText: replyMsg,
+          replyStatus: "AUTO_REPLIED"
+        });
+        return { success: true, handledBy: "DYNAMIC_OPTION", replyText: replyMsg, messageId: sentRes?.messageId };
+      }
+
       // 6. Action ID Normalization (supports both standard action IDs and user-customized button labels)
       const customConfirm = (autoReplySettings.quoteConfirm || "").toLowerCase();
       const customModify = (autoReplySettings.quoteModify || "").toLowerCase();
@@ -2627,8 +2862,87 @@ class WebhookService {
       handoffPhone: getSetting("BOT_HANDOFF_PHONE") || "+91 87665 90634",
       handoffMessage: getSetting("BOT_HANDOFF_MESSAGE") || "🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at {{phone}}.",
       selectedFlowId: getSetting("DEFAULT_WHATSAPP_FLOW_ID") || "flow_hospitality_booking",
-      takeoverPauseMinutes: parseInt(getSetting("BOT_TAKEOVER_PAUSE_MINUTES") || "60", 10)
+      takeoverPauseMinutes: parseInt(getSetting("BOT_TAKEOVER_PAUSE_MINUTES") || "60", 10),
+      dynamicOptions: (() => {
+        try {
+          const raw = getSetting("BOT_DYNAMIC_OPTIONS");
+          if (!raw) return this.getDefaultDynamicOptions();
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) && parsed.length > 0 ? parsed : this.getDefaultDynamicOptions();
+        } catch (e) {
+          return this.getDefaultDynamicOptions();
+        }
+      })()
     };
+  }
+
+  getDefaultDynamicOptions() {
+    return [
+      {
+        id: "opt_spa",
+        title: "Spa & Wellness",
+        buttonLabel: "Spa & Wellness",
+        triggers: "spa, massage, wellness, ayurveda, steam, relaxation, facial",
+        matchType: "CONTAINS",
+        stage: "ANY",
+        actionType: "REPLY_TEXT",
+        responseText: "🌿 *Ayurvedic Beachside Spa & Wellness*\n\nIndulge in our rejuvenating oceanfront therapies:\n• *Abhyanga Full Body Massage*: ₹2,400 (60 mins)\n• *Aromatherapy Deep Tissue*: ₹2,800 (60 mins)\n• *Herbal Steam & Shirodhara*: ₹1,800 (45 mins)\n\n🕒 Open daily from 08:00 AM to 08:00 PM.\nWould you like us to reserve a slot for you?",
+        followUpButtons: [
+          { id: "btn_staff", title: "Book Spa Slot" },
+          { id: "btn_check_avail", title: "View Rooms" }
+        ],
+        active: true,
+        showInGreeting: false
+      },
+      {
+        id: "opt_sightseeing",
+        title: "Local Tours",
+        buttonLabel: "Sightseeing",
+        triggers: "tour, sightseeing, beach, scuba, watersports, fort, travel, attractions, boat",
+        matchType: "CONTAINS",
+        stage: "ANY",
+        actionType: "REPLY_TEXT",
+        responseText: "⛵ *Must-Visit Attractions Around KonkanTrip*\n\n1. *Sindhudurg Sea Fort* - 15 mins by ferry (Historical 17th Century Fort)\n2. *Tsunami Island Watersports* - Jet skiing, Parasailing & Banana Rides\n3. *Scuba Diving at Tarkali* - Clear coral reef diving with certified PADI divers\n4. *Devbagh Sangam Beach* - Pristine estuary where the Karli river meets the sea\n\nOur travel desk can arrange private cabs and boat tickets!",
+        followUpButtons: [
+          { id: "btn_check_avail", title: "Plan Stay" },
+          { id: "btn_staff", title: "Book Cab / Tour" }
+        ],
+        active: true,
+        showInGreeting: false
+      },
+      {
+        id: "opt_ferry",
+        title: "Ferry & Directions",
+        buttonLabel: "Ferry & Route",
+        triggers: "ferry, ro-ro, boat, jetty, reaching, route, distance, map, directions, reach",
+        matchType: "CONTAINS",
+        stage: "ANY",
+        actionType: "REPLY_TEXT",
+        responseText: "🚗 *How to Reach Us & Ferry Schedules*\n\n• *From Mumbai / Pune*: Take NH 66 or M2M Ferries Ro-Pax from Bhaucha Dhakka to Mandwa.\n• *Ferry Schedule*: Runs every hour from 06:30 AM to 07:30 PM daily.\n• *Nearest Airport*: Chipi Airport (Sindhudurg - 35 mins) or Mopa Airport (Goa - 90 mins).\n\n📍 Google Maps: https://maps.google.com/?q=KonkanTrip+Beach+Resort",
+        followUpButtons: [
+          { id: "btn_check_avail", title: "Check Rates" },
+          { id: "btn_staff", title: "Need Pickup" }
+        ],
+        active: true,
+        showInGreeting: false
+      },
+      {
+        id: "opt_wifi",
+        title: "WiFi & Timings",
+        buttonLabel: "WiFi & Timings",
+        triggers: "wifi, password, internet, pool, swimming pool, breakfast, dinner, timings",
+        matchType: "CONTAINS",
+        stage: "ANY",
+        actionType: "REPLY_TEXT",
+        responseText: "📶 *Resort Guest Essentials*\n\n• *Wi-Fi Network*: `KonkanTrip_Guest` (Password: `BeachVibes2026`)\n• *Infinity Pool*: 07:00 AM – 08:00 PM (Costume mandatory)\n• *Breakfast Buffet*: 07:30 AM – 10:30 AM\n• *Dinner Buffet*: 07:30 PM – 10:30 PM\n• *Room Service*: Dial `9` from your room phone anytime!",
+        followUpButtons: [
+          { id: "btn_menu", title: "Dining Menu" },
+          { id: "btn_staff", title: "Call Front Desk" }
+        ],
+        active: true,
+        showInGreeting: false
+      }
+    ];
   }
 
   /**
@@ -2711,6 +3025,15 @@ class WebhookService {
       const parsed = parseInt(pauseMins, 10);
       if (!isNaN(parsed) && parsed >= 1) {
         setSetting("BOT_TAKEOVER_PAUSE_MINUTES", String(parsed));
+      }
+    }
+    if (payload.dynamicOptions !== undefined) {
+      let opts = payload.dynamicOptions;
+      if (typeof opts === "string") {
+        try { opts = JSON.parse(opts); } catch (e) { opts = []; }
+      }
+      if (Array.isArray(opts)) {
+        setSetting("BOT_DYNAMIC_OPTIONS", JSON.stringify(opts));
       }
     }
     return this.getAutoReplySettings();

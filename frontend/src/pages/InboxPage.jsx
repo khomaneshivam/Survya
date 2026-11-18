@@ -33,7 +33,11 @@ import {
   RotateCcw,
   FileText,
   PlusCircle,
-  Check
+  Check,
+  Edit3,
+  Lock,
+  Code,
+  SlidersHorizontal
 } from 'lucide-react';
 import { formatIndianTime } from '../utils/indianTime';
 
@@ -539,14 +543,20 @@ export default function InboxPage() {
     handoffPhone: '+91 87665 90634',
     handoffMessage: '🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at {{phone}}.',
     selectedFlowId: 'flow_hospitality_booking',
-    takeoverPauseMinutes: 60
+    takeoverPauseMinutes: 60,
+    dynamicOptions: []
   });
   const [publishedFlows, setPublishedFlows] = useState([]);
-  const [autoReplyActiveTab, setAutoReplyActiveTab] = useState('mode'); // 'mode' | 'welcome' | 'flow' | 'quote' | 'handoff'
-  const [previewStage, setPreviewStage] = useState('welcome'); // 'welcome' | 'flow' | 'quote' | 'confirmed' | 'handoff'
+  const [autoReplyActiveTab, setAutoReplyActiveTab] = useState('mode'); // 'mode' | 'welcome' | 'flow' | 'quote' | 'handoff' | 'dynamic'
+  const [previewStage, setPreviewStage] = useState('welcome'); // 'welcome' | 'flow' | 'quote' | 'confirmed' | 'handoff' | 'dynamic'
   const [loadingAutoReply, setLoadingAutoReply] = useState(false);
   const [savingAutoReply, setSavingAutoReply] = useState(false);
   const [autoReplySaveSuccess, setAutoReplySaveSuccess] = useState(false);
+
+  // Dynamic Bot Options & Programmable Rules (Admin)
+  const [editingDynOption, setEditingDynOption] = useState(null);
+  const [isDynOptionModalOpen, setIsDynOptionModalOpen] = useState(false);
+  const [dynPreviewOptionId, setDynPreviewOptionId] = useState('');
 
   // Interactive WhatsApp Flow Simulator & Intake Values
   const [simulatorValues, setSimulatorValues] = useState({
@@ -575,6 +585,169 @@ export default function InboxPage() {
     collectNotes: true,
     roomOptions: 'Deluxe Sea View Room, Luxury Coconut Cottage, Family Ocean Suite'
   });
+
+  const DYNAMIC_STARTER_TEMPLATES = [
+    {
+      title: "Spa & Massage",
+      buttonLabel: "Spa & Wellness",
+      triggers: "spa, massage, wellness, ayurveda, steam, relaxation, facial",
+      matchType: "CONTAINS",
+      stage: "ANY",
+      actionType: "REPLY_TEXT",
+      responseText: "🌿 *Ayurvedic Beachside Spa & Wellness*\n\nIndulge in our rejuvenating therapies:\n• *Abhyanga Full Body Massage*: ₹2,400 (60 mins)\n• *Aromatherapy Deep Tissue*: ₹2,800 (60 mins)\n• *Herbal Steam & Shirodhara*: ₹1,800 (45 mins)\n\n🕒 Open daily 08:00 AM – 08:00 PM.",
+      followUpButtons: [
+        { id: "btn_staff", title: "Book Spa Slot" },
+        { id: "btn_check_avail", title: "View Rooms" }
+      ],
+      active: true,
+      showInGreeting: false
+    },
+    {
+      title: "Local Sightseeing",
+      buttonLabel: "Sightseeing",
+      triggers: "tour, sightseeing, beach, scuba, watersports, fort, travel, attractions",
+      matchType: "CONTAINS",
+      stage: "ANY",
+      actionType: "REPLY_TEXT",
+      responseText: "⛵ *Must-Visit Attractions Around KonkanTrip*\n\n1. *Sindhudurg Sea Fort* - 15 mins by ferry\n2. *Tsunami Island Watersports* - Parasailing & Jet Ski\n3. *Scuba Diving at Tarkali* - Clear coral reefs\n4. *Devbagh Sangam Beach* - River meets the sea\n\nOur travel desk can arrange cabs and boat tickets!",
+      followUpButtons: [
+        { id: "btn_check_avail", title: "Plan Stay" },
+        { id: "btn_staff", title: "Book Cab / Tour" }
+      ],
+      active: true,
+      showInGreeting: false
+    },
+    {
+      title: "Ferry & Travel Route",
+      buttonLabel: "Ferry & Route",
+      triggers: "ferry, ro-ro, boat, jetty, reaching, route, distance, map, directions",
+      matchType: "CONTAINS",
+      stage: "ANY",
+      actionType: "REPLY_TEXT",
+      responseText: "🚗 *How to Reach Us & Ferry Schedules*\n\n• *From Mumbai / Pune*: Take NH 66 or M2M Ferries Ro-Pax to Mandwa.\n• *Ferry Schedule*: Runs hourly 06:30 AM – 07:30 PM daily.\n• *Nearest Airport*: Chipi Airport (35 mins) or Mopa Airport (90 mins).\n\n📍 Google Maps: https://maps.google.com/?q=KonkanTrip+Beach+Resort",
+      followUpButtons: [
+        { id: "btn_check_avail", title: "Check Rates" },
+        { id: "btn_staff", title: "Need Pickup" }
+      ],
+      active: true,
+      showInGreeting: false
+    },
+    {
+      title: "Guest WiFi & Timings",
+      buttonLabel: "WiFi & Timings",
+      triggers: "wifi, password, internet, pool, swimming pool, breakfast, dinner, timings",
+      matchType: "CONTAINS",
+      stage: "ANY",
+      actionType: "REPLY_TEXT",
+      responseText: "📶 *Resort Guest Essentials*\n\n• *Wi-Fi Network*: `KonkanTrip_Guest` (Password: `BeachVibes2026`)\n• *Infinity Pool*: 07:00 AM – 08:00 PM\n• *Breakfast Buffet*: 07:30 AM – 10:30 AM\n• *Dinner Buffet*: 07:30 PM – 10:30 PM\n• *Room Service*: Dial `9` from room phone anytime!",
+      followUpButtons: [
+        { id: "btn_menu", title: "Dining Menu" },
+        { id: "btn_staff", title: "Front Desk" }
+      ],
+      active: true,
+      showInGreeting: false
+    },
+    {
+      title: "Secret Discount Voucher",
+      buttonLabel: "Special Discount",
+      triggers: "discount, coupon, promo, offer, deal, voucher, cheap, reduce",
+      matchType: "CONTAINS",
+      stage: "ANY",
+      actionType: "REPLY_TEXT",
+      responseText: "🎉 *Special Direct Booking Benefit!*\n\nUse promo code *PARADISE10* to get *10% Flat Discount* + *Complimentary High Tea* on direct WhatsApp bookings for 2+ nights!\n\n👇 Check live dates to apply this offer:",
+      followUpButtons: [
+        { id: "btn_dates_weekend", title: "This Weekend" },
+        { id: "btn_check_avail", title: "Check Rates" }
+      ],
+      active: true,
+      showInGreeting: true
+    }
+  ];
+
+  const handleOpenDynOptionModal = (option = null) => {
+    if (option) {
+      setEditingDynOption({
+        ...option,
+        followUpButtons: option.followUpButtons && option.followUpButtons.length > 0 
+          ? [...option.followUpButtons] 
+          : [{ id: 'btn_staff', title: 'Talk to Staff' }]
+      });
+    } else {
+      setEditingDynOption({
+        id: `opt_${Date.now().toString(36)}`,
+        title: '',
+        buttonLabel: '',
+        triggers: '',
+        matchType: 'CONTAINS',
+        stage: 'ANY',
+        actionType: 'REPLY_TEXT',
+        responseText: '',
+        flowId: '',
+        url: '',
+        followUpButtons: [
+          { id: 'btn_check_avail', title: 'Check Rates' },
+          { id: 'btn_staff', title: 'Talk to Staff' }
+        ],
+        active: true,
+        showInGreeting: false
+      });
+    }
+    setIsDynOptionModalOpen(true);
+  };
+
+  const handleSaveDynamicOption = (e) => {
+    if (e) e.preventDefault();
+    if (!editingDynOption?.title?.trim()) {
+      alert('Please enter an Option Title.');
+      return;
+    }
+    const currentList = Array.isArray(autoReplySettings.dynamicOptions) ? [...autoReplySettings.dynamicOptions] : [];
+    const existingIdx = currentList.findIndex(o => o.id === editingDynOption.id);
+    const sanitizedOption = {
+      ...editingDynOption,
+      title: editingDynOption.title.trim(),
+      buttonLabel: (editingDynOption.buttonLabel || editingDynOption.title).trim().substring(0, 20),
+      triggers: editingDynOption.triggers ? editingDynOption.triggers.trim() : '',
+      matchType: editingDynOption.matchType || 'CONTAINS',
+      actionType: editingDynOption.actionType || 'REPLY_TEXT',
+      active: editingDynOption.active !== false
+    };
+
+    if (existingIdx !== -1) {
+      currentList[existingIdx] = sanitizedOption;
+    } else {
+      currentList.push(sanitizedOption);
+    }
+    setAutoReplySettings({ ...autoReplySettings, dynamicOptions: currentList });
+    setIsDynOptionModalOpen(false);
+    setEditingDynOption(null);
+  };
+
+  const handleDeleteDynamicOption = (optId) => {
+    if (!window.confirm('Are you sure you want to delete this dynamic bot rule?')) return;
+    const currentList = (autoReplySettings.dynamicOptions || []).filter(o => o.id !== optId);
+    setAutoReplySettings({ ...autoReplySettings, dynamicOptions: currentList });
+  };
+
+  const handleToggleDynamicOption = (optId) => {
+    const currentList = (autoReplySettings.dynamicOptions || []).map(o => {
+      if (o.id === optId) {
+        return { ...o, active: !o.active };
+      }
+      return o;
+    });
+    setAutoReplySettings({ ...autoReplySettings, dynamicOptions: currentList });
+  };
+
+  const handleApplyStarterTemplate = (tpl) => {
+    const currentList = Array.isArray(autoReplySettings.dynamicOptions) ? [...autoReplySettings.dynamicOptions] : [];
+    const newId = `opt_${Date.now().toString(36)}`;
+    currentList.push({
+      ...tpl,
+      id: newId
+    });
+    setAutoReplySettings({ ...autoReplySettings, dynamicOptions: currentList });
+  };
 
   function handleSimulatorSubmit(e) {
     if (e) e.preventDefault();
@@ -2918,8 +3091,10 @@ export default function InboxPage() {
               {[
                 { id: 'mode', label: 'Engine & Mode', icon: Sliders },
                 { id: 'welcome', label: 'Greeting & Quick Buttons', icon: Sparkles },
+                { id: 'flow', label: 'Meta Flow & Intake', icon: FileText },
                 { id: 'quote', label: 'Quote & Actions', icon: Layers },
-                { id: 'handoff', label: 'Front Desk & Handoff', icon: Phone }
+                { id: 'handoff', label: 'Front Desk & Handoff', icon: Phone },
+                { id: 'dynamic', label: '⚡ Dynamic Rules (Admin)', icon: Bot, adminOnly: true }
               ].map(tab => {
                 const Icon = tab.icon;
                 const isActive = autoReplyActiveTab === tab.id;
@@ -3774,6 +3949,318 @@ export default function InboxPage() {
                   </div>
                 )}
 
+                {/* TAB 5: Dynamic Rules & Programmable Actions (Admin) */}
+                {autoReplyActiveTab === 'dynamic' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                    {/* Admin Access Banner */}
+                    <div style={{
+                      background: 'linear-gradient(135deg, #F8FAF5 0%, #EDF4E6 100%)',
+                      border: '1px solid #C3D1AC',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '12px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: '10px',
+                          background: '#2F5219',
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <Bot size={22} />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.95rem', fontWeight: 800, color: '#171719' }}>
+                              Dynamic Concierge Rules & Programmable Actions
+                            </span>
+                            <span style={{
+                              fontSize: '0.68rem',
+                              background: '#2F5219',
+                              color: '#FFFFFF',
+                              padding: '2px 8px',
+                              borderRadius: '10px',
+                              fontWeight: 700,
+                              letterSpacing: '0.04em'
+                            }}>
+                              ADMIN EXCLUSIVE
+                            </span>
+                          </div>
+                          <span style={{ fontSize: '0.78rem', color: '#67676B', marginTop: '2px', display: 'block' }}>
+                            Create custom trigger keywords, custom replies, Meta Flows, and follow-up buttons with complete programming freedom.
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenDynOptionModal(null)}
+                        className="btn btn-action-green"
+                        style={{ padding: '8px 16px', fontSize: '0.825rem', gap: '6px' }}
+                      >
+                        <PlusCircle size={15} />
+                        <span>+ Create Custom Option</span>
+                      </button>
+                    </div>
+
+                    {/* Starter Templates Fast-Add Row */}
+                    <div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Sparkles size={14} color="#2F5219" />
+                        <span>1-Click Starter Templates (Add & Customize)</span>
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {DYNAMIC_STARTER_TEMPLATES.map((tpl, tIdx) => {
+                          const alreadyExists = (autoReplySettings.dynamicOptions || []).some(o => o.title === tpl.title);
+                          return (
+                            <button
+                              key={tIdx}
+                              type="button"
+                              onClick={() => handleApplyStarterTemplate(tpl)}
+                              disabled={alreadyExists}
+                              style={{
+                                padding: '6px 12px',
+                                borderRadius: '8px',
+                                fontSize: '0.78rem',
+                                fontWeight: 600,
+                                border: alreadyExists ? '1px dashed #D4D4D9' : '1px solid #C3D1AC',
+                                background: alreadyExists ? '#F5F5F6' : '#FFFFFF',
+                                color: alreadyExists ? '#96969C' : '#2F5219',
+                                cursor: alreadyExists ? 'default' : 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px'
+                              }}
+                              title={alreadyExists ? "Already added" : "Click to add this dynamic rule"}
+                            >
+                              <span>+ {tpl.title}</span>
+                              {alreadyExists && <Check size={12} />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Dynamic Rules List / Cards */}
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                        <label style={{ fontSize: '0.825rem', fontWeight: 800, color: '#3A3A3E' }}>
+                          Active Dynamic Rules ({(autoReplySettings.dynamicOptions || []).length})
+                        </label>
+                        <span style={{ fontSize: '0.72rem', color: '#67676B' }}>
+                          Rules are evaluated in order of matching priority.
+                        </span>
+                      </div>
+
+                      {(!autoReplySettings.dynamicOptions || autoReplySettings.dynamicOptions.length === 0) ? (
+                        <div style={{
+                          padding: '30px 16px',
+                          textAlign: 'center',
+                          background: '#F9FAFB',
+                          border: '1.5px dashed #E5E5E8',
+                          borderRadius: '12px',
+                          color: '#67676B'
+                        }}>
+                          <Bot size={32} style={{ color: '#96969C', margin: '0 auto 8px auto' }} />
+                          <div style={{ fontWeight: 700, fontSize: '0.875rem', color: '#3A3A3E' }}>No Dynamic Rules Configured Yet</div>
+                          <div style={{ fontSize: '0.78rem', marginTop: '4px' }}>
+                            Click &ldquo;+ Create Custom Option&rdquo; or pick one of the 1-click starter templates above to begin customizing.
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {(autoReplySettings.dynamicOptions || []).map((dyn, idx) => (
+                            <div
+                              key={dyn.id || idx}
+                              style={{
+                                background: dyn.active !== false ? '#FFFFFF' : '#FAFAFA',
+                                border: dyn.active !== false ? '1px solid #C3D1AC' : '1px solid #E5E5E8',
+                                borderRadius: '10px',
+                                padding: '14px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '10px',
+                                boxShadow: dyn.active !== false ? '0 1px 3px rgba(47, 82, 25, 0.05)' : 'none',
+                                opacity: dyn.active !== false ? 1 : 0.75
+                              }}
+                            >
+                              {/* Row 1: Header & Badges */}
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleDynamicOption(dyn.id)}
+                                    style={{
+                                      padding: '3px 8px',
+                                      borderRadius: '12px',
+                                      fontSize: '0.7rem',
+                                      fontWeight: 700,
+                                      border: 'none',
+                                      cursor: 'pointer',
+                                      background: dyn.active !== false ? '#EDF4E6' : '#EEEEF0',
+                                      color: dyn.active !== false ? '#2F5219' : '#67676B'
+                                    }}
+                                  >
+                                    {dyn.active !== false ? '● ACTIVE' : '○ PAUSED'}
+                                  </button>
+
+                                  <span style={{ fontSize: '0.9rem', fontWeight: 800, color: '#171719' }}>
+                                    {dyn.title}
+                                  </span>
+
+                                  {dyn.buttonLabel && (
+                                    <span style={{
+                                      fontSize: '0.72rem',
+                                      background: '#F1F5F9',
+                                      padding: '2px 8px',
+                                      borderRadius: '6px',
+                                      color: '#475569',
+                                      fontWeight: 600
+                                    }}>
+                                      Button: &ldquo;{dyn.buttonLabel}&rdquo;
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <span style={{
+                                    fontSize: '0.68rem',
+                                    padding: '2px 8px',
+                                    borderRadius: '6px',
+                                    background: '#EFF6FF',
+                                    color: '#2876B8',
+                                    border: '1px solid #BFDBFE',
+                                    fontWeight: 700
+                                  }}>
+                                    {dyn.actionType === 'REPLY_TEXT' && '💬 Text Message'}
+                                    {dyn.actionType === 'DISPATCH_FLOW' && '📋 Meta Flow'}
+                                    {dyn.actionType === 'OPEN_URL' && '🌐 Web Link'}
+                                    {dyn.actionType === 'STAFF_TAKEOVER' && '📞 Staff Takeover'}
+                                  </span>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setDynPreviewOptionId(dyn.id);
+                                      setPreviewStage('dynamic');
+                                    }}
+                                    className="btn btn-secondary"
+                                    style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
+                                    title="Test this rule in the live preview"
+                                  >
+                                    <Play size={12} />
+                                    <span>Preview</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenDynOptionModal(dyn)}
+                                    className="btn btn-secondary"
+                                    style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
+                                  >
+                                    <Edit3 size={12} />
+                                    <span>Edit</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteDynamicOption(dyn.id)}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      color: '#DC2626',
+                                      cursor: 'pointer',
+                                      padding: '4px',
+                                      display: 'flex',
+                                      alignItems: 'center'
+                                    }}
+                                    title="Delete rule"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Row 2: Trigger Keywords */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#67676B' }}>
+                                  Triggers ({dyn.matchType || 'CONTAINS'}):
+                                </span>
+                                {(dyn.triggers || '').split(',').map(t => t.trim()).filter(Boolean).map((trig, tIdx) => (
+                                  <span
+                                    key={tIdx}
+                                    style={{
+                                      background: '#F8FAF5',
+                                      border: '1px solid #C3D1AC',
+                                      borderRadius: '4px',
+                                      padding: '1px 6px',
+                                      fontSize: '0.7rem',
+                                      color: '#2F5219',
+                                      fontWeight: 600
+                                    }}
+                                  >
+                                    {trig}
+                                  </span>
+                                ))}
+                              </div>
+
+                              {/* Row 3: Response Text or Target Preview */}
+                              <div style={{
+                                background: '#F8FAFC',
+                                border: '1px solid #E2E8F0',
+                                borderRadius: '6px',
+                                padding: '8px 10px',
+                                fontSize: '0.78rem',
+                                color: '#334155',
+                                whiteSpace: 'pre-wrap',
+                                maxHeight: '70px',
+                                overflowY: 'auto',
+                                lineHeight: 1.4
+                              }}>
+                                {dyn.actionType === 'REPLY_TEXT' && (dyn.responseText || 'No response text configured.')}
+                                {dyn.actionType === 'DISPATCH_FLOW' && `🚀 Dispatches WhatsApp Flow: ${publishedFlows.find(f => f.id === dyn.flowId)?.name || dyn.flowId || 'Default Flow'}`}
+                                {dyn.actionType === 'OPEN_URL' && `🌐 Opens URL: ${dyn.url || 'Not set'}\n${dyn.responseText || ''}`}
+                                {dyn.actionType === 'STAFF_TAKEOVER' && `📞 Alerts front desk & pauses bot for ${autoReplySettings.takeoverPauseMinutes || 60} minutes`}
+                              </div>
+
+                              {/* Follow-up Buttons Preview */}
+                              {Array.isArray(dyn.followUpButtons) && dyn.followUpButtons.length > 0 && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: '0.7rem', color: '#96969C', fontWeight: 600 }}>Follow-up Buttons:</span>
+                                  {dyn.followUpButtons.map((fb, fIdx) => (
+                                    <span
+                                      key={fIdx}
+                                      style={{
+                                        fontSize: '0.7rem',
+                                        background: '#EDF4E6',
+                                        border: '1px solid #C3D1AC',
+                                        color: '#2F5219',
+                                        padding: '2px 8px',
+                                        borderRadius: '6px',
+                                        fontWeight: 700
+                                      }}
+                                    >
+                                      {fb.title || fb.label}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* REAL-TIME WHATSAPP & WEB LIVE PREVIEW */}
                 <div style={{
                   borderTop: '1px solid #EEEEF0',
@@ -3797,7 +4284,8 @@ export default function InboxPage() {
                         { id: 'flow', label: '📋 Flow Screen' },
                         { id: 'quote', label: '💰 Quote' },
                         { id: 'confirmed', label: '🎉 Confirmed' },
-                        { id: 'handoff', label: '📞 Handoff' }
+                        { id: 'handoff', label: '📞 Handoff' },
+                        { id: 'dynamic', label: '⚡ Dynamic Rule' }
                       ].map(st => (
                         <button
                           key={st.id}
@@ -3848,6 +4336,7 @@ export default function InboxPage() {
                           {previewStage === 'quote' && 'Estimated Price Quote'}
                           {previewStage === 'confirmed' && 'Inquiry Submitted'}
                           {previewStage === 'handoff' && 'Connecting to Front Desk'}
+                          {previewStage === 'dynamic' && 'Dynamic Programmable Action'}
                         </span>
                         <span style={{ fontSize: '0.675rem', color: '#94A3B8' }}>WhatsApp Verified</span>
                       </div>
@@ -3881,6 +4370,17 @@ export default function InboxPage() {
                             .replace(/\{\{phone\}\}/gi, autoReplySettings.handoffPhone || '+91 87665 90634')
                             .replace(/\{\{business_name\}\}/gi, autoReplySettings.businessName || 'KonkanTrip Beach Resort & Spa')
                         )}
+                        {previewStage === 'dynamic' && (() => {
+                          const dyn = (autoReplySettings.dynamicOptions || []).find(o => o.id === dynPreviewOptionId) ||
+                                      (autoReplySettings.dynamicOptions || [])[0];
+                          if (!dyn) return "No dynamic rules created yet. Go to the ⚡ Dynamic Rules tab to add your first rule!";
+                          let msg = (dyn.responseText || `Thank you for asking about ${dyn.title}! Our team is delighted to assist you.`)
+                            .replace(/\{\{name\}\}/gi, 'Shivam')
+                            .replace(/\{\{business_name\}\}/gi, autoReplySettings.businessName || 'KonkanTrip Beach Resort & Spa')
+                            .replace(/\{\{phone\}\}/gi, autoReplySettings.handoffPhone || '+91 87665 90634');
+                          if (dyn.actionType === 'OPEN_URL' && dyn.url) msg += `\n\n🌐 Explore Link: ${dyn.url}`;
+                          return msg;
+                        })()}
                       </div>
 
                       {/* Footer */}
@@ -3996,6 +4496,35 @@ export default function InboxPage() {
                               <span>{btnText}</span>
                             </div>
                           ))}
+
+                          {previewStage === 'dynamic' && (() => {
+                            const dyn = (autoReplySettings.dynamicOptions || []).find(o => o.id === dynPreviewOptionId) ||
+                                        (autoReplySettings.dynamicOptions || [])[0];
+                            const buttons = dyn?.followUpButtons && dyn.followUpButtons.length > 0 
+                              ? dyn.followUpButtons.map(b => b.title || b.label)
+                              : ['Check Rates', autoReplySettings.button3 || 'Talk to Staff'];
+                            return buttons.map((btnText, bIdx) => (
+                              <div
+                                key={bIdx}
+                                style={{
+                                  background: '#F8FAF5',
+                                  border: '1px solid #C3D1AC',
+                                  color: '#2F5219',
+                                  textAlign: 'center',
+                                  padding: '6px 12px',
+                                  borderRadius: '8px',
+                                  fontSize: '0.78rem',
+                                  fontWeight: 700,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px'
+                                }}
+                              >
+                                <span>{btnText}</span>
+                              </div>
+                            ));
+                          })()}
                         </div>
                       )}
                     </div>
@@ -4473,6 +5002,321 @@ export default function InboxPage() {
                 >
                   <PlusCircle size={15} />
                   <span>{creatingFlow ? 'Creating Flow...' : '⚡ Create & Activate Flow'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Rule Editor Modal (Admin) */}
+      {isDynOptionModalOpen && editingDynOption && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1070,
+          padding: '16px'
+        }}>
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '580px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            border: '1px solid #E5E5E8',
+            overflow: 'hidden'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '16px 20px',
+              borderBottom: '1px solid #EEEEF0',
+              background: '#F8FAF5'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: '#EDF4E6',
+                  color: '#2F5219',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Code size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#171719' }}>
+                    {editingDynOption.title ? `Edit: ${editingDynOption.title}` : 'Create Dynamic Bot Rule'}
+                  </h3>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#67676B' }}>
+                    Configure trigger matching, automated response, and interactive actions
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDynOptionModalOpen(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#96969C',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveDynamicOption} style={{ padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '4px' }}>
+                    Rule Name / Internal Title *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editingDynOption.title || ''}
+                    onChange={e => setEditingDynOption({ ...editingDynOption, title: e.target.value })}
+                    placeholder="e.g. Spa & Wellness Packages"
+                    className="saas-input"
+                    style={{ width: '100%', fontSize: '0.85rem', padding: '8px 10px' }}
+                  />
+                </div>
+
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#3A3A3E' }}>
+                      WhatsApp Button Label
+                    </label>
+                    <span style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748B' }}>
+                      {String(editingDynOption.buttonLabel || '').length}/20
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    maxLength={20}
+                    value={editingDynOption.buttonLabel || ''}
+                    onChange={e => setEditingDynOption({ ...editingDynOption, buttonLabel: e.target.value })}
+                    placeholder="e.g. Spa & Wellness"
+                    className="saas-input"
+                    style={{ width: '100%', fontSize: '0.85rem', padding: '8px 10px' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '4px' }}>
+                  Trigger Keywords (Comma-separated) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingDynOption.triggers || ''}
+                  onChange={e => setEditingDynOption({ ...editingDynOption, triggers: e.target.value })}
+                  placeholder="e.g. spa, massage, wellness, ayurveda, relaxation"
+                  className="saas-input"
+                  style={{ width: '100%', fontSize: '0.85rem', padding: '8px 10px' }}
+                />
+                <span style={{ fontSize: '0.72rem', color: '#96969C', marginTop: '3px', display: 'block' }}>
+                  The bot triggers this rule whenever an inbound message contains any of these words or when the guest clicks the button.
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '4px' }}>
+                    Matching Algorithm
+                  </label>
+                  <select
+                    value={editingDynOption.matchType || 'CONTAINS'}
+                    onChange={e => setEditingDynOption({ ...editingDynOption, matchType: e.target.value })}
+                    className="saas-input"
+                    style={{ width: '100%', fontSize: '0.85rem', padding: '8px 10px' }}
+                  >
+                    <option value="CONTAINS">Contains (Any trigger in message - Recommended)</option>
+                    <option value="EXACT">Exact (Strict full phrase match)</option>
+                    <option value="REGEX">Regular Expression (Advanced)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '4px' }}>
+                    Action Type
+                  </label>
+                  <select
+                    value={editingDynOption.actionType || 'REPLY_TEXT'}
+                    onChange={e => setEditingDynOption({ ...editingDynOption, actionType: e.target.value })}
+                    className="saas-input"
+                    style={{ width: '100%', fontSize: '0.85rem', padding: '8px 10px' }}
+                  >
+                    <option value="REPLY_TEXT">💬 Instant Custom Message</option>
+                    <option value="DISPATCH_FLOW">📋 Launch Meta Flow Intake Screen</option>
+                    <option value="OPEN_URL">🌐 Send Web Link / Brochure / Maps</option>
+                    <option value="STAFF_TAKEOVER">📞 Human Staff Takeover (Pause Bot)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Conditional: Flow Selector */}
+              {editingDynOption.actionType === 'DISPATCH_FLOW' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '4px' }}>
+                    Select WhatsApp Flow Form *
+                  </label>
+                  <select
+                    value={editingDynOption.flowId || ''}
+                    onChange={e => setEditingDynOption({ ...editingDynOption, flowId: e.target.value })}
+                    className="saas-input"
+                    style={{ width: '100%', fontSize: '0.85rem', padding: '8px 10px' }}
+                  >
+                    <option value="">-- Choose a Meta Flow --</option>
+                    {publishedFlows.map(f => (
+                      <option key={f.id} value={f.id}>
+                        {f.name} ({f.category}) - {f.meta_status || 'Draft'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Conditional: URL input */}
+              {editingDynOption.actionType === 'OPEN_URL' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '4px' }}>
+                    External Web URL *
+                  </label>
+                  <input
+                    type="url"
+                    value={editingDynOption.url || ''}
+                    onChange={e => setEditingDynOption({ ...editingDynOption, url: e.target.value })}
+                    placeholder="https://maps.google.com/?q=..."
+                    className="saas-input"
+                    style={{ width: '100%', fontSize: '0.85rem', padding: '8px 10px' }}
+                  />
+                </div>
+              )}
+
+              {/* Message Content */}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#3A3A3E' }}>
+                    Automated Response Text (Supports Markdown & Emojis)
+                  </label>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {['{{name}}', '{{phone}}', '{{business_name}}'].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => {
+                          const cur = editingDynOption.responseText || '';
+                          setEditingDynOption({ ...editingDynOption, responseText: cur + ' ' + v + ' ' });
+                        }}
+                        className="btn btn-secondary"
+                        style={{ padding: '2px 6px', fontSize: '0.7rem', fontWeight: 600 }}
+                      >
+                        + <code>{v}</code>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <textarea
+                  rows={4}
+                  value={editingDynOption.responseText || ''}
+                  onChange={e => setEditingDynOption({ ...editingDynOption, responseText: e.target.value })}
+                  placeholder="Enter custom response message..."
+                  className="saas-input"
+                  style={{ width: '100%', resize: 'vertical', fontSize: '0.85rem', padding: '8px 10px', lineHeight: 1.45 }}
+                />
+              </div>
+
+              {/* Follow-up Interactive Buttons */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '4px' }}>
+                  Follow-up Quick Reply Buttons (Max 3 WhatsApp buttons)
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                  {[0, 1, 2].map(idx => {
+                    const btn = (editingDynOption.followUpButtons || [])[idx] || { title: '' };
+                    return (
+                      <div key={idx}>
+                        <div style={{ fontSize: '0.7rem', color: '#67676B', marginBottom: '2px' }}>
+                          Button {idx + 1}
+                        </div>
+                        <input
+                          type="text"
+                          maxLength={20}
+                          value={btn.title || ''}
+                          onChange={e => {
+                            const newBtns = [...(editingDynOption.followUpButtons || [])];
+                            newBtns[idx] = { id: `btn_fup_${idx}`, title: e.target.value.substring(0, 20) };
+                            setEditingDynOption({ ...editingDynOption, followUpButtons: newBtns });
+                          }}
+                          placeholder={idx === 0 ? "Check Rates" : (idx === 1 ? "Talk to Staff" : "Optional")}
+                          className="saas-input"
+                          style={{ width: '100%', fontSize: '0.8rem', padding: '6px 8px' }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Toggles */}
+              <div style={{ display: 'flex', gap: '16px', borderTop: '1px solid #EEEEF0', paddingTop: '10px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={editingDynOption.active !== false}
+                    onChange={e => setEditingDynOption({ ...editingDynOption, active: e.target.checked })}
+                  />
+                  <span style={{ fontWeight: 600, color: '#2F5219' }}>Enable this rule in bot engine</span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!editingDynOption.showInGreeting}
+                    onChange={e => setEditingDynOption({ ...editingDynOption, showInGreeting: e.target.checked })}
+                  />
+                  <span style={{ color: '#3A3A3E' }}>Include as button in welcome greeting</span>
+                </label>
+              </div>
+
+              {/* Footer */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #EEEEF0', paddingTop: '14px', marginTop: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsDynOptionModalOpen(false)}
+                  className="btn btn-secondary"
+                  style={{ padding: '8px 16px', fontSize: '0.825rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-action-green"
+                  style={{ padding: '8px 20px', fontSize: '0.825rem', gap: '6px' }}
+                >
+                  <CheckCircle2 size={15} />
+                  <span>Save Dynamic Rule</span>
                 </button>
               </div>
             </form>

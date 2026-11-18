@@ -468,6 +468,35 @@ function updateAutoReplySettings(req, res) {
 }
 
 /**
+ * GET /api/replies/dynamic-options - List all dynamic bot rules & options
+ */
+function getDynamicOptions(req, res) {
+  try {
+    const settings = webhookService.getAutoReplySettings();
+    return res.status(200).json({ success: true, data: settings.dynamicOptions || [] });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * POST /api/replies/dynamic-options - Save dynamic bot rules
+ */
+function saveDynamicOptions(req, res) {
+  try {
+    const options = Array.isArray(req.body) ? req.body : (req.body?.dynamicOptions || []);
+    const updated = webhookService.saveAutoReplySettings({ dynamicOptions: options });
+    return res.status(200).json({
+      success: true,
+      message: "Dynamic bot options updated successfully.",
+      data: updated.dynamicOptions || []
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
  * Gets Bot Pause / Takeover status for a contact
  */
 function getBotStatus(req, res) {
@@ -518,6 +547,8 @@ module.exports = {
   sendManualReply,
   getAutoReplySettings,
   updateAutoReplySettings,
+  getDynamicOptions,
+  saveDynamicOptions,
   getBotStatus,
   setBotStatus
 };
