@@ -30,7 +30,10 @@ import {
   Bot,
   Sliders,
   Phone,
-  RotateCcw
+  RotateCcw,
+  FileText,
+  PlusCircle,
+  Check
 } from 'lucide-react';
 import { formatIndianTime } from '../utils/indianTime';
 
@@ -539,11 +542,221 @@ export default function InboxPage() {
     takeoverPauseMinutes: 60
   });
   const [publishedFlows, setPublishedFlows] = useState([]);
-  const [autoReplyActiveTab, setAutoReplyActiveTab] = useState('mode'); // 'mode' | 'welcome' | 'quote' | 'handoff'
-  const [previewStage, setPreviewStage] = useState('welcome'); // 'welcome' | 'quote' | 'confirmed' | 'handoff'
+  const [autoReplyActiveTab, setAutoReplyActiveTab] = useState('mode'); // 'mode' | 'welcome' | 'flow' | 'quote' | 'handoff'
+  const [previewStage, setPreviewStage] = useState('welcome'); // 'welcome' | 'flow' | 'quote' | 'confirmed' | 'handoff'
   const [loadingAutoReply, setLoadingAutoReply] = useState(false);
   const [savingAutoReply, setSavingAutoReply] = useState(false);
   const [autoReplySaveSuccess, setAutoReplySaveSuccess] = useState(false);
+
+  // Interactive WhatsApp Flow Simulator & Intake Values
+  const [simulatorValues, setSimulatorValues] = useState({
+    guest_name: 'Shivam',
+    check_in: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    check_out: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
+    room_preference: 'Deluxe Sea View Room',
+    adults: '2',
+    children: '0',
+    special_requests: 'Beach-facing room with extra pillows please.'
+  });
+  const [simulatorQuote, setSimulatorQuote] = useState(null);
+  const [simulatorValidationError, setSimulatorValidationError] = useState('');
+  const [isCreateFlowModalOpen, setIsCreateFlowModalOpen] = useState(false);
+  const [creatingFlow, setCreatingFlow] = useState(false);
+  const [newFlowForm, setNewFlowForm] = useState({
+    name: 'Beach Villa Stay & Dates Intake',
+    category: 'LEAD_GENERATION',
+    ctaText: 'Select Dates & Room',
+    description: 'Natively collect travel dates, guest count, and room preference on WhatsApp.',
+    collectName: true,
+    collectCheckin: true,
+    collectCheckout: true,
+    collectRoom: true,
+    collectGuests: true,
+    collectNotes: true,
+    roomOptions: 'Deluxe Sea View Room, Luxury Coconut Cottage, Family Ocean Suite'
+  });
+
+  function handleSimulatorSubmit(e) {
+    if (e) e.preventDefault();
+    setSimulatorValidationError('');
+    
+    const cin = new Date(simulatorValues.check_in);
+    const cout = new Date(simulatorValues.check_out);
+    if (isNaN(cin.getTime()) || isNaN(cout.getTime())) {
+      setSimulatorValidationError('Please select valid check-in and check-out dates.');
+      return;
+    }
+    if (cout <= cin) {
+      setSimulatorValidationError('Check-out date must be strictly after check-in date.');
+      return;
+    }
+    const diffTime = Math.abs(cout - cin);
+    const nights = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    
+    let rate = 4500;
+    if (simulatorValues.room_preference.includes('Cottage')) rate = 6500;
+    else if (simulatorValues.room_preference.includes('Suite')) rate = 8500;
+    
+    const total = rate * nights;
+    const computed = {
+      guest_name: simulatorValues.guest_name || 'Guest',
+      check_in: simulatorValues.check_in,
+      check_out: simulatorValues.check_out,
+      room: simulatorValues.room_preference,
+      nights,
+      adults: simulatorValues.adults || '2',
+      children: simulatorValues.children || '0',
+      rate,
+      total
+    };
+    setSimulatorQuote(computed);
+    setPreviewStage('quote');
+  }
+
+  async function handleCreateNewFlow(e) {
+    if (e) e.preventDefault();
+    if (!newFlowForm.name.trim()) {
+      alert('Please enter a Flow name.');
+      return;
+    }
+    setCreatingFlow(true);
+    try {
+      const roomArray = newFlowForm.roomOptions
+        .split(',')
+        .map(r => r.trim())
+        .filter(Boolean)
+        .map((r, i) => ({ id: `room_${i + 1}`, title: r.substring(0, 30) }));
+
+      const formChildren = [
+        { type: "TextHeading", text: newFlowForm.name.substring(0, 40) },
+        { type: "TextSubheading", text: (newFlowForm.description || "Share your dates and preferences. Our concierge will send you an official quote.").substring(0, 100) }
+      ];
+
+      if (newFlowForm.collectName) {
+        formChildren.push({ type: "TextInput", name: "guest_name", label: "Guest Full Name", required: true });
+      }
+      if (newFlowForm.collectCheckin) {
+        formChildren.push({ type: "TextInput", name: "check_in", label: "Check-in Date (YYYY-MM-DD)", required: true });
+      }
+      if (newFlowForm.collectCheckout) {
+        formChildren.push({ type: "TextInput", name: "check_out", label: "Check-out Date (YYYY-MM-DD)", required: true });
+      }
+      if (newFlowForm.collectRoom && roomArray.length > 0) {
+        formChildren.push({ type: "Dropdown", name: "room_preference", label: "Room / Package Category", required: true, "data-source": roomArray });
+      }
+      if (newFlowForm.collectGuests) {
+        formChildren.push({
+          type: "Dropdown",
+          name: "adults",
+          label: "Adult Guests",
+          required: true,
+          "data-source": [
+            { id: "1", title: "1 Adult" },
+            { id: "2", title: "2 Adults" },
+            { id: "3", title: "3 Adults" },
+            { id: "4", title: "4+ Adults" }
+          ]
+        });
+        formChildren.push({
+          type: "Dropdown",
+          name: "children",
+          label: "Children",
+          required: false,
+          "data-source": [
+            { id: "0", title: "None" },
+            { id: "1", title: "1 Child" },
+            { id: "2", title: "2 Children" },
+            { id: "3", title: "3+ Children" }
+          ]
+        });
+      }
+      if (newFlowForm.collectNotes) {
+        formChildren.push({ type: "TextInput", name: "special_requests", label: "Special Requests (Optional)", required: false });
+      }
+
+      const payloadObj = {};
+      if (newFlowForm.collectName) payloadObj.guest_name = "${form.guest_name}";
+      if (newFlowForm.collectCheckin) payloadObj.check_in = "${form.check_in}";
+      if (newFlowForm.collectCheckout) payloadObj.check_out = "${form.check_out}";
+      if (newFlowForm.collectRoom) payloadObj.room_preference = "${form.room_preference}";
+      if (newFlowForm.collectGuests) {
+        payloadObj.adults = "${form.adults}";
+        payloadObj.children = "${form.children}";
+      }
+      if (newFlowForm.collectNotes) payloadObj.special_requests = "${form.special_requests}";
+
+      formChildren.push({
+        type: "Footer",
+        label: (newFlowForm.ctaText || "Submit Inquiry").substring(0, 30),
+        "on-click-action": {
+          name: "complete",
+          payload: payloadObj
+        }
+      });
+
+      const flowJsonObj = {
+        version: "3.1",
+        data_api_version: "3.0",
+        routing_model: {
+          MAIN_INTAKE_SCREEN: []
+        },
+        screens: [
+          {
+            id: "MAIN_INTAKE_SCREEN",
+            title: newFlowForm.name.substring(0, 20),
+            terminal: true,
+            data: {},
+            layout: {
+              type: "SingleColumnLayout",
+              children: [
+                {
+                  type: "Form",
+                  name: "intake_form",
+                  children: formChildren
+                }
+              ]
+            }
+          }
+        ]
+      };
+
+      const res = await fetch('/api/flows', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: newFlowForm.name,
+          description: newFlowForm.description,
+          categories: [newFlowForm.category || 'LEAD_GENERATION'],
+          status: 'PUBLISHED',
+          publishImmediately: true,
+          flow_json: JSON.stringify(flowJsonObj)
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success && data.data) {
+        const created = data.data;
+        setPublishedFlows(prev => [created, ...prev]);
+        setAutoReplySettings(prev => ({
+          ...prev,
+          selectedFlowId: created.id,
+          flowCta: newFlowForm.ctaText
+        }));
+        setIsCreateFlowModalOpen(false);
+        setPreviewStage('flow');
+        alert(`✓ Flow "${newFlowForm.name}" created and linked to your concierge bot!`);
+      } else {
+        alert(data.message || 'Failed to create flow.');
+      }
+    } catch (err) {
+      alert(err.message || 'Error creating flow.');
+    } finally {
+      setCreatingFlow(false);
+    }
+  }
 
   function handleResetAutoReplyDefaults() {
     if (!window.confirm("Reset all bot messages and button labels to recommended hospitality defaults?")) return;
@@ -3185,6 +3398,151 @@ export default function InboxPage() {
                   </div>
                 )}
 
+                {/* TAB: Meta Flow & Intake Screen */}
+                {autoReplyActiveTab === 'flow' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                    {/* Active Flow Header Card */}
+                    <div style={{
+                      background: '#F8FAF5',
+                      border: '1px solid #C3D1AC',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '12px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: '10px',
+                          background: '#EDF4E6',
+                          color: '#2F5219',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <FileText size={20} />
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontWeight: 800, fontSize: '0.925rem', color: '#171719' }}>
+                              WhatsApp Native Flow & Data Intake
+                            </span>
+                            <span style={{ fontSize: '0.675rem', fontWeight: 700, background: '#EDF4E6', color: '#2F5219', padding: '2px 8px', borderRadius: '6px', border: '1px solid #C3D1AC' }}>
+                              META NATIVE
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.78rem', color: '#67676B', marginTop: '2px' }}>
+                            Collect dates, room choices, guest counts, and customer requests natively inside WhatsApp
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsCreateFlowModalOpen(true)}
+                        className="btn btn-primary"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '8px 14px',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          borderRadius: '8px'
+                        }}
+                      >
+                        <PlusCircle size={15} />
+                        <span>⚡ Create Flow from Here</span>
+                      </button>
+                    </div>
+
+                    {/* Active Flow Selector */}
+                    <div style={{
+                      background: '#FFFFFF',
+                      border: '1px solid #E5E5E8',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '14px'
+                    }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '6px' }}>
+                          Select Active Flow for Concierge Bot
+                        </label>
+                        <select
+                          className="saas-input"
+                          value={autoReplySettings.selectedFlowId || 'flow_hospitality_booking'}
+                          onChange={e => setAutoReplySettings({ ...autoReplySettings, selectedFlowId: e.target.value })}
+                          style={{ width: '100%', fontSize: '0.85rem', padding: '9px 12px' }}
+                        >
+                          {publishedFlows.map(f => (
+                            <option key={f.id} value={f.id}>
+                              {f.name} {f.meta_flow_id ? `(ID: ${f.meta_flow_id})` : ''} - [{f.status}]
+                            </option>
+                          ))}
+                          <option value="flow_hospitality_booking">KonkanTrip Stay & Booking Flow (Default Published)</option>
+                        </select>
+                        <span style={{ fontSize: '0.72rem', color: '#96969C', marginTop: '4px', display: 'block' }}>
+                          When a customer asks for dates or rooms, the concierge bot automatically triggers this Flow screen.
+                        </span>
+                      </div>
+
+                      {/* Call-to-Action Button Label */}
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <label style={{ fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E' }}>
+                            WhatsApp Flow CTA Button Text (Max 20 chars)
+                          </label>
+                          <span style={{
+                            fontSize: '0.675rem',
+                            fontWeight: 700,
+                            padding: '1px 6px',
+                            borderRadius: '6px',
+                            background: String(autoReplySettings.flowCta || 'Select Dates & Room').length > 20 ? '#FEE2E2' : '#F1F5F9',
+                            color: String(autoReplySettings.flowCta || 'Select Dates & Room').length > 20 ? '#B91C1C' : '#64748B'
+                          }}>
+                            {String(autoReplySettings.flowCta || 'Select Dates & Room').length}/20 chars
+                          </span>
+                        </div>
+                        <input
+                          type="text"
+                          maxLength={20}
+                          className="saas-input"
+                          value={autoReplySettings.flowCta || 'Select Dates & Room'}
+                          onChange={e => setAutoReplySettings({ ...autoReplySettings, flowCta: e.target.value })}
+                          placeholder="Select Dates & Room"
+                          style={{ width: '100%', fontSize: '0.85rem', padding: '9px 12px' }}
+                        />
+                        <span style={{ fontSize: '0.72rem', color: '#96969C', marginTop: '4px', display: 'block' }}>
+                          The action button attached to the WhatsApp invitation message that opens the interactive Flow screen.
+                        </span>
+                      </div>
+
+                      {/* Info on Collected Intake Values */}
+                      <div style={{
+                        background: '#F8FAF5',
+                        border: '1px dashed #C3D1AC',
+                        borderRadius: '10px',
+                        padding: '12px 14px'
+                      }}>
+                        <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#2F5219', marginBottom: '4px' }}>
+                          ✓ Automatic Intake Data Processing & Validation:
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#4A5568', lineHeight: 1.5 }}>
+                          • <strong>Check-in & Check-out:</strong> Validates date sequence, calculates nights duration, and checks live villa inventory.<br />
+                          • <strong>Room Category:</strong> Matches guest preference against pricing tiers and generates instant quotes.<br />
+                          • <strong>CRM Integration:</strong> Automatically captures guest name, creates booking enquiries (#ENQ-...), and logs opt-in consent.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* TAB 3: Quote & Booking Actions */}
                 {autoReplyActiveTab === 'quote' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
@@ -3436,6 +3794,7 @@ export default function InboxPage() {
                     <div style={{ display: 'flex', gap: '4px' }}>
                       {[
                         { id: 'welcome', label: '👋 Greeting' },
+                        { id: 'flow', label: '📋 Flow Screen' },
                         { id: 'quote', label: '💰 Quote' },
                         { id: 'confirmed', label: '🎉 Confirmed' },
                         { id: 'handoff', label: '📞 Handoff' }
@@ -3485,6 +3844,7 @@ export default function InboxPage() {
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #F1F5F9', paddingBottom: '4px' }}>
                         <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#2F5219' }}>
                           {previewStage === 'welcome' && 'Plan Your Stay'}
+                          {previewStage === 'flow' && 'Booking Intake Flow'}
                           {previewStage === 'quote' && 'Estimated Price Quote'}
                           {previewStage === 'confirmed' && 'Inquiry Submitted'}
                           {previewStage === 'handoff' && 'Connecting to Front Desk'}
@@ -3499,11 +3859,22 @@ export default function InboxPage() {
                             .replace(/\{\{name\}\}/gi, 'Shivam')
                             .replace(/\{\{business_name\}\}/gi, autoReplySettings.businessName || 'KonkanTrip Beach Resort & Spa')
                         )}
+                        {previewStage === 'flow' && (
+                          `👋 *Plan Your Stay - Room & Date Selection*\n\nPlease tap the button below to pick your check-in dates, guest count, and preferred room type:`
+                        )}
                         {previewStage === 'quote' && (
-                          `🏷️ *Deluxe Sea View Room* - 2 Nights Stay\n📅 *Dates*: 21 Nov - 23 Nov (2 Nights)\n👥 *Guests*: 2 Adults\n💰 *Total Quote*: ₹9,000 (Incl. Taxes & Breakfast)\n\n👇 Ready to confirm your room or explore other options?`
+                          simulatorQuote ? (
+                            `🏷️ *${simulatorQuote.room}* - ${simulatorQuote.nights} Night${simulatorQuote.nights > 1 ? 's' : ''} Stay\n📅 *Dates*: ${simulatorQuote.check_in} to ${simulatorQuote.check_out} (${simulatorQuote.nights} Night${simulatorQuote.nights > 1 ? 's' : ''})\n👥 *Guests*: ${simulatorQuote.adults} Adults${simulatorQuote.children && simulatorQuote.children !== '0' ? `, ${simulatorQuote.children} Children` : ''}\n💰 *Total Quote*: ₹${simulatorQuote.total.toLocaleString('en-IN')} (Incl. Taxes & Breakfast)\n\n👇 Ready to confirm your room or explore other options?`
+                          ) : (
+                            `🏷️ *Deluxe Sea View Room* - 2 Nights Stay\n📅 *Dates*: 21 Nov - 23 Nov (2 Nights)\n👥 *Guests*: 2 Adults\n💰 *Total Quote*: ₹9,000 (Incl. Taxes & Breakfast)\n\n👇 Ready to confirm your room or explore other options?`
+                          )
                         )}
                         {previewStage === 'confirmed' && (
-                          `🎉 *Stay Inquiry Submitted!*\n\nEnquiry ID: *#ENQ-1236*\nGuest: *Shivam*\nRoom: *Deluxe Sea View Room*\n\nOur team is reviewing your dates. Explore more details below:`
+                          simulatorQuote ? (
+                            `🎉 *Stay Inquiry Submitted!*\n\nEnquiry ID: *#ENQ-1236*\nGuest: *${simulatorQuote.guest_name}*\nRoom: *${simulatorQuote.room}*\nDates: *${simulatorQuote.check_in} to ${simulatorQuote.check_out}* (${simulatorQuote.nights} Night${simulatorQuote.nights > 1 ? 's' : ''})\nTotal: *₹${simulatorQuote.total.toLocaleString('en-IN')}*\n\nOur team is reviewing your dates. Explore more details below:`
+                          ) : (
+                            `🎉 *Stay Inquiry Submitted!*\n\nEnquiry ID: *#ENQ-1236*\nGuest: *Shivam*\nRoom: *Deluxe Sea View Room*\n\nOur team is reviewing your dates. Explore more details below:`
+                          )
                         )}
                         {previewStage === 'handoff' && (
                           (autoReplySettings.handoffMessage || '')
@@ -3551,6 +3922,28 @@ export default function InboxPage() {
                               <span>{btnText}</span>
                             </div>
                           ))}
+
+                          {previewStage === 'flow' && (
+                            <div
+                              style={{
+                                background: '#2F5219',
+                                border: '1px solid #1EBE5D',
+                                color: '#FFFFFF',
+                                textAlign: 'center',
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                fontSize: '0.82rem',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <span>📋 {autoReplySettings.flowCta || 'Select Dates & Room'}</span>
+                            </div>
+                          )}
 
                           {previewStage === 'quote' && [
                             autoReplySettings.quoteConfirm || 'Confirm Booking',
@@ -3607,6 +4000,193 @@ export default function InboxPage() {
                       )}
                     </div>
                   </div>
+
+                  {/* WhatsApp Flow Screen Mobile Simulator when Flow stage is selected */}
+                  {previewStage === 'flow' && (
+                    <div style={{
+                      marginTop: '4px',
+                      background: '#FFFFFF',
+                      borderRadius: '12px',
+                      border: '1.5px solid #2F5219',
+                      boxShadow: '0 4px 12px rgba(47, 82, 25, 0.08)',
+                      overflow: 'hidden'
+                    }}>
+                      {/* Flow Mockup Header */}
+                      <div style={{
+                        background: '#2F5219',
+                        color: '#FFFFFF',
+                        padding: '10px 14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <FileText size={16} />
+                          <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>
+                            {activePublishedFlow?.name || 'KonkanTrip Booking Intake'}
+                          </span>
+                        </div>
+                        <span style={{
+                          fontSize: '0.68rem',
+                          background: 'rgba(255,255,255,0.2)',
+                          padding: '2px 8px',
+                          borderRadius: '12px',
+                          fontWeight: 600
+                        }}>
+                          Meta Flow v3.1
+                        </span>
+                      </div>
+
+                      {/* Interactive Flow Form */}
+                      <form onSubmit={handleSimulatorSubmit} style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ fontSize: '0.78rem', color: '#67676B', lineHeight: 1.4 }}>
+                          Fill out this live Meta Flow screen. On submit, the system validates your input, calculates pricing, and transitions to the live Quote preview.
+                        </div>
+
+                        {simulatorValidationError && (
+                          <div style={{
+                            background: '#FEE2E2',
+                            border: '1px solid #FCA5A5',
+                            color: '#991B1B',
+                            padding: '6px 10px',
+                            borderRadius: '6px',
+                            fontSize: '0.78rem',
+                            fontWeight: 600
+                          }}>
+                            ⚠️ {simulatorValidationError}
+                          </div>
+                        )}
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '2px' }}>
+                              Guest Name *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={simulatorValues.guest_name}
+                              onChange={e => setSimulatorValues({ ...simulatorValues, guest_name: e.target.value })}
+                              placeholder="e.g. Sunil Gavaskar"
+                              className="saas-input"
+                              style={{ width: '100%', fontSize: '0.8rem', padding: '6px 10px' }}
+                            />
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '2px' }}>
+                                Check-in Date *
+                              </label>
+                              <input
+                                type="date"
+                                required
+                                value={simulatorValues.check_in}
+                                onChange={e => setSimulatorValues({ ...simulatorValues, check_in: e.target.value })}
+                                className="saas-input"
+                                style={{ width: '100%', fontSize: '0.8rem', padding: '6px 10px' }}
+                              />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '2px' }}>
+                                Check-out Date *
+                              </label>
+                              <input
+                                type="date"
+                                required
+                                value={simulatorValues.check_out}
+                                onChange={e => setSimulatorValues({ ...simulatorValues, check_out: e.target.value })}
+                                className="saas-input"
+                                style={{ width: '100%', fontSize: '0.8rem', padding: '6px 10px' }}
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '2px' }}>
+                              Room / Suite Preference *
+                            </label>
+                            <select
+                              value={simulatorValues.room_preference}
+                              onChange={e => setSimulatorValues({ ...simulatorValues, room_preference: e.target.value })}
+                              className="saas-input"
+                              style={{ width: '100%', fontSize: '0.8rem', padding: '6px 10px' }}
+                            >
+                              <option value="Deluxe Sea View Room">Deluxe Sea View Room (₹4,500/night)</option>
+                              <option value="Luxury Coconut Cottage">Luxury Coconut Cottage (₹6,500/night)</option>
+                              <option value="Family Ocean Suite">Family Ocean Suite (₹8,500/night)</option>
+                            </select>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '2px' }}>
+                                Adults
+                              </label>
+                              <select
+                                value={simulatorValues.adults}
+                                onChange={e => setSimulatorValues({ ...simulatorValues, adults: e.target.value })}
+                                className="saas-input"
+                                style={{ width: '100%', fontSize: '0.8rem', padding: '6px 10px' }}
+                              >
+                                <option value="1">1 Adult</option>
+                                <option value="2">2 Adults</option>
+                                <option value="3">3 Adults</option>
+                                <option value="4">4+ Adults</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '2px' }}>
+                                Children
+                              </label>
+                              <select
+                                value={simulatorValues.children}
+                                onChange={e => setSimulatorValues({ ...simulatorValues, children: e.target.value })}
+                                className="saas-input"
+                                style={{ width: '100%', fontSize: '0.8rem', padding: '6px 10px' }}
+                              >
+                                <option value="0">None (0)</option>
+                                <option value="1">1 Child</option>
+                                <option value="2">2 Children</option>
+                                <option value="3">3+ Children</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '2px' }}>
+                              Special Requests (Optional)
+                            </label>
+                            <input
+                              type="text"
+                              value={simulatorValues.special_requests}
+                              onChange={e => setSimulatorValues({ ...simulatorValues, special_requests: e.target.value })}
+                              placeholder="e.g. Ground floor villa, late check-in"
+                              className="saas-input"
+                              style={{ width: '100%', fontSize: '0.8rem', padding: '6px 10px' }}
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="submit"
+                          className="btn btn-action-green"
+                          style={{
+                            width: '100%',
+                            marginTop: '4px',
+                            padding: '8px 14px',
+                            fontSize: '0.825rem',
+                            fontWeight: 700,
+                            justifyContent: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          <Send size={14} />
+                          <span>🚀 Submit Form & Request Quote</span>
+                        </button>
+                      </form>
+                    </div>
+                  )}
                 </div>
 
                 {/* Save Success Alert */}
@@ -3663,6 +4243,239 @@ export default function InboxPage() {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* No-Code WhatsApp Flow Creator Modal */}
+      {isCreateFlowModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.6)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1060,
+          padding: '16px'
+        }}>
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '560px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            border: '1px solid #E5E5E8',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '16px 20px',
+              borderBottom: '1px solid #EEEEF0',
+              background: '#F8FAF5'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: '#EDF4E6',
+                  color: '#2F5219',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <PlusCircle size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#171719' }}>
+                    Create Custom WhatsApp Flow
+                  </h3>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#67676B' }}>
+                    Build an interactive Meta Flow intake screen directly from here
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateFlowModalOpen(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#96969C',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateNewFlow} style={{ padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '4px' }}>
+                  Flow Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={50}
+                  value={newFlowForm.name}
+                  onChange={e => setNewFlowForm({ ...newFlowForm, name: e.target.value })}
+                  placeholder="e.g. Weekend Getaway Booking Flow"
+                  className="saas-input"
+                  style={{ width: '100%', fontSize: '0.85rem', padding: '8px 12px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '4px' }}>
+                  Form Screen Description / Subtitle
+                </label>
+                <input
+                  type="text"
+                  maxLength={120}
+                  value={newFlowForm.description}
+                  onChange={e => setNewFlowForm({ ...newFlowForm, description: e.target.value })}
+                  placeholder="e.g. Share your dates and preferences. Our concierge will send you an official quote."
+                  className="saas-input"
+                  style={{ width: '100%', fontSize: '0.85rem', padding: '8px 12px' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '4px' }}>
+                    Category
+                  </label>
+                  <select
+                    value={newFlowForm.category}
+                    onChange={e => setNewFlowForm({ ...newFlowForm, category: e.target.value })}
+                    className="saas-input"
+                    style={{ width: '100%', fontSize: '0.85rem', padding: '8px 12px' }}
+                  >
+                    <option value="LEAD_GENERATION">Lead Generation</option>
+                    <option value="APPOINTMENT_BOOKING">Appointment Booking</option>
+                    <option value="CUSTOMER_SUPPORT">Customer Support</option>
+                    <option value="CONTACT_US">Contact Us</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '4px' }}>
+                    Flow CTA Button Label
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={20}
+                    value={newFlowForm.ctaText}
+                    onChange={e => setNewFlowForm({ ...newFlowForm, ctaText: e.target.value })}
+                    placeholder="e.g. Select Dates & Room"
+                    className="saas-input"
+                    style={{ width: '100%', fontSize: '0.85rem', padding: '8px 12px' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '4px' }}>
+                  Room / Package Categories (Comma-separated)
+                </label>
+                <input
+                  type="text"
+                  value={newFlowForm.roomOptions}
+                  onChange={e => setNewFlowForm({ ...newFlowForm, roomOptions: e.target.value })}
+                  placeholder="Deluxe Sea View Room, Luxury Coconut Cottage, Family Ocean Suite"
+                  className="saas-input"
+                  style={{ width: '100%', fontSize: '0.85rem', padding: '8px 12px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.825rem', fontWeight: 700, color: '#3A3A3E', marginBottom: '8px' }}>
+                  Intake Fields to Include in Flow Screen
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  {[
+                    { id: 'collectName', label: 'Guest Full Name' },
+                    { id: 'collectCheckin', label: 'Check-in Date' },
+                    { id: 'collectCheckout', label: 'Check-out Date' },
+                    { id: 'collectRoom', label: 'Room Preference Dropdown' },
+                    { id: 'collectGuests', label: 'Adults & Children Dropdowns' },
+                    { id: 'collectNotes', label: 'Special Requests / Notes' }
+                  ].map(fld => (
+                    <label
+                      key={fld.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '6px 10px',
+                        borderRadius: '6px',
+                        border: '1px solid #E5E5E8',
+                        background: newFlowForm[fld.id] ? '#F8FAF5' : '#FFFFFF',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!newFlowForm[fld.id]}
+                        onChange={e => setNewFlowForm({ ...newFlowForm, [fld.id]: e.target.checked })}
+                      />
+                      <span style={{ fontWeight: newFlowForm[fld.id] ? 600 : 400, color: newFlowForm[fld.id] ? '#2F5219' : '#3A3A3E' }}>
+                        {fld.label}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{
+                background: '#EDF4E6',
+                border: '1px solid #C3D1AC',
+                borderRadius: '8px',
+                padding: '10px 12px',
+                fontSize: '0.78rem',
+                color: '#2F5219',
+                display: 'flex',
+                gap: '8px',
+                alignItems: 'flex-start'
+              }}>
+                <Sparkles size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+                <span>
+                  This will generate a valid Meta Flow JSON v3.1 specification, save it to your database, and immediately set it as the active intake flow for your automated concierge!
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #EEEEF0', paddingTop: '14px', marginTop: '4px' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateFlowModalOpen(false)}
+                  className="btn btn-secondary"
+                  style={{ padding: '8px 16px', fontSize: '0.825rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingFlow}
+                  className="btn btn-action-green"
+                  style={{ padding: '8px 20px', fontSize: '0.825rem', gap: '6px' }}
+                >
+                  <PlusCircle size={15} />
+                  <span>{creatingFlow ? 'Creating Flow...' : '⚡ Create & Activate Flow'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

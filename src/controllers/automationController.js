@@ -48,12 +48,14 @@ async function previewSheet(req, res) {
     if (checkoutTemplate) overrides.checkoutTemplate = checkoutTemplate;
 
     const preview = await bookingAutomationService.previewTriggers(sheetUrl, overrides, Boolean(forceSync));
-    if (!preview.success && preview.configured === false) {
-      return res.status(400).json({
-        success: false,
+    if (preview.configured === false) {
+      return res.status(200).json({
+        success: true,
+        configured: false,
         message: preview.message || "Google Sheet not configured.",
         rows: [],
-        headers: []
+        headers: [],
+        config: bookingAutomationService.getConfig()
       });
     }
 

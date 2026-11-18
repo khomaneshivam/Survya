@@ -29,6 +29,7 @@ export default function FlowsPage() {
   // Flows list state
   const [flows, setFlows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -96,10 +97,13 @@ export default function FlowsPage() {
         setFlows(data.data || []);
         setIsFeatureEnabled(data.isFeatureEnabled !== false);
       } else {
-        setError(data.message || 'Failed to load flows.');
+        const msg = data.message || 'Failed to load flows.';
+        setError(msg);
+        showNotification(msg, 'error');
       }
     } catch (err) {
       setError('Network connection error fetching flows.');
+      showNotification('Network connection error fetching flows.', 'error');
     } finally {
       setLoading(false);
     }
