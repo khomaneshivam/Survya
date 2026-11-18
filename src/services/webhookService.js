@@ -5,13 +5,11 @@ const { db, getSetting, setSetting } = require("../config/database");
 const config = require("../config/env");
 const broadcastEngine = require("./broadcastEngine");
 const metaWhatsAppService = require("./metaWhatsAppService");
-const {
-  sendTextMessage,
-  sendInteractiveButtons,
-  sendInteractiveList,
-  sendFlowMessage,
-  downloadAndSaveInboundMedia
-} = metaWhatsAppService;
+const sendTextMessage = (params) => metaWhatsAppService.sendTextMessage(params);
+const sendInteractiveButtons = (params) => metaWhatsAppService.sendInteractiveButtons(params);
+const sendInteractiveList = (params) => metaWhatsAppService.sendInteractiveList(params);
+const sendFlowMessage = (params) => metaWhatsAppService.sendFlowMessage(params);
+const downloadAndSaveInboundMedia = (...args) => metaWhatsAppService.downloadAndSaveInboundMedia(...args);
 
 let hospitalityFlowEngine = null;
 try {
