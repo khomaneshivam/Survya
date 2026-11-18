@@ -396,12 +396,18 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
   });
 
   await t.test("11. Live HTTP POST to Webhook Endpoint: /webhook and /api/webhook accept notifications with 200 OK", async () => {
+    const { app } = require("../server");
+    const testServer = await new Promise((resolve) => {
+      const s = app.listen(0, "127.0.0.1", () => resolve(s));
+    });
+    const port = testServer.address().port;
+
     const postPayload = (endpoint, payload) => {
       return new Promise((resolve, reject) => {
         const bodyStr = JSON.stringify(payload);
         const req = http.request({
-          hostname: "localhost",
-          port: 5000,
+          hostname: "127.0.0.1",
+          port,
           path: endpoint,
           method: "POST",
           headers: {
@@ -419,56 +425,60 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
       });
     };
 
-    const httpMsgId = `wamid.HTTP_TEST_${Date.now()}`;
-    const httpPhone = `${basePhone}99`;
-    const payload = {
-      object: "whatsapp_business_account",
-      entry: [{
-        id: "1064803546265989",
-        changes: [{
-          value: {
-            messaging_product: "whatsapp",
-            metadata: { phone_number_id: "1510764325447375" },
-            contacts: [{ profile: { name: "HTTP Tester" }, wa_id: httpPhone }],
-            messages: [{
-              from: httpPhone,
-              id: httpMsgId,
-              timestamp: String(Math.floor(Date.now() / 1000)),
-              type: "text",
-              text: { body: "Testing live HTTP post to /webhook" }
-            }]
-          },
-          field: "messages"
+    try {
+      const httpMsgId = `wamid.HTTP_TEST_${Date.now()}`;
+      const httpPhone = `${basePhone}99`;
+      const payload = {
+        object: "whatsapp_business_account",
+        entry: [{
+          id: "1064803546265989",
+          changes: [{
+            value: {
+              messaging_product: "whatsapp",
+              metadata: { phone_number_id: "1510764325447375" },
+              contacts: [{ profile: { name: "HTTP Tester" }, wa_id: httpPhone }],
+              messages: [{
+                from: httpPhone,
+                id: httpMsgId,
+                timestamp: String(Math.floor(Date.now() / 1000)),
+                type: "text",
+                text: { body: "Testing live HTTP post to /webhook" }
+              }]
+            },
+            field: "messages"
+          }]
         }]
-      }]
-    };
+      };
 
-    // Test /webhook
-    const res1 = await postPayload("/webhook", payload);
-    assert.equal(res1.statusCode, 200);
-    assert.equal(res1.body, "EVENT_RECEIVED");
+      // Test /webhook
+      const res1 = await postPayload("/webhook", payload);
+      assert.equal(res1.statusCode, 200);
+      assert.equal(res1.body, "EVENT_RECEIVED");
 
-    // Wait a brief moment for async processing
-    await new Promise(r => setTimeout(r, 200));
+      // Wait a brief moment for async processing
+      await new Promise(r => setTimeout(r, 200));
 
-    // Verify message saved
-    const record = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(httpMsgId);
-    assert.ok(record, "Message sent via HTTP POST /webhook must be in DB");
-    assert.equal(record.message_body, "Testing live HTTP post to /webhook");
+      // Verify message saved
+      const record = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(httpMsgId);
+      assert.ok(record, "Message sent via HTTP POST /webhook must be in DB");
+      assert.equal(record.message_body, "Testing live HTTP post to /webhook");
 
-    // Test /api/webhook
-    const apiMsgId = `wamid.HTTP_API_TEST_${Date.now()}`;
-    payload.entry[0].changes[0].value.messages[0].id = apiMsgId;
-    payload.entry[0].changes[0].value.messages[0].text.body = "Testing live HTTP post to /api/webhook";
+      // Test /api/webhook
+      const apiMsgId = `wamid.HTTP_API_TEST_${Date.now()}`;
+      payload.entry[0].changes[0].value.messages[0].id = apiMsgId;
+      payload.entry[0].changes[0].value.messages[0].text.body = "Testing live HTTP post to /api/webhook";
 
-    const res2 = await postPayload("/api/webhook", payload);
-    assert.equal(res2.statusCode, 200);
-    assert.equal(res2.body, "EVENT_RECEIVED");
+      const res2 = await postPayload("/api/webhook", payload);
+      assert.equal(res2.statusCode, 200);
+      assert.equal(res2.body, "EVENT_RECEIVED");
 
-    await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 200));
 
-    const apiRecord = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(apiMsgId);
-    assert.ok(apiRecord, "Message sent via HTTP POST /api/webhook must be in DB");
-    assert.equal(apiRecord.message_body, "Testing live HTTP post to /api/webhook");
+      const apiRecord = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(apiMsgId);
+      assert.ok(apiRecord, "Message sent via HTTP POST /api/webhook must be in DB");
+      assert.equal(apiRecord.message_body, "Testing live HTTP post to /api/webhook");
+    } finally {
+      await new Promise(r => testServer.close(r));
+    }
   });
 });

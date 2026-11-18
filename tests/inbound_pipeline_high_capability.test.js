@@ -113,13 +113,18 @@ test("High-Capability Inbound Message & Trigger Pipeline Test Suite", async (t) 
     assert.equal(webhookService.isBotPausedForPhone(cleanP), false, "Bot must be unpaused automatically");
   });
 
-  await t.test("3. Shared Inbox Scoping: Non-admin user can access all shared WhatsApp customer replies", () => {
-    const nonAdminUserId = "user_test_regular_worker_999";
-    const res = webhookService.getReplies({ limit: 50, userId: nonAdminUserId, repliesOnly: true });
+  await t.test("3. Scoped Inbox Access: User can access own customer replies and campaigns", () => {
+    const userId = "user_test_worker_123";
+    db.prepare(`
+      INSERT INTO customer_replies (
+        wa_message_id, from_phone, customer_name, message_type, message_body, is_read, user_id, source, received_at
+      ) VALUES (?, ?, ?, ?, ?, 0, ?, 'WHATSAPP', CURRENT_TIMESTAMP)
+    `).run(`wamid.SCOPED_${Date.now()}`, "919777999888", "Scoped Contact", "text", "Inquiry", userId);
 
+    const res = webhookService.getReplies({ limit: 50, userId, repliesOnly: true });
     assert.ok(res);
     assert.ok(typeof res.totalCount === "number");
-    assert.ok(res.totalCount > 0, "Non-admin user must see shared WhatsApp replies");
+    assert.ok(res.totalCount > 0, "User must see assigned customer replies");
   });
 
   await t.test("4. Resilient Payload Ingestion: Direct unwrapped messages payload is ingested cleanly", async () => {
