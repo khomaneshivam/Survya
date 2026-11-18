@@ -372,7 +372,7 @@ async function pushFlowToMeta(req, res) {
 
     const newStatus = metaDetails?.status || flow.status || "DRAFT";
     const validationErrors = JSON.stringify(uploadRes.validationErrors || metaDetails?.validation_errors || []);
-    const previewUrl = metaDetails?.preview?.preview_url || flow.preview_url;
+    const previewUrl = metaDetails?.preview?.preview_url || flow.preview_url || null;
 
     db.prepare(`
       UPDATE whatsapp_flows
