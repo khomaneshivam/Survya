@@ -2924,12 +2924,47 @@ class WebhookService {
    * Gets current auto-reply settings
    */
   getAutoReplySettings() {
+    const rawOptions = (() => {
+      try {
+        const raw = getSetting("BOT_DYNAMIC_OPTIONS");
+        if (!raw) return this.getDefaultDynamicOptions();
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) && parsed.length > 0 ? parsed : this.getDefaultDynamicOptions();
+      } catch (e) {
+        return this.getDefaultDynamicOptions();
+      }
+    })();
+
+    const normalizedOptions = rawOptions.map((opt, idx) => ({
+      ...opt,
+      id: opt.id || `dyn_${Date.now()}_${idx}`,
+      title: opt.title || `Rule ${idx + 1}`,
+      buttonLabel: opt.buttonLabel || opt.title || `Rule ${idx + 1}`,
+      triggers: opt.triggers || opt.matchTerms || "",
+      matchTerms: opt.matchTerms || opt.triggers || "",
+      matcherType: opt.matcherType || opt.matchType || "CONTAINS",
+      matchType: opt.matchType || opt.matcherType || "CONTAINS",
+      stage: opt.stage || "ANY",
+      actionType: opt.actionType || opt.action || "REPLY_TEXT",
+      action: opt.action || opt.actionType || "REPLY_TEXT",
+      responsePayload: opt.responsePayload || opt.responseText || "",
+      responseText: opt.responseText || opt.responsePayload || "",
+      url: opt.url || opt.link || "",
+      link: opt.url || opt.link || "",
+      followUpButtons: Array.isArray(opt.followUpButtons) ? opt.followUpButtons : [],
+      isActive: opt.isActive !== false && opt.active !== false,
+      active: opt.active !== false && opt.isActive !== false,
+      showInGreeting: Boolean(opt.showInGreeting)
+    }));
+
+    const fallbackMsg = getSetting("AUTO_REPLY_MESSAGE") || "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message and our team will get back to you shortly.";
+
     return {
       enabled: getSetting("AUTO_REPLY_ENABLED") !== "false",
       mode: getSetting("AUTO_REPLY_MODE") || "ONCE_PER_CONTACT",
       engineMode: getSetting("AUTO_REPLY_ENGINE_MODE") || "HOSPITALITY_FLOW",
-      message: getSetting("AUTO_REPLY_MESSAGE") || "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message and our team will get back to you shortly.",
-      fallbackMessage: getSetting("AUTO_REPLY_MESSAGE") || "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message and our team will get back to you shortly.",
+      message: fallbackMsg,
+      fallbackMessage: fallbackMsg,
       businessName: getSetting("BOT_BUSINESS_NAME") || "KonkanTrip Beach Resort & Spa",
       welcomeMessage: getSetting("BOT_WELCOME_MESSAGE") || "👋 Hello {{name}}! Welcome to *{{business_name}}*.\n\nHow can we help you today? Select an option below or reply with your travel dates to check real-time availability and live rates! 👇",
       button1: getSetting("BOT_WELCOME_BUTTON_1_LABEL") || "This Weekend",
@@ -2945,16 +2980,7 @@ class WebhookService {
       handoffMessage: getSetting("BOT_HANDOFF_MESSAGE") || "🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at {{phone}}.",
       selectedFlowId: getSetting("DEFAULT_WHATSAPP_FLOW_ID") || "flow_hospitality_booking",
       takeoverPauseMinutes: parseInt(getSetting("BOT_TAKEOVER_PAUSE_MINUTES") || "60", 10),
-      dynamicOptions: (() => {
-        try {
-          const raw = getSetting("BOT_DYNAMIC_OPTIONS");
-          if (!raw) return this.getDefaultDynamicOptions();
-          const parsed = JSON.parse(raw);
-          return Array.isArray(parsed) && parsed.length > 0 ? parsed : this.getDefaultDynamicOptions();
-        } catch (e) {
-          return this.getDefaultDynamicOptions();
-        }
-      })()
+      dynamicOptions: normalizedOptions
     };
   }
 
@@ -3036,71 +3062,72 @@ class WebhookService {
       setSetting("AUTO_REPLY_ENABLED", isEnabled ? "true" : "false");
     }
     const mode = payload.mode || payload.auto_reply_mode;
-    if (mode && (mode === "ONCE_PER_CONTACT" || mode === "ONCE_PER_24_HOURS")) {
+    if (mode && (mode === "ONCE_PER_CONTACT" || mode === "ONCE_PER_24_HOURS" || mode === "ALWAYS")) {
       setSetting("AUTO_REPLY_MODE", mode);
     }
     const engineMode = payload.engineMode || payload.engine_mode;
     if (engineMode && (engineMode === "HOSPITALITY_FLOW" || engineMode === "SIMPLE_GREETING")) {
       setSetting("AUTO_REPLY_ENGINE_MODE", engineMode);
     }
-    const msg = payload.message || payload.fallbackMessage || payload.auto_reply_message;
-    if (msg && String(msg).trim()) {
+    const msg = payload.fallbackMessage !== undefined ? payload.fallbackMessage : (payload.message !== undefined ? payload.message : payload.auto_reply_message);
+    if (msg !== undefined && String(msg).trim()) {
       setSetting("AUTO_REPLY_MESSAGE", String(msg).trim());
     }
     const bName = payload.businessName || payload.business_name;
-    if (bName && String(bName).trim()) {
+    if (bName !== undefined && String(bName).trim()) {
       setSetting("BOT_BUSINESS_NAME", String(bName).trim().substring(0, 100));
     }
     const welcome = payload.welcomeMessage || payload.welcome_message;
-    if (welcome && String(welcome).trim()) {
+    if (welcome !== undefined && String(welcome).trim()) {
       setSetting("BOT_WELCOME_MESSAGE", String(welcome).trim());
     }
-    const b1 = payload.button1 || payload.button_1 || payload.welcomeButton1;
-    if (b1 && String(b1).trim()) {
-      setSetting("BOT_WELCOME_BUTTON_1_LABEL", shortenButtonTitle(String(b1).trim()));
+    if (payload.button1 !== undefined || payload.button_1 !== undefined || payload.welcomeButton1 !== undefined) {
+      const b1 = payload.button1 ?? payload.button_1 ?? payload.welcomeButton1;
+      setSetting("BOT_WELCOME_BUTTON_1_LABEL", shortenButtonTitle(String(b1 || "").trim() || "This Weekend"));
     }
-    const b2 = payload.button2 || payload.button_2 || payload.welcomeButton2;
-    if (b2 && String(b2).trim()) {
-      setSetting("BOT_WELCOME_BUTTON_2_LABEL", shortenButtonTitle(String(b2).trim()));
+    if (payload.button2 !== undefined || payload.button_2 !== undefined || payload.welcomeButton2 !== undefined) {
+      const b2 = payload.button2 ?? payload.button_2 ?? payload.welcomeButton2;
+      setSetting("BOT_WELCOME_BUTTON_2_LABEL", shortenButtonTitle(String(b2 || "").trim() || "Tomorrow (2 N)"));
     }
-    const b3 = payload.button3 || payload.button_3 || payload.welcomeButton3;
-    if (b3 && String(b3).trim()) {
-      setSetting("BOT_WELCOME_BUTTON_3_LABEL", shortenButtonTitle(String(b3).trim()));
+    if (payload.button3 !== undefined || payload.button_3 !== undefined || payload.welcomeButton3 !== undefined) {
+      const b3 = payload.button3 ?? payload.button_3 ?? payload.welcomeButton3;
+      setSetting("BOT_WELCOME_BUTTON_3_LABEL", shortenButtonTitle(String(b3 || "").trim() || "Talk to Staff"));
     }
-    const qc = payload.quoteConfirm || payload.quote_confirm;
-    if (qc && String(qc).trim()) {
-      setSetting("BOT_QUOTE_CONFIRM_LABEL", shortenButtonTitle(String(qc).trim()));
+    if (payload.quoteConfirm !== undefined || payload.quote_confirm !== undefined) {
+      const qc = payload.quoteConfirm ?? payload.quote_confirm;
+      setSetting("BOT_QUOTE_CONFIRM_LABEL", shortenButtonTitle(String(qc || "").trim() || "Confirm Booking"));
     }
-    const qm = payload.quoteModify || payload.quote_modify;
-    if (qm && String(qm).trim()) {
-      setSetting("BOT_QUOTE_MODIFY_LABEL", shortenButtonTitle(String(qm).trim()));
+    if (payload.quoteModify !== undefined || payload.quote_modify !== undefined) {
+      const qm = payload.quoteModify ?? payload.quote_modify;
+      setSetting("BOT_QUOTE_MODIFY_LABEL", shortenButtonTitle(String(qm || "").trim() || "Change Dates"));
     }
-    const qr = payload.quoteRooms || payload.quote_rooms;
-    if (qr && String(qr).trim()) {
-      setSetting("BOT_QUOTE_ROOMS_LABEL", shortenButtonTitle(String(qr).trim()));
+    if (payload.quoteRooms !== undefined || payload.quote_rooms !== undefined) {
+      const qr = payload.quoteRooms ?? payload.quote_rooms;
+      setSetting("BOT_QUOTE_ROOMS_LABEL", shortenButtonTitle(String(qr || "").trim() || "Other Rooms"));
     }
-    const cb1 = payload.confirmedButton1 || payload.confirmed_button_1;
-    if (cb1 && String(cb1).trim()) {
-      setSetting("BOT_CONFIRMED_BUTTON_1_LABEL", shortenButtonTitle(String(cb1).trim()));
+    if (payload.confirmedButton1 !== undefined || payload.confirmed_button_1 !== undefined) {
+      const cb1 = payload.confirmedButton1 ?? payload.confirmed_button_1;
+      setSetting("BOT_CONFIRMED_BUTTON_1_LABEL", shortenButtonTitle(String(cb1 || "").trim() || "Facilities"));
     }
-    const cb2 = payload.confirmedButton2 || payload.confirmed_button_2;
-    if (cb2 && String(cb2).trim()) {
-      setSetting("BOT_CONFIRMED_BUTTON_2_LABEL", shortenButtonTitle(String(cb2).trim()));
+    if (payload.confirmedButton2 !== undefined || payload.confirmed_button_2 !== undefined) {
+      const cb2 = payload.confirmedButton2 ?? payload.confirmed_button_2;
+      setSetting("BOT_CONFIRMED_BUTTON_2_LABEL", shortenButtonTitle(String(cb2 || "").trim() || "Dining Menu"));
     }
-    const cb3 = payload.confirmedButton3 || payload.confirmed_button_3;
-    if (cb3 && String(cb3).trim()) {
-      setSetting("BOT_CONFIRMED_BUTTON_3_LABEL", shortenButtonTitle(String(cb3).trim()));
+    if (payload.confirmedButton3 !== undefined || payload.confirmed_button_3 !== undefined) {
+      const cb3 = payload.confirmedButton3 ?? payload.confirmed_button_3;
+      setSetting("BOT_CONFIRMED_BUTTON_3_LABEL", shortenButtonTitle(String(cb3 || "").trim() || "Location / Map"));
     }
     const phone = payload.handoffPhone || payload.handoff_phone;
-    if (phone && String(phone).trim()) {
+    if (phone !== undefined && String(phone).trim()) {
       setSetting("BOT_HANDOFF_PHONE", String(phone).trim());
     }
     const handoffMsg = payload.handoffMessage || payload.handoff_message;
-    if (handoffMsg && String(handoffMsg).trim()) {
+    if (handoffMsg !== undefined && String(handoffMsg).trim()) {
       setSetting("BOT_HANDOFF_MESSAGE", String(handoffMsg).trim());
     }
-    if (payload.selectedFlowId !== undefined) {
-      setSetting("DEFAULT_WHATSAPP_FLOW_ID", payload.selectedFlowId ? String(payload.selectedFlowId).trim() : "");
+    const flowId = payload.selectedFlowId !== undefined ? payload.selectedFlowId : (payload.flowId !== undefined ? payload.flowId : payload.flow_id);
+    if (flowId !== undefined) {
+      setSetting("DEFAULT_WHATSAPP_FLOW_ID", flowId ? String(flowId).trim() : "");
     }
     const pauseMins = payload.takeoverPauseMinutes || payload.takeover_pause_minutes;
     if (pauseMins !== undefined) {
@@ -3115,7 +3142,28 @@ class WebhookService {
         try { opts = JSON.parse(opts); } catch (e) { opts = []; }
       }
       if (Array.isArray(opts)) {
-        setSetting("BOT_DYNAMIC_OPTIONS", JSON.stringify(opts));
+        const normalized = opts.map((opt, idx) => ({
+          ...opt,
+          id: opt.id || `dyn_${Date.now()}_${idx}`,
+          title: opt.title || `Custom Rule ${idx + 1}`,
+          buttonLabel: opt.buttonLabel || opt.title || `Rule ${idx + 1}`,
+          triggers: opt.triggers || opt.matchTerms || "",
+          matchTerms: opt.matchTerms || opt.triggers || "",
+          matchType: opt.matchType || opt.matcherType || "CONTAINS",
+          matcherType: opt.matcherType || opt.matchType || "CONTAINS",
+          stage: opt.stage || "ANY",
+          actionType: opt.actionType || opt.action || "REPLY_TEXT",
+          action: opt.action || opt.actionType || "REPLY_TEXT",
+          responseText: opt.responseText || opt.responsePayload || "",
+          responsePayload: opt.responsePayload || opt.responseText || "",
+          url: opt.url || opt.link || "",
+          link: opt.url || opt.link || "",
+          followUpButtons: Array.isArray(opt.followUpButtons) ? opt.followUpButtons : [],
+          active: opt.active !== false && opt.isActive !== false,
+          isActive: opt.isActive !== false && opt.active !== false,
+          showInGreeting: Boolean(opt.showInGreeting)
+        }));
+        setSetting("BOT_DYNAMIC_OPTIONS", JSON.stringify(normalized));
       }
     }
     return this.getAutoReplySettings();

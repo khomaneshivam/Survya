@@ -32,6 +32,53 @@ import {
   ArrowRight
 } from 'lucide-react';
 
+function TabSaveFooter({ hasUnsavedChanges, saving, onSave }) {
+  return (
+    <div style={{
+      marginTop: '28px',
+      paddingTop: '16px',
+      borderTop: '1px solid #E5E5E8',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: '12px'
+    }}>
+      <div style={{ fontSize: '0.82rem', color: hasUnsavedChanges ? '#D97706' : '#67676B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        {hasUnsavedChanges ? (
+          <>
+            <AlertTriangle size={15} color="#D97706" />
+            <span style={{ fontWeight: 600 }}>Unsaved changes in this section</span>
+          </>
+        ) : (
+          <>
+            <CheckCircle2 size={15} color="#2F5219" />
+            <span>All settings saved to database</span>
+          </>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => onSave()}
+        disabled={saving}
+        className="btn btn-primary"
+        style={{
+          gap: '7px',
+          fontSize: '0.84rem',
+          fontWeight: 600,
+          background: '#2F5219',
+          borderColor: '#2F5219',
+          padding: '8px 18px',
+          boxShadow: '0 2px 6px rgba(47,82,25,0.2)'
+        }}
+      >
+        {saving ? <RotateCcw size={15} className="spin" /> : <Save size={15} />}
+        <span>{saving ? 'Saving Changes...' : 'Save Configuration'}</span>
+      </button>
+    </div>
+  );
+}
+
 export default function AutoReplyBotPage({ onNavigate }) {
   const { token, isAdmin } = useAuth();
 
@@ -59,11 +106,18 @@ export default function AutoReplyBotPage({ onNavigate }) {
     dynamicOptions: []
   });
 
+  const [originalSettings, setOriginalSettings] = useState(null);
   const [publishedFlows, setPublishedFlows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
+
+  // Compute dirty unsaved state
+  const hasUnsavedChanges = useMemo(() => {
+    if (!originalSettings) return false;
+    return JSON.stringify(settings) !== JSON.stringify(originalSettings);
+  }, [settings, originalSettings]);
 
   // Active Tab: 'engine' | 'greeting' | 'flow' | 'quote' | 'handoff' | 'dynamic'
   const [activeTab, setActiveTab] = useState('engine');
@@ -119,11 +173,14 @@ export default function AutoReplyBotPage({ onNavigate }) {
             isActive: r.isActive !== false && r.active !== false,
             active: r.active !== false && r.isActive !== false
           }));
-          setSettings(prev => ({
-            ...prev,
+          const loaded = {
             ...resData.data,
+            fallbackMessage: resData.data.fallbackMessage || resData.data.message || '',
+            message: resData.data.fallbackMessage || resData.data.message || '',
             dynamicOptions: loadedOptions
-          }));
+          };
+          setSettings(loaded);
+          setOriginalSettings(loaded);
         }
       } else {
         throw new Error(`Failed to load settings (status: ${settingsRes.status})`);
@@ -148,10 +205,11 @@ export default function AutoReplyBotPage({ onNavigate }) {
   }, [loadData]);
 
   // Save Settings to Backend
-  const handleSave = async () => {
+  const handleSave = async (customPayload = null) => {
     setSaving(true);
     setErrorMsg(null);
     setSaveSuccess(false);
+    const payloadToSave = customPayload || settings;
     try {
       const headers = {
         ...getAuthHeaders(),
@@ -161,7 +219,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
       const res = await fetch('/api/replies/auto-reply-settings', {
         method: 'POST',
         headers,
-        body: JSON.stringify(settings)
+        body: JSON.stringify(payloadToSave)
       });
 
       const resData = await res.json();
@@ -169,14 +227,46 @@ export default function AutoReplyBotPage({ onNavigate }) {
         throw new Error(resData.message || 'Failed to save settings');
       }
 
+      if (resData.data) {
+        const loadedOptions = (Array.isArray(resData.data.dynamicOptions) ? resData.data.dynamicOptions : []).map(r => ({
+          ...r,
+          matchTerms: r.matchTerms || r.triggers || '',
+          triggers: r.triggers || r.matchTerms || '',
+          matcherType: r.matcherType || r.matchType || 'CONTAINS',
+          matchType: r.matchType || r.matcherType || 'CONTAINS',
+          responsePayload: r.responsePayload || r.responseText || '',
+          responseText: r.responseText || r.responsePayload || '',
+          actionType: r.actionType || r.action || 'REPLY_TEXT',
+          isActive: r.isActive !== false && r.active !== false,
+          active: r.active !== false && r.isActive !== false
+        }));
+        const updated = {
+          ...resData.data,
+          fallbackMessage: resData.data.fallbackMessage || resData.data.message || '',
+          message: resData.data.fallbackMessage || resData.data.message || '',
+          dynamicOptions: loadedOptions
+        };
+        setSettings(updated);
+        setOriginalSettings(updated);
+      }
+
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3500);
+      return true;
     } catch (err) {
       console.error('[AutoReplyBotPage] Save error:', err);
       setErrorMsg(err.message || 'Failed to save settings.');
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleToggleMasterBot = async () => {
+    const nextEnabled = !settings.enabled;
+    const nextSettings = { ...settings, enabled: nextEnabled };
+    setSettings(nextSettings);
+    await handleSave(nextSettings);
   };
 
   // Check / Manage Live Contact Bot Status
@@ -254,7 +344,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
     setRuleModalOpen(true);
   };
 
-  const handleSaveRule = () => {
+  const handleSaveRule = async () => {
     if (!editingRule || !editingRule.title?.trim() || !(editingRule.matchTerms?.trim() || editingRule.triggers?.trim())) {
       alert('Please provide a Title and at least one Match Term.');
       return;
@@ -285,26 +375,28 @@ export default function AutoReplyBotPage({ onNavigate }) {
     } else {
       current.push(sanitizedRule);
     }
-    setSettings(prev => ({ ...prev, dynamicOptions: current }));
+    const nextSettings = { ...settings, dynamicOptions: current };
+    setSettings(nextSettings);
     setRuleModalOpen(false);
     setEditingRule(null);
+    await handleSave(nextSettings);
   };
 
-  const handleDeleteRule = (ruleId) => {
+  const handleDeleteRule = async (ruleId) => {
     if (!window.confirm('Are you sure you want to delete this custom dynamic rule?')) return;
-    setSettings(prev => ({
-      ...prev,
-      dynamicOptions: (prev.dynamicOptions || []).filter(r => r.id !== ruleId)
-    }));
+    const nextOptions = (settings.dynamicOptions || []).filter(r => r.id !== ruleId);
+    const nextSettings = { ...settings, dynamicOptions: nextOptions };
+    setSettings(nextSettings);
+    await handleSave(nextSettings);
   };
 
-  const handleToggleRuleActive = (ruleId) => {
-    setSettings(prev => ({
-      ...prev,
-      dynamicOptions: (prev.dynamicOptions || []).map(r =>
-        r.id === ruleId ? { ...r, isActive: !r.isActive, active: !r.isActive } : r
-      )
-    }));
+  const handleToggleRuleActive = async (ruleId) => {
+    const nextOptions = (settings.dynamicOptions || []).map(r =>
+      r.id === ruleId ? { ...r, isActive: !r.isActive, active: !r.isActive } : r
+    );
+    const nextSettings = { ...settings, dynamicOptions: nextOptions };
+    setSettings(nextSettings);
+    await handleSave(nextSettings);
   };
 
   // Interactive In-Memory Simulation Dispatcher
@@ -419,7 +511,8 @@ export default function AutoReplyBotPage({ onNavigate }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button
             type="button"
-            onClick={() => setSettings(prev => ({ ...prev, enabled: !prev.enabled }))}
+            onClick={handleToggleMasterBot}
+            disabled={saving}
             className="btn btn-secondary"
             style={{
               gap: '6px',
@@ -819,6 +912,12 @@ export default function AutoReplyBotPage({ onNavigate }) {
                     </ul>
                   </div>
                 </div>
+
+                <TabSaveFooter
+                  hasUnsavedChanges={hasUnsavedChanges}
+                  saving={saving}
+                  onSave={handleSave}
+                />
               </div>
             )}
 
@@ -926,6 +1025,12 @@ export default function AutoReplyBotPage({ onNavigate }) {
                     );
                   })}
                 </div>
+
+                <TabSaveFooter
+                  hasUnsavedChanges={hasUnsavedChanges}
+                  saving={saving}
+                  onSave={handleSave}
+                />
               </div>
             )}
 
@@ -1001,6 +1106,12 @@ export default function AutoReplyBotPage({ onNavigate }) {
                     </button>
                   </div>
                 )}
+
+                <TabSaveFooter
+                  hasUnsavedChanges={hasUnsavedChanges}
+                  saving={saving}
+                  onSave={handleSave}
+                />
               </div>
             )}
 
@@ -1085,6 +1196,12 @@ export default function AutoReplyBotPage({ onNavigate }) {
                     </div>
                   ))}
                 </div>
+
+                <TabSaveFooter
+                  hasUnsavedChanges={hasUnsavedChanges}
+                  saving={saving}
+                  onSave={handleSave}
+                />
               </div>
             )}
 
@@ -1235,6 +1352,12 @@ export default function AutoReplyBotPage({ onNavigate }) {
                     </div>
                   )}
                 </div>
+
+                <TabSaveFooter
+                  hasUnsavedChanges={hasUnsavedChanges}
+                  saving={saving}
+                  onSave={handleSave}
+                />
               </div>
             )}
 
@@ -1382,6 +1505,12 @@ export default function AutoReplyBotPage({ onNavigate }) {
                     ))}
                   </div>
                 )}
+
+                <TabSaveFooter
+                  hasUnsavedChanges={hasUnsavedChanges}
+                  saving={saving}
+                  onSave={handleSave}
+                />
               </div>
             )}
           </div>
@@ -1967,12 +2096,86 @@ export default function AutoReplyBotPage({ onNavigate }) {
               <button
                 type="button"
                 onClick={handleSaveRule}
+                disabled={saving}
                 className="btn btn-primary"
-                style={{ fontSize: '0.84rem', background: '#2F5219' }}
+                style={{ fontSize: '0.84rem', background: '#2F5219', display: 'flex', alignItems: 'center', gap: '6px' }}
               >
-                Save Rule
+                {saving ? <RotateCcw size={14} className="spin" /> : <Save size={14} />}
+                <span>{saving ? 'Saving Rule...' : 'Save Rule to Database'}</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Unsaved Changes Warning & Quick-Save Bar */}
+      {hasUnsavedChanges && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          background: '#0F172A',
+          color: '#FFFFFF',
+          borderRadius: '12px',
+          padding: '12px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '18px',
+          boxShadow: '0 12px 36px rgba(0,0,0,0.35)',
+          border: '1px solid #334155'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              background: '#F59E0B',
+              boxShadow: '0 0 8px #F59E0B'
+            }} />
+            <span style={{ fontSize: '0.86rem', fontWeight: 600 }}>
+              You have unsaved bot configuration changes
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={() => originalSettings && setSettings({ ...originalSettings })}
+              style={{
+                background: 'transparent',
+                color: '#94A3B8',
+                border: '1px solid #475569',
+                borderRadius: '6px',
+                padding: '6px 12px',
+                fontSize: '0.8rem',
+                cursor: 'pointer'
+              }}
+            >
+              Discard
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSave()}
+              disabled={saving}
+              style={{
+                background: '#2F5219',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: '6px',
+                padding: '6px 16px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 2px 6px rgba(47,82,25,0.4)'
+              }}
+            >
+              {saving ? <RotateCcw size={14} className="spin" /> : <Save size={14} />}
+              <span>{saving ? 'Saving...' : 'Save Configuration'}</span>
+            </button>
           </div>
         </div>
       )}
