@@ -769,7 +769,7 @@ function handleCustomerInquiry({
 
   // Check if user is confirming a presented quote or confirming while awaiting room (without selecting a different room)
   if (session && (session.current_step === "QUOTE_PRESENTED" || session.current_step === "AWAITING_ROOM") && !matchedRoom) {
-    if (/\b(confirm|yes|proceed|submit|ok|okay|please book|sure)\b/i.test(lower) || /^\s*book\s*$/i.test(lower) || /^\s*confirm\s*booking\s*$/i.test(lower)) {
+    if (/\b(confirm|proceed|submit|please book|book this|confirm booking)\b/i.test(lower) || /^\s*book\s*$/i.test(lower) || /^\s*confirm\s*booking\s*$/i.test(lower) || lower === "yes, please book" || lower === "yes please") {
       const sData = session.sessionData || {};
 
       // If room was not explicitly selected yet, pick the best available room

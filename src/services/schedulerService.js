@@ -46,19 +46,8 @@ class SchedulerService {
       console.warn("[Scheduler] Initial evergreen campaign sync notice:", e.message);
     }
 
-    // Initial run for Booking Lifecycle triggers after startup delay (2.5s)
-    setTimeout(() => {
-      bookingAutomationService.runTriggers().catch(err => {
-        console.warn("[Scheduler] Initial booking triggers check notice:", err.message);
-      });
-    }, 2500);
-
-    // Background runner for Google Sheet & Saved Booking Automation (evaluates 4-stage lifecycle times every 30s)
-    this.bookingIntervalTimer = setInterval(() => {
-      bookingAutomationService.runTriggers().catch(err => {
-        console.warn("[Scheduler] Background booking triggers check notice:", err.message);
-      });
-    }, 30 * 1000);
+    // Note: Automatic 30s background booking runner removed per user send structure policy.
+    // Booking lifecycle triggers are strictly manual or scheduled via explicit campaign broadcasts.
   }
 
   /**
