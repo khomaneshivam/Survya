@@ -29,8 +29,27 @@ import {
   Eye,
   Settings,
   Zap,
-  ArrowRight
+  ArrowRight,
+  GitBranch,
+  Library,
+  BarChart3,
+  History,
+  CheckSquare,
+  Hotel,
+  HelpCircle,
+  X,
+  Tag,
+  Copy,
+  ChevronDown
 } from 'lucide-react';
+
+import FlowCanvas from '../components/flow-studio/FlowCanvas';
+import NodeInspectorDrawer from '../components/flow-studio/NodeInspectorDrawer';
+import FlowTemplatesModal from '../components/flow-studio/FlowTemplatesModal';
+import FlowVersionsModal from '../components/flow-studio/FlowVersionsModal';
+import FlowSimulatorPanel from '../components/flow-studio/FlowSimulatorPanel';
+import MessageTemplatesStudio from '../components/flow-studio/MessageTemplatesStudio';
+import FlowAnalyticsPanel from '../components/flow-studio/FlowAnalyticsPanel';
 
 function TabSaveFooter({ hasUnsavedChanges, saving, onSave }) {
   return (
@@ -141,21 +160,64 @@ export default function AutoReplyBotPage({ onNavigate }) {
     { sender: 'bot', text: '👋 Hello Sunil! Welcome to *KonkanTrip Beach Resort & Spa*. How can we assist you today?', time: '10:00 AM' }
   ]);
 
+  // Conversation Flow & Automation Studio State
+  const [studioMode, setStudioMode] = useState('BUILDER'); // 'BUILDER' | 'LIBRARY' | 'MESSAGES' | 'SIMULATOR' | 'ANALYTICS' | 'LEGACY'
+  const [flowsList, setFlowsList] = useState([]);
+  const [activeFlowId, setActiveFlowId] = useState(null);
+  const [activeFlow, setActiveFlow] = useState(null);
+  const [currentNodes, setCurrentNodes] = useState([]);
+  const [currentTransitions, setCurrentTransitions] = useState([]);
+  const [currentVariables, setCurrentVariables] = useState({});
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [simulatorOpen, setSimulatorOpen] = useState(false);
+  const [templatesModalOpen, setTemplatesModalOpen] = useState(false);
+  const [versionsModalOpen, setVersionsModalOpen] = useState(false);
+  const [templatesList, setTemplatesList] = useState([]);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [validationReport, setValidationReport] = useState(null);
+  const [validationModalOpen, setValidationModalOpen] = useState(false);
+
   // Auth Headers helper
   const getAuthHeaders = useCallback(() => {
     const activeToken = token || localStorage.getItem('token');
     return activeToken ? { Authorization: `Bearer ${activeToken}` } : {};
   }, [token]);
 
-  // Load Auto-Reply Settings & Published Flows
+  // Load flow details & canvas nodes
+  const loadFlowDetails = useCallback(async (flowId) => {
+    if (!flowId) return;
+    try {
+      const headers = getAuthHeaders();
+      const res = await fetch(`/api/flows/conversation-flows/${flowId}`, { headers });
+      const data = await res.json();
+      if (data.success && data.flow) {
+        setActiveFlow(data.flow);
+        setActiveFlowId(data.flow.id);
+        const version = data.draftVersion || data.publishedVersion;
+        if (version) {
+          setCurrentNodes(version.nodes || []);
+          setCurrentTransitions(version.transitions || []);
+          setCurrentVariables(version.variables || {});
+          setSelectedNodeId((version.nodes || [])[0]?.id || null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load flow details:', err);
+    }
+  }, [getAuthHeaders]);
+
+  // Load Auto-Reply Settings, Published Flows & Conversation Flows
   const loadData = useCallback(async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
       const headers = getAuthHeaders();
-      const [settingsRes, flowsRes] = await Promise.all([
+      const [settingsRes, flowsRes, convFlowsRes, tplsRes] = await Promise.all([
         fetch('/api/replies/auto-reply-settings', { headers }),
-        fetch('/api/flows?status=PUBLISHED', { headers }).catch(() => null)
+        fetch('/api/flows?status=PUBLISHED', { headers }).catch(() => null),
+        fetch('/api/flows/conversation-flows', { headers }).catch(() => null),
+        fetch('/api/flows/conversation-templates', { headers }).catch(() => null)
       ]);
 
       if (settingsRes.ok) {
@@ -192,13 +254,235 @@ export default function AutoReplyBotPage({ onNavigate }) {
           setPublishedFlows(flowsData.data);
         }
       }
+
+      if (convFlowsRes && convFlowsRes.ok) {
+        const convData = await convFlowsRes.json();
+        if (convData.success && Array.isArray(convData.flows)) {
+          setFlowsList(convData.flows);
+          if (convData.flows.length > 0) {
+            const firstId = convData.flows[0].id;
+            loadFlowDetails(firstId);
+          }
+        }
+      }
+
+      if (tplsRes && tplsRes.ok) {
+        const tplsData = await tplsRes.json();
+        if (tplsData.success && Array.isArray(tplsData.templates)) {
+          setTemplatesList(tplsData.templates);
+        }
+      }
     } catch (err) {
       console.error('[AutoReplyBotPage] loadData error:', err);
       setErrorMsg(err.message || 'Failed to load bot settings.');
     } finally {
       setLoading(false);
     }
-  }, [getAuthHeaders]);
+  }, [getAuthHeaders, loadFlowDetails]);
+
+  // Flow Studio Actions
+  const handleSaveFlowDraft = async () => {
+    if (!activeFlowId) return;
+    setSavingDraft(true);
+    try {
+      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      const res = await fetch(`/api/flows/conversation-flows/${activeFlowId}/draft`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          nodes: currentNodes,
+          transitions: currentTransitions,
+          variables: currentVariables,
+          changelog: 'Saved via Visual Studio Builder'
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+        loadFlowDetails(activeFlowId);
+      } else {
+        alert(data.error || 'Failed to save draft');
+      }
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  const handlePublishFlow = async () => {
+    if (!activeFlowId) return;
+    setPublishing(true);
+    try {
+      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      // Save draft first
+      await fetch(`/api/flows/conversation-flows/${activeFlowId}/draft`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          nodes: currentNodes,
+          transitions: currentTransitions,
+          variables: currentVariables,
+          changelog: 'Pre-publish auto snapshot'
+        })
+      });
+
+      const res = await fetch(`/api/flows/conversation-flows/${activeFlowId}/publish`, {
+        method: 'POST',
+        headers
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 4000);
+        loadFlowDetails(activeFlowId);
+        loadData();
+      } else {
+        alert(data.error || 'Failed to publish flow');
+      }
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handleValidateFlow = async () => {
+    if (!activeFlowId) return;
+    try {
+      const headers = getAuthHeaders();
+      const res = await fetch(`/api/flows/conversation-flows/${activeFlowId}/validate`, {
+        method: 'POST',
+        headers
+      });
+      const data = await res.json();
+      if (data.success) {
+        setValidationReport(data.report);
+        setValidationModalOpen(true);
+      }
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  const handleCreateNewFlow = async () => {
+    const name = window.prompt('Enter name for the new Conversation Flow:', 'Custom Customer Journey');
+    if (!name || !name.trim()) return;
+    try {
+      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      const res = await fetch('/api/flows/conversation-flows', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          name: name.trim(),
+          description: 'Custom conversation flow created from studio',
+          category: 'CUSTOM',
+          nodes: [
+            {
+              id: 'node_start',
+              type: 'START',
+              title: 'Start Conversation',
+              position: { x: 80, y: 150 },
+              config: {}
+            },
+            {
+              id: 'node_welcome',
+              type: 'MESSAGE',
+              title: 'Welcome Message',
+              position: { x: 340, y: 150 },
+              config: { text: 'Hello {{name}}! Welcome to {{property.name}}. How can we assist you today?' }
+            }
+          ],
+          transitions: [
+            {
+              id: 'trans_start_welcome',
+              from: 'node_start',
+              to: 'node_welcome',
+              type: 'ALWAYS'
+            }
+          ],
+          variables: {}
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.flow) {
+        setFlowsList(prev => [data.flow, ...prev]);
+        setActiveFlowId(data.flow.id);
+        loadFlowDetails(data.flow.id);
+        setStudioMode('BUILDER');
+      } else {
+        alert(data.error || 'Failed to create new flow');
+      }
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  const handleArchiveFlow = async (flowId, flowName) => {
+    if (!window.confirm(`Are you sure you want to archive flow "${flowName}"?`)) return;
+    try {
+      const headers = getAuthHeaders();
+      const res = await fetch(`/api/flows/conversation-flows/${flowId}/archive`, {
+        method: 'POST',
+        headers
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFlowsList(prev => prev.filter(f => f.id !== flowId));
+        if (activeFlowId === flowId) {
+          const remaining = flowsList.filter(f => f.id !== flowId);
+          if (remaining.length > 0) {
+            setActiveFlowId(remaining[0].id);
+            loadFlowDetails(remaining[0].id);
+          } else {
+            setActiveFlowId(null);
+            setActiveFlow(null);
+            setCurrentNodes([]);
+            setCurrentTransitions([]);
+          }
+        }
+      } else {
+        alert(data.error || 'Failed to archive flow');
+      }
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  const handleRollback = async (verNumber) => {
+    if (!activeFlowId) return;
+    const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+    const res = await fetch(`/api/flows/conversation-flows/${activeFlowId}/rollback`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ targetVersionNumber: verNumber })
+    });
+    const data = await res.json();
+    if (data.success) {
+      loadFlowDetails(activeFlowId);
+    }
+  };
+
+  const handleCloneTemplate = async (templateSlug, customName) => {
+    try {
+      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      const res = await fetch(`/api/flows/conversation-templates/${templateSlug}/clone`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ name: customName })
+      });
+      const data = await res.json();
+      if (data.success && data.flow) {
+        setTemplatesModalOpen(false);
+        setStudioMode('BUILDER');
+        loadData();
+        loadFlowDetails(data.flow.id);
+      }
+    } catch (e) {
+      alert(e.message);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -698,7 +982,781 @@ export default function AutoReplyBotPage({ onNavigate }) {
         </div>
       </div>
 
-      {/* Main Workspace: Left Settings (Tabs) | Right Live Phone Mockup & Sandbox */}
+      {/* Master Studio Mode Switcher */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '12px',
+        background: '#FFFFFF',
+        borderRadius: '12px',
+        border: '1px solid #E5E5E8',
+        padding: '10px 14px',
+        marginBottom: '20px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          {[
+            { id: 'BUILDER', label: 'Visual Flow Builder', icon: GitBranch, color: '#2F5219' },
+            { id: 'LIBRARY', label: 'Flows & Blueprints', icon: Library, color: '#2563EB' },
+            { id: 'MESSAGES', label: 'Message Templates', icon: MessageSquare, color: '#7C3AED' },
+            { id: 'SIMULATOR', label: 'Test Simulator', icon: Smartphone, color: '#D97706' },
+            { id: 'ANALYTICS', label: 'Analytics & Reports', icon: BarChart3, color: '#059669' },
+            { id: 'LEGACY', label: 'Channel Settings & Rules', icon: Sliders, color: '#475569' }
+          ].map(m => {
+            const Icon = m.icon;
+            const isSelected = studioMode === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setStudioMode(m.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  border: isSelected ? `1.5px solid ${m.color}` : '1px solid transparent',
+                  background: isSelected ? `${m.color}15` : 'transparent',
+                  color: isSelected ? m.color : '#475569',
+                  fontSize: '0.86rem',
+                  fontWeight: isSelected ? 700 : 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Icon size={16} color={isSelected ? m.color : '#64748B'} />
+                <span>{m.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {activeFlow && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '0.8rem',
+            color: '#475569',
+            background: '#F1F5F9',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            border: '1px solid #E2E8F0'
+          }}>
+            <span style={{
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              background: activeFlow.status === 'PUBLISHED' ? '#16A34A' : '#F59E0B'
+            }} />
+            <span>Active Flow: <strong>{activeFlow.name}</strong></span>
+          </div>
+        )}
+      </div>
+
+      {/* MODE 1: VISUAL FLOW BUILDER */}
+      {studioMode === 'BUILDER' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Builder Action Toolbar */}
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '12px',
+            border: '1px solid #E5E5E8',
+            padding: '12px 18px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#67676B' }}>Flow:</span>
+                <select
+                  value={activeFlowId || ''}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setActiveFlowId(val);
+                    loadFlowDetails(val);
+                  }}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '0.86rem',
+                    fontWeight: 600,
+                    borderRadius: '8px',
+                    border: '1px solid #CBD5E1',
+                    background: '#FFFFFF',
+                    color: '#1E293B',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {flowsList.map(f => (
+                    <option key={f.id} value={f.id}>
+                      {f.name} ({f.status === 'PUBLISHED' ? 'Published' : 'Draft'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {activeFlow && (
+                <span style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  padding: '3px 8px',
+                  borderRadius: '12px',
+                  textTransform: 'uppercase',
+                  background: activeFlow.status === 'PUBLISHED' ? '#DCFCE7' : '#FEF3C7',
+                  color: activeFlow.status === 'PUBLISHED' ? '#166534' : '#92400E',
+                  border: activeFlow.status === 'PUBLISHED' ? '1px solid #BBF7D0' : '1px solid #FDE68A'
+                }}>
+                  {activeFlow.status === 'PUBLISHED' ? 'Published' : 'Draft'}
+                </span>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setTemplatesModalOpen(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  fontSize: '0.82rem',
+                  borderRadius: '6px',
+                  border: '1px solid #E2E8F0',
+                  background: '#F8FAFC',
+                  color: '#334155',
+                  cursor: 'pointer'
+                }}
+              >
+                <Sparkles size={14} color="#6366F1" />
+                <span>Blueprints</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setVersionsModalOpen(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  fontSize: '0.82rem',
+                  borderRadius: '6px',
+                  border: '1px solid #E2E8F0',
+                  background: '#F8FAFC',
+                  color: '#334155',
+                  cursor: 'pointer'
+                }}
+              >
+                <History size={14} color="#64748B" />
+                <span>Version History</span>
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={handleValidateFlow}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 14px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  color: '#334155',
+                  cursor: 'pointer'
+                }}
+              >
+                <CheckSquare size={14} color="#059669" />
+                <span>Validate Graph</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setStudioMode('SIMULATOR')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 14px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  border: '1px solid #FDE68A',
+                  background: '#FEF3C7',
+                  color: '#92400E',
+                  cursor: 'pointer'
+                }}
+              >
+                <Smartphone size={14} />
+                <span>Zero-Cost Simulator</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveFlowDraft}
+                disabled={savingDraft}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 14px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  color: '#1E293B',
+                  cursor: 'pointer'
+                }}
+              >
+                {savingDraft ? <RotateCcw size={14} className="spin" /> : <Save size={14} />}
+                <span>{savingDraft ? 'Saving...' : 'Save Draft'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePublishFlow}
+                disabled={publishing}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '7px 16px',
+                  fontSize: '0.82rem',
+                  fontWeight: 600,
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: '#2F5219',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(47,82,25,0.25)'
+                }}
+              >
+                {publishing ? <RotateCcw size={14} className="spin" /> : <Play size={14} />}
+                <span>{publishing ? 'Publishing...' : 'Publish to Live'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Canvas & Drawer Container */}
+          <div style={{
+            display: 'flex',
+            height: '760px',
+            background: '#FFFFFF',
+            borderRadius: '12px',
+            border: '1px solid #E5E5E8',
+            overflow: 'hidden',
+            position: 'relative'
+          }}>
+            <div style={{ flex: 1, height: '100%', position: 'relative' }}>
+              <FlowCanvas
+                nodes={currentNodes}
+                transitions={currentTransitions}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={setSelectedNodeId}
+                onUpdateNodes={setCurrentNodes}
+                onUpdateTransitions={setCurrentTransitions}
+              />
+            </div>
+
+            {selectedNodeId && currentNodes.find(n => n.id === selectedNodeId) && (
+              <NodeInspectorDrawer
+                node={currentNodes.find(n => n.id === selectedNodeId)}
+                nodes={currentNodes}
+                variables={currentVariables}
+                onUpdateNode={updated => {
+                  setCurrentNodes(nodes => nodes.map(n => n.id === updated.id ? updated : n));
+                }}
+                onClose={() => setSelectedNodeId(null)}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODE 2: FLOWS & STARTER BLUEPRINTS */}
+      {studioMode === 'LIBRARY' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '12px',
+            border: '1px solid #E5E5E8',
+            padding: '20px 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '16px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+          }}>
+            <div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 4px 0', color: '#171719' }}>
+                Conversation Flows &amp; Customer Journeys
+              </h2>
+              <p style={{ fontSize: '0.85rem', color: '#67676B', margin: 0 }}>
+                Manage multi-turn conversation workflows, customer onboarding funnels, and automated quotation journeys.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setTemplatesModalOpen(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '9px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid #E2E8F0',
+                  background: '#F8FAFC',
+                  color: '#1E293B',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                <Sparkles size={16} color="#6366F1" />
+                <span>Browse Blueprints</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCreateNewFlow}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '9px 18px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: '#2F5219',
+                  color: '#FFFFFF',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 6px rgba(47,82,25,0.25)'
+                }}
+              >
+                <Plus size={16} />
+                <span>Create New Flow</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Flows Grid */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+            gap: '18px'
+          }}>
+            {flowsList.map(flow => {
+              const isCurrent = activeFlowId === flow.id;
+              return (
+                <div
+                  key={flow.id}
+                  style={{
+                    background: '#FFFFFF',
+                    borderRadius: '12px',
+                    border: isCurrent ? '2px solid #2F5219' : '1px solid #E5E5E8',
+                    padding: '20px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: '16px',
+                    boxShadow: isCurrent ? '0 4px 12px rgba(47,82,25,0.1)' : '0 1px 3px rgba(0,0,0,0.04)',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <span style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: '10px',
+                        textTransform: 'uppercase',
+                        background: flow.status === 'PUBLISHED' ? '#DCFCE7' : '#FEF3C7',
+                        color: flow.status === 'PUBLISHED' ? '#166534' : '#92400E',
+                        border: flow.status === 'PUBLISHED' ? '1px solid #BBF7D0' : '1px solid #FDE68A'
+                      }}>
+                        {flow.status === 'PUBLISHED' ? 'Published' : 'Draft'}
+                      </span>
+
+                      <span style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        padding: '3px 8px',
+                        borderRadius: '10px',
+                        background: '#F1F5F9',
+                        color: '#475569',
+                        border: '1px solid #E2E8F0'
+                      }}>
+                        {flow.category || 'HOSPITALITY'}
+                      </span>
+                    </div>
+
+                    <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#171719', margin: '0 0 6px 0' }}>
+                      {flow.name}
+                    </h3>
+                    <p style={{ fontSize: '0.82rem', color: '#67676B', margin: 0, lineHeight: 1.45, minHeight: '38px' }}>
+                      {flow.description || 'Custom multi-turn automated customer conversation journey.'}
+                    </p>
+                  </div>
+
+                  <div style={{
+                    paddingTop: '14px',
+                    borderTop: '1px solid #F1F5F9',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: '#64748B' }}>
+                      <span>Flow ID: <code>{flow.id.substring(0, 16)}...</code></span>
+                      <span>Active v{flow.published_version_number || flow.publishedVersionNumber || 1}</span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveFlowId(flow.id);
+                          loadFlowDetails(flow.id);
+                          setStudioMode('BUILDER');
+                        }}
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          padding: '7px 12px',
+                          borderRadius: '6px',
+                          border: '1px solid #CBD5E1',
+                          background: '#F8FAFC',
+                          color: '#1E293B',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <Edit2 size={13} />
+                        <span>Edit in Builder</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveFlow(flow);
+                          setActiveFlowId(flow.id);
+                          setVersionsModalOpen(true);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          padding: '7px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid #E2E8F0',
+                          background: '#FFFFFF',
+                          color: '#475569',
+                          fontSize: '0.8rem',
+                          cursor: 'pointer'
+                        }}
+                        title="Version History & Rollback"
+                      >
+                        <History size={14} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveFlowId(flow.id);
+                          loadFlowDetails(flow.id);
+                          setStudioMode('SIMULATOR');
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          padding: '7px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid #FDE68A',
+                          background: '#FEF3C7',
+                          color: '#92400E',
+                          fontSize: '0.8rem',
+                          cursor: 'pointer'
+                        }}
+                        title="Simulate in Zero-Cost Sandbox"
+                      >
+                        <Smartphone size={14} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleArchiveFlow(flow.id, flow.name)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '7px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid #FEE2E2',
+                          background: '#FEF2F2',
+                          color: '#DC2626',
+                          fontSize: '0.8rem',
+                          cursor: 'pointer'
+                        }}
+                        title="Archive Flow"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Starter Templates Highlight Section */}
+          <div style={{
+            marginTop: '12px',
+            background: '#F8FAFC',
+            borderRadius: '12px',
+            border: '1px solid #E2E8F0',
+            padding: '24px'
+          }}>
+            <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '0 0 4px 0', color: '#1E293B' }}>
+                  ⚡ Pre-Engineered Starter Journeys
+                </h3>
+                <p style={{ fontSize: '0.82rem', color: '#64748B', margin: 0 }}>
+                  Clone industry-tested conversation blueprints with 1-click and customize them on the visual canvas.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTemplatesModalOpen(true)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#2F5219',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                <span>View All Blueprints</span>
+                <ArrowRight size={14} />
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
+              {templatesList.map(tpl => (
+                <div
+                  key={tpl.slug}
+                  style={{
+                    background: '#FFFFFF',
+                    borderRadius: '10px',
+                    border: '1px solid #E2E8F0',
+                    padding: '16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: '12px'
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                      <div style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        background: '#EDF4E6',
+                        color: '#2F5219',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <Hotel size={16} />
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: '0.88rem', color: '#1E293B' }}>{tpl.title}</div>
+                    </div>
+                    <p style={{ fontSize: '0.78rem', color: '#64748B', margin: 0, lineHeight: 1.45 }}>
+                      {tpl.description}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCloneTemplate(tpl.slug, `${tpl.title} (Clone)`)}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px',
+                      padding: '7px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid #C3D1AC',
+                      background: '#EDF4E6',
+                      color: '#2F5219',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Copy size={13} />
+                    <span>Clone Blueprint</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODE 3: MESSAGE TEMPLATES STUDIO */}
+      {studioMode === 'MESSAGES' && (
+        <MessageTemplatesStudio token={token} />
+      )}
+
+      {/* MODE 4: TEST SIMULATOR SANDBOX */}
+      {studioMode === 'SIMULATOR' && (
+        <div style={{
+          background: '#FFFFFF',
+          borderRadius: '12px',
+          border: '1px solid #E5E5E8',
+          padding: '24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '20px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: '#171719' }}>
+                  Interactive Flow Simulator &amp; Sandbox
+                </h2>
+                <span style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  background: '#EDF4E6',
+                  color: '#2F5219',
+                  border: '1px solid #C3D1AC',
+                  padding: '2px 8px',
+                  borderRadius: '10px'
+                }}>
+                  Zero Meta API Costs
+                </span>
+              </div>
+              <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: '#67676B' }}>
+                Simulate multi-turn journeys, button clicks, quotes, and state transitions in memory. No live WhatsApp messages are dispatched.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#67676B' }}>Simulating Flow:</span>
+              <select
+                value={activeFlowId || ''}
+                onChange={e => {
+                  const val = e.target.value;
+                  setActiveFlowId(val);
+                  loadFlowDetails(val);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF'
+                }}
+              >
+                {flowsList.map(f => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <FlowSimulatorPanel
+            flow={activeFlow}
+            currentNodes={currentNodes}
+            currentTransitions={currentTransitions}
+            token={token}
+          />
+        </div>
+      )}
+
+      {/* MODE 5: ANALYTICS & REPORTS */}
+      {studioMode === 'ANALYTICS' && (
+        <div style={{
+          background: '#FFFFFF',
+          borderRadius: '12px',
+          border: '1px solid #E5E5E8',
+          padding: '24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '20px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+            <div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 4px 0', color: '#171719' }}>
+                Conversation Funnel &amp; Dropoff Analytics
+              </h2>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: '#67676B' }}>
+                Real-time conversation metrics, completion conversion rates, and staff handoff escalations.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#67676B' }}>Flow:</span>
+              <select
+                value={activeFlowId || ''}
+                onChange={e => {
+                  const val = e.target.value;
+                  setActiveFlowId(val);
+                  loadFlowDetails(val);
+                }}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF'
+                }}
+              >
+                {flowsList.map(f => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <FlowAnalyticsPanel flowId={activeFlowId} token={token} />
+        </div>
+      )}
+
+      {/* MODE 6: LEGACY CHANNEL SETTINGS & DIRECT RULES */}
+      {studioMode === 'LEGACY' && (
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'minmax(0, 1.4fr) minmax(380px, 1fr)',
@@ -797,7 +1855,27 @@ export default function AutoReplyBotPage({ onNavigate }) {
                 {/* Engine Mode Selection */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <label style={{ fontSize: '0.84rem', fontWeight: 600 }}>Automation Engine Mode</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                    <div
+                      onClick={() => setSettings(prev => ({ ...prev, engineMode: 'FLOW_STUDIO' }))}
+                      style={{
+                        border: settings.engineMode === 'FLOW_STUDIO' ? '2px solid #2F5219' : '1px solid #E5E5E8',
+                        background: settings.engineMode === 'FLOW_STUDIO' ? '#F3F6EE' : '#FFFFFF',
+                        borderRadius: '10px',
+                        padding: '16px',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#2F5219' }}>✨ Flow Studio Engine</span>
+                        {settings.engineMode === 'FLOW_STUDIO' && <CheckCircle2 size={18} color="#2F5219" />}
+                      </div>
+                      <p style={{ fontSize: '0.78rem', color: '#67676B', margin: 0, lineHeight: 1.45 }}>
+                        Visual conversation flows with custom branching, input collection, server-side quotes &amp; CRM actions.
+                      </p>
+                    </div>
+
                     <div
                       onClick={() => setSettings(prev => ({ ...prev, engineMode: 'HOSPITALITY_FLOW' }))}
                       style={{
@@ -1963,6 +3041,136 @@ export default function AutoReplyBotPage({ onNavigate }) {
           </div>
         </div>
       </div>
+      )}
+
+      {/* Graph Validation Report Modal */}
+      {validationModalOpen && validationReport && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.5)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '620px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '18px 24px',
+              borderBottom: '1px solid #E5E5E8',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: validationReport.isValid ? '#F0FDF4' : '#FEF2F2'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {validationReport.isValid ? (
+                  <CheckCircle2 size={22} color="#16A34A" />
+                ) : (
+                  <AlertTriangle size={22} color="#DC2626" />
+                )}
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: validationReport.isValid ? '#166534' : '#991B1B' }}>
+                  {validationReport.isValid ? 'Graph Validation Passed' : 'Graph Validation Issues Detected'}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setValidationModalOpen(false)}
+                style={{ background: 'none', border: 'none', fontSize: '1.2rem', cursor: 'pointer', color: '#67676B' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '65vh', overflowY: 'auto' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ padding: '12px', borderRadius: '8px', background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 600 }}>TOTAL CANVAS NODES</div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#1E293B' }}>{currentNodes.length}</div>
+                </div>
+                <div style={{ padding: '12px', borderRadius: '8px', background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 600 }}>TOTAL TRANSITIONS</div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 700, color: '#1E293B' }}>{currentTransitions.length}</div>
+                </div>
+              </div>
+
+              {validationReport.errors && validationReport.errors.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#DC2626', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <AlertTriangle size={16} />
+                    <span>Errors (Must be resolved before publishing):</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {validationReport.errors.map((err, i) => (
+                      <div key={i} style={{ padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: '6px', fontSize: '0.82rem', color: '#991B1B' }}>
+                        • {err}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {validationReport.warnings && validationReport.warnings.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ fontSize: '0.84rem', fontWeight: 700, color: '#D97706', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Info size={16} />
+                    <span>Warnings &amp; Recommendations:</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {validationReport.warnings.map((warn, i) => (
+                      <div key={i} style={{ padding: '8px 12px', background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: '6px', fontSize: '0.82rem', color: '#92400E' }}>
+                        • {warn}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {validationReport.isValid && (!validationReport.warnings || validationReport.warnings.length === 0) && (
+                <p style={{ margin: 0, fontSize: '0.88rem', color: '#166534', lineHeight: 1.5 }}>
+                  ✓ All start nodes, message prompts, transitions, and business action bindings are fully reachable and compliant with WhatsApp Cloud API constraints. You can safely publish this flow to live WhatsApp chats.
+                </p>
+              )}
+            </div>
+
+            <div style={{ padding: '14px 24px', borderTop: '1px solid #E5E5E8', background: '#FAFAFB', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setValidationModalOpen(false)}
+                className="btn btn-secondary"
+                style={{ fontSize: '0.84rem' }}
+              >
+                Close Report
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Starter Blueprints Modal */}
+      <FlowTemplatesModal
+        isOpen={templatesModalOpen}
+        onClose={() => setTemplatesModalOpen(false)}
+        templates={templatesList}
+        onCloneTemplate={handleCloneTemplate}
+      />
+
+      {/* Version History & Rollback Modal */}
+      <FlowVersionsModal
+        isOpen={versionsModalOpen}
+        onClose={() => setVersionsModalOpen(false)}
+        flow={activeFlow}
+        token={token}
+        onRollback={handleRollback}
+      />
 
       {/* Admin Dynamic Rule Edit / Create Modal */}
       {ruleModalOpen && editingRule && (

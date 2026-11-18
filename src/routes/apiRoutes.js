@@ -354,6 +354,11 @@ router.get("/templates/:templateId", authenticateToken, templateController.getTe
 router.delete("/templates/:templateId", authenticateToken, requireAdmin, templateController.deleteTemplate);
 
 // =========================================================================
+// 6.4. CONVERSATION FLOW & AUTOMATION STUDIO MODULE
+// =========================================================================
+router.use(require("./conversationFlowRoutes"));
+
+// =========================================================================
 // 6.5. WHATSAPP FLOWS MANAGEMENT (Protected & Scoped)
 // =========================================================================
 const flowController = require("../controllers/flowController");

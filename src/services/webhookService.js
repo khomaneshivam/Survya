@@ -1777,6 +1777,150 @@ class WebhookService {
         ...(isSimulation ? { isSimulation: true } : {})
       };
 
+      // 6b. Dynamic Conversation Flow & Automation Studio Engine
+      // If client is configured in FLOW_STUDIO mode or an active studio session is open:
+      const isStudioMode = autoReplySettings.engineMode === "FLOW_STUDIO" || autoReplySettings.engineMode === "CONVERSATION_FLOW";
+      const flowEngine = require("./conversationFlowEngine");
+      const activeFlowSession = db.prepare(`
+        SELECT id FROM conversation_flow_sessions
+        WHERE sender_phone = ? AND session_status = 'ACTIVE'
+        LIMIT 1
+      `).get(cleanPhone);
+
+      const hasPublishedFlows = db.prepare(`
+        SELECT id FROM conversation_flows
+        WHERE tenant_id = 1 AND status = 'PUBLISHED'
+        LIMIT 1
+      `).get();
+
+      if (isStudioMode && (activeFlowSession || hasPublishedFlows)) {
+        // Universal Deduplication check for initial greeting
+        if (!activeFlowSession && !isInteractiveAction && !isResumeKeyword) {
+          if (autoReplySettings.mode === "ONCE_PER_CONTACT") {
+            const prior = db.prepare(`
+              SELECT id FROM customer_replies 
+              WHERE from_phone = ? AND id != ? AND reply_status = 'AUTO_REPLIED'
+              LIMIT 1
+            `).get(cleanPhone, replyRecord.id);
+            if (prior) {
+              console.log(`[Webhook Flow] Deduplication: contact ${cleanPhone} already replied once. Skipping.`);
+              return null;
+            }
+          } else if (autoReplySettings.mode === "ONCE_PER_24_HOURS") {
+            const prior = db.prepare(`
+              SELECT id FROM customer_replies 
+              WHERE from_phone = ? AND id != ? AND reply_status = 'AUTO_REPLIED'
+                AND received_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+              LIMIT 1
+            `).get(cleanPhone, replyRecord.id);
+            if (prior) {
+              console.log(`[Webhook Flow] Deduplication: contact ${cleanPhone} already replied in last 24h. Skipping.`);
+              return null;
+            }
+          }
+        }
+        try {
+          const flowResult = await flowEngine.processTurn({
+            senderPhone: cleanPhone,
+            userInput: effectiveText,
+            userPayload: rawMsg?.interactive?.button_reply || rawMsg?.interactive?.list_reply || null,
+            context: {
+              tenantId: 1,
+              propertyId: 1,
+              channel: "WHATSAPP",
+              isSimulation: isSimulation
+            }
+          });
+
+          if (flowResult && flowResult.handled && flowResult.replyText) {
+            let sentMsgId = null;
+            if (flowResult.replyInteractive && flowResult.replyInteractive.options?.length > 0) {
+              const buttons = flowResult.replyInteractive.options.map(o => ({
+                id: o.id,
+                title: o.title
+              }));
+              try {
+                if (buttons.length <= 3) {
+                  const bRes = await sendInteractiveButtons({
+                    to: cleanPhone,
+                    bodyText: flowResult.replyText,
+                    buttons,
+                    footerText: autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa",
+                    customCredentials
+                  });
+                  sentMsgId = bRes?.messageId || null;
+                } else {
+                  const lRes = await sendInteractiveList({
+                    to: cleanPhone,
+                    bodyText: flowResult.replyText,
+                    buttonText: "Choose Option",
+                    sections: [{
+                      title: "Options",
+                      rows: buttons.map(b => ({ id: b.id, title: b.title }))
+                    }],
+                    footerText: autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa",
+                    customCredentials
+                  });
+                  sentMsgId = lRes?.messageId || null;
+                }
+              } catch (btnErr) {
+                const txtRes = await sendTextMessage({
+                  to: cleanPhone,
+                  body: flowResult.replyText,
+                  customCredentials
+                });
+                sentMsgId = txtRes?.messageId || null;
+              }
+            } else {
+              const txtRes = await sendTextMessage({
+                to: cleanPhone,
+                body: flowResult.replyText,
+                customCredentials
+              });
+              sentMsgId = txtRes?.messageId || null;
+            }
+
+            const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+            const botReplyId = `bot_flow_${Date.now()}`;
+            try {
+              db.prepare(`
+                INSERT INTO customer_replies (
+                  wa_message_id, from_phone, customer_name, message_type,
+                  message_body, reply_text, reply_sent_at, reply_status,
+                  link_id, source, is_read, user_id, received_at
+                ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'CONVERSATION_FLOW', 1, 'bot', ?)
+              `).run(botReplyId, cleanPhone, replyRecord.customer_name || "Guest", flowResult.replyText, flowResult.replyText, nowIso, replyRecord.link_id || null, nowIso);
+            } catch (e) {}
+
+            db.prepare(`
+              UPDATE customer_replies 
+              SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
+              WHERE id = ?
+            `).run(flowResult.replyText, nowIso, replyRecord.id);
+
+            const updatedRecord = {
+              ...replyRecord,
+              reply_text: flowResult.replyText,
+              reply_sent_at: nowIso,
+              reply_status: "AUTO_REPLIED"
+            };
+
+            broadcastEngine.emit("webhook:reply_updated", updatedRecord);
+            return {
+              success: true,
+              flowEngine: true,
+              messageId: sentMsgId,
+              replyText: flowResult.replyText,
+              sessionKey: flowResult.sessionKey,
+              currentNodeId: flowResult.currentNodeId
+            };
+          }
+        } catch (engineErr) {
+          console.warn("[Webhook Flow] Conversation Flow Engine fallback:", engineErr.message);
+          // Fall through to legacy handlers
+        }
+      }
+
       // 7. Simple Greeting Engine Mode (if business client configured simple greeting instead of interactive flow)
       if (autoReplySettings.engineMode === "SIMPLE_GREETING") {
         if (!isInteractiveAction && !isResumeKeyword) {
@@ -3066,7 +3210,7 @@ class WebhookService {
       setSetting("AUTO_REPLY_MODE", mode);
     }
     const engineMode = payload.engineMode || payload.engine_mode;
-    if (engineMode && (engineMode === "HOSPITALITY_FLOW" || engineMode === "SIMPLE_GREETING")) {
+    if (engineMode && (engineMode === "HOSPITALITY_FLOW" || engineMode === "SIMPLE_GREETING" || engineMode === "FLOW_STUDIO" || engineMode === "CONVERSATION_FLOW")) {
       setSetting("AUTO_REPLY_ENGINE_MODE", engineMode);
     }
     const msg = payload.fallbackMessage !== undefined ? payload.fallbackMessage : (payload.message !== undefined ? payload.message : payload.auto_reply_message);
