@@ -8,6 +8,7 @@ import BroadcastPage from './pages/BroadcastPage';
 import FlowsPage from './pages/FlowsPage';
 import AutomationPage from './pages/AutomationPage';
 import InboxPage from './pages/InboxPage';
+import AutoReplyBotPage from './pages/AutoReplyBotPage';
 import ReportsPage from './pages/ReportsPage';
 import SystemAdminPanel from './pages/SystemAdminPanel';
 import SettingsPage from './pages/SettingsPage';
@@ -231,7 +232,8 @@ function AppContent() {
               {activeTab === 'links' && <ChatLinksPage onNavigate={setActiveTab} />}
               {activeTab === 'flows' && <FlowsPage />}
               {activeTab === 'automation' && <AutomationPage />}
-              {activeTab === 'inbox' && <InboxPage />}
+              {activeTab === 'inbox' && <InboxPage onNavigate={setActiveTab} />}
+              {activeTab === 'autoreply' && <AutoReplyBotPage onNavigate={setActiveTab} />}
               {activeTab === 'ai' && <AiAssistantPage />}
               {activeTab === 'reports' && <ReportsPage />}
               {activeTab === 'pricing' && (

@@ -383,7 +383,7 @@ function getChannelMeta(channelType, convo) {
   }
 }
 
-export default function InboxPage() {
+export default function InboxPage({ onNavigate }) {
   const { token } = useAuth();
   const [conversations, setConversations] = useState([]);
   const [selectedConvo, setSelectedConvo] = useState(null);
@@ -1601,8 +1601,12 @@ export default function InboxPage() {
           <button
             type="button"
             onClick={() => {
-              loadAutoReplySettings();
-              setShowAutoReplyModal(true);
+              if (onNavigate) {
+                onNavigate('autoreply');
+              } else {
+                loadAutoReplySettings();
+                setShowAutoReplyModal(true);
+              }
             }}
             className="btn btn-secondary"
             style={{
@@ -3063,20 +3067,37 @@ export default function InboxPage() {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowAutoReplyModal(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#96969C',
-                  cursor: 'pointer',
-                  padding: '6px',
-                  borderRadius: '6px'
-                }}
-              >
-                <X size={18} />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {onNavigate && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAutoReplyModal(false);
+                      onNavigate('autoreply');
+                    }}
+                    className="btn btn-secondary"
+                    style={{ fontSize: '0.78rem', padding: '5px 10px', gap: '5px' }}
+                    title="Open dedicated full-screen page"
+                  >
+                    <span>Full Screen Manager</span>
+                    <ExternalLink size={13} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowAutoReplyModal(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#96969C',
+                    cursor: 'pointer',
+                    padding: '6px',
+                    borderRadius: '6px'
+                  }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {/* Navigation Tabs Bar */}
