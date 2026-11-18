@@ -107,10 +107,22 @@ export default function AutoReplyBotPage({ onNavigate }) {
       if (settingsRes.ok) {
         const resData = await settingsRes.json();
         if (resData.success && resData.data) {
+          const loadedOptions = (Array.isArray(resData.data.dynamicOptions) ? resData.data.dynamicOptions : []).map(r => ({
+            ...r,
+            matchTerms: r.matchTerms || r.triggers || '',
+            triggers: r.triggers || r.matchTerms || '',
+            matcherType: r.matcherType || r.matchType || 'CONTAINS',
+            matchType: r.matchType || r.matcherType || 'CONTAINS',
+            responsePayload: r.responsePayload || r.responseText || '',
+            responseText: r.responseText || r.responsePayload || '',
+            actionType: r.actionType || r.action || 'REPLY_TEXT',
+            isActive: r.isActive !== false && r.active !== false,
+            active: r.active !== false && r.isActive !== false
+          }));
           setSettings(prev => ({
             ...prev,
             ...resData.data,
-            dynamicOptions: Array.isArray(resData.data.dynamicOptions) ? resData.data.dynamicOptions : []
+            dynamicOptions: loadedOptions
           }));
         }
       } else {
@@ -243,16 +255,35 @@ export default function AutoReplyBotPage({ onNavigate }) {
   };
 
   const handleSaveRule = () => {
-    if (!editingRule || !editingRule.title?.trim() || !editingRule.matchTerms?.trim()) {
+    if (!editingRule || !editingRule.title?.trim() || !(editingRule.matchTerms?.trim() || editingRule.triggers?.trim())) {
       alert('Please provide a Title and at least one Match Term.');
       return;
     }
+    const cleanTerms = (editingRule.matchTerms || editingRule.triggers || '').trim();
+    const cleanText = (editingRule.responsePayload || editingRule.responseText || '').trim();
+    const cleanMatcher = editingRule.matcherType || editingRule.matchType || 'CONTAINS';
+    const cleanAction = editingRule.actionType || 'REPLY_TEXT';
+
+    const sanitizedRule = {
+      ...editingRule,
+      title: editingRule.title.trim(),
+      matchTerms: cleanTerms,
+      triggers: cleanTerms,
+      matcherType: cleanMatcher,
+      matchType: cleanMatcher,
+      responsePayload: cleanText,
+      responseText: cleanText,
+      actionType: cleanAction,
+      isActive: editingRule.isActive !== false && editingRule.active !== false,
+      active: editingRule.isActive !== false && editingRule.active !== false
+    };
+
     const current = Array.isArray(settings.dynamicOptions) ? [...settings.dynamicOptions] : [];
     const idx = current.findIndex(r => r.id === editingRule.id);
     if (idx >= 0) {
-      current[idx] = { ...editingRule };
+      current[idx] = sanitizedRule;
     } else {
-      current.push({ ...editingRule });
+      current.push(sanitizedRule);
     }
     setSettings(prev => ({ ...prev, dynamicOptions: current }));
     setRuleModalOpen(false);
@@ -271,7 +302,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
     setSettings(prev => ({
       ...prev,
       dynamicOptions: (prev.dynamicOptions || []).map(r =>
-        r.id === ruleId ? { ...r, isActive: !r.isActive } : r
+        r.id === ruleId ? { ...r, isActive: !r.isActive, active: !r.isActive } : r
       )
     }));
   };

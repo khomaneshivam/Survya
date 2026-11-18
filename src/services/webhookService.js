@@ -1783,7 +1783,7 @@ class WebhookService {
           if (autoReplySettings.mode === "ONCE_PER_CONTACT") {
             const prior = db.prepare(`
               SELECT id FROM customer_replies 
-              WHERE from_phone = ? AND id != ? AND (reply_status = 'AUTO_REPLIED' OR message_type = 'outbound')
+              WHERE from_phone = ? AND id != ? AND reply_status = 'AUTO_REPLIED'
               LIMIT 1
             `).get(cleanPhone, replyRecord.id);
             if (prior) {
@@ -1793,7 +1793,7 @@ class WebhookService {
           } else if (autoReplySettings.mode === "ONCE_PER_24_HOURS") {
             const prior = db.prepare(`
               SELECT id FROM customer_replies 
-              WHERE from_phone = ? AND id != ? AND (reply_status = 'AUTO_REPLIED' OR message_type = 'outbound')
+              WHERE from_phone = ? AND id != ? AND reply_status = 'AUTO_REPLIED'
                 AND received_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
               LIMIT 1
             `).get(cleanPhone, replyRecord.id);
@@ -1984,14 +1984,14 @@ class WebhookService {
         const cleanOptId = interactiveActionId.replace(/^dyn_/, "").replace(/^opt_/, "");
         matchedDyn = dynamicOptions.find(d => 
           (d.id === cleanOptId || d.id === `opt_${cleanOptId}` || String(d.id) === String(interactiveActionId)) && 
-          d.active !== false
+          d.active !== false && d.isActive !== false
         );
       }
 
       // B) Trigger keyword or title match
       if (!matchedDyn && lower) {
         for (const opt of dynamicOptions) {
-          if (opt.active === false) continue;
+          if (opt.active === false || opt.isActive === false) continue;
 
           // Check if button title matches
           if (opt.title && lower === opt.title.toLowerCase()) {
@@ -2003,19 +2003,22 @@ class WebhookService {
             break;
           }
 
-          // Check triggers
-          const triggers = String(opt.triggers || "")
+          // Check triggers (supporting triggers, matchTerms, and trigger aliases)
+          const rawTriggers = opt.triggers || opt.matchTerms || opt.trigger || "";
+          const triggers = String(rawTriggers)
             .split(",")
             .map(t => t.trim().toLowerCase())
             .filter(Boolean);
 
           if (triggers.length === 0) continue;
 
-          const matchType = opt.matchType || "CONTAINS";
+          const matchType = (opt.matchType || opt.matcherType || "CONTAINS").toUpperCase();
           let matched = false;
 
           if (matchType === "EXACT") {
             matched = triggers.some(t => lower === t);
+          } else if (matchType === "STARTS_WITH") {
+            matched = triggers.some(t => lower.startsWith(t));
           } else if (matchType === "REGEX") {
             matched = triggers.some(t => {
               try { return new RegExp(t, "i").test(lower); } catch (e) { return false; }
@@ -2037,16 +2040,21 @@ class WebhookService {
       }
 
       if (matchedDyn) {
-        console.log(`[Webhook Flow] Executing Dynamic Bot Option: '${matchedDyn.title}' (${matchedDyn.actionType}) for ${cleanPhone}`);
+        const dynAction = (matchedDyn.actionType || matchedDyn.action || "REPLY_TEXT").toUpperCase();
+        console.log(`[Webhook Flow] Executing Dynamic Bot Option: '${matchedDyn.title}' (${dynAction}) for ${cleanPhone}`);
         const bName = autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa";
         const cName = replyRecord.customer_name || "Guest";
         const hPhone = autoReplySettings.handoffPhone || "+91 87665 90634";
         const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
 
-        if (matchedDyn.actionType === "STAFF_TAKEOVER") {
+        // Normalize response text from responseText or responsePayload
+        const rawResponse = matchedDyn.responseText || matchedDyn.responsePayload || matchedDyn.message ||
+          `Thank you for asking about ${matchedDyn.title}! Our team is delighted to assist you.`;
+
+        if (dynAction === "STAFF_TAKEOVER") {
           const pauseMins = autoReplySettings.takeoverPauseMinutes || 60;
           this.pauseBotForPhone(cleanPhone, pauseMins * 60 * 1000);
-          const customStaffMsg = (matchedDyn.responseText || autoReplySettings.handoffMessage || "Connecting with our staff...")
+          const customStaffMsg = (rawResponse || autoReplySettings.handoffMessage || "Connecting with our staff...")
             .replace(/\{\{phone\}\}/gi, hPhone)
             .replace(/\{\{business_name\}\}/gi, bName)
             .replace(/\{\{name\}\}/gi, cName);
@@ -2086,13 +2094,14 @@ class WebhookService {
           return { success: true, handledBy: "DYNAMIC_OPTION_STAFF", replyText: customStaffMsg, messageId: sentMsgId };
         }
 
-        if (matchedDyn.actionType === "DISPATCH_FLOW" && matchedDyn.flowId) {
-          const flow = db.prepare("SELECT * FROM whatsapp_flows WHERE (id = ? OR meta_flow_id = ?)").get(matchedDyn.flowId, matchedDyn.flowId);
+        if (dynAction === "DISPATCH_FLOW") {
+          const targetFlowId = matchedDyn.flowId || matchedDyn.selectedFlowId || autoReplySettings.selectedFlowId;
+          const flow = targetFlowId ? db.prepare("SELECT * FROM whatsapp_flows WHERE (id = ? OR meta_flow_id = ?)").get(targetFlowId, targetFlowId) : null;
           if (flow) {
             const flowCta = shortenButtonTitle(matchedDyn.buttonLabel || flow.name || "Open Form");
             const flowHeader = shortenHeaderText(bName);
-            const flowBody = matchedDyn.responseText
-              ? matchedDyn.responseText.replace(/\{\{name\}\}/gi, cName).replace(/\{\{business_name\}\}/gi, bName)
+            const flowBody = rawResponse
+              ? rawResponse.replace(/\{\{name\}\}/gi, cName).replace(/\{\{business_name\}\}/gi, bName)
               : `Hi ${cName}, please tap below to complete our ${flow.name} form:`;
 
             let sentFlowRes = null;
@@ -2109,43 +2118,48 @@ class WebhookService {
               });
             } catch (e) {}
 
-            const sentSummary = `[Dispatched Flow: ${flow.name}]`;
-            db.prepare(`
-              UPDATE customer_replies 
-              SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
-              WHERE id = ?
-            `).run(sentSummary, nowIso, replyRecord.id);
-
-            const botReplyId = `bot_dyn_flow_${Date.now()}`;
-            try {
+            // If Flow send succeeded
+            if (sentFlowRes && (sentFlowRes.success || sentFlowRes.messageId)) {
+              const sentSummary = `[Dispatched Flow: ${flow.name}]`;
               db.prepare(`
-                INSERT INTO customer_replies (
-                  wa_message_id, from_phone, customer_name, message_type,
-                  message_body, reply_text, reply_sent_at, reply_status,
-                  link_id, source, is_read, user_id, received_at
-                ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
-              `).run(
-                botReplyId, cleanPhone, cName, sentSummary, sentSummary, nowIso, replyRecord.link_id || null, nowIso
-              );
-              const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
-              broadcastEngine.emit("webhook:reply", savedBot);
-            } catch (e) {}
+                UPDATE customer_replies 
+                SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
+                WHERE id = ?
+              `).run(sentSummary, nowIso, replyRecord.id);
 
-            broadcastEngine.emit("inbox:reply", {
-              replyId: replyRecord.id,
-              replyText: sentSummary,
-              replyStatus: "AUTO_REPLIED"
-            });
-            return { success: true, handledBy: "DYNAMIC_OPTION_FLOW", flowId: flow.id, messageId: sentFlowRes?.messageId };
+              const botReplyId = `bot_dyn_flow_${Date.now()}`;
+              try {
+                db.prepare(`
+                  INSERT INTO customer_replies (
+                    wa_message_id, from_phone, customer_name, message_type,
+                    message_body, reply_text, reply_sent_at, reply_status,
+                    link_id, source, is_read, user_id, received_at
+                  ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
+                `).run(
+                  botReplyId, cleanPhone, cName, sentSummary, sentSummary, nowIso, replyRecord.link_id || null, nowIso
+                );
+                const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
+                broadcastEngine.emit("webhook:reply", savedBot);
+              } catch (e) {}
+
+              broadcastEngine.emit("inbox:reply", {
+                replyId: replyRecord.id,
+                replyText: sentSummary,
+                replyStatus: "AUTO_REPLIED"
+              });
+              return { success: true, handledBy: "DYNAMIC_OPTION_FLOW", flowId: flow.id, messageId: sentFlowRes?.messageId };
+            } else {
+              console.warn(`[Webhook Flow] Dynamic option flow dispatch note: ${sentFlowRes?.error || "Meta flow not available"}. Falling back to text response.`);
+            }
           }
         }
 
-        let replyMsg = (matchedDyn.responseText || `Thank you for asking about ${matchedDyn.title}! Our team is delighted to assist you.`)
+        let replyMsg = (rawResponse || `Thank you for asking about ${matchedDyn.title}! Our team is delighted to assist you.`)
           .replace(/\{\{name\}\}/gi, cName)
           .replace(/\{\{business_name\}\}/gi, bName)
           .replace(/\{\{phone\}\}/gi, hPhone);
 
-        if (matchedDyn.actionType === "OPEN_URL" && matchedDyn.url) {
+        if ((dynAction === "OPEN_URL" || matchedDyn.url) && matchedDyn.url) {
           replyMsg += `\n\n🌐 *Explore Link*: ${matchedDyn.url}`;
         }
 
@@ -2405,44 +2419,47 @@ class WebhookService {
         }
       }
 
-      // 9. Hospitality Engine Protection: Deduplicate & Cooldown generic inquiries to stop unprompted stay quotations
+      // 9. Hospitality Engine Protection: Guard against duplicate generic welcome greetings
       const isBookingInquiryWithDates = Boolean(
         hospitalityFlowEngine?.parseNaturalDates ? hospitalityFlowEngine.parseNaturalDates(effectiveText) : null
       );
+      const hasSpecificInquiry = isBookingInquiryWithDates ||
+        /\b(rate|rates|price|prices|tariff|tariffs|room|rooms|cottage|villa|suite|stay|book|booking|reserve|reservation|available|availability|quote|cost|night|nights|weekend|tomorrow|package|packages)\b/i.test(effectiveText);
 
-      if (!isInteractiveAction && !isResumeKeyword && !isBookingInquiryWithDates) {
+      // Only apply frequency deduplication to repeat generic inquiries without specific dates/rates/room intent
+      if (!isInteractiveAction && !isResumeKeyword && !hasSpecificInquiry) {
         if (autoReplySettings.mode === "ONCE_PER_CONTACT") {
           const prior = db.prepare(`
             SELECT id FROM customer_replies 
-            WHERE from_phone = ? AND id != ? AND (reply_status = 'AUTO_REPLIED' OR source = 'WHATSAPP_FLOW')
+            WHERE from_phone = ? AND id != ? AND reply_status = 'AUTO_REPLIED'
             LIMIT 1
           `).get(cleanPhone, replyRecord.id);
           if (prior) {
-            console.log(`[Webhook Flow] Universal Deduplication: contact ${cleanPhone} already received automated flow reply. Skipping unprompted quotation.`);
+            console.log(`[Webhook Flow] Universal Deduplication: contact ${cleanPhone} already received automated flow greeting. Skipping repeat generic greeting.`);
             return null;
           }
         } else if (autoReplySettings.mode === "ONCE_PER_24_HOURS") {
           const prior = db.prepare(`
             SELECT id FROM customer_replies 
-            WHERE from_phone = ? AND id != ? AND (reply_status = 'AUTO_REPLIED' OR source = 'WHATSAPP_FLOW')
+            WHERE from_phone = ? AND id != ? AND reply_status = 'AUTO_REPLIED'
               AND received_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
             LIMIT 1
           `).get(cleanPhone, replyRecord.id);
           if (prior) {
-            console.log(`[Webhook Flow] Universal Deduplication: contact ${cleanPhone} already received automated flow reply in last 24h. Skipping unprompted quotation.`);
+            console.log(`[Webhook Flow] Universal Deduplication: contact ${cleanPhone} already received automated flow greeting in last 24h. Skipping repeat generic greeting.`);
             return null;
           }
         }
 
-        // Rapid duplicate cooldown (3 minutes) to prevent multiple unsolicited dispatches
+        // Rapid duplicate cooldown (30 seconds) for repeated identical generic greetings
         const recentBot = db.prepare(`
           SELECT id FROM customer_replies 
-          WHERE from_phone = ? AND id != ? AND (reply_status = 'AUTO_REPLIED' OR source = 'WHATSAPP_FLOW')
-            AND received_at > DATE_SUB(NOW(), INTERVAL 3 MINUTE)
+          WHERE from_phone = ? AND id != ? AND reply_status = 'AUTO_REPLIED'
+            AND received_at > DATE_SUB(NOW(), INTERVAL 30 SECOND)
           LIMIT 1
         `).get(cleanPhone, replyRecord.id);
         if (recentBot) {
-          console.log(`[Webhook Flow] Cooldown active for ${cleanPhone}: automated reply sent within last 3 minutes. Skipping unprompted quotation.`);
+          console.log(`[Webhook Flow] Rapid greeting cooldown active for ${cleanPhone}. Skipping repeat.`);
           return null;
         }
       }
@@ -2674,8 +2691,7 @@ class WebhookService {
                   screenData.room_preference = rawPayload.selected_room.name;
                 }
 
-                const flowSendFn = metaWhatsAppService.sendFlowMessage || sendFlowMessage;
-                const flowSendRes = await flowSendFn({
+                const flowSendRes = await sendFlowMessage({
                   to: cleanPhone,
                   flowId: metaFlowId,
                   flowToken,
@@ -2692,6 +2708,9 @@ class WebhookService {
                   sentMessageId = flowSendRes.messageId;
                   deliveredInteractive = true;
                   flowDispatched = true;
+                  console.log(`[Webhook Flow] ✓ Meta Flow (${metaFlowId}) delivered to ${cleanPhone}. ID: ${sentMessageId}`);
+                } else {
+                  console.warn(`[Webhook Flow] Meta Flow (${metaFlowId}) dispatch note: ${flowSendRes?.error || "Not published/blocked by Meta"}. Activating interactive concierge buttons fallback.`);
                 }
               } catch (flowErr) {
                 console.warn("[Webhook Flow] Flow send fallback to buttons:", flowErr.message);
