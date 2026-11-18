@@ -262,4 +262,18 @@ describe("Conversational Concierge & Auto-Reply Bot Customization Test Suite", (
       takeoverPauseMinutes: 60
     });
   });
+
+  after(() => {
+    if (server) {
+      server.close();
+    }
+    try {
+      if (testLinkId) {
+        db.prepare("DELETE FROM chat_links WHERE id = ?").run(testLinkId);
+      }
+      db.prepare("DELETE FROM chat_links WHERE slug LIKE 'custom-bot-test-%'").run();
+      db.prepare("DELETE FROM users WHERE id = ?").run(testUserId);
+      db.prepare("DELETE FROM customer_replies WHERE from_phone = ? OR from_phone = ?").run(guestPhone, `+${guestPhone}`);
+    } catch (e) {}
+  });
 });

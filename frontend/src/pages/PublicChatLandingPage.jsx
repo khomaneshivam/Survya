@@ -1052,8 +1052,11 @@ export default function PublicChatLandingPage({ slug }) {
     handleSendMessage(activeMessage);
   };
 
+  const targetPhone = (linkData?.phoneNumber || linkData?.phone_number || '').replace(/[^\d]/g, '');
   const waUrl = linkData?.urls?.waMeUrl 
-    || `https://wa.me/${linkData?.phoneNumber || linkData?.phone_number || '919209967364'}?text=${encodeURIComponent(`Hi ${linkData?.welcomeTitle || 'KonkanTrip'}! My name is ${customerName || 'Guest'}.`)}`;
+    || (targetPhone 
+        ? `https://wa.me/${targetPhone}?text=${encodeURIComponent(`Hi ${linkData?.welcomeTitle || 'KonkanTrip'}! My name is ${customerName || 'Guest'}.`)}`
+        : '#');
 
   if (loading) {
     return (

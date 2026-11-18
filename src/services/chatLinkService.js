@@ -227,6 +227,8 @@ function createLink({
 
   const defaultCountry = getSetting("DEFAULT_COUNTRY_CODE") || "91";
   let rawPhone = phoneNumber;
+  let rawPhoneId = phoneNumberId;
+
   if (!rawPhone || !String(rawPhone).trim()) {
     try {
       if (userId && userId !== "system") {
@@ -238,27 +240,45 @@ function createLink({
         `).get(userId);
         if (userAssigned?.phone_number) {
           rawPhone = userAssigned.phone_number;
-          if (!phoneNumberId) phoneNumberId = userAssigned.phone_number_id;
+          if (!rawPhoneId) rawPhoneId = userAssigned.phone_number_id;
         }
       }
       if (!rawPhone) {
-        const waba = db.prepare("SELECT phone_number, phone_number_id FROM waba_phone_numbers ORDER BY is_default DESC, id ASC LIMIT 1").get();
-        if (waba?.phone_number) {
-          rawPhone = waba.phone_number;
-          if (!phoneNumberId) phoneNumberId = waba.phone_number_id;
+        const defaultWaba = db.prepare("SELECT phone_number, phone_number_id FROM waba_phone_numbers WHERE is_default = 1 LIMIT 1").get();
+        if (defaultWaba?.phone_number) {
+          rawPhone = defaultWaba.phone_number;
+          if (!rawPhoneId) rawPhoneId = defaultWaba.phone_number_id;
+        }
+      }
+      if (!rawPhone) {
+        const anyWaba = db.prepare("SELECT phone_number, phone_number_id FROM waba_phone_numbers ORDER BY is_default DESC, id ASC LIMIT 1").get();
+        if (anyWaba?.phone_number) {
+          rawPhone = anyWaba.phone_number;
+          if (!rawPhoneId) rawPhoneId = anyWaba.phone_number_id;
         }
       }
     } catch (e) {}
   }
-  if (!rawPhone || !String(rawPhone).trim()) {
-    try {
-      const u = db.prepare("SELECT phone FROM users WHERE id = ?").get(userId);
-      if (u?.phone) rawPhone = u.phone;
-    } catch (e) {}
-  }
+
+  // Fall back to verified system default WABA phone number if still unassigned
   if (!rawPhone || !String(rawPhone).trim()) {
     rawPhone = "918766590634";
   }
+
+  // Auto-resolve phoneNumberId if not explicitly provided
+  if (!rawPhoneId && rawPhone) {
+    try {
+      const cleanDigits = String(rawPhone).replace(/\D/g, "");
+      const matchedLine = db.prepare("SELECT phone_number_id FROM waba_phone_numbers WHERE phone_number LIKE ? LIMIT 1").get(`%${cleanDigits.slice(-10)}%`);
+      if (matchedLine?.phone_number_id) {
+        rawPhoneId = matchedLine.phone_number_id;
+      }
+    } catch (e) {}
+    if (!rawPhoneId) {
+      rawPhoneId = config.WHATSAPP_PHONE_NUMBER_ID || "1510764325447375";
+    }
+  }
+  phoneNumberId = rawPhoneId;
 
   const cleanTo = cleanPhone(rawPhone, defaultCountry);
   if (!cleanTo || cleanTo.length < 10) {

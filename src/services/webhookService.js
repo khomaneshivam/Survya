@@ -241,7 +241,7 @@ class WebhookService {
   /**
    * Automatically detects and attributes Click-to-Chat Link or Table QR from incoming WhatsApp message
    */
-  detectChatLinkAttribution(messageBody = "", cleanPhone = "") {
+  detectChatLinkAttribution(messageBody = "", cleanPhone = "", recipientPhoneOrId = null) {
     if (!messageBody && !cleanPhone) return null;
     const text = String(messageBody || "").trim();
 
@@ -263,6 +263,26 @@ class WebhookService {
     // 3. Match against active chat_links.default_message or slug in text
     if (text.length >= 10) {
       const activeLinks = db.prepare("SELECT * FROM chat_links WHERE status = 'ACTIVE'").all();
+      const cleanRecipient = recipientPhoneOrId ? String(recipientPhoneOrId).replace(/\D/g, "") : "";
+
+      // Pass 1: Prioritize links strictly bound to the receiving WhatsApp Business Number / Phone ID
+      if (cleanRecipient || recipientPhoneOrId) {
+        for (const lk of activeLinks) {
+          const lkDigits = String(lk.phone_number || "").replace(/\D/g, "");
+          const isSameLine = (cleanRecipient && lkDigits.slice(-10) === cleanRecipient.slice(-10)) ||
+                             (recipientPhoneOrId && lk.phone_number_id === recipientPhoneOrId);
+          if (isSameLine) {
+            if (lk.default_message && text.includes(lk.default_message.trim())) {
+              return lk;
+            }
+            if (lk.slug && text.toLowerCase().includes(lk.slug.toLowerCase())) {
+              return lk;
+            }
+          }
+        }
+      }
+
+      // Pass 2: Fallback across active links if receiving phone is unstated or generic
       for (const lk of activeLinks) {
         if (lk.default_message && text.includes(lk.default_message.trim())) {
           return lk;
@@ -877,7 +897,8 @@ class WebhookService {
     let matchedLinkId = null;
     let matchedLink = null;
     try {
-      matchedLink = this.detectChatLinkAttribution(messageBody, cleanPhone);
+      const recipientLine = rawValue?.metadata?.display_phone_number || rawValue?.metadata?.phone_number_id || null;
+      matchedLink = this.detectChatLinkAttribution(messageBody, cleanPhone, recipientLine);
       if (matchedLink) {
         matchedLinkId = matchedLink.id;
         if (!replyUserId && matchedLink.user_id && matchedLink.user_id !== "bot") {

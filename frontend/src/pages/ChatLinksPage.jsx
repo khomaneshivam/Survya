@@ -162,7 +162,7 @@ export default function ChatLinksPage({ onNavigate }) {
     setForm({
       title: '',
       slug: '',
-      phoneNumber: defaultPhone?.phone_number || '919307382030',
+      phoneNumber: defaultPhone?.phone_number || '',
       phoneNumberId: defaultPhone?.phone_number_id || '',
       defaultMessage: 'Hi KonkanTrip Beach Resort, I want to book a villa.',
       welcomeTitle: 'KonkanTrip Beach Resort & Spa',
@@ -291,7 +291,12 @@ export default function ChatLinksPage({ onNavigate }) {
       return;
     }
     const cleanNum = form.phoneNumber ? form.phoneNumber.replace(/[^\d+]/g, '') : '';
-    const finalPhone = cleanNum || (phoneNumbers[0]?.phone_number || '919307382030');
+    const defaultAccount = phoneNumbers.find((p) => p.is_default === 1) || phoneNumbers[0] || null;
+    const finalPhone = cleanNum || (defaultAccount?.phone_number ? defaultAccount.phone_number.replace(/[^\d+]/g, '') : '');
+    if (!finalPhone) {
+      setFormError('A valid WhatsApp destination phone number is required.');
+      return;
+    }
 
     setSaving(true);
     setFormError('');
@@ -357,12 +362,18 @@ export default function ChatLinksPage({ onNavigate }) {
     setBulkGenerating(true);
     try {
       const defaultPhone = phoneNumbers.find((p) => p.is_default === 1) || phoneNumbers[0] || null;
+      const defaultPhoneNum = defaultPhone?.phone_number ? defaultPhone.phone_number.replace(/[^\d+]/g, '') : '';
+      if (!defaultPhoneNum) {
+        alert('No connected WhatsApp sender account found. Please connect your WhatsApp Business line first in Settings.');
+        setBulkGenerating(false);
+        return;
+      }
       const linksPayload = items.map((title) => {
         const slugPart = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
         return {
           title,
           slug: `${bulkPrefix}-${slugPart}`,
-          phoneNumber: defaultPhone?.phone_number || '919307382030',
+          phoneNumber: defaultPhoneNum,
           phoneNumberId: defaultPhone?.phone_number_id || null,
           defaultMessage: `Hi KonkanTrip Beach Resort, I want to inquire about availability and package for ${title}.`,
           welcomeTitle: title,
@@ -908,14 +919,14 @@ export default function ChatLinksPage({ onNavigate }) {
                       }}
                     >
                       {phoneNumbers.length === 0 && (
-                        <option value="919307382030">+91 93073 82030 (Default Resort Number)</option>
+                        <option value="" disabled>-- No connected WhatsApp lines found --</option>
                       )}
                       {phoneNumbers.map((p) => (
                         <option key={p.id} value={p.phone_number}>
-                          {p.display_name} ({p.phone_number})
+                          {p.display_name || 'Business Line'} ({p.phone_number}){p.is_default === 1 ? ' [Default]' : ''}
                         </option>
                       ))}
-                      <option value="__custom__">+ Enter custom / personal number...</option>
+                      <option value="__custom__">+ Enter custom destination number...</option>
                     </select>
                   )}
                   <p className="sarvya-field-hint" style={{ margin: 0 }}>
