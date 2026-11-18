@@ -405,6 +405,10 @@ export default function InboxPage() {
   const [flowCtaText, setFlowCtaText] = useState('Open Form');
   const [sendingFlow, setSendingFlow] = useState(false);
 
+  // Real-time Bot Pause / Takeover status for active contact
+  const [selectedBotStatus, setSelectedBotStatus] = useState({ isPaused: false, remainingMinutes: 0 });
+  const [togglingBot, setTogglingBot] = useState(false);
+
   async function handleOpenFlowModal() {
     try {
       const res = await fetch('/api/flows', { headers: { Authorization: `Bearer ${token}` } });
@@ -576,6 +580,78 @@ export default function InboxPage() {
     }, 8000);
     return () => clearInterval(interval);
   }, [token, convoFilter]);
+
+  // Real-time instant SSE stream: instant arrival of incoming messages and bot status updates
+  useEffect(() => {
+    if (!token) return;
+    let sse = null;
+    try {
+      sse = new EventSource(`/api/broadcast/stream?streamToken=${encodeURIComponent(token)}`);
+      sse.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          const type = (payload.type || '').toUpperCase();
+          if (type === 'REPLY' || type === 'REPLY_UPDATED' || type === 'STATUS') {
+            loadInbox(true, convoFilter);
+            if (selectedConvo?.phone) {
+              fetchBotStatus(selectedConvo.phone);
+            }
+          }
+        } catch (e) {}
+      };
+      sse.onerror = () => {
+        // SSE error, 8-sec interval polling acts as fallback
+      };
+    } catch (err) {}
+
+    return () => {
+      if (sse) {
+        try { sse.close(); } catch (e) {}
+      }
+    };
+  }, [token, convoFilter, selectedConvo?.phone]);
+
+  async function fetchBotStatus(phone) {
+    if (!phone || !token) return;
+    try {
+      const res = await fetch(`/api/inbox/bot-status/${encodeURIComponent(phone)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setSelectedBotStatus(data.data);
+      }
+    } catch (e) {}
+  }
+
+  async function handleToggleBotStatus(phone, pause) {
+    if (!phone || !token || togglingBot) return;
+    try {
+      setTogglingBot(true);
+      const res = await fetch(`/api/inbox/bot-status/${encodeURIComponent(phone)}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ paused: pause, durationMinutes: 60 })
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setSelectedBotStatus(data.data);
+      }
+    } catch (e) {
+      console.error('Failed to toggle bot status:', e);
+    } finally {
+      setTogglingBot(false);
+    }
+  }
+
+  useEffect(() => {
+    if (selectedConvo?.phone) {
+      fetchBotStatus(selectedConvo.phone);
+    }
+  }, [selectedConvo?.phone, token]);
 
   async function loadAutoReplySettings() {
     try {
@@ -1716,6 +1792,57 @@ export default function InboxPage() {
                       </span>
                     );
                   })()}
+
+                  {/* Real-time Bot Pause / Takeover Status */}
+                  {selectedBotStatus?.isPaused ? (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleBotStatus(selectedConvo.phone, false)}
+                      disabled={togglingBot}
+                      title="Automated bot replies are currently paused for this guest. Click to resume automated replies immediately."
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        background: '#FEF3C7',
+                        color: '#92400E',
+                        border: '1px solid #FCD34D',
+                        cursor: togglingBot ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#D97706' }} />
+                      <span>Staff Takeover ({selectedBotStatus.remainingMinutes || 0}m left)</span>
+                      <span style={{ textDecoration: 'underline', marginLeft: '2px' }}>Resume Bot</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleBotStatus(selectedConvo.phone, true)}
+                      disabled={togglingBot}
+                      title="Automated bot replies are active. Click to pause bot and take over conversation manually for 60 minutes."
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        background: '#F0FDF4',
+                        color: '#166534',
+                        border: '1px solid #BBF7D0',
+                        cursor: togglingBot ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: '#22C55E' }} />
+                      <span>🤖 Bot Active</span>
+                      <span style={{ fontSize: '0.68rem', color: '#15803D', textDecoration: 'underline' }}>Take Over</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleDeleteConversation(selectedConvo)}

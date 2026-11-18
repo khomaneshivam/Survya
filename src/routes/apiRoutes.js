@@ -607,7 +607,7 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
 });
 
 // Get Bot Pause / Takeover status for a contact
-router.get("/inbox/bot-status/:phone", authenticateToken, (req, res) => {
+router.get(["/inbox/bot-status/:phone", "/replies/bot-status/:phone"], authenticateToken, (req, res) => {
   try {
     const phone = req.params.phone;
     const status = webhookService.getBotStatus(phone);
@@ -618,9 +618,9 @@ router.get("/inbox/bot-status/:phone", authenticateToken, (req, res) => {
 });
 
 // Set Bot Pause / Resume status for a contact
-router.post("/inbox/bot-status/:phone", authenticateToken, (req, res) => {
+router.post(["/inbox/bot-status/:phone", "/replies/bot-status/:phone", "/replies/bot-status"], authenticateToken, (req, res) => {
   try {
-    const phone = req.params.phone;
+    const phone = req.params.phone || req.body?.phone;
     const { paused, durationMinutes } = req.body || {};
     if (paused === false || paused === "false") {
       webhookService.resumeBotForPhone(phone);

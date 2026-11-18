@@ -123,12 +123,19 @@ app.use("/uploads", express.static(uploadsPath));
 const flowController = require("./src/controllers/flowController");
 const webhookAliases = [
   "/webhook",
+  "/webhook/",
   "/api/webhook",
+  "/api/webhook/",
   "/api/v1/webhook",
+  "/api/v1/webhook/",
   "/v1/webhook",
+  "/v1/webhook/",
   "/webhooks",
+  "/webhooks/",
   "/webhooks/meta/whatsapp",
-  "/api/v1/webhooks/meta/whatsapp"
+  "/webhooks/meta/whatsapp/",
+  "/api/v1/webhooks/meta/whatsapp",
+  "/api/v1/webhooks/meta/whatsapp/"
 ];
 app.get(webhookAliases, webhookController.handleVerification);
 app.post(webhookAliases, webhookController.handleIncomingEvent);

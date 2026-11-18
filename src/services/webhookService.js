@@ -59,6 +59,7 @@ class WebhookService {
   constructor() {
     this.inFlightAutoReplies = new Set();
     this.botPausedUntil = new Map(); // cleanPhone -> expiryTimestamp (ms)
+    this.phoneQueues = new Map(); // cleanPhone -> Promise chain for sequential processing
   }
 
   /**
@@ -430,14 +431,32 @@ class WebhookService {
    * Parses and processes incoming Webhook notification payload from Meta
    */
   async processIncomingPayload(payload) {
-    if (!payload || !Array.isArray(payload.entry)) {
+    if (!payload || typeof payload !== "object") {
       return { processed: 0, messages: 0, statuses: 0 };
+    }
+
+    let entries = Array.isArray(payload.entry) ? payload.entry : [];
+
+    // Enterprise Resilient Fallback: support direct unwrapped payload from webhook proxies / cloud relays
+    if (entries.length === 0 && (Array.isArray(payload.messages) || Array.isArray(payload.statuses))) {
+      entries = [{
+        changes: [{
+          field: "messages",
+          value: {
+            messaging_product: "whatsapp",
+            metadata: payload.metadata || {},
+            contacts: Array.isArray(payload.contacts) ? payload.contacts : [],
+            messages: Array.isArray(payload.messages) ? payload.messages : [],
+            statuses: Array.isArray(payload.statuses) ? payload.statuses : []
+          }
+        }]
+      }];
     }
 
     let processedMessages = 0;
     let processedStatuses = 0;
 
-    for (const entry of payload.entry) {
+    for (const entry of entries) {
       const changes = Array.isArray(entry.changes) ? entry.changes : [];
       for (const change of changes) {
         const val = change.value || {};
@@ -481,6 +500,14 @@ class WebhookService {
                 this.triggerAutoReply(result.reply, msg, val).catch(arErr => {
                   console.error("[Webhook Flow] Error:", arErr.message);
                 });
+              } else if (result && !result.saved && result.id) {
+                // If message already existed in DB but auto-reply hasn't fired yet or had network retry
+                try {
+                  const existingRec = db.prepare("SELECT * FROM customer_replies WHERE id = ?").get(result.id);
+                  if (existingRec && !existingRec.reply_status && existingRec.message_type !== "outbound") {
+                    this.triggerAutoReply(existingRec, msg, val).catch(() => {});
+                  }
+                } catch (e) {}
               }
             } catch (err) {
               console.error("[Webhook] Error saving customer reply:", err);
@@ -1571,31 +1598,65 @@ class WebhookService {
     const cleanPhone = rawPhone.replace(/\D/g, "");
     if (!cleanPhone || cleanPhone.length < 10) return null;
 
-    // 1. Concurrency Lock: Prevent rapid burst incoming messages from the same phone from racing
-    if (this.inFlightAutoReplies.has(cleanPhone)) {
-      console.log(`[Webhook Flow] Concurrency: Flow already in-flight for ${cleanPhone}. Skipping race condition.`);
-      return null;
+    // Sequential Promise Queue per phone: prevents race conditions while ensuring NO rapid burst messages are dropped
+    if (!this.phoneQueues) {
+      this.phoneQueues = new Map();
     }
+
+    const currentTask = this.phoneQueues.get(cleanPhone) || Promise.resolve();
+    const nextTask = currentTask
+      .catch(() => {}) // Don't let a prior failure block subsequent messages
+      .then(() => this._executeConversationalFlow(replyRecord, rawMsg, rawValue))
+      .finally(() => {
+        if (this.phoneQueues.get(cleanPhone) === nextTask) {
+          this.phoneQueues.delete(cleanPhone);
+        }
+      });
+
+    this.phoneQueues.set(cleanPhone, nextTask);
+    return nextTask;
+  }
+
+  /**
+   * Internal execution of conversational flow logic for a customer message
+   */
+  async _executeConversationalFlow(replyRecord, rawMsg = {}, rawValue = {}) {
+    if (!replyRecord || !replyRecord.from_phone) return null;
+
+    const rawPhone = String(replyRecord.from_phone).trim();
+    const cleanPhone = rawPhone.replace(/\D/g, "");
+    if (!cleanPhone || cleanPhone.length < 10) return null;
+
     this.inFlightAutoReplies.add(cleanPhone);
 
     try {
-      // 2. Check Staff Takeover / Bot Pause
+      const rawText = String(replyRecord.message_body || "").trim();
+      const upper = rawText.toUpperCase();
+
+      // 1. Auto-opt-out suppression check
+      if (["STOP", "UNSUBSCRIBE", "OPT OUT", "OPTOUT", "CANCEL"].includes(upper)) {
+        return null;
+      }
+
+      // 2. Keyword Bot Unpause: Customers texting explicit resume commands wake the bot back up
+      const resumeKeywords = ["START", "RESTART", "BOT", "MENU", "RESET", "UNPAUSE"];
+      if (resumeKeywords.includes(upper) || upper.startsWith("BOT ") || upper.startsWith("/START") || upper.startsWith("/BOT")) {
+        if (this.isBotPausedForPhone(cleanPhone)) {
+          this.resumeBotForPhone(cleanPhone);
+          console.log(`[Webhook Flow] Customer ${cleanPhone} unpaused bot via intent keyword: "${upper}"`);
+        }
+      }
+
+      // 3. Check Staff Takeover / Bot Pause
       if (this.isBotPausedForPhone(cleanPhone)) {
         console.log(`[Webhook Flow] Bot is currently paused for ${cleanPhone} (Staff Takeover active). Skipping automated response.`);
         return null;
       }
 
-      // 2b. Check Auto-Reply Master Settings
+      // 4. Check Auto-Reply Master Settings
       const autoReplySettings = this.getAutoReplySettings();
       if (!autoReplySettings.enabled) {
         console.log(`[Webhook Flow] Auto-Reply Bot is disabled in settings. Skipping automated response.`);
-        return null;
-      }
-
-      // 3. Auto-opt-out suppression check
-      const rawText = String(replyRecord.message_body || "").trim();
-      const upper = rawText.toUpperCase();
-      if (["STOP", "UNSUBSCRIBE", "OPT OUT", "OPTOUT", "CANCEL"].includes(upper)) {
         return null;
       }
 
