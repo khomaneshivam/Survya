@@ -1,28 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import ImpersonationBanner from './components/ImpersonationBanner';
-import DashboardPage from './pages/DashboardPage';
-import BroadcastPage from './pages/BroadcastPage';
-import FlowsPage from './pages/FlowsPage';
-import AutomationPage from './pages/AutomationPage';
-import InboxPage from './pages/InboxPage';
-import AutoReplyBotPage from './pages/AutoReplyBotPage';
-import ReportsPage from './pages/ReportsPage';
-import SystemAdminPanel from './pages/SystemAdminPanel';
-import SettingsPage from './pages/SettingsPage';
-import SarvyaConnectPage from './pages/SarvyaConnectPage';
-import ChatLinksPage from './pages/ChatLinksPage';
+import PageSystem from './components/PageSystem';
 import PublicChatLandingPage from './pages/PublicChatLandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import LandingPage from './pages/LandingPage';
-import EnquiriesPage from './pages/EnquiriesPage';
-import InventoryCalendarPage from './pages/InventoryCalendarPage';
-import CatalogInventoryPage from './pages/CatalogInventoryPage';
-import PayoutsPage from './pages/PayoutsPage';
-import AiAssistantPage from './pages/AiAssistantPage';
 import {
   LayoutDashboard,
   Users,
@@ -119,19 +104,65 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+function getInitialActiveTab() {
+  if (typeof window !== 'undefined' && window.location.hash) {
+    const raw = window.location.hash.replace('#', '').trim();
+    if (raw) return raw;
+  }
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('sarvya_active_tab');
+      if (saved) return saved;
+    } catch (_) {}
+  }
+  return 'dashboard';
+}
+
 function AppContent() {
   const { isAuthenticated, loading, isAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTabState] = useState(getInitialActiveTab);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [authView, setAuthView] = useState('landing');
+
+  // Deep-linking & history synchronization
+  const setActiveTab = useCallback((nextTab) => {
+    setActiveTabState(nextTab);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('sarvya_active_tab', nextTab);
+        if (window.location.hash.replace('#', '') !== nextTab) {
+          window.history.pushState(null, '', `#${nextTab}`);
+        }
+      } catch (_) {}
+    }
+  }, []);
+
+  // Sync state if user clicks browser back/forward buttons or hash changes externally
+  useEffect(() => {
+    const handlePopState = () => {
+      const hashTab = window.location.hash.replace('#', '').trim();
+      if (hashTab && hashTab !== activeTab) {
+        setActiveTabState(hashTab);
+        try {
+          localStorage.setItem('sarvya_active_tab', hashTab);
+        } catch (_) {}
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('hashchange', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('hashchange', handlePopState);
+    };
+  }, [activeTab]);
 
   // Client-side RBAC Guard: non-admins cannot stay on admin-exclusive views
   useEffect(() => {
     if (!isAdmin && (activeTab === 'admin' || activeTab === 'payouts' || activeTab === 'connect')) {
       setActiveTab('dashboard');
     }
-  }, [isAdmin, activeTab]);
+  }, [isAdmin, activeTab, setActiveTab]);
 
   // Intercept public customer chat links (/c/:slug or /chat/:slug) without requiring login
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
@@ -221,30 +252,14 @@ function AppContent() {
             setMobileOpen={setMobileOpen}
           />
 
-          <main style={{ flex: 1 }}>
+          <main style={{ flex: 1, minWidth: 0, overflowX: 'hidden' }}>
             <ErrorBoundary onReset={() => setActiveTab('dashboard')}>
-              {activeTab === 'dashboard' && <DashboardPage setActiveTab={setActiveTab} />}
-              {activeTab === 'enquiries' && <EnquiriesPage />}
-              {activeTab === 'catalog' && <CatalogInventoryPage />}
-              {activeTab === 'inventory' && <InventoryCalendarPage />}
-              {activeTab === 'payouts' && isAdmin && <PayoutsPage />}
-              {activeTab === 'broadcast' && <BroadcastPage />}
-              {activeTab === 'links' && <ChatLinksPage onNavigate={setActiveTab} />}
-              {activeTab === 'flows' && <FlowsPage />}
-              {activeTab === 'automation' && <AutomationPage />}
-              {activeTab === 'inbox' && <InboxPage onNavigate={setActiveTab} />}
-              {activeTab === 'autoreply' && <AutoReplyBotPage onNavigate={setActiveTab} />}
-              {activeTab === 'ai' && <AiAssistantPage />}
-              {activeTab === 'reports' && <ReportsPage />}
-              {activeTab === 'pricing' && (
-                <LandingPage
-                  onGetStarted={() => setActiveTab('broadcast')}
-                  onSignIn={() => setActiveTab('dashboard')}
-                />
-              )}
-              {activeTab === 'admin' && isAdmin && <SystemAdminPanel onNavigate={setActiveTab} />}
-              {activeTab === 'connect' && isAdmin && <SarvyaConnectPage onNavigate={setActiveTab} currentUser={{ role: 'ADMIN' }} />}
-              {activeTab === 'settings' && <SettingsPage />}
+              <PageSystem
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                sidebarCollapsed={sidebarCollapsed}
+                mobileOpen={mobileOpen}
+              />
             </ErrorBoundary>
           </main>
 
