@@ -428,34 +428,46 @@ async function publishFlow(req, res) {
       return res.status(404).json({ success: false, message: "Flow not found." });
     }
 
-    if (!flow.meta_flow_id) {
-      return res.status(400).json({ success: false, message: "Flow must be pushed to Meta before it can be published." });
-    }
+    const forceLocal = req.body?.forceLocal || req.query?.forceLocal === 'true';
 
-    await flowService.publishMetaFlow(flow.meta_flow_id);
+    if (!forceLocal) {
+      if (!flow.meta_flow_id) {
+        return res.status(400).json({ success: false, message: "Flow must be pushed to Meta before it can be published." });
+      }
+
+      await flowService.publishMetaFlow(flow.meta_flow_id);
+    }
 
     db.prepare(`
       UPDATE whatsapp_flows
       SET status = 'PUBLISHED',
-          sync_status = 'SYNCED',
+          sync_status = ?,
           last_sync_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(flowId);
+    `).run(forceLocal ? 'LOCAL_ACTIVE' : 'SYNCED', flowId);
 
-    logAudit(userId, "PUBLISH_FLOW", flowId, `Published flow ${flow.name} (${flow.meta_flow_id})`, req);
+    logAudit(userId, "PUBLISH_FLOW", flowId, `Published flow ${flow.name} (${flow.meta_flow_id || 'LOCAL'})`, req);
 
     return res.status(200).json({
       success: true,
-      message: "Flow successfully published! Customers can now receive and complete this Flow.",
-      data: { id: flowId, status: "PUBLISHED" }
+      message: forceLocal 
+        ? "Flow activated for local bot concierge & test mode successfully!" 
+        : "Flow successfully published on Meta! Customers can now receive and complete this Flow.",
+      data: { id: flowId, status: "PUBLISHED", isLocal: !!forceLocal }
     });
   } catch (error) {
     console.error("[FlowController] publishFlow error:", error);
+    let friendlyMessage = error.message || "Failed to publish Flow.";
+    const isIntegrity = error.metaError?.code === 139000 || error.metaError?.error_subcode === 4233020 || String(error.message).includes("Integrity");
+    if (isIntegrity) {
+      friendlyMessage = "Meta Account Integrity Requirement: Meta requires Business Verification and accepted WhatsApp Platform Terms in Meta Business Suite before publishing interactive Flows to all users. (Error 139000: Integrity requirements not met).";
+    }
     return res.status(error.statusCode || 500).json({
       success: false,
-      message: error.message || "Failed to publish Flow.",
-      details: error.metaError || null
+      message: friendlyMessage,
+      details: error.metaError || null,
+      isIntegrityBlock: isIntegrity
     });
   }
 }

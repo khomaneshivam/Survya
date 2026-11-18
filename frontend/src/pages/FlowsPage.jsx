@@ -322,12 +322,33 @@ export default function FlowsPage() {
     try {
       const res = await fetch(`/api/flows/${flowId}/publish`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}` 
+        }
       });
       const data = await res.json();
       if (data.success) {
         showNotification(data.message || 'Flow published successfully!');
         fetchFlows();
+      } else if (data.isIntegrityBlock) {
+        if (window.confirm(`${data.message}\n\nMeta requires Business Verification in Meta Business Suite before live publishing.\n\nWould you like to activate this Flow locally for testing & your Automated Concierge?`)) {
+          const localRes = await fetch(`/api/flows/${flowId}/publish`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}` 
+            },
+            body: JSON.stringify({ forceLocal: true })
+          });
+          const localData = await localRes.json();
+          if (localData.success) {
+            showNotification(localData.message || 'Flow activated locally!');
+            fetchFlows();
+            return;
+          }
+        }
+        showNotification(data.message, 'error');
       } else {
         showNotification(data.message || 'Publishing failed.', 'error');
       }
