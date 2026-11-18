@@ -7,11 +7,18 @@ const config = require("../config/env");
  * Validates incoming Meta X-Hub-Signature-256 against raw request payload
  */
 function verifyMetaSignature(req) {
+  // Allow explicit signature bypass if disabled via env/settings (e.g. for staging or troubleshooting)
+  const bypassFlag = process.env.VERIFY_WEBHOOK_SIGNATURE ?? getSetting("VERIFY_WEBHOOK_SIGNATURE");
+  if (bypassFlag === "false" || bypassFlag === false) {
+    return true;
+  }
+
   const signature = req.headers["x-hub-signature-256"];
-  const appSecret = config.META_APP_SECRET || getSetting("META_APP_SECRET") || process.env.META_APP_SECRET;
+  let appSecret = config.META_APP_SECRET || getSetting("META_APP_SECRET") || process.env.META_APP_SECRET || "";
+  appSecret = String(appSecret).trim().replace(/^["']|["']$/g, "");
 
   // If no Meta App Secret is configured on the platform, permit inbound event without HMAC verification
-  if (!appSecret || appSecret.includes("placeholder")) {
+  if (!appSecret || /placeholder|your_meta_app_secret|your_app_secret|dummy|optional/i.test(appSecret)) {
     return true;
   }
 
@@ -22,17 +29,23 @@ function verifyMetaSignature(req) {
   }
 
   const clientHash = signature.substring(7);
-  const rawBody = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
+  const rawBody = req.rawBody || Buffer.from(typeof req.body === "string" ? req.body : JSON.stringify(req.body || {}));
   const expectedHash = crypto.createHmac("sha256", appSecret).update(rawBody).digest("hex");
 
   try {
     const clientBuf = Buffer.from(clientHash, "hex");
     const expectedBuf = Buffer.from(expectedHash, "hex");
     if (clientBuf.length !== expectedBuf.length) {
+      console.warn("[Webhook Security] Signature length mismatch. Verify META_APP_SECRET in .env matches your Meta App Secret.");
       return false;
     }
-    return crypto.timingSafeEqual(clientBuf, expectedBuf);
+    const isMatch = crypto.timingSafeEqual(clientBuf, expectedBuf);
+    if (!isMatch) {
+      console.warn("[Webhook Security] HMAC-SHA256 signature mismatch! Check META_APP_SECRET in .env against App Secret in developers.facebook.com.");
+    }
+    return isMatch;
   } catch (err) {
+    console.error("[Webhook Security] Signature check exception:", err);
     return false;
   }
 }

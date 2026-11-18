@@ -1,12 +1,21 @@
 const http = require("http");
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const config = require("../src/config/env");
-const { db } = require("../src/config/database");
+const { db, getSetting } = require("../src/config/database");
 
 async function main() {
   console.log("========================================================================");
   console.log("🚀 Meta Webhook Inbound Message Receiving & Processing Live Verification");
   console.log("========================================================================");
+
+  let appSecret = (config.META_APP_SECRET || process.env.META_APP_SECRET || getSetting("META_APP_SECRET") || "").trim().replace(/^["']|["']$/g, "");
+  if (appSecret && !/placeholder|dummy/i.test(appSecret)) {
+    console.log(`🔐 Meta App Secret detected: [Configured - Length: ${appSecret.length} chars]`);
+    console.log("   (Test requests will include X-Hub-Signature-256 HMAC signature)");
+  } else {
+    console.log("ℹ️ No Meta App Secret configured (Unsigned webhooks permitted)");
+  }
 
   const testPhone = `9198${Date.now().toString().slice(-8)}`;
   const customerName = "Sunil Gavaskar";
@@ -17,15 +26,22 @@ async function main() {
   function sendWebhookPost(endpoint, payload) {
     return new Promise((resolve, reject) => {
       const dataStr = JSON.stringify(payload);
+      const headers = {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(dataStr)
+      };
+
+      if (appSecret && !/placeholder|dummy/i.test(appSecret)) {
+        const hmac = crypto.createHmac("sha256", appSecret).update(dataStr).digest("hex");
+        headers["x-hub-signature-256"] = `sha256=${hmac}`;
+      }
+
       const req = http.request({
         hostname: "localhost",
         port: 5000,
         path: endpoint,
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(dataStr)
-        }
+        headers
       }, (res) => {
         let body = "";
         res.on("data", chunk => body += chunk);
