@@ -106,6 +106,8 @@ export default function AutoReplyBotPage({ onNavigate }) {
     enabled: true,
     mode: 'ONCE_PER_CONTACT',
     engineMode: 'HOSPITALITY_FLOW',
+    strictInboundOnly: true,
+    sessionTimeoutMinutes: 30,
     businessName: 'KonkanTrip Beach Resort & Spa',
     welcomeMessage: '👋 Hello {{name}}! Welcome to *{{business_name}}*.\n\nHow can we help you today? Select an option below or reply with your travel dates to check real-time availability and live rates! 👇',
     fallbackMessage: 'Hi {{name}}, thank you for reaching out to {{business_name}}! We have received your message and our team will get back to you shortly.',
@@ -936,7 +938,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
           <div>
             <div style={{ fontSize: '0.75rem', color: '#67676B', fontWeight: 600 }}>ENGINE MODE</div>
             <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#171719' }}>
-              {settings.engineMode === 'HOSPITALITY_FLOW' ? 'Hospitality Guided Flow' : 'Simple Greeting & FAQ'}
+              {settings.engineMode === 'FLOW_STUDIO' ? 'Flow Studio Engine' : settings.engineMode === 'HOSPITALITY_FLOW' ? 'Hospitality Guided Flow' : 'Simple Greeting & FAQ'}
             </div>
           </div>
         </div>
@@ -950,13 +952,13 @@ export default function AutoReplyBotPage({ onNavigate }) {
           alignItems: 'center',
           gap: '12px'
         }}>
-          <div style={{ width: '38px', height: '38px', borderRadius: '8px', background: '#FCF2FE', color: '#7A2E83', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Zap size={20} />
+          <div style={{ width: '38px', height: '38px', borderRadius: '8px', background: settings.strictInboundOnly ? '#EDF4E6' : '#FEF3C7', color: settings.strictInboundOnly ? '#2F5219' : '#92400E', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ShieldCheck size={20} />
           </div>
           <div>
-            <div style={{ fontSize: '0.75rem', color: '#67676B', fontWeight: 600 }}>DYNAMIC RULES</div>
+            <div style={{ fontSize: '0.75rem', color: '#67676B', fontWeight: 600 }}>STRICT RESPONSE MODE</div>
             <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#171719' }}>
-              {(settings.dynamicOptions || []).filter(r => r.isActive !== false).length} Active Rules
+              {settings.strictInboundOnly ? 'Strict: Inbound Reaction Only' : 'Standard Auto-Reply'}
             </div>
           </div>
         </div>
@@ -974,9 +976,9 @@ export default function AutoReplyBotPage({ onNavigate }) {
             <Clock size={20} />
           </div>
           <div>
-            <div style={{ fontSize: '0.75rem', color: '#67676B', fontWeight: 600 }}>STAFF TAKEOVER PAUSE</div>
+            <div style={{ fontSize: '0.75rem', color: '#67676B', fontWeight: 600 }}>SESSION OPEN LIMIT</div>
             <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#171719' }}>
-              {settings.takeoverPauseMinutes} Minutes
+              {settings.sessionTimeoutMinutes || 30} Min Inactivity Window
             </div>
           </div>
         </div>
@@ -1968,6 +1970,93 @@ export default function AutoReplyBotPage({ onNavigate }) {
                       </label>
                     ))}
                   </div>
+                </div>
+
+                {/* Strict Inbound-Reactive Mode Control */}
+                <div style={{
+                  background: settings.strictInboundOnly ? '#F0FDF4' : '#FFFBEB',
+                  border: settings.strictInboundOnly ? '1.5px solid #86EFAC' : '1px solid #FDE68A',
+                  borderRadius: '10px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <ShieldCheck size={20} color={settings.strictInboundOnly ? '#16A34A' : '#D97706'} />
+                      <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1E293B' }}>
+                        Strict Inbound-Only Mode (Zero Unsolicited Messages)
+                      </span>
+                    </div>
+                    <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '8px' }}>
+                      <input
+                        type="checkbox"
+                        checked={settings.strictInboundOnly}
+                        onChange={e => setSettings(prev => ({ ...prev, strictInboundOnly: e.target.checked }))}
+                        style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: '#2F5219' }}
+                      />
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: settings.strictInboundOnly ? '#166534' : '#92400E' }}>
+                        {settings.strictInboundOnly ? 'STRICT MODE ACTIVE' : 'STANDARD MODE'}
+                      </span>
+                    </label>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#475569', lineHeight: 1.45 }}>
+                    When enabled, the bot replies <strong>strictly</strong> in immediate reaction to a customer's inbound message. If a customer does not reply or goes inactive, <strong>NO automated follow-ups, reminder nudges, or unprovoked timer messages will ever be dispatched</strong>.
+                  </p>
+                </div>
+
+                {/* Connection Session Open Limit (Inactivity Timeout) */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={{ fontSize: '0.84rem', fontWeight: 600 }}>
+                      Connection Session Open Limit (Inactivity Timeout)
+                    </label>
+                    <span style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                      Auto-closes waiting sessions with zero messages sent
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px' }}>
+                    {[
+                      { minutes: 15, label: '15 Minutes', badge: 'Quick' },
+                      { minutes: 30, label: '30 Minutes', badge: 'Recommended' },
+                      { minutes: 60, label: '1 Hour', badge: 'Standard' },
+                      { minutes: 120, label: '2 Hours', badge: 'Extended' },
+                      { minutes: 1440, label: '24 Hours', badge: 'Meta Max' }
+                    ].map(t => {
+                      const isSelected = (settings.sessionTimeoutMinutes || 30) === t.minutes;
+                      return (
+                        <div
+                          key={t.minutes}
+                          onClick={() => setSettings(prev => ({ ...prev, sessionTimeoutMinutes: t.minutes }))}
+                          style={{
+                            border: isSelected ? '2px solid #2F5219' : '1px solid #E5E5E8',
+                            background: isSelected ? '#F3F6EE' : '#FFFFFF',
+                            borderRadius: '8px',
+                            padding: '10px 12px',
+                            cursor: 'pointer',
+                            textAlign: 'center',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div style={{ fontSize: '0.86rem', fontWeight: 700, color: isSelected ? '#2F5219' : '#171719' }}>
+                            {t.label}
+                          </div>
+                          <div style={{
+                            fontSize: '0.68rem',
+                            fontWeight: 600,
+                            marginTop: '4px',
+                            color: isSelected ? '#2F5219' : '#64748B'
+                          }}>
+                            {t.badge}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <span style={{ fontSize: '0.76rem', color: '#64748B', lineHeight: 1.4 }}>
+                    If a guest stops replying midway through a conversation flow, the session stays open for this duration. Once timed out, it transitions to <code>EXPIRED</code> silently. If they reply later, a fresh conversation begins without stale state.
+                  </span>
                 </div>
 
                 {/* 5-Layer Send Gateway Notice */}

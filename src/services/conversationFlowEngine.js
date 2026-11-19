@@ -374,15 +374,52 @@ async function processTurn({
     `).get(sessionKey);
 
     if (session) {
-      collectedData = session.collected_data_json ? JSON.parse(session.collected_data_json) : {};
+      // Inactivity timeout / connection open limit check (Strict Mode)
+      let timeoutMinutes = 30;
+      try {
+        const { getSetting } = require("../config/database");
+        timeoutMinutes = parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "30", 10);
+        if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 30;
+      } catch (e) {}
 
-      // Load flow & pinned version
-      flow = db.prepare("SELECT * FROM conversation_flows WHERE id = ?").get(session.flow_id);
-      flowVersion = db.prepare("SELECT * FROM conversation_flow_versions WHERE id = ?").get(session.flow_version_id);
+      const lastInteractionTime = session.last_interaction_at ? new Date(session.last_interaction_at).getTime() : new Date(session.created_at).getTime();
+      const expiresAtTime = session.expires_at ? new Date(session.expires_at).getTime() : null;
+      const isSessionTimedOut = (expiresAtTime && Date.now() > expiresAtTime) || (Date.now() - lastInteractionTime > timeoutMinutes * 60 * 1000);
 
-      if (flowVersion) {
-        nodes = JSON.parse(flowVersion.nodes_json || "[]");
-        transitions = JSON.parse(flowVersion.transitions_json || "[]");
+      if (isSessionTimedOut) {
+        // Silently mark old session as EXPIRED in DB (Strict mode: NO auto message sent)
+        db.prepare(`
+          UPDATE conversation_flow_sessions
+          SET session_status = 'EXPIRED', updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(session.id);
+
+        try {
+          db.prepare(`
+            INSERT INTO conversation_flow_events (
+              session_id, flow_id, flow_version_id, node_id, node_type, event_type, payload_json, created_at
+            ) VALUES (?, ?, ?, ?, 'SESSION_TIMEOUT', 'EXPIRED', ?, CURRENT_TIMESTAMP)
+          `).run(
+            session.id,
+            session.flow_id,
+            session.flow_version_id,
+            session.current_node_id || "unknown",
+            JSON.stringify({ reason: "INACTIVITY_TIMEOUT", timeoutMinutes, lastInteractionAt: session.last_interaction_at })
+          );
+        } catch (e) {}
+
+        session = null; // Session expired; fresh journey will start for this new incoming turn
+      } else {
+        collectedData = session.collected_data_json ? JSON.parse(session.collected_data_json) : {};
+
+        // Load flow & pinned version
+        flow = db.prepare("SELECT * FROM conversation_flows WHERE id = ?").get(session.flow_id);
+        flowVersion = db.prepare("SELECT * FROM conversation_flow_versions WHERE id = ?").get(session.flow_version_id);
+
+        if (flowVersion) {
+          nodes = JSON.parse(flowVersion.nodes_json || "[]");
+          transitions = JSON.parse(flowVersion.transitions_json || "[]");
+        }
       }
     }
   }
@@ -434,13 +471,20 @@ async function processTurn({
 
       const startNode = nodes.find(n => n.type === "START") || nodes[0];
 
-      // Create new session in DB
+      let timeoutMinutes = 30;
+      try {
+        const { getSetting } = require("../config/database");
+        timeoutMinutes = parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "30", 10);
+        if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 30;
+      } catch (e) {}
+
+      // Create new session in DB with calculated expires_at (Strict Mode)
       const res = db.prepare(`
         INSERT INTO conversation_flow_sessions (
           session_key, tenant_id, property_id, channel, sender_phone,
           flow_id, flow_version_id, current_node_id, session_status,
-          collected_data_json, last_interaction_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          collected_data_json, last_interaction_at, expires_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', '{}', CURRENT_TIMESTAMP, DATE_ADD(CURRENT_TIMESTAMP, INTERVAL ? MINUTE), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON DUPLICATE KEY UPDATE
           flow_id = VALUES(flow_id),
           flow_version_id = VALUES(flow_version_id),
@@ -448,6 +492,7 @@ async function processTurn({
           session_status = 'ACTIVE',
           collected_data_json = '{}',
           last_interaction_at = CURRENT_TIMESTAMP,
+          expires_at = DATE_ADD(CURRENT_TIMESTAMP, INTERVAL ? MINUTE),
           updated_at = CURRENT_TIMESTAMP
       `).run(
         sessionKey,
@@ -457,7 +502,9 @@ async function processTurn({
         normalizedPhone,
         flow.id,
         flowVersion.id,
-        startNode.id
+        startNode.id,
+        timeoutMinutes,
+        timeoutMinutes
       );
 
       session = db.prepare("SELECT * FROM conversation_flow_sessions WHERE session_key = ?").get(sessionKey);
@@ -708,15 +755,25 @@ async function processTurn({
 
   // Update DB session if not in simulation mode
   if (!isSimulation && session) {
+    let timeoutMinutes = 30;
+    try {
+      const { getSetting } = require("../config/database");
+      timeoutMinutes = parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "30", 10);
+      if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 30;
+    } catch (e) {}
+
     db.prepare(`
       UPDATE conversation_flow_sessions
       SET current_node_id = ?, session_status = ?, collected_data_json = ?,
-          last_interaction_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+          last_interaction_at = CURRENT_TIMESTAMP,
+          expires_at = DATE_ADD(CURRENT_TIMESTAMP, INTERVAL ? MINUTE),
+          updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
       finalNodeId,
       status,
       JSON.stringify(collectedData),
+      timeoutMinutes,
       session.id
     );
 

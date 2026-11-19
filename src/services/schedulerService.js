@@ -58,6 +58,9 @@ class SchedulerService {
     this.isChecking = true;
 
     try {
+      // 0. Silent Inactive Session Expiration Sweep (Strict Mode: Zero Outbound Messages)
+      this.silentExpireInactiveSessions();
+
       const now = new Date();
       // Fetch all campaigns currently in SCHEDULED state
       const scheduledCampaigns = db.prepare(`
@@ -99,6 +102,25 @@ class SchedulerService {
       console.error("[Scheduler] Error in checkScheduledCampaigns:", err);
     } finally {
       this.isChecking = false;
+    }
+  }
+
+  /**
+   * Silent session expiration sweep (Strict Inbound Mode)
+   * Sweeps expired inactive conversation flow sessions in DB without dispatching any messages.
+   * Zero API spend, zero unsolicited auto-messages.
+   */
+  silentExpireInactiveSessions() {
+    try {
+      db.prepare(`
+        UPDATE conversation_flow_sessions
+        SET session_status = 'EXPIRED', updated_at = CURRENT_TIMESTAMP
+        WHERE session_status = 'ACTIVE'
+          AND expires_at IS NOT NULL
+          AND expires_at <= NOW()
+      `).run();
+    } catch (e) {
+      // Non-fatal silent sweep
     }
   }
 

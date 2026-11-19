@@ -1767,9 +1767,7 @@ class WebhookService {
         return null;
       }
 
-      const isInteractiveAction = Boolean(interactiveActionId || isFlowReply);
-
-      // 6. Resolve multi-line sender phone ID and simulation sandbox
+      // Resolve multi-line sender phone ID and simulation sandbox
       const incomingPhoneId = rawValue?.metadata?.phone_number_id || null;
       const isSimulation = Boolean(rawValue?.is_simulation || rawMsg?.is_simulation || isSandboxOrTestPhone(cleanPhone));
       const customCredentials = {
@@ -1777,15 +1775,46 @@ class WebhookService {
         ...(isSimulation ? { isSimulation: true } : {})
       };
 
+      // 5b. Strict Inbound-Only Mode & Meta 24-Hour Customer Care Window Guard
+      // Enforce that automated messages ONLY trigger in direct reaction to a verified inbound customer message.
+      if (autoReplySettings.strictInboundOnly) {
+        if (!replyRecord.message_body && !rawMsg?.type && !interactiveActionId && !isFlowReply) {
+          console.log(`[Webhook Flow] Strict Inbound Mode: No explicit customer action detected for ${cleanPhone}. Suppressing response.`);
+          return null;
+        }
+      }
+
+      const receivedAtMs = replyRecord.received_at ? new Date(replyRecord.received_at).getTime() : Date.now();
+      const isWithinMeta24hWindow = (Date.now() - receivedAtMs) <= 24 * 60 * 60 * 1000;
+      if (!isWithinMeta24hWindow && !isSimulation) {
+        console.log(`[Webhook Flow] Inbound message from ${cleanPhone} received outside Meta 24-hour customer window (${replyRecord.received_at}). Suppressing freeform reply.`);
+        return null;
+      }
+
+      const isInteractiveAction = Boolean(interactiveActionId || isFlowReply);
+
       // 6b. Dynamic Conversation Flow & Automation Studio Engine
       // If client is configured in FLOW_STUDIO mode or an active studio session is open:
       const isStudioMode = autoReplySettings.engineMode === "FLOW_STUDIO" || autoReplySettings.engineMode === "CONVERSATION_FLOW";
       const flowEngine = require("./conversationFlowEngine");
-      const activeFlowSession = db.prepare(`
-        SELECT id FROM conversation_flow_sessions
+      let activeFlowSession = db.prepare(`
+        SELECT id, last_interaction_at, expires_at FROM conversation_flow_sessions
         WHERE sender_phone = ? AND session_status = 'ACTIVE'
         LIMIT 1
       `).get(cleanPhone);
+
+      // Check if previous session timed out (Connection Open Time Limit)
+      if (activeFlowSession) {
+        const timeoutMins = autoReplySettings.sessionTimeoutMinutes || 30;
+        const lastMs = activeFlowSession.last_interaction_at ? new Date(activeFlowSession.last_interaction_at).getTime() : 0;
+        const expMs = activeFlowSession.expires_at ? new Date(activeFlowSession.expires_at).getTime() : null;
+        const isSessionTimedOut = (expMs && Date.now() > expMs) || (Date.now() - lastMs > timeoutMins * 60 * 1000);
+        if (isSessionTimedOut) {
+          console.log(`[Webhook Flow] Previous session #${activeFlowSession.id} for ${cleanPhone} timed out (${timeoutMins}m limit). Expired silently with ZERO auto-messages.`);
+          db.prepare("UPDATE conversation_flow_sessions SET session_status = 'EXPIRED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(activeFlowSession.id);
+          activeFlowSession = null;
+        }
+      }
 
       const hasPublishedFlows = db.prepare(`
         SELECT id FROM conversation_flows
@@ -3124,6 +3153,8 @@ class WebhookService {
       handoffMessage: getSetting("BOT_HANDOFF_MESSAGE") || "🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at {{phone}}.",
       selectedFlowId: getSetting("DEFAULT_WHATSAPP_FLOW_ID") || "flow_hospitality_booking",
       takeoverPauseMinutes: parseInt(getSetting("BOT_TAKEOVER_PAUSE_MINUTES") || "60", 10),
+      sessionTimeoutMinutes: parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "30", 10),
+      strictInboundOnly: getSetting("BOT_STRICT_INBOUND_ONLY") !== "false",
       dynamicOptions: normalizedOptions
     };
   }
@@ -3279,6 +3310,17 @@ class WebhookService {
       if (!isNaN(parsed) && parsed >= 1) {
         setSetting("BOT_TAKEOVER_PAUSE_MINUTES", String(parsed));
       }
+    }
+    const sessionTimeout = payload.sessionTimeoutMinutes ?? payload.session_timeout_minutes;
+    if (sessionTimeout !== undefined) {
+      const parsedTimeout = parseInt(sessionTimeout, 10);
+      if (!isNaN(parsedTimeout) && parsedTimeout >= 1) {
+        setSetting("BOT_SESSION_TIMEOUT_MINUTES", String(parsedTimeout));
+      }
+    }
+    if (payload.strictInboundOnly !== undefined || payload.strict_inbound_only !== undefined) {
+      const strictVal = payload.strictInboundOnly ?? payload.strict_inbound_only;
+      setSetting("BOT_STRICT_INBOUND_ONLY", strictVal ? "true" : "false");
     }
     if (payload.dynamicOptions !== undefined) {
       let opts = payload.dynamicOptions;
