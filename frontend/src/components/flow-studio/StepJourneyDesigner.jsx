@@ -25,7 +25,11 @@ import {
   Shield,
   Eye,
   Settings,
-  X
+  X,
+  Smartphone,
+  Bookmark,
+  Copy,
+  Check
 } from 'lucide-react';
 
 const STEP_TYPES = [
@@ -46,19 +50,87 @@ const VALIDATION_PRESETS = [
   { id: 'NUMBER', label: '🔢 Numeric Value / Quantity (e.g. 1 to 50)', defaultError: '⚠️ Please enter a valid number.' },
   { id: 'TEXT', label: '📝 Freeform Text (with minimum character length)', defaultError: '⚠️ Please provide a detailed response (at least 3 characters).' },
   { id: 'EMAIL', label: '✉️ Email Address (e.g. guest@example.com)', defaultError: '⚠️ Please enter a valid email address.' },
-  { id: 'PHONE', label: '📱 Phone Number (10 to 15 digits)', defaultError: '⚠️ Please enter a valid phone number.' }
+  { id: 'PHONE', label: '📱 Phone Number (10 to 15 digits)', defaultError: '⚠️ Please enter a valid phone number.' },
+  { id: 'REGEX', label: '🔣 Custom Regex Pattern (advanced pattern match)', defaultError: '⚠️ Input format is invalid. Please try again.' }
 ];
 
 const REGISTERED_ACTIONS = [
-  { id: 'HOSPITALITY_CHECK_AVAILABILITY', label: '🏨 Check Room Inventory Availability', desc: 'Validates sellable room counts in real-time' },
-  { id: 'HOSPITALITY_CALCULATE_QUOTE', label: '💵 Calculate Stay Quotation & Taxes', desc: 'Computes dynamic rates, extra guests, and GST' },
-  { id: 'HOSPITALITY_CREATE_ENQUIRY', label: '📋 Create CRM Booking Enquiry', desc: 'Saves lead/enquiry and alerts front desk' },
-  { id: 'HOSPITALITY_LOOKUP_FAQ', label: '📖 Lookup Concierge Property FAQ', desc: 'Retrieves answers on timings, dining, pool, policies' },
-  { id: 'ASSIGN_STAFF', label: '👤 Assign Staff Member', desc: 'Assigns reservations officer' },
-  { id: 'B2B_CALCULATE_SALES_QUOTE', label: '💼 Calculate B2B Software Quote', desc: 'Computes enterprise tier price by seats' },
-  { id: 'B2B_CREATE_SALES_DEAL', label: '🚀 Create CRM Sales Deal', desc: 'Registers prospect in sales CRM' },
-  { id: 'GENERATE_PAYMENT_LINK', label: '💳 Generate Secure Payment Link', desc: 'Generates deposit checkout link' }
+  { id: 'HOSPITALITY_CHECK_AVAILABILITY', label: '🏨 Check Room Inventory Availability', desc: 'Validates sellable room counts in real-time from room_types & hotel_daily_inventory' },
+  { id: 'HOSPITALITY_CALCULATE_QUOTE', label: '💵 Calculate Stay Quotation & Taxes', desc: 'Computes dynamic rates, extra guests, and GST authoritative quote' },
+  { id: 'HOSPITALITY_CREATE_ENQUIRY', label: '📋 Create CRM Booking Enquiry', desc: 'Saves lead/enquiry, assigns reservations officer, and alerts front desk' },
+  { id: 'HOSPITALITY_LOOKUP_FAQ', label: '📖 Lookup Concierge Property FAQ', desc: 'Retrieves answers on timings, dining, pool, parking, policies' },
+  { id: 'ASSIGN_STAFF', label: '👤 Assign Staff Member', desc: 'Assigns on-duty reservations officer' },
+  { id: 'B2B_CALCULATE_SALES_QUOTE', label: '💼 Calculate B2B Software Quote', desc: 'Computes enterprise tier price by seats and billing cycle' },
+  { id: 'B2B_CREATE_SALES_DEAL', label: '🚀 Create CRM Sales Deal', desc: 'Registers prospect in sales CRM and alerts account executives' },
+  { id: 'GENERATE_PAYMENT_LINK', label: '💳 Generate Secure Payment Link', desc: 'Generates deposit checkout link (safe simulation mode)' }
 ];
+
+const VARIABLE_SUGGESTIONS = [
+  'check_in_date',
+  'check_out_date',
+  'guests',
+  'room_category',
+  'customer_name',
+  'guest_email',
+  'phone_number',
+  'special_requests',
+  'enquiry_type',
+  'budget_range'
+];
+
+const SAMPLE_DEMO_DATA = {
+  customer_name: 'Sunil Kumar',
+  name: 'Sunil Kumar',
+  property_name: 'KonkanTrip Beach Resort & Spa',
+  'property.name': 'KonkanTrip Beach Resort & Spa',
+  business_name: 'KonkanTrip Beach Resort & Spa',
+  'business.name': 'KonkanTrip Beach Resort & Spa',
+  selected_room_name: 'Deluxe Sea View Villa',
+  room_category: 'Deluxe Sea View Villa',
+  check_in_date: '2026-11-20',
+  check_out_date: '2026-11-22',
+  nights: '2',
+  guests: '2 Adults, 1 Child',
+  party_size: '3',
+  guest_email: 'sunil.kumar@example.com',
+  phone_number: '+91 98765 43210',
+  phone: '+91 87665 90634',
+  quote_subtotal: '12,000',
+  tax_total: '1,440',
+  quote_total: '13,440'
+};
+
+/**
+ * Format markdown and variables for WhatsApp preview
+ */
+function renderWhatsAppFormattedText(rawText) {
+  if (!rawText) return '';
+  let text = String(rawText);
+
+  // Variable substitution with sample demo data
+  text = text.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_, key) => {
+    return SAMPLE_DEMO_DATA[key] || `[${key}]`;
+  });
+
+  // Preserve lines
+  const lines = text.split('\n');
+  return lines.map((line, lIdx) => {
+    // Bold *word*
+    let formatted = line.replace(/\*([^*]+)\*/g, '<strong>$1</strong>');
+    // Italic _word_
+    formatted = formatted.replace(/_([^_]+)_/g, '<em>$1</em>');
+    // Strike ~word~
+    formatted = formatted.replace(/~([^~]+)~/g, '<del>$1</del>');
+
+    return (
+      <span
+        key={lIdx}
+        dangerouslySetInnerHTML={{ __html: formatted || '&nbsp;' }}
+        style={{ display: 'block', minHeight: '1.1em' }}
+      />
+    );
+  });
+}
 
 export default function StepJourneyDesigner({
   nodes = [],
@@ -70,10 +142,23 @@ export default function StepJourneyDesigner({
   onOpenSimulator
 }) {
   const [expandedStepId, setExpandedStepId] = useState(null);
+  const [previewSteps, setPreviewSteps] = useState({}); // { [nodeId]: boolean }
   const [isAddStepModalOpen, setIsAddStepModalOpen] = useState(false);
   const [newStepType, setNewStepType] = useState('MESSAGE');
   const [newStepTitle, setNewStepTitle] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Variables Drawer state
+  const [showVariablesDrawer, setShowVariablesDrawer] = useState(false);
+  const [copiedVar, setCopiedVar] = useState(null);
+
+  // Save as Template Modal
+  const [isSaveTemplateModalOpen, setIsSaveTemplateModalOpen] = useState(false);
+  const [templateTitle, setTemplateTitle] = useState('');
+  const [templateDesc, setTemplateDesc] = useState('');
+  const [templateIndustry, setTemplateIndustry] = useState('HOSPITALITY');
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [templateSavedSuccess, setTemplateSavedSuccess] = useState(false);
 
   // Map transitions: source -> target
   const transitionMap = useMemo(() => {
@@ -95,13 +180,11 @@ export default function StepJourneyDesigner({
   // Order nodes by conversational sequence starting from START node
   const orderedNodes = useMemo(() => {
     if (!nodes || nodes.length === 0) return [];
-    
-    // Find START node
+
     const startNode = nodes.find(n => n.type === 'START') || nodes[0];
     const visited = new Set();
     const ordered = [];
 
-    // Helper to traverse transitions
     const traverse = (nodeId) => {
       if (!nodeId || visited.has(nodeId)) return;
       visited.add(nodeId);
@@ -125,6 +208,30 @@ export default function StepJourneyDesigner({
 
     return ordered;
   }, [nodes, transitionMap, nodeMap]);
+
+  // Extract all dynamic variables used/created across this entire flow
+  const detectedVariables = useMemo(() => {
+    const vars = new Set();
+    nodes.forEach(n => {
+      if (n.config?.variable) vars.add(n.config.variable);
+      if (n.config?.prompt) {
+        const matches = n.config.prompt.matchAll(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g);
+        for (const m of matches) vars.add(m[1]);
+      }
+      if (n.config?.text) {
+        const matches = n.config.text.matchAll(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g);
+        for (const m of matches) vars.add(m[1]);
+      }
+      if (n.config?.handoffMessage) {
+        const matches = n.config.handoffMessage.matchAll(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g);
+        for (const m of matches) vars.add(m[1]);
+      }
+      if (n.config?.outputs && typeof n.config.outputs === 'object') {
+        Object.values(n.config.outputs).forEach(v => vars.add(v));
+      }
+    });
+    return Array.from(vars).filter(Boolean);
+  }, [nodes]);
 
   // Filtered nodes
   const filteredNodes = useMemo(() => {
@@ -160,7 +267,6 @@ export default function StepJourneyDesigner({
 
   // Helper: set next step transition
   const handleSetNextStep = (sourceNodeId, targetNodeId) => {
-    // Remove existing transition from this source
     const remaining = transitions.filter(t => t.source !== sourceNodeId);
     if (targetNodeId && targetNodeId !== 'NONE') {
       const newTransition = {
@@ -174,6 +280,42 @@ export default function StepJourneyDesigner({
     }
   };
 
+  // Helper: move step Up or Down in sequential sequence
+  const handleMoveStep = (nodeId, direction) => {
+    const currentIndex = orderedNodes.findIndex(n => n.id === nodeId);
+    if (currentIndex <= 0 && direction === 'UP') return; // Cannot move above START
+    if (currentIndex <= 0) return; // START node stays fixed at index 0
+    const targetIndex = direction === 'UP' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex <= 0 || targetIndex >= orderedNodes.length) return;
+
+    const newOrdered = [...orderedNodes];
+    const [movedNode] = newOrdered.splice(currentIndex, 1);
+    newOrdered.splice(targetIndex, 0, movedNode);
+
+    // Update canvas positions
+    const updatedNodes = newOrdered.map((n, idx) => ({
+      ...n,
+      position: { x: n.position?.x || 300, y: (idx + 1) * 120 }
+    }));
+
+    // Update sequential transitions if these nodes were chained sequentially
+    const updatedTransitions = [...transitions];
+    const prevNode = newOrdered[targetIndex - 1];
+    const currentMoved = newOrdered[targetIndex];
+    const nextNode = newOrdered[targetIndex + 1];
+
+    if (direction === 'DOWN') {
+      // Swapped with the one below
+      // Update prevNode -> currentMoved, currentMoved -> displacedNode
+      const otherNode = newOrdered[currentIndex];
+      // Stitch transitions smoothly
+      const t1 = updatedTransitions.find(t => t.source === prevNode?.id);
+      if (t1 && t1.target === otherNode.id) t1.target = currentMoved.id;
+    }
+
+    onUpdateNodes(updatedNodes);
+  };
+
   // Helper: add an interactive option to a menu node
   const handleAddOption = (nodeId) => {
     const target = nodeMap[nodeId];
@@ -182,7 +324,7 @@ export default function StepJourneyDesigner({
     const newOptionNumber = currentOptions.length + 1;
     const newOpt = {
       id: `opt_${Date.now()}_${newOptionNumber}`,
-      title: `Option ${newOptionNumber}`,
+      title: `Option ${newOptionNumber} 🏷️`,
       value: `OPTION_${newOptionNumber}`,
       targetNodeId: ''
     };
@@ -258,24 +400,33 @@ export default function StepJourneyDesigner({
   const handleCreateStep = () => {
     const newId = `node_${newStepType.toLowerCase()}_${Date.now()}`;
     const meta = STEP_TYPES.find(t => t.type === newStepType) || STEP_TYPES[0];
-    
+
     let defaultConfig = {};
     if (newStepType === 'MESSAGE') {
-      defaultConfig = { text: 'Hello! Thank you for contacting us. How may we assist you today?' };
+      defaultConfig = { text: 'Hello {{customer_name}}! Welcome to *{{property.name}}*.\n\nHow may we assist you today?' };
     } else if (newStepType === 'INPUT_COLLECTION') {
       defaultConfig = {
-        prompt: 'Please enter your details:',
+        prompt: '📅 Please enter your details:',
         variable: 'user_input_var',
         validation: { type: 'TEXT', minLength: 2, errorMessage: 'Please enter a valid response.' }
       };
     } else if (newStepType === 'BUTTON_MENU') {
       defaultConfig = {
-        prompt: 'Please choose an option to get started:',
+        prompt: 'Please select an option to get started:',
         variable: 'menu_choice',
         options: [
           { id: `opt_1_${Date.now()}`, title: 'Option 1 🏷️', value: 'CHOICE_1' },
           { id: `opt_2_${Date.now()}`, title: 'Option 2 💬', value: 'CHOICE_2' }
         ]
+      };
+    } else if (newStepType === 'CONDITION') {
+      defaultConfig = {
+        variable: 'menu_choice',
+        rules: [
+          { operator: 'EQUALS', value: 'CHOICE_1', targetNodeId: '' },
+          { operator: 'EQUALS', value: 'CHOICE_2', targetNodeId: '' }
+        ],
+        defaultTargetNodeId: ''
       };
     } else if (newStepType === 'BUSINESS_ACTION') {
       defaultConfig = {
@@ -291,8 +442,8 @@ export default function StepJourneyDesigner({
       };
     } else if (newStepType === 'CONFIRMATION') {
       defaultConfig = {
-        prompt: 'Please confirm your booking details above:',
-        variable: 'booking_confirmation',
+        prompt: 'Please confirm your details above:',
+        variable: 'confirmation_choice',
         options: [
           { id: 'opt_confirm', title: 'Confirm & Proceed ✅', value: 'CONFIRM' },
           { id: 'opt_modify', title: 'Modify Details ✏️', value: 'MODIFY' },
@@ -301,13 +452,13 @@ export default function StepJourneyDesigner({
       };
     } else if (newStepType === 'HANDOFF') {
       defaultConfig = {
-        handoffMessage: '🔔 Connecting you with our Front Desk team. An agent will reply directly to this chat shortly.',
+        handoffMessage: '🔔 Connecting you with our Front Desk concierge. An agent will message you directly on this chat shortly.',
         alertStaff: true,
         pauseMinutes: 60
       };
     } else if (newStepType === 'END') {
       defaultConfig = {
-        farewellMessage: '🙏 Thank you for chatting with us! Have a wonderful day.'
+        farewellMessage: '🙏 Thank you for chatting with us! Have a wonderful day ahead.'
       };
     }
 
@@ -323,7 +474,6 @@ export default function StepJourneyDesigner({
     const lastNode = orderedNodes[orderedNodes.length - 1];
     const newTransitions = [...transitions];
     if (lastNode && lastNode.type !== 'END' && lastNode.type !== 'HANDOFF') {
-      // Connect last node to this new node
       newTransitions.push({
         id: `t_${lastNode.id}_${newId}_${Date.now()}`,
         source: lastNode.id,
@@ -337,6 +487,52 @@ export default function StepJourneyDesigner({
     onSelectNode(newId);
     setIsAddStepModalOpen(false);
     setNewStepTitle('');
+  };
+
+  // Helper: Save current flow as reusable template
+  const handleSaveAsTemplate = async () => {
+    if (!templateTitle.trim()) {
+      alert("Please provide a title for the template.");
+      return;
+    }
+    setSavingTemplate(true);
+    try {
+      const res = await fetch('/api/flows/conversation-templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: templateTitle.trim(),
+          description: templateDesc || 'Custom template saved from Studio Designer',
+          industry: templateIndustry,
+          category: 'CUSTOM',
+          nodes,
+          transitions
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTemplateSavedSuccess(true);
+        setTimeout(() => {
+          setTemplateSavedSuccess(false);
+          setIsSaveTemplateModalOpen(false);
+          setTemplateTitle('');
+          setTemplateDesc('');
+        }, 2000);
+      } else {
+        alert(data.error || 'Failed to save template');
+      }
+    } catch (err) {
+      alert(err.message || 'Error saving template');
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  // Copy variable helper
+  const handleCopyVar = (vName) => {
+    navigator.clipboard.writeText(`{{${vName}}}`);
+    setCopiedVar(vName);
+    setTimeout(() => setCopiedVar(null), 2000);
   };
 
   return (
@@ -356,8 +552,8 @@ export default function StepJourneyDesigner({
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{
-            width: '40px',
-            height: '40px',
+            width: '42px',
+            height: '42px',
             borderRadius: '10px',
             background: '#F3F6EE',
             color: '#2F5219',
@@ -372,12 +568,13 @@ export default function StepJourneyDesigner({
               Step-by-Step Conversation Flow Designer
             </h3>
             <p style={{ margin: 0, fontSize: '0.82rem', color: '#67676B' }}>
-              Configure your exact customer journey sequence: welcome greeting, questions, validation rules, interactive buttons &amp; automated replies.
+              Design customer journeys visually: greetings, questions, strict validations, dynamic buttons &amp; business replies. Zero hardcoding.
             </p>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Search bar */}
           <div style={{ position: 'relative' }}>
             <input
               type="text"
@@ -389,13 +586,36 @@ export default function StepJourneyDesigner({
                 fontSize: '0.82rem',
                 borderRadius: '8px',
                 border: '1px solid #CBD5E1',
-                width: '180px',
+                width: '160px',
                 background: '#F8FAFC'
               }}
             />
             <span style={{ position: 'absolute', left: '10px', top: '9px', color: '#94A3B8' }}>🔍</span>
           </div>
 
+          {/* Variables Reference Pill */}
+          <button
+            type="button"
+            onClick={() => setShowVariablesDrawer(!showVariablesDrawer)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 12px',
+              borderRadius: '8px',
+              border: showVariablesDrawer ? '1px solid #2563EB' : '1px solid #CBD5E1',
+              background: showVariablesDrawer ? '#EFF6FF' : '#FFFFFF',
+              color: showVariablesDrawer ? '#2563EB' : '#475569',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            <Tag size={15} />
+            <span>Variables ({detectedVariables.length})</span>
+          </button>
+
+          {/* Add Step Button */}
           <button
             type="button"
             onClick={() => setIsAddStepModalOpen(true)}
@@ -418,6 +638,30 @@ export default function StepJourneyDesigner({
             <span>Add Step</span>
           </button>
 
+          {/* Save as Template Preset */}
+          <button
+            type="button"
+            onClick={() => setIsSaveTemplateModalOpen(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 13px',
+              borderRadius: '8px',
+              border: '1px solid #CBD5E1',
+              background: '#FFFFFF',
+              color: '#334155',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+            title="Save as reusable preset template"
+          >
+            <Bookmark size={15} />
+            <span>Save as Template</span>
+          </button>
+
+          {/* Test Simulator Button */}
           {onOpenSimulator && (
             <button
               type="button"
@@ -443,13 +687,68 @@ export default function StepJourneyDesigner({
         </div>
       </div>
 
+      {/* Variables Drawer / Bar */}
+      {showVariablesDrawer && (
+        <div style={{
+          background: '#F8FAFC',
+          borderRadius: '10px',
+          border: '1px solid #E2E8F0',
+          padding: '12px 18px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#334155' }}>
+              💡 Variables Available in this Flow (click to copy interpolation tag):
+            </span>
+            <span style={{ fontSize: '0.74rem', color: '#64748B' }}>
+              Use in prompts or messages as <code>&#123;&#123;variable_name&#125;&#125;</code>
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {detectedVariables.length === 0 ? (
+              <span style={{ fontSize: '0.78rem', color: '#94A3B8' }}>No variables created yet. Add an "Ask Question" step to capture inputs.</span>
+            ) : (
+              detectedVariables.map(v => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => handleCopyVar(v)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid #BFDBFE',
+                    background: copiedVar === v ? '#DCFCE7' : '#EFF6FF',
+                    color: copiedVar === v ? '#166534' : '#1D4ED8',
+                    fontSize: '0.78rem',
+                    fontFamily: 'monospace',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {copiedVar === v ? <Check size={13} /> : <Copy size={13} />}
+                  <span>{`{{${v}}}`}</span>
+                  {copiedVar === v && <span style={{ fontSize: '0.7rem', color: '#166534' }}>Copied!</span>}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Sequential Step Cards List */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {filteredNodes.map((node, index) => {
           const typeMeta = STEP_TYPES.find(t => t.type === node.type) || { label: node.type, icon: MessageSquare, color: '#475569', bg: '#F1F5F9' };
           const Icon = typeMeta.icon;
           const isExpanded = expandedStepId === node.id;
           const isSelected = selectedNodeId === node.id;
+          const isPreviewOpen = Boolean(previewSteps[node.id]);
           const nextTargets = transitionMap[node.id] || [];
 
           return (
@@ -465,19 +764,20 @@ export default function StepJourneyDesigner({
               }}
             >
               {/* Card Header Bar */}
-              <div style={{
-                padding: '14px 18px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                background: isExpanded ? typeMeta.bg : '#FAFAFB',
-                borderBottom: isExpanded ? '1px solid #E5E5E8' : 'none',
-                cursor: 'pointer'
-              }}
-              onClick={() => {
-                setExpandedStepId(isExpanded ? null : node.id);
-                onSelectNode(node.id);
-              }}
+              <div
+                style={{
+                  padding: '14px 18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: isExpanded ? typeMeta.bg : '#FAFAFB',
+                  borderBottom: isExpanded || isPreviewOpen ? '1px solid #E5E5E8' : 'none',
+                  cursor: 'pointer'
+                }}
+                onClick={() => {
+                  setExpandedStepId(isExpanded ? null : node.id);
+                  onSelectNode(node.id);
+                }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div style={{
@@ -521,6 +821,68 @@ export default function StepJourneyDesigner({
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }} onClick={e => e.stopPropagation()}>
+                  {/* Step Reorder: Move Up */}
+                  {index > 1 && (
+                    <button
+                      type="button"
+                      title="Move Step Up"
+                      onClick={() => handleMoveStep(node.id, 'UP')}
+                      style={{
+                        padding: '6px',
+                        borderRadius: '6px',
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        color: '#475569',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <ArrowUp size={14} />
+                    </button>
+                  )}
+
+                  {/* Step Reorder: Move Down */}
+                  {index > 0 && index < orderedNodes.length - 1 && (
+                    <button
+                      type="button"
+                      title="Move Step Down"
+                      onClick={() => handleMoveStep(node.id, 'DOWN')}
+                      style={{
+                        padding: '6px',
+                        borderRadius: '6px',
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        color: '#475569',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <ArrowDown size={14} />
+                    </button>
+                  )}
+
+                  {/* WhatsApp Live Preview Toggle */}
+                  <button
+                    type="button"
+                    title="Toggle WhatsApp Message Preview"
+                    onClick={() => setPreviewSteps(prev => ({ ...prev, [node.id]: !prev[node.id] }))}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '5px 10px',
+                      borderRadius: '6px',
+                      border: isPreviewOpen ? '1px solid #10B981' : '1px solid #CBD5E1',
+                      background: isPreviewOpen ? '#ECFDF5' : '#FFFFFF',
+                      color: isPreviewOpen ? '#059669' : '#475569',
+                      fontSize: '0.76rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Smartphone size={14} />
+                    <span>{isPreviewOpen ? 'Hide Preview' : 'WhatsApp Preview'}</span>
+                  </button>
+
+                  {/* Delete Step */}
                   {node.type !== 'START' && (
                     <button
                       type="button"
@@ -541,6 +903,7 @@ export default function StepJourneyDesigner({
                     </button>
                   )}
 
+                  {/* Expand / Collapse Chevron */}
                   <button
                     type="button"
                     onClick={() => {
@@ -561,7 +924,158 @@ export default function StepJourneyDesigner({
                 </div>
               </div>
 
-              {/* Collapsed Step Preview */}
+              {/* WhatsApp Live Bubble Preview (when toggled) */}
+              {isPreviewOpen && (
+                <div style={{
+                  padding: '16px 20px',
+                  background: '#E5DDD5', // Authentic WhatsApp background
+                  backgroundImage: 'radial-gradient(#CBD5E1 0.75px, transparent 0.75px)',
+                  backgroundSize: '12px 12px',
+                  borderBottom: '1px solid #CBD5E1',
+                  display: 'flex',
+                  justifyContent: 'flex-start'
+                }}>
+                  <div style={{
+                    maxWidth: '440px',
+                    width: '100%',
+                    background: '#FFFFFF',
+                    borderRadius: '8px 8px 8px 0px',
+                    boxShadow: '0 1px 1px rgba(0,0,0,0.13)',
+                    padding: '10px 14px 6px 14px',
+                    position: 'relative',
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+                  }}>
+                    {/* Message Text Content */}
+                    <div style={{ fontSize: '0.88rem', color: '#111B21', lineHeight: '1.45', marginBottom: '8px' }}>
+                      {node.type === 'START' && (
+                        <div>
+                          ⚡ <strong>Inbound Trigger Listener:</strong> Listens for incoming WhatsApp messages matching configured keywords.
+                        </div>
+                      )}
+
+                      {node.type === 'MESSAGE' && renderWhatsAppFormattedText(node.config?.text || 'Hello! Welcome to our resort.')}
+
+                      {node.type === 'INPUT_COLLECTION' && (
+                        <div>
+                          {renderWhatsAppFormattedText(node.config?.prompt || 'Please enter details:')}
+                          <div style={{
+                            marginTop: '8px',
+                            padding: '6px 10px',
+                            borderRadius: '6px',
+                            background: '#F0F2F5',
+                            fontSize: '0.74rem',
+                            color: '#54656F',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}>
+                            <span>💬 Customer reply will be validated as: <strong>{node.config?.validation?.type || 'TEXT'}</strong></span>
+                          </div>
+                        </div>
+                      )}
+
+                      {node.type === 'BUTTON_MENU' && (
+                        <div>
+                          {renderWhatsAppFormattedText(node.config?.prompt || 'Please select an option:')}
+                        </div>
+                      )}
+
+                      {node.type === 'CONDITION' && (
+                        <div>
+                          🔀 <em>Evaluates variable <strong>${node.config?.variable}</strong> and routes customer automatically.</em>
+                        </div>
+                      )}
+
+                      {node.type === 'BUSINESS_ACTION' && (
+                        <div>
+                          ⚙️ <em>Executes backend operation: <strong>{node.config?.action}</strong></em>
+                        </div>
+                      )}
+
+                      {node.type === 'QUOTATION' && (
+                        <div>
+                          {renderWhatsAppFormattedText(node.config?.text || '✨ *Stay Quotation Summary*\n\nNights: 2\nTotal Amount: ₹13,440')}
+                        </div>
+                      )}
+
+                      {node.type === 'CONFIRMATION' && (
+                        <div>
+                          {renderWhatsAppFormattedText(node.config?.prompt || 'Please confirm your details:')}
+                        </div>
+                      )}
+
+                      {node.type === 'HANDOFF' && (
+                        <div>
+                          {renderWhatsAppFormattedText(node.config?.handoffMessage || '🔔 Connecting you with our front desk...')}
+                        </div>
+                      )}
+
+                      {node.type === 'END' && (
+                        <div>
+                          {renderWhatsAppFormattedText(node.config?.farewellMessage || '🙏 Thank you for chatting with us!')}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* WhatsApp Interactive Buttons (Rendered if BUTTON_MENU or CONFIRMATION) */}
+                    {(node.type === 'BUTTON_MENU' || node.type === 'CONFIRMATION') && (
+                      <div style={{ borderTop: '1px solid #E9EDEF', margin: '8px -14px 4px -14px', paddingTop: '4px' }}>
+                        {(node.config?.options || []).length <= 3 ? (
+                          // 1 to 3 Quick Reply Buttons
+                          (node.config?.options || []).map((opt, oIdx) => (
+                            <div
+                              key={opt.id || oIdx}
+                              style={{
+                                padding: '9px 12px',
+                                textAlign: 'center',
+                                color: '#00A884',
+                                fontWeight: 600,
+                                fontSize: '0.86rem',
+                                borderBottom: oIdx < (node.config?.options || []).length - 1 ? '1px solid #E9EDEF' : 'none',
+                                cursor: 'default'
+                              }}
+                            >
+                              {opt.title}
+                            </div>
+                          ))
+                        ) : (
+                          // 4+ List Menu Button
+                          <div style={{
+                            padding: '10px 12px',
+                            textAlign: 'center',
+                            color: '#00A884',
+                            fontWeight: 600,
+                            fontSize: '0.86rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px'
+                          }}>
+                            <Menu size={16} />
+                            <span>☰ Select an Option ({(node.config?.options || []).length} choices)</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* WhatsApp Message Metadata Footer (Timestamp + Double Tick) */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'flex-end',
+                      gap: '4px',
+                      fontSize: '0.68rem',
+                      color: '#667781',
+                      marginTop: '2px'
+                    }}>
+                      <span>10:15 AM</span>
+                      <span style={{ color: '#53BDEB' }}>✓✓</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Collapsed Step Summary */}
               {!isExpanded && (
                 <div style={{ padding: '12px 18px', fontSize: '0.84rem', color: '#334155' }}>
                   {node.type === 'START' && (
@@ -605,7 +1119,7 @@ export default function StepJourneyDesigner({
 
                   {node.type === 'CONDITION' && (
                     <div style={{ fontSize: '0.78rem', color: '#D97706', background: '#FFFBEB', padding: '8px 12px', borderRadius: '6px', border: '1px solid #FDE68A' }}>
-                      Branch on variable: <strong>${node.config?.variable}</strong> ({node.config?.rules?.length || 0} branching rules configured)
+                      Branch on variable: <strong>${node.config?.variable}</strong> ({(node.config?.rules || []).length} branching rules configured)
                     </div>
                   )}
 
@@ -673,33 +1187,97 @@ export default function StepJourneyDesigner({
 
                   {/* START Node Config */}
                   {node.type === 'START' && (
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
-                        Inbound Trigger Keywords (comma separated)
-                      </label>
-                      <input
-                        type="text"
-                        value={(node.config?.triggerKeywords || []).join(', ')}
-                        onChange={(e) => {
-                          const kws = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                          handleConfigChange(node.id, 'triggerKeywords', kws);
-                        }}
-                        placeholder="hi, hello, book, resort, room, rates"
-                        style={{ width: '100%', padding: '8px 12px', fontSize: '0.86rem', borderRadius: '6px', border: '1px solid #CBD5E1' }}
-                      />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: '6px' }}>
+                          Inbound Trigger Mode
+                        </label>
+                        <div style={{ display: 'flex', gap: '16px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem', cursor: 'pointer' }}>
+                            <input
+                              type="radio"
+                              name={`trigger_${node.id}`}
+                              checked={node.config?.triggerType === 'INBOUND_ANY'}
+                              onChange={() => handleConfigChange(node.id, 'triggerType', 'INBOUND_ANY')}
+                            />
+                            <span>Any Inbound Customer Message (Catch-all)</span>
+                          </label>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.84rem', cursor: 'pointer' }}>
+                            <input
+                              type="radio"
+                              name={`trigger_${node.id}`}
+                              checked={node.config?.triggerType !== 'INBOUND_ANY'}
+                              onChange={() => handleConfigChange(node.id, 'triggerType', 'KEYWORD_MATCH')}
+                            />
+                            <span>Matching Trigger Keywords</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {node.config?.triggerType !== 'INBOUND_ANY' && (
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
+                            Trigger Keywords (comma separated)
+                          </label>
+                          <input
+                            type="text"
+                            value={(node.config?.triggerKeywords || []).join(', ')}
+                            onChange={(e) => {
+                              const kws = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                              handleConfigChange(node.id, 'triggerKeywords', kws);
+                            }}
+                            placeholder="resort, book, room, stay, hi, hello, rates"
+                            style={{ width: '100%', padding: '8px 12px', fontSize: '0.86rem', borderRadius: '6px', border: '1px solid #CBD5E1' }}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
 
                   {/* MESSAGE Node Config */}
                   {(node.type === 'MESSAGE' || node.type === 'END') && (
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
-                        Message Template Text (supports variables like <code>&#123;&#123;property.name&#125;&#125;</code>, <code>&#123;&#123;customer_name&#125;&#125;</code>)
-                      </label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>
+                          Message Template Text
+                        </label>
+                        <span style={{ fontSize: '0.74rem', color: '#64748B' }}>
+                          Markdown supported (*bold*, _italic_)
+                        </span>
+                      </div>
+
+                      {/* Variable Insertion Pills */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.72rem', color: '#94A3B8' }}>Insert:</span>
+                        {['customer_name', 'property.name', 'check_in_date', 'check_out_date', 'quote_total'].map(v => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => {
+                              const curr = node.config?.text || node.config?.farewellMessage || '';
+                              handleConfigChange(node.id, node.type === 'END' ? 'farewellMessage' : 'text', `${curr} {{${v}}}`);
+                            }}
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              border: '1px solid #E2E8F0',
+                              background: '#F8FAFC',
+                              color: '#3B82F6',
+                              fontSize: '0.72rem',
+                              fontFamily: 'monospace',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            + {`{{${v}}}`}
+                          </button>
+                        ))}
+                      </div>
+
                       <textarea
                         rows={4}
                         value={node.config?.text || node.config?.farewellMessage || ''}
                         onChange={(e) => handleConfigChange(node.id, node.type === 'END' ? 'farewellMessage' : 'text', e.target.value)}
+                        placeholder="Type your message here..."
                         style={{ width: '100%', padding: '8px 12px', fontSize: '0.86rem', borderRadius: '6px', border: '1px solid #CBD5E1' }}
                       />
                     </div>
@@ -730,9 +1308,30 @@ export default function StepJourneyDesigner({
                             type="text"
                             value={node.config?.variable || ''}
                             onChange={(e) => handleConfigChange(node.id, 'variable', e.target.value)}
-                            placeholder="e.g. check_in_date, guest_count, full_name"
+                            placeholder="e.g. check_in_date, guest_count"
                             style={{ width: '100%', padding: '8px 12px', fontSize: '0.86rem', borderRadius: '6px', border: '1px solid #CBD5E1', fontFamily: 'monospace' }}
                           />
+                          {/* Quick suggestions */}
+                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '6px' }}>
+                            {VARIABLE_SUGGESTIONS.slice(0, 5).map(s => (
+                              <button
+                                key={s}
+                                type="button"
+                                onClick={() => handleConfigChange(node.id, 'variable', s)}
+                                style={{
+                                  border: 'none',
+                                  background: '#EFF6FF',
+                                  color: '#2563EB',
+                                  fontSize: '0.7rem',
+                                  borderRadius: '4px',
+                                  padding: '1px 6px',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </div>
                         </div>
 
                         <div>
@@ -758,6 +1357,43 @@ export default function StepJourneyDesigner({
                           </select>
                         </div>
                       </div>
+
+                      {/* Validation Sub-settings */}
+                      {node.config?.validation?.type === 'NUMBER' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.76rem', color: '#64748B' }}>Minimum Value</label>
+                            <input
+                              type="number"
+                              value={node.config?.validation?.min ?? 1}
+                              onChange={(e) => handleConfigChange(node.id, 'validation', { ...(node.config?.validation || {}), min: Number(e.target.value) })}
+                              style={{ width: '100%', padding: '6px 10px', fontSize: '0.82rem', borderRadius: '4px', border: '1px solid #CBD5E1' }}
+                            />
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.76rem', color: '#64748B' }}>Maximum Value</label>
+                            <input
+                              type="number"
+                              value={node.config?.validation?.max ?? 20}
+                              onChange={(e) => handleConfigChange(node.id, 'validation', { ...(node.config?.validation || {}), max: Number(e.target.value) })}
+                              style={{ width: '100%', padding: '6px 10px', fontSize: '0.82rem', borderRadius: '4px', border: '1px solid #CBD5E1' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {node.config?.validation?.type === 'DATE' && (
+                        <div>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#475569', cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={node.config?.validation?.allowRelativeKeywords !== false}
+                              onChange={(e) => handleConfigChange(node.id, 'validation', { ...(node.config?.validation || {}), allowRelativeKeywords: e.target.checked })}
+                            />
+                            <span>Allow natural relative keywords (e.g. "tomorrow", "kal", "today")</span>
+                          </label>
+                        </div>
+                      )}
 
                       <div>
                         <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
@@ -795,11 +1431,29 @@ export default function StepJourneyDesigner({
                         />
                       </div>
 
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '6px' }}>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>
+                          Store Selected Choice in Variable
+                        </label>
+                        <input
+                          type="text"
+                          value={node.config?.variable || 'menu_choice'}
+                          onChange={(e) => handleConfigChange(node.id, 'variable', e.target.value)}
+                          placeholder="e.g. selected_service, enquiry_type"
+                          style={{ width: '100%', padding: '8px 12px', fontSize: '0.86rem', borderRadius: '6px', border: '1px solid #CBD5E1', fontFamily: 'monospace' }}
+                        />
+                      </div>
+
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                          <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>
-                            Interactive Options &amp; Branch Destinations
-                          </label>
+                          <div>
+                            <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>
+                              Interactive Options &amp; Branch Destinations
+                            </label>
+                            <span style={{ display: 'block', fontSize: '0.72rem', color: '#64748B' }}>
+                              💡 1 to 3 options render as Quick-Reply Buttons; 4 to 10 render as Interactive List Menu.
+                            </span>
+                          </div>
                           <button
                             type="button"
                             onClick={() => handleAddOption(node.id)}
@@ -807,7 +1461,7 @@ export default function StepJourneyDesigner({
                               display: 'flex',
                               alignItems: 'center',
                               gap: '4px',
-                              padding: '4px 10px',
+                              padding: '5px 12px',
                               borderRadius: '6px',
                               border: '1px solid #7C3AED',
                               background: '#F5F3FF',
@@ -879,6 +1533,157 @@ export default function StepJourneyDesigner({
                     </div>
                   )}
 
+                  {/* CONDITION Node Config */}
+                  {node.type === 'CONDITION' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
+                          Variable to Evaluate
+                        </label>
+                        <input
+                          type="text"
+                          value={node.config?.variable || ''}
+                          onChange={(e) => handleConfigChange(node.id, 'variable', e.target.value)}
+                          placeholder="e.g. menu_choice, guests, quote_total"
+                          style={{ width: '100%', padding: '8px 12px', fontSize: '0.86rem', borderRadius: '6px', border: '1px solid #CBD5E1', fontFamily: 'monospace' }}
+                        />
+                      </div>
+
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                          <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#475569' }}>
+                            Condition Rules
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const currRules = node.config?.rules || [];
+                              handleConfigChange(node.id, 'rules', [
+                                ...currRules,
+                                { operator: 'EQUALS', value: '', targetNodeId: '' }
+                              ]);
+                            }}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              border: '1px solid #D97706',
+                              background: '#FFFBEB',
+                              color: '#D97706',
+                              fontSize: '0.78rem',
+                              fontWeight: 600,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <Plus size={14} /> Add Rule
+                          </button>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {(node.config?.rules || []).map((rule, rIdx) => (
+                            <div
+                              key={rIdx}
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: '1fr 1fr 1.2fr auto',
+                                gap: '8px',
+                                background: '#FFFBEB',
+                                padding: '8px 10px',
+                                borderRadius: '8px',
+                                border: '1px solid #FDE68A',
+                                alignItems: 'center'
+                              }}
+                            >
+                              <select
+                                value={rule.operator || 'EQUALS'}
+                                onChange={(e) => {
+                                  const updated = [...(node.config?.rules || [])];
+                                  updated[rIdx] = { ...updated[rIdx], operator: e.target.value };
+                                  handleConfigChange(node.id, 'rules', updated);
+                                }}
+                                style={{ padding: '6px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid #CBD5E1', background: '#FFFFFF' }}
+                              >
+                                <option value="EQUALS">== EQUALS</option>
+                                <option value="NOT_EQUALS">!= NOT EQUALS</option>
+                                <option value="CONTAINS">CONTAINS</option>
+                                <option value="GREATER_THAN">&gt; GREATER THAN</option>
+                                <option value="LESS_THAN">&lt; LESS THAN</option>
+                                <option value="EXISTS">EXISTS (Not Empty)</option>
+                              </select>
+
+                              <input
+                                type="text"
+                                value={rule.value || ''}
+                                onChange={(e) => {
+                                  const updated = [...(node.config?.rules || [])];
+                                  updated[rIdx] = { ...updated[rIdx], value: e.target.value };
+                                  handleConfigChange(node.id, 'rules', updated);
+                                }}
+                                placeholder="Match Value"
+                                style={{ padding: '6px 10px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid #CBD5E1' }}
+                              />
+
+                              <select
+                                value={rule.targetNodeId || ''}
+                                onChange={(e) => {
+                                  const updated = [...(node.config?.rules || [])];
+                                  updated[rIdx] = { ...updated[rIdx], targetNodeId: e.target.value };
+                                  handleConfigChange(node.id, 'rules', updated);
+                                  // sync transition
+                                  if (e.target.value) {
+                                    const exists = transitions.some(t => t.source === node.id && t.target === e.target.value);
+                                    if (!exists) {
+                                      onUpdateTransitions([...transitions, { id: `t_${node.id}_${e.target.value}_${Date.now()}`, source: node.id, target: e.target.value }]);
+                                    }
+                                  }
+                                }}
+                                style={{ padding: '6px', fontSize: '0.8rem', borderRadius: '4px', border: '1px solid #CBD5E1', background: '#FFFFFF' }}
+                              >
+                                <option value="">Select target step...</option>
+                                {nodes.filter(n => n.id !== node.id).map(targetNode => (
+                                  <option key={targetNode.id} value={targetNode.id}>
+                                    ➔ {targetNode.title}
+                                  </option>
+                                ))}
+                              </select>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const updated = (node.config?.rules || []).filter((_, i) => i !== rIdx);
+                                  handleConfigChange(node.id, 'rules', updated);
+                                }}
+                                style={{ border: 'none', background: 'transparent', color: '#94A3B8', cursor: 'pointer', padding: '4px' }}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div style={{ marginTop: '10px' }}>
+                          <label style={{ display: 'block', fontSize: '0.78rem', color: '#64748B', marginBottom: '4px' }}>
+                            Default Fallback Step (if no rules match):
+                          </label>
+                          <select
+                            value={node.config?.defaultTargetNodeId || 'NONE'}
+                            onChange={(e) => handleConfigChange(node.id, 'defaultTargetNodeId', e.target.value)}
+                            style={{ width: '100%', padding: '6px 10px', fontSize: '0.82rem', borderRadius: '4px', border: '1px solid #CBD5E1', background: '#FFFFFF' }}
+                          >
+                            <option value="NONE">None / Complete flow</option>
+                            {nodes.filter(n => n.id !== node.id).map(targetNode => (
+                              <option key={targetNode.id} value={targetNode.id}>
+                                ➔ {targetNode.title}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* BUSINESS_ACTION Node Config */}
                   {node.type === 'BUSINESS_ACTION' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -902,8 +1707,78 @@ export default function StepJourneyDesigner({
                     </div>
                   )}
 
+                  {/* QUOTATION Node Config */}
+                  {node.type === 'QUOTATION' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
+                          Itemized Quote Message Format
+                        </label>
+                        <textarea
+                          rows={4}
+                          value={node.config?.text || '✨ *Stay Quotation Summary*\n\nNights: {{nights}}\nBase Charges: ₹{{quote_subtotal}}\nTaxes (GST): ₹{{tax_total}}\n*Total Amount Payable: ₹{{quote_total}}*'}
+                          onChange={(e) => handleConfigChange(node.id, 'text', e.target.value)}
+                          style={{ width: '100%', padding: '8px 12px', fontSize: '0.86rem', borderRadius: '6px', border: '1px solid #CBD5E1' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* CONFIRMATION Node Config */}
+                  {node.type === 'CONFIRMATION' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
+                          Confirmation Question Prompt
+                        </label>
+                        <input
+                          type="text"
+                          value={node.config?.prompt || 'Please confirm your details above:'}
+                          onChange={(e) => handleConfigChange(node.id, 'prompt', e.target.value)}
+                          style={{ width: '100%', padding: '8px 12px', fontSize: '0.86rem', borderRadius: '6px', border: '1px solid #CBD5E1' }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* HANDOFF Node Config */}
+                  {node.type === 'HANDOFF' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
+                          Staff Transfer Notice Message
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={node.config?.handoffMessage || '🔔 Connecting you with our Front Desk team. An agent will message you directly on this chat shortly.'}
+                          onChange={(e) => handleConfigChange(node.id, 'handoffMessage', e.target.value)}
+                          style={{ width: '100%', padding: '8px 12px', fontSize: '0.86rem', borderRadius: '6px', border: '1px solid #CBD5E1' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.76rem', color: '#64748B' }}>Pause Bot Duration (mins)</label>
+                          <input
+                            type="number"
+                            value={node.config?.pauseMinutes || 60}
+                            onChange={(e) => handleConfigChange(node.id, 'pauseMinutes', Number(e.target.value))}
+                            style={{ width: '120px', padding: '6px 10px', fontSize: '0.82rem', borderRadius: '4px', border: '1px solid #CBD5E1' }}
+                          />
+                        </div>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', color: '#475569', cursor: 'pointer', marginTop: '16px' }}>
+                          <input
+                            type="checkbox"
+                            checked={node.config?.alertStaff !== false}
+                            onChange={(e) => handleConfigChange(node.id, 'alertStaff', e.target.checked)}
+                          />
+                          <span>Alert on-duty reservations staff via WebSocket</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Next Step Transition Selector */}
-                  {node.type !== 'END' && node.type !== 'HANDOFF' && node.type !== 'BUTTON_MENU' && (
+                  {node.type !== 'END' && node.type !== 'HANDOFF' && node.type !== 'BUTTON_MENU' && node.type !== 'CONDITION' && (
                     <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '12px' }}>
                       <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>
                         Next Step in Flow
@@ -1057,6 +1932,126 @@ export default function StepJourneyDesigner({
                 style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', background: '#2F5219', color: '#FFFFFF', fontSize: '0.84rem', fontWeight: 600, cursor: 'pointer' }}
               >
                 Add Step to Flow
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save as Template Modal */}
+      {isSaveTemplateModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '16px',
+            maxWidth: '520px',
+            width: '100%',
+            overflow: 'hidden',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+          }}>
+            <div style={{
+              padding: '18px 24px',
+              borderBottom: '1px solid #E2E8F0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#0F172A' }}>
+                Save as Reusable Template
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsSaveTemplateModalOpen(false)}
+                style={{ border: 'none', background: 'transparent', color: '#64748B', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {templateSavedSuccess && (
+                <div style={{ padding: '10px 14px', borderRadius: '8px', background: '#DCFCE7', color: '#166534', fontSize: '0.84rem', fontWeight: 600 }}>
+                  ✓ Template saved successfully to library!
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                  Template Title
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Luxury Beachfront Resort Booking Journey"
+                  value={templateTitle}
+                  onChange={(e) => setTemplateTitle(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', fontSize: '0.86rem', borderRadius: '6px', border: '1px solid #CBD5E1' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                  Industry / Category
+                </label>
+                <select
+                  value={templateIndustry}
+                  onChange={(e) => setTemplateIndustry(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', fontSize: '0.86rem', borderRadius: '6px', border: '1px solid #CBD5E1', background: '#FFFFFF' }}
+                >
+                  <option value="HOSPITALITY">Hospitality &amp; Resorts</option>
+                  <option value="SALES">B2B Sales &amp; Quotes</option>
+                  <option value="CUSTOMER_SERVICE">Customer Support</option>
+                  <option value="GENERAL">General Purpose</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.84rem', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
+                  Description
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Describe the customer journey and what this template achieves..."
+                  value={templateDesc}
+                  onChange={(e) => setTemplateDesc(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', fontSize: '0.86rem', borderRadius: '6px', border: '1px solid #CBD5E1' }}
+                />
+              </div>
+            </div>
+
+            <div style={{
+              padding: '16px 24px',
+              borderTop: '1px solid #E2E8F0',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '10px',
+              background: '#F8FAFC'
+            }}>
+              <button
+                type="button"
+                onClick={() => setIsSaveTemplateModalOpen(false)}
+                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#475569', fontSize: '0.84rem', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAsTemplate}
+                disabled={savingTemplate}
+                style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', background: '#2F5219', color: '#FFFFFF', fontSize: '0.84rem', fontWeight: 600, cursor: 'pointer' }}
+              >
+                {savingTemplate ? 'Saving...' : 'Save Template'}
               </button>
             </div>
           </div>

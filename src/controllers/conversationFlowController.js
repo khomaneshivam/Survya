@@ -198,6 +198,17 @@ async function listTemplates(req, res) {
   }
 }
 
+async function createTemplate(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const user = req.user || { id: "admin", name: "Administrator" };
+    const template = flowService.createTemplate(req.body, user, tenantId);
+    return res.status(201).json({ success: true, template });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
 async function cloneTemplate(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
@@ -307,6 +318,7 @@ module.exports = {
   getExecutionDetails,
   simulateTurn,
   listTemplates,
+  createTemplate,
   cloneTemplate,
   listMessageTemplates,
   saveMessageTemplate,

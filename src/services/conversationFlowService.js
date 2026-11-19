@@ -747,6 +747,44 @@ function createFlowFromTemplate(templateSlug, data = {}, user = { id: "admin", n
 }
 
 /**
+ * Create a new template (custom template saved from designer)
+ */
+function createTemplate(data, user = { id: "admin", name: "Administrator" }, tenantId = 1) {
+  const { title, description, industry = "HOSPITALITY", category = "CUSTOM", nodes = [], transitions = [], variables = {} } = data;
+  if (!title || !title.trim()) {
+    throw new Error("Template title is required.");
+  }
+
+  const baseSlug = (data.slug || title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 45) || "custom-flow";
+  const slug = `${baseSlug}-${Date.now().toString(36)}`;
+
+  const res = db.prepare(`
+    INSERT INTO conversation_flow_templates (
+      slug, title, description, industry, category, is_system,
+      nodes_json, transitions_json, variables_json
+    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+  `).run(
+    slug,
+    title.trim(),
+    description || "Custom template saved from Studio Designer",
+    industry,
+    category,
+    JSON.stringify(nodes),
+    JSON.stringify(transitions),
+    JSON.stringify(variables)
+  );
+
+  const tplId = res.lastInsertRowid || db.prepare("SELECT id FROM conversation_flow_templates WHERE slug = ?").get(slug)?.id;
+  const created = db.prepare("SELECT * FROM conversation_flow_templates WHERE id = ?").get(tplId);
+  return {
+    ...created,
+    is_system: Boolean(created?.is_system),
+    nodeCount: nodes.length,
+    transitionCount: transitions.length
+  };
+}
+
+/**
  * Reusable Message Templates CRUD
  */
 function listMessageTemplates(tenantId = 1, propertyId = null) {
@@ -994,6 +1032,7 @@ module.exports = {
   rollbackFlow,
   listVersions,
   listTemplates,
+  createTemplate,
   createFlowFromTemplate,
   listMessageTemplates,
   saveMessageTemplate,

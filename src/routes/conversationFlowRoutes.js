@@ -28,6 +28,7 @@ router.delete("/flows/message-templates/:id", authenticateToken, flowController.
 
 // Starter Journey Templates
 router.get("/flows/conversation-templates", authenticateToken, flowController.listTemplates);
+router.post("/flows/conversation-templates", authenticateToken, flowController.createTemplate);
 router.post("/flows/conversation-templates/:slug/clone", authenticateToken, flowController.cloneTemplate);
 
 // Single Flow Operations

@@ -193,3 +193,136 @@ test("Step Designer - Custom dynamically generated workflow executes end-to-end 
   assert.match(turn4Valid.replyText, /Your request for 6 guests/i);
   assert.match(turn4Valid.replyText, /vip\.guest@retreat\.com/i);
 });
+
+test("Step Designer - Dynamic condition branching routes based on variable thresholds", async () => {
+  const branchingNodes = [
+    {
+      id: "node_b_start",
+      type: "START",
+      title: "Inbound Start",
+      config: { triggerType: "INBOUND_ANY" }
+    },
+    {
+      id: "node_b_ask_guests",
+      type: "INPUT_COLLECTION",
+      title: "Ask Guest Count",
+      config: {
+        prompt: "How many guests will be joining us?",
+        variable: "guest_count",
+        validation: { type: "NUMBER", min: 1, max: 50, errorMessage: "Enter a number between 1 and 50" }
+      }
+    },
+    {
+      id: "node_b_condition",
+      type: "CONDITION",
+      title: "Branch by Group Size",
+      config: {
+        variable: "guest_count",
+        rules: [
+          { operator: "GREATER_THAN", value: "10", targetNodeId: "node_b_large_group" }
+        ],
+        defaultTargetNodeId: "node_b_standard_group"
+      }
+    },
+    {
+      id: "node_b_large_group",
+      type: "MESSAGE",
+      title: "Large Group Notice",
+      config: {
+        text: "🎉 You have a large group of {{guest_count}} guests! Our Banquet & Events coordinator will arrange group discounts."
+      }
+    },
+    {
+      id: "node_b_standard_group",
+      type: "MESSAGE",
+      title: "Standard Group Notice",
+      config: {
+        text: "🌴 Welcome! We have private luxury villas perfectly suited for {{guest_count}} guests."
+      }
+    }
+  ];
+
+  const branchingTransitions = [
+    { id: "tb1", source: "node_b_start", target: "node_b_ask_guests" },
+    { id: "tb2", source: "node_b_ask_guests", target: "node_b_condition" }
+  ];
+
+  // Test Case A: Customer enters 15 guests (> 10) -> Routes to large group branch
+  const stateLarge = {
+    session_key: "WHATSAPP:919911223344:1",
+    current_node_id: "node_b_ask_guests",
+    session_status: "ACTIVE",
+    collectedData: {}
+  };
+
+  const turnLarge = await flowEngine.processTurn({
+    senderPhone: "919911223344",
+    userInput: "15",
+    context: {
+      isSimulation: true,
+      simulationState: stateLarge,
+      flowOverride: { nodes: branchingNodes, transitions: branchingTransitions }
+    }
+  });
+
+  assert.equal(turnLarge.handled, true);
+  assert.equal(turnLarge.collectedData.guest_count, 15);
+  assert.match(turnLarge.replyText, /large group of 15 guests/i);
+  assert.match(turnLarge.replyText, /Banquet & Events coordinator/i);
+
+  // Test Case B: Customer enters 4 guests (<= 10) -> Routes to default standard group branch
+  const stateStandard = {
+    session_key: "WHATSAPP:919911223355:1",
+    current_node_id: "node_b_ask_guests",
+    session_status: "ACTIVE",
+    collectedData: {}
+  };
+
+  const turnStandard = await flowEngine.processTurn({
+    senderPhone: "919911223355",
+    userInput: "4",
+    context: {
+      isSimulation: true,
+      simulationState: stateStandard,
+      flowOverride: { nodes: branchingNodes, transitions: branchingTransitions }
+    }
+  });
+
+  assert.equal(turnStandard.handled, true);
+  assert.equal(turnStandard.collectedData.guest_count, 4);
+  assert.match(turnStandard.replyText, /private luxury villas perfectly suited for 4 guests/i);
+});
+
+test("Step Designer - Reusable Template creation and listing persists zero-hardcoded journey", async () => {
+  const flowService = require("../src/services/conversationFlowService");
+
+  const templatePayload = {
+    title: "Eco Resort Glamping Journey",
+    description: "Automated booking and eco-activity tour enquiry flow",
+    industry: "HOSPITALITY",
+    category: "GLAMPING",
+    nodes: [
+      { id: "n1", type: "START", title: "Start", config: { triggerType: "INBOUND_ANY" } },
+      { id: "n2", type: "MESSAGE", title: "Greeting", config: { text: "Welcome to Eco Glamping!" } }
+    ],
+    transitions: [
+      { id: "t1", source: "n1", target: "n2" }
+    ]
+  };
+
+  const created = flowService.createTemplate(templatePayload);
+  assert.ok(created.id);
+  assert.ok(created.slug.startsWith("eco-resort-glamping-journey"));
+  assert.equal(created.title, "Eco Resort Glamping Journey");
+
+  // Verify it appears in template listing
+  const allTemplates = flowService.listTemplates();
+  const found = allTemplates.find(t => t.slug === created.slug);
+  assert.ok(found);
+  assert.equal(found.title, "Eco Resort Glamping Journey");
+  assert.equal(found.nodeCount, 2);
+
+  // Clean up
+  db.prepare("DELETE FROM conversation_flow_templates WHERE id = ?").run(created.id);
+});
+
