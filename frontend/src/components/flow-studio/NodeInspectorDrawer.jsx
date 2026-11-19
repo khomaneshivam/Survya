@@ -26,10 +26,13 @@ const APPROVED_ACTIONS = [
   { id: 'GENERATE_PAYMENT_LINK', label: '💳 Generate Secure Payment Deposit Link', desc: 'Generates Razorpay / Survya Pay checkout link with payment ID' }
 ];
 
+const EMPTY_OBJECT = Object.freeze({});
+const EMPTY_ARRAY = Object.freeze([]);
+
 export default function NodeInspectorDrawer({
   node,
-  nodes = [],
-  variables = {},
+  nodes = EMPTY_ARRAY,
+  variables = EMPTY_OBJECT,
   onUpdateNode,
   onClose
 }) {

@@ -30,18 +30,21 @@ export default function FlowSimulatorPanel({
   const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'variables' | 'trace'
 
   const chatEndRef = useRef(null);
+  const onActiveNodeChangeRef = useRef(onActiveNodeChange);
+  onActiveNodeChangeRef.current = onActiveNodeChange;
+  const simulationStartedRef = useRef(false);
 
   // Auto-scroll chat to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Clear highlight on unmount
+  // Clear highlight strictly on component unmount
   useEffect(() => {
     return () => {
-      onActiveNodeChange?.(null);
+      onActiveNodeChangeRef.current?.(null);
     };
-  }, [onActiveNodeChange]);
+  }, []);
 
   // Initial trigger
   const startSimulation = async () => {
@@ -108,7 +111,8 @@ export default function FlowSimulatorPanel({
   };
 
   useEffect(() => {
-    if (currentNodes.length > 0 && messages.length === 0) {
+    if (currentNodes.length > 0 && messages.length === 0 && !simulationStartedRef.current) {
+      simulationStartedRef.current = true;
       startSimulation();
     }
   }, [currentNodes]);

@@ -43,12 +43,15 @@ const edgeTypes = {
   customFlowEdge: CustomFlowEdge
 };
 
+const EMPTY_OBJECT = Object.freeze({});
+const EMPTY_ARRAY = Object.freeze([]);
+
 function FlowCanvasInner({
-  nodes: sarvyaNodes = [],
-  transitions: sarvyaTransitions = [],
+  nodes: sarvyaNodes = EMPTY_ARRAY,
+  transitions: sarvyaTransitions = EMPTY_ARRAY,
   selectedNodeId,
   activeSimulatedNodeId,
-  nodeMetrics = {},
+  nodeMetrics = EMPTY_OBJECT,
   onSelectNode,
   onUpdateNodes,
   onUpdateTransitions
@@ -189,6 +192,24 @@ function FlowCanvasInner({
     [sarvyaNodes, sarvyaTransitions, onUpdateTransitions, recordHistory]
   );
 
+  const handleDuplicateNodeRef = useRef(handleDuplicateNode);
+  handleDuplicateNodeRef.current = handleDuplicateNode;
+  const handleDeleteNodeRef = useRef(handleDeleteNode);
+  handleDeleteNodeRef.current = handleDeleteNode;
+  const handleDeleteEdgeRef = useRef(handleDeleteEdge);
+  handleDeleteEdgeRef.current = handleDeleteEdge;
+  const nodeMetricsRef = useRef(nodeMetrics);
+  nodeMetricsRef.current = nodeMetrics;
+
+  const metricsHash = useMemo(() => {
+    if (!nodeMetrics || Object.keys(nodeMetrics).length === 0) return '';
+    try {
+      return JSON.stringify(nodeMetrics);
+    } catch {
+      return '';
+    }
+  }, [nodeMetrics]);
+
   // Synchronize Inbound: Convert SARVYA { nodes, transitions } to React Flow
   useEffect(() => {
     if (isSyncingRef.current) return;
@@ -198,9 +219,12 @@ function FlowCanvasInner({
       sarvyaTransitions
     );
 
+    const issues = validationReport?.allIssues || [];
+    const metrics = nodeMetricsRef.current || EMPTY_OBJECT;
+
     // Attach callbacks, simulation highlights, and validation issues to node data
     const enrichedNodes = convertedNodes.map((n) => {
-      const nodeIssues = validationReport.allIssues.filter((i) => i.nodeId === n.id);
+      const nodeIssues = issues.filter((i) => i.nodeId === n.id);
       return {
         ...n,
         selected: n.id === selectedNodeId,
@@ -209,9 +233,9 @@ function FlowCanvasInner({
           activeSimulatedNodeId,
           validationIssues: nodeIssues,
           showAnalyticsOverlay,
-          metrics: nodeMetrics?.[n.id] || null,
-          onDuplicateNode: (nodeId) => handleDuplicateNode(nodeId),
-          onDeleteNode: (nodeId) => handleDeleteNode(nodeId)
+          metrics: metrics[n.id] || null,
+          onDuplicateNode: (nodeId) => handleDuplicateNodeRef.current?.(nodeId),
+          onDeleteNode: (nodeId) => handleDeleteNodeRef.current?.(nodeId)
         }
       };
     });
@@ -220,13 +244,13 @@ function FlowCanvasInner({
       ...e,
       data: {
         ...e.data,
-        onDeleteEdge: (edgeId) => handleDeleteEdge(edgeId)
+        onDeleteEdge: (edgeId) => handleDeleteEdgeRef.current?.(edgeId)
       }
     }));
 
     setRfNodes(enrichedNodes);
     setRfEdges(enrichedEdges);
-  }, [sarvyaNodes, sarvyaTransitions, selectedNodeId, activeSimulatedNodeId, showAnalyticsOverlay, nodeMetrics, validationReport, handleDuplicateNode, handleDeleteNode, handleDeleteEdge]);
+  }, [sarvyaNodes, sarvyaTransitions, selectedNodeId, activeSimulatedNodeId, showAnalyticsOverlay, metricsHash, validationReport]);
 
   // Auto-pan / center on simulated active node
   useEffect(() => {
@@ -889,10 +913,20 @@ function FlowCanvasInner({
   );
 }
 
-export default function FlowCanvas(props) {
+export default function FlowCanvas({
+  nodes = EMPTY_ARRAY,
+  transitions = EMPTY_ARRAY,
+  nodeMetrics = EMPTY_OBJECT,
+  ...props
+}) {
   return (
     <ReactFlowProvider>
-      <FlowCanvasInner {...props} />
+      <FlowCanvasInner
+        nodes={nodes}
+        transitions={transitions}
+        nodeMetrics={nodeMetrics}
+        {...props}
+      />
     </ReactFlowProvider>
   );
 }
