@@ -40,7 +40,8 @@ import {
   X,
   Tag,
   Copy,
-  ChevronDown
+  ChevronDown,
+  Layers
 } from 'lucide-react';
 
 import FlowCanvas from '../components/flow-studio/FlowCanvas';
