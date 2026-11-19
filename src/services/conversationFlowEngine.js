@@ -28,14 +28,17 @@ function interpolateVariables(templateStr, context = {}) {
 }
 
 /**
- * Natural language / basic date parser for guest check-in/check-out inputs
+ * Natural language / robust date parser for guest check-in/check-out inputs
  */
 function parseDateInput(inputStr, referenceDate = new Date()) {
   if (!inputStr) return null;
-  const raw = String(inputStr).trim().toLowerCase();
+  let raw = String(inputStr).trim().toLowerCase();
+
+  // Strip ordinals: "20th" -> "20", "1st" -> "1", "2nd" -> "2", "3rd" -> "3"
+  raw = raw.replace(/\b(\d{1,2})(st|nd|rd|th)\b/g, "$1");
 
   // YYYY-MM-DD
-  const isoMatch = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  const isoMatch = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
   if (isoMatch) {
     const y = Number(isoMatch[1]);
     const m = String(isoMatch[2]).padStart(2, "0");
@@ -54,6 +57,7 @@ function parseDateInput(inputStr, referenceDate = new Date()) {
 
   // Relative keywords
   const ref = new Date(referenceDate);
+  const refYear = ref.getFullYear();
   if (raw === "today" || raw === "aaj") {
     return ref.toISOString().split("T")[0];
   }
@@ -66,10 +70,80 @@ function parseDateInput(inputStr, referenceDate = new Date()) {
     return ref.toISOString().split("T")[0];
   }
 
+  // Month dictionary
+  const months = {
+    jan: 1, january: 1,
+    feb: 2, february: 2,
+    mar: 3, march: 3,
+    apr: 4, april: 4,
+    may: 5,
+    jun: 6, june: 6,
+    jul: 7, july: 7,
+    aug: 8, august: 8,
+    sep: 9, sept: 9, september: 9,
+    oct: 10, october: 10,
+    nov: 11, november: 11,
+    dec: 12, december: 12
+  };
+
+  // Pattern: "20 nov", "20 november", "20 nov 2026", "nov 20", "november 20"
+  const monthDayMatch = raw.match(/^(\d{1,2})\s+([a-z]+)(?:\s+(\d{4}))?$/) ||
+                        raw.match(/^([a-z]+)\s+(\d{1,2})(?:\s+(\d{4}))?$/);
+  if (monthDayMatch) {
+    let day, monthStr, yearStr;
+    if (/^\d/.test(monthDayMatch[1])) {
+      day = Number(monthDayMatch[1]);
+      monthStr = monthDayMatch[2];
+      yearStr = monthDayMatch[3];
+    } else {
+      monthStr = monthDayMatch[1];
+      day = Number(monthDayMatch[2]);
+      yearStr = monthDayMatch[3];
+    }
+    const monthNum = months[monthStr];
+    if (monthNum && day >= 1 && day <= 31) {
+      let y = yearStr ? Number(yearStr) : refYear;
+      // If no year specified and date is already past in this year, roll to next year
+      const candidate = new Date(y, monthNum - 1, day);
+      if (!yearStr && candidate < new Date(ref.getFullYear(), ref.getMonth(), ref.getDate())) {
+        y += 1;
+      }
+      const mStr = String(monthNum).padStart(2, "0");
+      const dStr = String(day).padStart(2, "0");
+      return `${y}-${mStr}-${dStr}`;
+    }
+  }
+
+  // DD/MM or DD-MM (without year)
+  const dmMatch = raw.match(/^(\d{1,2})[-/](\d{1,2})$/);
+  if (dmMatch) {
+    const d = Number(dmMatch[1]);
+    const m = Number(dmMatch[2]);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      let y = refYear;
+      const candidate = new Date(y, m - 1, d);
+      if (candidate < new Date(ref.getFullYear(), ref.getMonth(), ref.getDate())) {
+        y += 1;
+      }
+      return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    }
+  }
+
   // Fallback: standard Date.parse
   const parsed = new Date(raw);
   if (!isNaN(parsed.getTime())) {
-    return parsed.toISOString().split("T")[0];
+    let y = parsed.getFullYear();
+    // V8 defaults missing year to 2001
+    if (y < refYear) {
+      y = refYear;
+      const candidate = new Date(y, parsed.getMonth(), parsed.getDate());
+      if (candidate < new Date(ref.getFullYear(), ref.getMonth(), ref.getDate())) {
+        y += 1;
+      }
+    }
+    const m = String(parsed.getMonth() + 1).padStart(2, "0");
+    const d = String(parsed.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
   }
 
   return null;
@@ -142,69 +216,65 @@ function evaluateConditionRule(valA, operator, valB) {
 }
 
 /**
- * Robust option matcher for buttons, lists, and quoted WhatsApp messages
+ * Robust option matcher for buttons, lists, numeric choices, and quoted WhatsApp messages
  */
 function matchOption(rawOptions, choiceValue, userInput, isInitialPreAnswer = false) {
   if (!Array.isArray(rawOptions) || rawOptions.length === 0) return null;
   const cVal = String(choiceValue || "").toLowerCase().trim();
   const uInput = String(userInput || "").toLowerCase().trim();
 
-  // 1. If choiceValue is provided from userPayload (button/list click or explicit choice), match with highest priority
-  if (cVal && cVal !== uInput) {
-    const directMatch = rawOptions.find(o =>
-      String(o.id).toLowerCase() === cVal ||
-      String(o.value).toLowerCase() === cVal ||
-      String(o.title).toLowerCase() === cVal
-    );
-    if (directMatch) return directMatch;
-  }
+  // Helper: strip emojis and extra punctuation for clean comparisons
+  const cleanEmoji = str => String(str || "")
+    .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F600}-\u{1F6FF}]/gu, "")
+    .replace(/[^\w\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+  const uInputClean = cleanEmoji(uInput);
+  const cValClean = cleanEmoji(cVal);
 
   // Extract lines from userInput if multiline (e.g. WhatsApp quoted reply)
   const lines = String(userInput || "").split("\n").map(l => l.trim()).filter(Boolean);
   const lastLine = lines.length > 0 ? lines[lines.length - 1].toLowerCase().trim() : "";
+  const lastLineClean = cleanEmoji(lastLine);
 
-  // 2. Direct match on last line of multiline userInput
-  if (lastLine) {
-    const lastLineMatch = rawOptions.find(o => {
-      const oId = String(o.id).toLowerCase();
-      const oVal = String(o.value).toLowerCase();
-      const oTitle = String(o.title).toLowerCase();
-      const oTitleClean = oTitle.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
-      const lastLineClean = lastLine.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
-      return (
-        oId === lastLine ||
-        oVal === lastLine ||
-        oTitle === lastLine ||
-        (oTitleClean && oTitleClean === lastLineClean)
-      );
-    });
-    if (lastLineMatch) return lastLineMatch;
+  // 1. Numeric choice matching: "1", "2", "3" (e.g. customer replies "1" for first button or "2" for second)
+  const candidateForNumber = lastLine || uInput;
+  const numericMatch = candidateForNumber.match(/^\s*(\d{1,2})\s*$/);
+  if (numericMatch && !isInitialPreAnswer) {
+    const numIdx = parseInt(numericMatch[1], 10) - 1;
+    if (numIdx >= 0 && numIdx < rawOptions.length) {
+      return rawOptions[numIdx];
+    }
   }
 
-  // 3. Exact match on entire userInput
-  if (uInput) {
-    const exactMatch = rawOptions.find(o => {
-      const oId = String(o.id).toLowerCase();
-      const oVal = String(o.value).toLowerCase();
-      const oTitle = String(o.title).toLowerCase();
-      const oTitleClean = oTitle.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
-      const uInputClean = uInput.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
+  // 2. Direct exact match on choiceValue, userInput, or lastLine against option id, value, title, or clean title
+  const exactCandidates = [cVal, uInput, lastLine, cValClean, uInputClean, lastLineClean].filter(Boolean);
+  for (const cand of exactCandidates) {
+    const directMatch = rawOptions.find(o => {
+      const oId = String(o.id || "").toLowerCase();
+      const oVal = String(o.value || "").toLowerCase();
+      const oTitle = String(o.title || "").toLowerCase();
+      const oTitleClean = cleanEmoji(oTitle);
+      const oValClean = cleanEmoji(oVal);
+
       return (
-        oId === uInput ||
-        oVal === uInput ||
-        oTitle === uInput ||
-        (oTitleClean && oTitleClean === uInputClean)
+        oId === cand ||
+        oVal === cand ||
+        oTitle === cand ||
+        (oTitleClean && oTitleClean === cand) ||
+        (oValClean && oValClean === cand)
       );
     });
-    if (exactMatch) return exactMatch;
+    if (directMatch) return directMatch;
   }
 
-  // 4. Check if last line contains full option title (for quoted replies where button title was clicked)
+  // 3. Substring matching for quoted WhatsApp replies where option title is quoted
   if (lastLine) {
     const lastLineContains = rawOptions.find(o => {
-      const oTitle = String(o.title).toLowerCase().trim();
-      const oTitleClean = oTitle.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
-      const lastLineClean = lastLine.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
+      const oTitle = String(o.title || "").toLowerCase().trim();
+      const oTitleClean = cleanEmoji(oTitle);
       return (
         lastLine.includes(oTitle) ||
         (oTitleClean && lastLineClean.includes(oTitleClean))
@@ -213,16 +283,24 @@ function matchOption(rawOptions, choiceValue, userInput, isInitialPreAnswer = fa
     if (lastLineContains) return lastLineContains;
   }
 
-  // If waiting node (not initial turn pre-answering), allow looser matching on title/keywords
+  // 4. Bidirectional keyword / substring match (e.g. "garden" matches "Garden Villa 🌿", "beach" matches "Beachfront Suite")
   if (!isInitialPreAnswer) {
-    const textToScan = cVal || uInput;
-    if (textToScan) {
-      const containsMatch = rawOptions.find(o => {
-        const oTitle = String(o.title).toLowerCase().trim();
-        const oTitleClean = oTitle.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
-        return textToScan.includes(oTitle) || (oTitleClean && textToScan.includes(oTitleClean));
-      });
-      if (containsMatch) return containsMatch;
+    const scanCandidates = [lastLineClean, uInputClean, cValClean].filter(Boolean);
+    for (const scan of scanCandidates) {
+      if (scan.length >= 2) {
+        const subMatch = rawOptions.find(o => {
+          const oTitle = cleanEmoji(o.title);
+          const oVal = cleanEmoji(o.value);
+          const oId = String(o.id || "").toLowerCase();
+
+          return (
+            (oTitle && (oTitle.includes(scan) || scan.includes(oTitle))) ||
+            (oVal && (oVal.includes(scan) || scan.includes(oVal))) ||
+            (oId && (oId.includes(scan) || scan.includes(oId)))
+          );
+        });
+        if (subMatch) return subMatch;
+      }
     }
   }
 
@@ -719,10 +797,18 @@ async function processTurn({
 
     executionLogs.push(`User answered [${currentNode.type}] '${currentNode.id}': selected '${valToStore}' into '${targetVar}'`);
 
-    // Advance to next node
-    const nextTargets = transitionsFrom.get(currentNode.id) || [];
-    if (nextTargets.length > 0) {
-      currentNode = nodeMap.get(nextTargets[0]);
+    // Advance to next node: prioritize option targetNodeId, then explicit edge, then next sequential node
+    let nextNodeId = matchedOpt?.targetNodeId;
+    if (!nextNodeId || !nodeMap.has(nextNodeId)) {
+      const nextTargets = transitionsFrom.get(currentNode.id) || [];
+      nextNodeId = nextTargets.length > 0 ? nextTargets[0] : null;
+    }
+
+    if (nextNodeId && nodeMap.has(nextNodeId)) {
+      currentNode = nodeMap.get(nextNodeId);
+    } else {
+      const curIdx = nodes.findIndex(n => n.id === currentNode.id);
+      currentNode = curIdx >= 0 && curIdx < nodes.length - 1 ? nodes[curIdx + 1] : null;
     }
   } else if (isInputField && userInput) {
     const valConfig = currentNode.config?.validation || {};
@@ -804,10 +890,15 @@ async function processTurn({
 
     executionLogs.push(`User input saved on [${currentNode.type}] '${currentNode.id}': ${JSON.stringify(parsedVal)}`);
 
-    // Advance to next node
+    // Advance to next node: explicit edge, then next sequential node
     const nextTargets = transitionsFrom.get(currentNode.id) || [];
-    if (nextTargets.length > 0) {
-      currentNode = nodeMap.get(nextTargets[0]);
+    let nextNodeId = nextTargets.length > 0 ? nextTargets[0] : null;
+
+    if (nextNodeId && nodeMap.has(nextNodeId)) {
+      currentNode = nodeMap.get(nextNodeId);
+    } else {
+      const curIdx = nodes.findIndex(n => n.id === currentNode.id);
+      currentNode = curIdx >= 0 && curIdx < nodes.length - 1 ? nodes[curIdx + 1] : null;
     }
   }
 
@@ -981,8 +1072,17 @@ async function processTurn({
           variableContext[targetVar] = matchedOpt.value;
           inputConsumed = true;
           executionLogs.push(`User input pre-answered [${currentNode.type}] '${currentNode.id}': selected '${matchedOpt.value}' into '${targetVar}'`);
-          const nextTargets = transitionsFrom.get(currentNode.id) || [];
-          currentNode = nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null;
+          let nextNodeId = matchedOpt?.targetNodeId;
+          if (!nextNodeId || !nodeMap.has(nextNodeId)) {
+            const nextTargets = transitionsFrom.get(currentNode.id) || [];
+            nextNodeId = nextTargets.length > 0 ? nextTargets[0] : null;
+          }
+          if (nextNodeId && nodeMap.has(nextNodeId)) {
+            currentNode = nodeMap.get(nextNodeId);
+          } else {
+            const curIdx = nodes.findIndex(n => n.id === currentNode.id);
+            currentNode = curIdx >= 0 && curIdx < nodes.length - 1 ? nodes[curIdx + 1] : null;
+          }
           continue;
         }
       }
@@ -1018,8 +1118,17 @@ async function processTurn({
           variableContext[targetVar] = matchedOpt.value;
           inputConsumed = true;
           executionLogs.push(`User intent pre-selected [${currentNode.type}] '${currentNode.id}': '${matchedOpt.value}' into '${targetVar}'`);
-          const nextTargets = transitionsFrom.get(currentNode.id) || [];
-          currentNode = nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null;
+          let nextNodeId = matchedOpt?.targetNodeId;
+          if (!nextNodeId || !nodeMap.has(nextNodeId)) {
+            const nextTargets = transitionsFrom.get(currentNode.id) || [];
+            nextNodeId = nextTargets.length > 0 ? nextTargets[0] : null;
+          }
+          if (nextNodeId && nodeMap.has(nextNodeId)) {
+            currentNode = nodeMap.get(nextNodeId);
+          } else {
+            const curIdx = nodes.findIndex(n => n.id === currentNode.id);
+            currentNode = curIdx >= 0 && curIdx < nodes.length - 1 ? nodes[curIdx + 1] : null;
+          }
           continue;
         }
       }
@@ -1079,8 +1188,8 @@ async function processTurn({
 
   const finalNodeId = currentNode ? currentNode.id : "node_end";
 
-  // Update DB session if not in simulation mode
-  if (!isSimulation && session) {
+  // Update DB session if not in pure in-memory simulation mode
+  if (session && session.id && !simulationState) {
     let timeoutMinutes = 1440;
     try {
       const { getSetting } = require("../config/database");

@@ -1895,20 +1895,28 @@ class WebhookService {
                   sentMsgId = lRes?.messageId || null;
                 }
               } catch (btnErr) {
+                try {
+                  const txtRes = await sendTextMessage({
+                    to: cleanPhone,
+                    body: flowResult.replyText,
+                    customCredentials
+                  });
+                  sentMsgId = txtRes?.messageId || null;
+                } catch (txtErr) {
+                  console.warn("[Webhook Flow] Flow interactive fallback text send note:", txtErr.message);
+                }
+              }
+            } else {
+              try {
                 const txtRes = await sendTextMessage({
                   to: cleanPhone,
                   body: flowResult.replyText,
                   customCredentials
                 });
                 sentMsgId = txtRes?.messageId || null;
+              } catch (txtErr) {
+                console.warn("[Webhook Flow] Flow text send note:", txtErr.message);
               }
-            } else {
-              const txtRes = await sendTextMessage({
-                to: cleanPhone,
-                body: flowResult.replyText,
-                customCredentials
-              });
-              sentMsgId = txtRes?.messageId || null;
             }
 
             const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
@@ -1947,8 +1955,11 @@ class WebhookService {
             };
           }
         } catch (engineErr) {
-          console.warn("[Webhook Flow] Conversation Flow Engine fallback:", engineErr.message);
-          // Fall through to legacy handlers
+          console.warn("[Webhook Flow] Conversation Flow Engine error:", engineErr.message);
+          return {
+            success: false,
+            error: engineErr.message
+          };
         }
       }
 
@@ -2655,7 +2666,7 @@ class WebhookService {
         } catch (e) {}
       }
 
-      if (hospitalityFlowEngine) {
+      if (hospitalityFlowEngine && !isStudioMode) {
         try {
           flowRes = hospitalityFlowEngine.handleCustomerInquiry({
             channel: "WHATSAPP",
