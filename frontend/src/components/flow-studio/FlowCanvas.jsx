@@ -22,7 +22,10 @@ import {
   ArrowRight,
   Send,
   Eye,
-  Settings
+  Settings,
+  Globe,
+  CreditCard,
+  CheckSquare
 } from 'lucide-react';
 
 const NODE_DEFINITIONS = [
@@ -31,9 +34,12 @@ const NODE_DEFINITIONS = [
   { type: 'BUTTON_MENU', label: 'Button Menu', icon: Layers, color: '#7C3AED', bg: '#EDE9FE' },
   { type: 'INPUT_COLLECTION', label: 'Input Field', icon: FileSpreadsheet, color: '#D97706', bg: '#FEF3C7' },
   { type: 'CONDITION', label: 'Branch / Rule', icon: Sliders, color: '#EA580C', bg: '#FFEDD5' },
-  { type: 'BUSINESS_ACTION', label: 'System Action', icon: Zap, color: '#059669', bg: '#D1FAE5' },
+  { type: 'CONFIRMATION', label: 'Confirmation', icon: CheckSquare, color: '#0284C7', bg: '#E0F2FE' },
+  { type: 'PAYMENT', label: 'Payment Link', icon: CreditCard, color: '#059669', bg: '#D1FAE5' },
+  { type: 'QUOTATION', label: 'Quotation', icon: Sparkles, color: '#B45309', bg: '#FEF3C7' },
+  { type: 'API_INTEGRATION', label: 'API Webhook', icon: Globe, color: '#6366F1', bg: '#EEF2FF' },
+  { type: 'BUSINESS_ACTION', label: 'System Action', icon: Zap, color: '#0D9488', bg: '#CCFBF1' },
   { type: 'HANDOFF', label: 'Staff Handoff', icon: PhoneCall, color: '#4F46E5', bg: '#EEF2FF' },
-  { type: 'DELAY', label: 'Simulate Wait', icon: Clock, color: '#64748B', bg: '#F1F5F9' },
   { type: 'END', label: 'End Journey', icon: CheckCircle2, color: '#475569', bg: '#E2E8F0' }
 ];
 
@@ -118,6 +124,43 @@ export default function FlowCanvas({
         action: 'HOSPITALITY_CHECK_AVAILABILITY',
         inputs: {},
         outputs: {}
+      };
+    }
+    if (type === 'CONFIRMATION') {
+      defaultConfig = {
+        prompt: 'Please confirm your selection:',
+        variable: 'confirmation_choice',
+        options: [
+          { id: `opt_confirm_${Date.now()}`, title: 'Confirm & Proceed ✅', value: 'CONFIRM' },
+          { id: `opt_modify_${Date.now()}`, title: 'Modify Details ✏️', value: 'MODIFY' },
+          { id: `opt_staff_${Date.now()}`, title: 'Talk to Staff 💬', value: 'STAFF' }
+        ]
+      };
+    }
+    if (type === 'PAYMENT') {
+      defaultConfig = {
+        amountVariable: 'quote_total',
+        currency: 'INR',
+        description: 'Advance Deposit',
+        paymentGateway: 'RAZORPAY',
+        prompt: '💳 Please complete your deposit payment using the link below:\n\n{{payment_link}}\nTotal Payable: ₹{{quote_total}}'
+      };
+    }
+    if (type === 'QUOTATION') {
+      defaultConfig = {
+        action: 'HOSPITALITY_CALCULATE_QUOTE',
+        inputs: {},
+        outputs: { quote_total: 'quote_total', quote_subtotal: 'quote_subtotal', tax_total: 'tax_total' },
+        text: '✨ *Estimated Quotation:*\n\nSubtotal: ₹{{quote_subtotal}}\nTax: ₹{{tax_total}}\n*Total: ₹{{quote_total}}*'
+      };
+    }
+    if (type === 'API_INTEGRATION') {
+      defaultConfig = {
+        method: 'POST',
+        url: 'https://api.example.com/webhook',
+        headers: { 'Content-Type': 'application/json' },
+        body: {},
+        outputMappings: { status: 'api_status' }
       };
     }
     if (type === 'HANDOFF') {

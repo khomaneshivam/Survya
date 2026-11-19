@@ -248,11 +248,53 @@ async function deleteMessageTemplate(req, res) {
   }
 }
 
+async function duplicateFlow(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const user = req.user || { id: "admin", name: "Administrator" };
+    const flowId = req.params.id;
+    const result = flowService.duplicateFlow(flowId, req.body, user, tenantId);
+    return res.status(201).json({
+      success: true,
+      message: "Flow duplicated successfully",
+      flow: result.flow,
+      draftVersion: result.draftVersion,
+      publishedVersion: result.publishedVersion
+    });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
+async function listFlowExecutions(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const flowId = req.params.id || req.query.flowId;
+    const { status, phone, page, limit } = req.query;
+    const data = flowService.listFlowExecutions(flowId, { status, phone, page, limit }, tenantId);
+    return res.json({ success: true, ...data });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+async function getExecutionDetails(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const sessionId = req.params.sessionId;
+    const data = flowService.getExecutionDetails(sessionId, tenantId);
+    return res.json({ success: true, ...data });
+  } catch (err) {
+    return res.status(404).json({ success: false, error: err.message });
+  }
+}
+
 module.exports = {
   listFlows,
   getFlowById,
   createFlow,
   updateFlow,
+  duplicateFlow,
   saveFlowDraft,
   validateFlow,
   publishFlow,
@@ -261,6 +303,8 @@ module.exports = {
   rollbackFlow,
   listVersions,
   getFlowAnalytics,
+  listFlowExecutions,
+  getExecutionDetails,
   simulateTurn,
   listTemplates,
   cloneTemplate,

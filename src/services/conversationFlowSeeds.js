@@ -245,12 +245,60 @@ const HOSPITALITY_BOOKING_NODES = [
   },
   {
     id: "node_confirm_enquiry",
-    type: "MESSAGE",
-    title: "Enquiry Confirmation",
+    type: "CONFIRMATION",
+    title: "Confirm Stay & Reserve",
     config: {
-      text: "✅ *Booking Enquiry #{{enquiry_id}} Logged Successfully!* 🎉\n\nDear {{guest_name}}, your booking request has been forwarded to our front desk team. Assigned Officer: *{{assigned_staff}}*.\n\nOur reservation team is reviewing room allocation and will connect with you right here on WhatsApp to confirm payment details and seal your booking."
+      prompt: "Dear {{guest_name}}, would you like to confirm your reservation enquiry for {{matched_room_name}} (₹{{quote_total}})?",
+      variable: "booking_confirmation_choice",
+      options: [
+        { id: "opt_confirm_pay", title: "Confirm & Pay 💳", value: "CONFIRM" },
+        { id: "opt_modify_stay", title: "Modify Dates 📅", value: "MODIFY" },
+        { id: "opt_talk_desk", title: "Talk to Desk 💬", value: "STAFF" }
+      ]
     },
     position: { x: 300, y: 1700 }
+  },
+  {
+    id: "node_branch_confirmation",
+    type: "CONDITION",
+    title: "Branch on Confirmation",
+    config: {
+      variable: "booking_confirmation_choice",
+      rules: [
+        { operator: "EQUALS", value: "CONFIRM", targetNodeId: "node_payment_link" },
+        { operator: "EQUALS", value: "MODIFY", targetNodeId: "node_select_room" },
+        { operator: "EQUALS", value: "STAFF", targetNodeId: "node_concierge_handoff" }
+      ],
+      defaultTargetNodeId: "node_payment_link"
+    },
+    position: { x: 300, y: 1820 }
+  },
+  {
+    id: "node_payment_link",
+    type: "PAYMENT",
+    title: "Generate Advance Payment Link",
+    config: {
+      amountVariable: "quote_total",
+      currency: "INR",
+      description: "Advance Deposit for {{matched_room_name}} Stay",
+      paymentGateway: "RAZORPAY",
+      action: "GENERATE_PAYMENT_LINK",
+      outputs: {
+        payment_link: "payment_link",
+        payment_id: "payment_id",
+        payment_status: "payment_status"
+      }
+    },
+    position: { x: 300, y: 1940 }
+  },
+  {
+    id: "node_booking_receipt",
+    type: "MESSAGE",
+    title: "Official Booking Voucher & Receipt",
+    config: {
+      text: "🧾 *Official Booking Voucher & Receipt #BK-{{enquiry_id}}* 🎉\n\nDear {{guest_name}}, your booking request has been locked in!\n\n🏡 *Accommodation:* {{matched_room_name}}\n📅 *Check-in:* {{check_in_date}} (14:00 hrs)\n📅 *Check-out:* {{check_out_date}} (11:00 hrs)\n👥 *Guests:* {{adults}} Adult(s), {{children}} Child(ren)\n💵 *Total Estimated Payable:* *₹{{quote_total}}*\n\n💳 *Advance Payment Link:* {{payment_link}}\n_Payment Reference: {{payment_id}}_\n\nAssigned Officer: *{{assigned_staff}}*. We look forward to hosting you in {{property.city}}!"
+    },
+    position: { x: 300, y: 2060 }
   },
   {
     id: "node_concierge_handoff",
@@ -262,7 +310,7 @@ const HOSPITALITY_BOOKING_NODES = [
       handoffMessage: "🔔 You are now connected with our Front Desk team. A member of our staff will respond to you shortly.",
       pauseAutomationMinutes: 180
     },
-    position: { x: 300, y: 1820 }
+    position: { x: 300, y: 2180 }
   },
   {
     id: "node_end",
@@ -271,7 +319,7 @@ const HOSPITALITY_BOOKING_NODES = [
     config: {
       farewellMessage: "Thank you for contacting {{property.name}}. We look forward to welcoming you!"
     },
-    position: { x: 300, y: 1940 }
+    position: { x: 300, y: 2300 }
   }
 ];
 
@@ -290,8 +338,10 @@ const HOSPITALITY_BOOKING_TRANSITIONS = [
   { id: "t12", source: "node_display_quote", target: "node_ask_guest_name" },
   { id: "t13", source: "node_ask_guest_name", target: "node_create_enquiry" },
   { id: "t14", source: "node_create_enquiry", target: "node_confirm_enquiry" },
-  { id: "t15", source: "node_confirm_enquiry", target: "node_concierge_handoff" },
-  { id: "t16", source: "node_concierge_handoff", target: "node_end" }
+  { id: "t15", source: "node_confirm_enquiry", target: "node_branch_confirmation" },
+  { id: "t16", source: "node_payment_link", target: "node_booking_receipt" },
+  { id: "t17", source: "node_booking_receipt", target: "node_concierge_handoff" },
+  { id: "t18", source: "node_concierge_handoff", target: "node_end" }
 ];
 
 const HOSPITALITY_BOOKING_VARIABLES = {
@@ -309,7 +359,11 @@ const HOSPITALITY_BOOKING_VARIABLES = {
   tax_percent: { type: "NUMBER", label: "Tax Percentage", defaultValue: 12 },
   nights: { type: "NUMBER", label: "Number of Nights", defaultValue: 1 },
   enquiry_id: { type: "NUMBER", label: "Enquiry Record ID" },
-  assigned_staff: { type: "STRING", label: "Assigned Staff Member" }
+  assigned_staff: { type: "STRING", label: "Assigned Staff Member" },
+  booking_confirmation_choice: { type: "STRING", label: "Confirmation Choice", defaultValue: "CONFIRM" },
+  payment_link: { type: "STRING", label: "Payment Gateway Link" },
+  payment_id: { type: "STRING", label: "Payment Reference ID" },
+  payment_status: { type: "STRING", label: "Payment Status", defaultValue: "PENDING" }
 };
 
 const FAQ_JOURNEY_NODES = [
@@ -514,6 +568,243 @@ const STAFF_HANDOFF_VARIABLES = {
   assigned_officer: { type: "STRING", label: "Designated Officer", defaultValue: "Duty Manager" }
 };
 
+const SALES_QUOTATION_B2B_NODES = [
+  {
+    id: "b2b_start",
+    type: "START",
+    title: "B2B Sales Inquiry Start",
+    config: {
+      triggerType: "KEYWORD_MATCH",
+      triggerKeywords: ["pricing", "plans", "quote", "demo", "sales", "enterprise", "software", "api", "b2b"]
+    },
+    position: { x: 300, y: 50 }
+  },
+  {
+    id: "b2b_welcome",
+    type: "MESSAGE",
+    title: "Welcome to Survya Enterprise",
+    config: {
+      text: "💼 *Welcome to Survya Enterprise Automation!* 🚀\n\nPower your customer operations with high-throughput WhatsApp Cloud API, visual workflow journeys, and unified CRM automation. Let's design the right stack for your business."
+    },
+    position: { x: 300, y: 150 }
+  },
+  {
+    id: "b2b_select_plan",
+    type: "BUTTON_MENU",
+    title: "Select Software Edition",
+    config: {
+      prompt: "Which software edition aligns with your business goals?",
+      variable: "selected_plan",
+      options: [
+        { id: "opt_starter", title: "Starter Suite 🚀", value: "STARTER" },
+        { id: "opt_growth", title: "Growth Hub ⚡", value: "GROWTH" },
+        { id: "opt_enterprise", title: "Enterprise Cloud 🏢", value: "ENTERPRISE" }
+      ]
+    },
+    position: { x: 300, y: 260 }
+  },
+  {
+    id: "b2b_show_plan_features",
+    type: "MESSAGE",
+    title: "Show Plan Features",
+    config: {
+      text: "📋 *{{selected_plan}} Edition Inclusions:*\n\n✅ Official Meta Cloud API Connectivity\n✅ Drag-and-Drop Visual Workflow Studio\n✅ Multi-Agent Team Inbox & Handoff\n✅ Webhooks & CRM Integration Endpoints\n\nLet's calculate your monthly investment."
+    },
+    position: { x: 300, y: 380 }
+  },
+  {
+    id: "b2b_ask_team_size",
+    type: "INPUT_COLLECTION",
+    title: "Collect Team Size",
+    config: {
+      prompt: "👥 How many team members or agents will need access? (e.g. 5, 10, 25):",
+      variable: "team_size",
+      validation: {
+        type: "NUMBER",
+        errorMessage: "Please enter a valid number of team members (e.g. 5):"
+      }
+    },
+    position: { x: 300, y: 500 }
+  },
+  {
+    id: "b2b_ask_volume",
+    type: "INPUT_COLLECTION",
+    title: "Collect Message Volume",
+    config: {
+      prompt: "📈 What is your estimated monthly outgoing WhatsApp message volume? (e.g. 10000, 50000, 250000):",
+      variable: "monthly_volume",
+      validation: {
+        type: "NUMBER",
+        errorMessage: "Please enter a valid numeric message volume (e.g. 25000):"
+      }
+    },
+    position: { x: 300, y: 620 }
+  },
+  {
+    id: "b2b_calc_quote",
+    type: "BUSINESS_ACTION",
+    title: "Calculate B2B Quotation",
+    config: {
+      action: "B2B_CALCULATE_SALES_QUOTE",
+      inputs: {
+        plan_name: "{{selected_plan}}",
+        team_size: "{{team_size}}",
+        monthly_volume: "{{monthly_volume}}"
+      },
+      outputs: {
+        quote_total: "quote_total",
+        quote_subtotal: "quote_subtotal",
+        tax_total: "tax_total",
+        tax_percent: "tax_percent",
+        deposit_amount: "deposit_amount"
+      }
+    },
+    position: { x: 300, y: 740 }
+  },
+  {
+    id: "b2b_display_quote",
+    type: "MESSAGE",
+    title: "Display Sales Quotation",
+    config: {
+      text: "📊 *Survya Custom Quotation & Proposal:*\n\n💼 *Edition:* {{selected_plan}}\n👥 *Team Seats:* {{team_size}} Authorized Users\n📈 *Volume Allowance:* {{monthly_volume}} Monthly Messages\n\n💵 *Software License:* ₹{{quote_subtotal}}/mo\n📊 *GST ({{tax_percent}}%):* ₹{{tax_total}}\n🏷️ *Total Monthly Investment:* *₹{{quote_total}}*\n\n_Includes 99.9% uptime SLA, dedicated onboarding manager, and 24/7 technical support._"
+    },
+    position: { x: 300, y: 860 }
+  },
+  {
+    id: "b2b_confirm_quote",
+    type: "CONFIRMATION",
+    title: "Confirm Proposal",
+    config: {
+      prompt: "Would you like to lock in this proposal and connect with your Enterprise Solutions Architect?",
+      variable: "b2b_confirm_choice",
+      options: [
+        { id: "opt_lockin", title: "Lock In Proposal ✅", value: "CONFIRM" },
+        { id: "opt_adjust", title: "Adjust Plan ✏️", value: "MODIFY" },
+        { id: "opt_speak", title: "Talk to Sales 💬", value: "SALES" }
+      ]
+    },
+    position: { x: 300, y: 980 }
+  },
+  {
+    id: "b2b_branch_confirm",
+    type: "CONDITION",
+    title: "Branch on Client Decision",
+    config: {
+      variable: "b2b_confirm_choice",
+      rules: [
+        { operator: "EQUALS", value: "CONFIRM", targetNodeId: "b2b_create_deal" },
+        { operator: "EQUALS", value: "MODIFY", targetNodeId: "b2b_select_plan" },
+        { operator: "EQUALS", value: "SALES", targetNodeId: "b2b_sales_handoff" }
+      ],
+      defaultTargetNodeId: "b2b_create_deal"
+    },
+    position: { x: 300, y: 1100 }
+  },
+  {
+    id: "b2b_create_deal",
+    type: "BUSINESS_ACTION",
+    title: "Create CRM Deal Record",
+    config: {
+      action: "B2B_CREATE_SALES_DEAL",
+      inputs: {
+        plan_name: "{{selected_plan}}",
+        team_size: "{{team_size}}",
+        monthly_volume: "{{monthly_volume}}",
+        quote_total: "{{quote_total}}",
+        phone: "{{sender_phone}}"
+      },
+      outputs: {
+        deal_id: "deal_id",
+        assigned_executive: "assigned_executive",
+        deal_stage: "deal_stage"
+      }
+    },
+    position: { x: 300, y: 1220 }
+  },
+  {
+    id: "b2b_deal_receipt",
+    type: "MESSAGE",
+    title: "Deal Confirmation Notice",
+    config: {
+      text: "🎉 *Deal #DEAL-{{deal_id}} Registered Successfully!* 🚀\n\nYour formal enterprise proposal has been initialized with stage *{{deal_stage}}*.\nAssigned Account Executive: *{{assigned_executive}}*.\n\nNext step: To reserve your deployment slot and setup provisioning, you may authorize the onboarding retainer below."
+    },
+    position: { x: 300, y: 1340 }
+  },
+  {
+    id: "b2b_payment_deposit",
+    type: "PAYMENT",
+    title: "Onboarding Retainer Link",
+    config: {
+      amountVariable: "deposit_amount",
+      currency: "INR",
+      description: "Priority Onboarding Retainer for Proposal #DEAL-{{deal_id}}",
+      paymentGateway: "RAZORPAY",
+      action: "GENERATE_PAYMENT_LINK",
+      outputs: {
+        payment_link: "payment_link",
+        payment_id: "payment_id",
+        payment_status: "payment_status"
+      }
+    },
+    position: { x: 300, y: 1460 }
+  },
+  {
+    id: "b2b_sales_handoff",
+    type: "HANDOFF",
+    title: "Transfer to Account Executive",
+    config: {
+      team: "ENTERPRISE_SALES",
+      assignedTo: "{{assigned_executive}}",
+      handoffMessage: "🔔 Transferring you to your dedicated Enterprise Solutions Architect ({{assigned_executive}}). We will follow up right here on WhatsApp shortly.",
+      pauseAutomationMinutes: 240
+    },
+    position: { x: 300, y: 1580 }
+  },
+  {
+    id: "b2b_end",
+    type: "END",
+    title: "End Sales Session",
+    config: {
+      farewellMessage: "Thank you for contacting Survya. We look forward to powering your customer conversations!"
+    },
+    position: { x: 300, y: 1700 }
+  }
+];
+
+const SALES_QUOTATION_B2B_TRANSITIONS = [
+  { id: "bt1", source: "b2b_start", target: "b2b_welcome" },
+  { id: "bt2", source: "b2b_welcome", target: "b2b_select_plan" },
+  { id: "bt3", source: "b2b_select_plan", target: "b2b_show_plan_features" },
+  { id: "bt4", source: "b2b_show_plan_features", target: "b2b_ask_team_size" },
+  { id: "bt5", source: "b2b_ask_team_size", target: "b2b_ask_volume" },
+  { id: "bt6", source: "b2b_ask_volume", target: "b2b_calc_quote" },
+  { id: "bt7", source: "b2b_calc_quote", target: "b2b_display_quote" },
+  { id: "bt8", source: "b2b_display_quote", target: "b2b_confirm_quote" },
+  { id: "bt9", source: "b2b_confirm_quote", target: "b2b_branch_confirm" },
+  { id: "bt10", source: "b2b_create_deal", target: "b2b_deal_receipt" },
+  { id: "bt11", source: "b2b_deal_receipt", target: "b2b_payment_deposit" },
+  { id: "bt12", source: "b2b_payment_deposit", target: "b2b_sales_handoff" },
+  { id: "bt13", source: "b2b_sales_handoff", target: "b2b_end" }
+];
+
+const SALES_QUOTATION_B2B_VARIABLES = {
+  selected_plan: { type: "STRING", label: "Selected Software Plan", defaultValue: "GROWTH" },
+  team_size: { type: "NUMBER", label: "Number of Team Seats", defaultValue: 5 },
+  monthly_volume: { type: "NUMBER", label: "Monthly Message Volume", defaultValue: 25000 },
+  quote_total: { type: "NUMBER", label: "Quotation Total Amount" },
+  quote_subtotal: { type: "NUMBER", label: "Quotation Subtotal" },
+  tax_total: { type: "NUMBER", label: "Tax Amount" },
+  tax_percent: { type: "NUMBER", label: "Tax Percentage", defaultValue: 18 },
+  deposit_amount: { type: "NUMBER", label: "Onboarding Deposit", defaultValue: 5000 },
+  b2b_confirm_choice: { type: "STRING", label: "Confirmation Choice", defaultValue: "CONFIRM" },
+  deal_id: { type: "NUMBER", label: "CRM Deal ID" },
+  assigned_executive: { type: "STRING", label: "Assigned Account Exec", defaultValue: "Enterprise Solutions Architect" },
+  deal_stage: { type: "STRING", label: "Deal Stage", defaultValue: "QUALIFIED_PROSPECT" },
+  payment_link: { type: "STRING", label: "Payment Gateway Link" },
+  payment_id: { type: "STRING", label: "Payment Reference ID" },
+  payment_status: { type: "STRING", label: "Payment Status", defaultValue: "PENDING" }
+};
+
 const DEFAULT_FLOW_TEMPLATES = [
   {
     slug: "hospitality-booking-quote-journey",
@@ -524,6 +815,17 @@ const DEFAULT_FLOW_TEMPLATES = [
     nodes: HOSPITALITY_BOOKING_NODES,
     transitions: HOSPITALITY_BOOKING_TRANSITIONS,
     variables: HOSPITALITY_BOOKING_VARIABLES,
+    is_system: 1
+  },
+  {
+    slug: "sales-quotation-b2b-journey",
+    title: "B2B Sales & Dynamic Quotation Journey",
+    description: "Configurable B2B sales automation collecting volume and seat requirements, generating dynamic price quotations with GST, registering CRM deals, and routing to account executives.",
+    industry: "B2B_SAAS",
+    category: "SALES",
+    nodes: SALES_QUOTATION_B2B_NODES,
+    transitions: SALES_QUOTATION_B2B_TRANSITIONS,
+    variables: SALES_QUOTATION_B2B_VARIABLES,
     is_system: 1
   },
   {
@@ -572,6 +874,18 @@ const DEFAULT_MESSAGE_TEMPLATES = [
     buttons: [
       { id: "qb1", title: "Confirm Enquiry ✅", value: "CONFIRM" },
       { id: "qb2", title: "Modify Dates 📅", value: "MODIFY" }
+    ]
+  },
+  {
+    code: "B2B_SALES_PROPOSAL",
+    title: "Enterprise Sales Proposal Breakdown",
+    category: "QUOTE",
+    content: "📊 *Survya Custom Quotation & Proposal:*\n\n💼 *Edition:* {{selected_plan}}\n👥 *Team Seats:* {{team_size}} Authorized Users\n📈 *Volume Allowance:* {{monthly_volume}} Monthly Messages\n\n💵 *Software License:* ₹{{quote_subtotal}}/mo\n📊 *GST ({{tax_percent}}%):* ₹{{tax_total}}\n🏷️ *Total Monthly Investment:* *₹{{quote_total}}*\n\n_Includes 99.9% uptime SLA, dedicated onboarding manager, and 24/7 technical support._",
+    variables: ["selected_plan", "team_size", "monthly_volume", "quote_subtotal", "tax_percent", "tax_total", "quote_total"],
+    buttons: [
+      { id: "sb1", title: "Lock In Proposal ✅", value: "CONFIRM" },
+      { id: "sb2", title: "Adjust Plan ✏️", value: "MODIFY" },
+      { id: "sb3", title: "Talk to Sales 💬", value: "SALES" }
     ]
   },
   {

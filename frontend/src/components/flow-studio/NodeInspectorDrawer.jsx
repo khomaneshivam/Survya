@@ -18,7 +18,10 @@ const APPROVED_ACTIONS = [
   { id: 'HOSPITALITY_CREATE_ENQUIRY', label: '📋 Create CRM Booking Enquiry', desc: 'Records verified booking enquiry, links quote and assigns front-desk staff' },
   { id: 'HOSPITALITY_LOOKUP_FAQ', label: '📖 Lookup Concierge Property FAQ', desc: 'Retrieves answers on timings, dining, pool, policies or travel routes' },
   { id: 'FETCH_PROPERTY_INFO', label: '🏷️ Fetch Property Details', desc: 'Loads property name, address, contact numbers, and amenities' },
-  { id: 'ASSIGN_STAFF', label: '👤 Assign Staff Member', desc: 'Routes conversation to on-duty reservations officer' }
+  { id: 'ASSIGN_STAFF', label: '👤 Assign Staff Member', desc: 'Routes conversation to on-duty reservations officer' },
+  { id: 'B2B_CALCULATE_SALES_QUOTE', label: '💼 Calculate B2B Software Quote & GST', desc: 'Dynamic software tier calculation based on seats and monthly volume' },
+  { id: 'B2B_CREATE_SALES_DEAL', label: '🚀 Create CRM B2B Sales Deal', desc: 'Initializes deal record with stage QUALIFIED_PROSPECT and assigns account exec' },
+  { id: 'GENERATE_PAYMENT_LINK', label: '💳 Generate Secure Payment Deposit Link', desc: 'Generates Razorpay / Survya Pay checkout link with payment ID' }
 ];
 
 export default function NodeInspectorDrawer({
@@ -570,6 +573,219 @@ export default function NodeInspectorDrawer({
                   <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Action Outputs (Variable Assignment)</label>
                   <div style={{ background: '#FAFAFB', padding: '10px', borderRadius: '8px', border: '1px solid #E5E5E8' }}>
                     {Object.entries(node.config?.outputs || {}).map(([k, v]) => (
+                      <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '0.76rem' }}>
+                        <span style={{ fontWeight: 600 }}>{k} ➔</span>
+                        <span style={{ color: '#1E40AF', fontFamily: 'monospace' }}>{String(v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* CONFIRMATION Node Config */}
+            {node.type === 'CONFIRMATION' && (
+              <>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Confirmation Prompt</label>
+                  <textarea
+                    className="form-input"
+                    rows={3}
+                    value={node.config?.prompt || ''}
+                    onChange={(e) => handleConfigChange('prompt', e.target.value)}
+                    placeholder="Would you like to confirm your selection and proceed?"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Assign Result to Variable</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={node.config?.variable || 'confirmation_choice'}
+                    onChange={(e) => handleConfigChange('variable', e.target.value)}
+                    placeholder="e.g. booking_confirmation_choice, b2b_confirm_choice"
+                  />
+                </div>
+                <div className="form-group">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem', margin: 0 }}>
+                      Action Choices ({options.length}/3)
+                    </label>
+                    {options.length < 3 && (
+                      <button
+                        type="button"
+                        onClick={handleAddOption}
+                        className="btn btn-outline"
+                        style={{ padding: '4px 10px', fontSize: '0.75rem', gap: '4px' }}
+                      >
+                        <Plus size={13} /> Add Choice
+                      </button>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {options.map((opt, idx) => (
+                      <div key={opt.id || idx} style={{
+                        padding: '10px',
+                        border: '1px solid #E5E5E8',
+                        borderRadius: '8px',
+                        background: '#FAFAFB',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px'
+                      }}>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <input
+                            type="text"
+                            value={opt.title || ''}
+                            onChange={(e) => handleUpdateOption(idx, 'title', e.target.value)}
+                            placeholder="Title (Max 20 chars)"
+                            className="form-input"
+                            style={{ flex: 1, fontSize: '0.82rem', padding: '6px 8px' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveOption(idx)}
+                            style={{ border: 'none', background: 'transparent', color: '#DC2626', cursor: 'pointer', padding: '4px' }}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={opt.value || ''}
+                          onChange={(e) => handleUpdateOption(idx, 'value', e.target.value)}
+                          placeholder="Value (e.g. CONFIRM, MODIFY, STAFF)"
+                          className="form-input"
+                          style={{ fontSize: '0.76rem', padding: '4px 8px', color: '#67676B' }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* PAYMENT Node Config */}
+            {node.type === 'PAYMENT' && (
+              <>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Dynamic Amount Variable</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={node.config?.amountVariable || 'quote_total'}
+                    onChange={(e) => handleConfigChange('amountVariable', e.target.value)}
+                    placeholder="e.g. quote_total, deposit_amount"
+                  />
+                  <div style={{ fontSize: '0.74rem', color: '#8E8E93', marginTop: '4px' }}>
+                    Resolves amount from session variable.
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Fallback Fixed Amount (₹)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={node.config?.amount || 5000}
+                    onChange={(e) => handleConfigChange('amount', Number(e.target.value) || 0)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Payment Gateway Provider</label>
+                  <select
+                    className="form-input"
+                    value={node.config?.paymentGateway || 'RAZORPAY'}
+                    onChange={(e) => handleConfigChange('paymentGateway', e.target.value)}
+                  >
+                    <option value="RAZORPAY">Razorpay UPI & Cards</option>
+                    <option value="SURVYA_PAY">Survya Payment Gateway</option>
+                    <option value="MOCK_SANDBOX">Test Mock Sandbox (Zero Fees)</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Payment Description</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={node.config?.description || 'Booking Deposit'}
+                    onChange={(e) => handleConfigChange('description', e.target.value)}
+                    placeholder="e.g. Advance Stay Deposit for {{matched_room_name}}"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Payment Prompt Message (Optional)</label>
+                  <textarea
+                    className="form-input"
+                    rows={3}
+                    value={node.config?.prompt || ''}
+                    onChange={(e) => handleConfigChange('prompt', e.target.value)}
+                    placeholder="💳 Complete deposit: {{payment_link}} (Ref: {{payment_id}})"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* QUOTATION Node Config */}
+            {node.type === 'QUOTATION' && (
+              <>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Calculation Action</label>
+                  <select
+                    className="form-input"
+                    value={node.config?.action || 'HOSPITALITY_CALCULATE_QUOTE'}
+                    onChange={(e) => handleConfigChange('action', e.target.value)}
+                  >
+                    {APPROVED_ACTIONS.filter(a => a.id.includes('CALCULATE')).map(act => (
+                      <option key={act.id} value={act.id}>{act.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Quotation Breakdown Template</label>
+                  <textarea
+                    className="form-input"
+                    rows={5}
+                    value={node.config?.text || ''}
+                    onChange={(e) => handleConfigChange('text', e.target.value)}
+                    placeholder="✨ *Estimated Quotation:*&#10;&#10;Charges: ₹{{quote_subtotal}}&#10;Taxes: ₹{{tax_total}}&#10;*Total: ₹{{quote_total}}*"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* API_INTEGRATION Node Config */}
+            {node.type === 'API_INTEGRATION' && (
+              <>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>HTTP Method & Endpoint</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      className="form-input"
+                      style={{ width: '100px' }}
+                      value={node.config?.method || 'POST'}
+                      onChange={(e) => handleConfigChange('method', e.target.value)}
+                    >
+                      <option value="GET">GET</option>
+                      <option value="POST">POST</option>
+                      <option value="PUT">PUT</option>
+                    </select>
+                    <input
+                      type="text"
+                      className="form-input"
+                      style={{ flex: 1 }}
+                      value={node.config?.url || ''}
+                      onChange={(e) => handleConfigChange('url', e.target.value)}
+                      placeholder="https://api.crm.com/v1/leads"
+                    />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Output Field Mappings (JSON ➔ Variables)</label>
+                  <div style={{ background: '#FAFAFB', padding: '10px', borderRadius: '8px', border: '1px solid #E5E5E8' }}>
+                    <div style={{ fontSize: '0.74rem', color: '#67676B', marginBottom: '6px' }}>
+                      Maps response keys to flow context variables:
+                    </div>
+                    {Object.entries(node.config?.outputMappings || { status: 'api_status' }).map(([k, v]) => (
                       <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '0.76rem' }}>
                         <span style={{ fontWeight: 600 }}>{k} ➔</span>
                         <span style={{ color: '#1E40AF', fontFamily: 'monospace' }}>{String(v)}</span>

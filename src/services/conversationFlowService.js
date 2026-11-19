@@ -79,9 +79,9 @@ function validateFlowGraph(nodes, transitions, variables = {}) {
       }
     });
 
-    // Also include condition rule branch targets
+    // Also include condition rule branch targets and API targets
     nodes.forEach(n => {
-      if (n.type === "CONDITION" && n.config?.rules) {
+      if ((n.type === "CONDITION" || n.type === "CONFIRMATION") && n.config?.rules) {
         (n.config.rules || []).forEach(r => {
           if (r.targetNodeId && nodeMap.has(r.targetNodeId)) {
             adj.get(n.id).push(r.targetNodeId);
@@ -90,6 +90,12 @@ function validateFlowGraph(nodes, transitions, variables = {}) {
         if (n.config.defaultTargetNodeId && nodeMap.has(n.config.defaultTargetNodeId)) {
           adj.get(n.id).push(n.config.defaultTargetNodeId);
         }
+      }
+      if (n.type === "API_INTEGRATION" && n.config?.successTargetNodeId) {
+        if (nodeMap.has(n.config.successTargetNodeId)) adj.get(n.id).push(n.config.successTargetNodeId);
+      }
+      if (n.type === "API_INTEGRATION" && n.config?.failureTargetNodeId) {
+        if (nodeMap.has(n.config.failureTargetNodeId)) adj.get(n.id).push(n.config.failureTargetNodeId);
       }
     });
 
@@ -117,16 +123,19 @@ function validateFlowGraph(nodes, transitions, variables = {}) {
     "HOSPITALITY_CREATE_ENQUIRY",
     "HOSPITALITY_LOOKUP_FAQ",
     "FETCH_PROPERTY_INFO",
-    "ASSIGN_STAFF"
+    "ASSIGN_STAFF",
+    "B2B_CALCULATE_SALES_QUOTE",
+    "B2B_CREATE_SALES_DEAL",
+    "GENERATE_PAYMENT_LINK"
   ]);
 
   nodes.forEach(n => {
-    if (n.type === "BUTTON_MENU") {
+    if (n.type === "BUTTON_MENU" || n.type === "SELECTION" || n.type === "CONFIRMATION") {
       const opts = n.config?.options || [];
-      if (opts.length === 0) {
-        errors.push(`Button Menu node '${n.id}' must have at least one option.`);
+      if (opts.length === 0 && n.type !== "CONFIRMATION") {
+        errors.push(`Menu node '${n.id}' must have at least one option.`);
       } else if (opts.length > 10) {
-        warnings.push(`Button Menu node '${n.id}' has ${opts.length} options (WhatsApp interactive list maximum is 10).`);
+        warnings.push(`Menu node '${n.id}' has ${opts.length} options (WhatsApp interactive list maximum is 10).`);
       }
       opts.forEach((o, oIdx) => {
         if (o.title && o.title.length > 20) {
@@ -142,16 +151,16 @@ function validateFlowGraph(nodes, transitions, variables = {}) {
       }
     }
 
-    if (n.type === "BUSINESS_ACTION") {
+    if (n.type === "BUSINESS_ACTION" || n.type === "TRANSACTION" || n.type === "BOOKING") {
       const actionName = n.config?.action;
       if (!actionName) {
-        errors.push(`Business Action node '${n.id}' does not specify an 'action'.`);
+        errors.push(`Action node '${n.id}' does not specify an 'action'.`);
       } else if (!APPROVED_ACTIONS.has(actionName)) {
-        errors.push(`Business Action node '${n.id}' specifies unapproved action '${actionName}'. Must be one of: ${Array.from(APPROVED_ACTIONS).join(", ")}`);
+        errors.push(`Action node '${n.id}' specifies unapproved action '${actionName}'. Must be one of: ${Array.from(APPROVED_ACTIONS).join(", ")}`);
       }
     }
 
-    if (n.type === "INPUT_COLLECTION") {
+    if (n.type === "INPUT_COLLECTION" || n.type === "QUESTION") {
       if (!n.config?.variable) {
         warnings.push(`Input Collection node '${n.id}' does not specify a target variable. User input will not be stored.`);
       }
@@ -833,12 +842,150 @@ function getFlowAnalytics(flowId, tenantId = 1) {
   };
 }
 
+/**
+ * Duplicate a flow
+ */
+function duplicateFlow(flowId, data = {}, user = { id: "admin", name: "Administrator" }, tenantId = 1) {
+  const { flow, draftVersion, publishedVersion } = getFlowById(flowId, tenantId);
+  const version = draftVersion || publishedVersion;
+  if (!version) {
+    throw new Error(`Flow #${flowId} has no version to duplicate.`);
+  }
+
+  const newName = data.name || `${flow.name} (Copy)`;
+  return createFlow({
+    tenant_id: tenantId,
+    property_id: flow.property_id || 1,
+    name: newName,
+    description: flow.description || "",
+    category: flow.category,
+    trigger_type: flow.trigger_type,
+    trigger_keywords: flow.trigger_keywords,
+    is_default: 0,
+    priority: flow.priority,
+    initialNodes: version.nodes,
+    initialTransitions: version.transitions,
+    initialVariables: version.variables
+  }, user);
+}
+
+/**
+ * List Flow Executions / Sessions with filter and pagination
+ */
+function listFlowExecutions(flowId = null, options = {}, tenantId = 1) {
+  const { status, phone, page = 1, limit = 20 } = options;
+  const offset = (Math.max(1, Number(page)) - 1) * Math.max(1, Number(limit));
+
+  const conditions = ["s.tenant_id = ?"];
+  const params = [tenantId];
+
+  if (flowId && String(flowId).toLowerCase() !== "all") {
+    conditions.push("s.flow_id = ?");
+    params.push(flowId);
+  }
+  if (status && status !== "ALL") {
+    conditions.push("s.session_status = ?");
+    params.push(status);
+  }
+  if (phone && phone.trim()) {
+    conditions.push("s.sender_phone LIKE ?");
+    params.push(`%${phone.trim().replace(/\D/g, "")}%`);
+  }
+
+  const whereClause = conditions.join(" AND ");
+
+  const countRow = db.prepare(`
+    SELECT COUNT(*) as total FROM conversation_flow_sessions s WHERE ${whereClause}
+  `).get(...params);
+  const total = Number(countRow?.total || 0);
+
+  const query = `
+    SELECT 
+      s.id,
+      s.session_key,
+      s.tenant_id,
+      s.property_id,
+      s.channel,
+      s.sender_phone,
+      s.flow_id,
+      s.flow_version_id,
+      s.current_node_id,
+      s.session_status,
+      s.collected_data_json,
+      s.last_interaction_at,
+      s.expires_at,
+      s.created_at,
+      s.updated_at,
+      f.name as flow_name,
+      f.category as flow_category,
+      v.version_number
+    FROM conversation_flow_sessions s
+    LEFT JOIN conversation_flows f ON f.id = s.flow_id
+    LEFT JOIN conversation_flow_versions v ON v.id = s.flow_version_id
+    WHERE ${whereClause}
+    ORDER BY s.last_interaction_at DESC
+    LIMIT ? OFFSET ?
+  `;
+
+  const rows = db.prepare(query).all(...params, Number(limit), offset);
+
+  const executions = rows.map(r => ({
+    ...r,
+    collected_data: r.collected_data_json ? JSON.parse(r.collected_data_json) : {}
+  }));
+
+  return {
+    executions,
+    total,
+    page: Number(page),
+    limit: Number(limit),
+    totalPages: Math.ceil(total / Number(limit))
+  };
+}
+
+/**
+ * Get detailed trace events for a specific execution session
+ */
+function getExecutionDetails(sessionId, tenantId = 1) {
+  const session = db.prepare(`
+    SELECT s.*, f.name as flow_name, v.version_number
+    FROM conversation_flow_sessions s
+    LEFT JOIN conversation_flows f ON f.id = s.flow_id
+    LEFT JOIN conversation_flow_versions v ON v.id = s.flow_version_id
+    WHERE s.id = ? AND s.tenant_id = ?
+  `).get(sessionId, tenantId);
+
+  if (!session) {
+    throw new Error(`Execution session #${sessionId} not found.`);
+  }
+
+  session.collected_data = session.collected_data_json ? JSON.parse(session.collected_data_json) : {};
+
+  const events = db.prepare(`
+    SELECT id, session_id, flow_id, flow_version_id, node_id, node_type, event_type, payload_json, created_at
+    FROM conversation_flow_events
+    WHERE session_id = ?
+    ORDER BY id ASC
+  `).all(sessionId);
+
+  const parsedEvents = events.map(e => ({
+    ...e,
+    payload: e.payload_json ? JSON.parse(e.payload_json) : {}
+  }));
+
+  return {
+    session,
+    events: parsedEvents
+  };
+}
+
 module.exports = {
   validateFlowGraph,
   listFlows,
   getFlowById,
   createFlow,
   updateFlow,
+  duplicateFlow,
   saveFlowDraft,
   validateFlow,
   publishFlow,
@@ -851,5 +998,7 @@ module.exports = {
   listMessageTemplates,
   saveMessageTemplate,
   deleteMessageTemplate,
-  getFlowAnalytics
+  getFlowAnalytics,
+  listFlowExecutions,
+  getExecutionDetails
 };

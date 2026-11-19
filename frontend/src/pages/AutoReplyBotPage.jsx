@@ -50,6 +50,7 @@ import FlowVersionsModal from '../components/flow-studio/FlowVersionsModal';
 import FlowSimulatorPanel from '../components/flow-studio/FlowSimulatorPanel';
 import MessageTemplatesStudio from '../components/flow-studio/MessageTemplatesStudio';
 import FlowAnalyticsPanel from '../components/flow-studio/FlowAnalyticsPanel';
+import FlowExecutionsModal from '../components/flow-studio/FlowExecutionsModal';
 
 function TabSaveFooter({ hasUnsavedChanges, saving, onSave }) {
   return (
@@ -174,6 +175,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [templatesModalOpen, setTemplatesModalOpen] = useState(false);
   const [versionsModalOpen, setVersionsModalOpen] = useState(false);
+  const [executionsModalOpen, setExecutionsModalOpen] = useState(false);
   const [templatesList, setTemplatesList] = useState([]);
   const [savingDraft, setSavingDraft] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -479,6 +481,25 @@ export default function AutoReplyBotPage({ onNavigate }) {
         setTemplatesModalOpen(false);
         setStudioMode('BUILDER');
         loadData();
+        loadFlowDetails(data.flow.id);
+      }
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  const handleDuplicateFlow = async () => {
+    if (!activeFlowId) return;
+    try {
+      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      const res = await fetch(`/api/flows/conversation-flows/${activeFlowId}/duplicate`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ name: `${activeFlow?.name || 'Flow'} (Copy)` })
+      });
+      const data = await res.json();
+      if (data.success && data.flow) {
+        setFlowsList(prev => [data.flow, ...prev]);
         loadFlowDetails(data.flow.id);
       }
     } catch (e) {
@@ -1157,6 +1178,46 @@ export default function AutoReplyBotPage({ onNavigate }) {
               >
                 <History size={14} color="#64748B" />
                 <span>Version History</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setExecutionsModalOpen(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  fontSize: '0.82rem',
+                  borderRadius: '6px',
+                  border: '1px solid #E2E8F0',
+                  background: '#F8FAFC',
+                  color: '#334155',
+                  cursor: 'pointer'
+                }}
+              >
+                <Clock size={14} color="#0D9488" />
+                <span>Execution Logs</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDuplicateFlow}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  fontSize: '0.82rem',
+                  borderRadius: '6px',
+                  border: '1px solid #E2E8F0',
+                  background: '#F8FAFC',
+                  color: '#334155',
+                  cursor: 'pointer'
+                }}
+              >
+                <Copy size={14} color="#2563EB" />
+                <span>Duplicate</span>
               </button>
             </div>
 
@@ -3260,6 +3321,16 @@ export default function AutoReplyBotPage({ onNavigate }) {
         token={token}
         onRollback={handleRollback}
       />
+
+      {/* Execution History & Event Traces Modal */}
+      {executionsModalOpen && (
+        <FlowExecutionsModal
+          flowId={activeFlowId}
+          flowName={activeFlow?.name}
+          token={token}
+          onClose={() => setExecutionsModalOpen(false)}
+        />
+      )}
 
       {/* Admin Dynamic Rule Edit / Create Modal */}
       {ruleModalOpen && editingRule && (

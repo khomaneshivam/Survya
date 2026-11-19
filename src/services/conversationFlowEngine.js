@@ -318,6 +318,68 @@ function executeBusinessAction(actionName, inputs = {}, context = {}) {
       };
     }
 
+    case "B2B_CALCULATE_SALES_QUOTE": {
+      const planName = String(inputs.plan_name || "GROWTH").toUpperCase();
+      const teamSize = Math.max(1, parseInt(inputs.team_size || 5, 10));
+      const monthlyVolume = Math.max(1000, parseInt(inputs.monthly_volume || 25000, 10));
+
+      let basePrice = 7999;
+      let baseSeats = 10;
+      let baseVolume = 25000;
+
+      if (planName.includes("STARTER")) {
+        basePrice = 2999;
+        baseSeats = 3;
+        baseVolume = 5000;
+      } else if (planName.includes("ENTERPRISE")) {
+        basePrice = 19999;
+        baseSeats = 25;
+        baseVolume = 100000;
+      }
+
+      const extraSeats = Math.max(0, teamSize - baseSeats);
+      const extraSeatsCost = extraSeats * 499;
+
+      const extraVolume = Math.max(0, monthlyVolume - baseVolume);
+      const volumeTierCost = Math.round(extraVolume * 0.20);
+
+      const subtotal = basePrice + extraSeatsCost + volumeTierCost;
+      const taxPercent = 18;
+      const taxTotal = Math.round(subtotal * (taxPercent / 100));
+      const grandTotal = subtotal + taxTotal;
+      const depositAmount = Math.min(5000, grandTotal);
+
+      return {
+        quote_total: grandTotal,
+        quote_subtotal: subtotal,
+        tax_total: taxTotal,
+        tax_percent: taxPercent,
+        extra_seats_cost: extraSeatsCost,
+        volume_tier_cost: volumeTierCost,
+        deposit_amount: depositAmount
+      };
+    }
+
+    case "B2B_CREATE_SALES_DEAL": {
+      const dealId = Math.floor(1000 + Math.random() * 9000);
+      return {
+        deal_id: dealId,
+        assigned_executive: "Enterprise Solutions Architect",
+        deal_stage: "QUALIFIED_PROSPECT"
+      };
+    }
+
+    case "GENERATE_PAYMENT_LINK": {
+      const amount = inputs.amount || inputs.quote_total || 5000;
+      const payRef = "PAY_" + Math.random().toString(36).substring(2, 8).toUpperCase();
+      const paymentLink = `https://survya.flex-us.com/pay/${payRef.toLowerCase()}?amt=${amount}`;
+      return {
+        payment_link: paymentLink,
+        payment_id: payRef,
+        payment_status: "PENDING"
+      };
+    }
+
     default:
       return {};
   }
@@ -543,32 +605,43 @@ async function processTurn({
   const maxSteps = 25; // prevent infinite loops
 
   // 3. Process Input on Waiting Node
-  if (currentNode.type === "BUTTON_MENU" && userInput) {
-    const options = currentNode.config?.options || [];
+  const isMenuOrConfirmation = currentNode.type === "BUTTON_MENU" || currentNode.type === "SELECTION" || currentNode.type === "CONFIRMATION";
+  const isInputField = currentNode.type === "INPUT_COLLECTION" || currentNode.type === "QUESTION";
+
+  if (isMenuOrConfirmation && userInput) {
+    const rawOptions = currentNode.config?.options && currentNode.config.options.length > 0
+      ? currentNode.config.options
+      : [
+          { id: "opt_confirm", title: "Confirm & Proceed ✅", value: "CONFIRM" },
+          { id: "opt_modify", title: "Modify Details ✏️", value: "MODIFY" },
+          { id: "opt_staff", title: "Talk to Staff 💬", value: "STAFF" }
+        ];
+
     const choiceValue = userPayload?.id || userPayload?.value || userInput;
     const normInput = String(choiceValue).toLowerCase().trim();
 
-    const matchedOpt = options.find(o =>
+    const matchedOpt = rawOptions.find(o =>
       String(o.id).toLowerCase() === normInput ||
       String(o.value).toLowerCase() === normInput ||
       String(o.title).toLowerCase() === normInput ||
-      normInput.includes(String(o.title).toLowerCase())
+      normInput.includes(String(o.title).toLowerCase()) ||
+      normInput.includes(String(o.value).toLowerCase())
     );
 
-    const valToStore = matchedOpt ? matchedOpt.value : userInput;
-    if (currentNode.config?.variable) {
-      collectedData[currentNode.config.variable] = valToStore;
-      variableContext[currentNode.config.variable] = valToStore;
-    }
+    const valToStore = matchedOpt ? matchedOpt.value : (normInput.includes("confirm") || normInput.includes("yes") || normInput.includes("pay") ? "CONFIRM" : normInput.includes("modify") || normInput.includes("change") ? "MODIFY" : normInput.includes("staff") || normInput.includes("human") || normInput.includes("agent") ? "STAFF" : userInput);
 
-    executionLogs.push(`User answered BUTTON_MENU '${currentNode.id}': selected '${valToStore}'`);
+    const targetVar = currentNode.config?.variable || (currentNode.type === "CONFIRMATION" ? "confirmation_choice" : "menu_selection");
+    collectedData[targetVar] = valToStore;
+    variableContext[targetVar] = valToStore;
+
+    executionLogs.push(`User answered [${currentNode.type}] '${currentNode.id}': selected '${valToStore}' into '${targetVar}'`);
 
     // Advance to next node
     const nextTargets = transitionsFrom.get(currentNode.id) || [];
     if (nextTargets.length > 0) {
       currentNode = nodeMap.get(nextTargets[0]);
     }
-  } else if (currentNode.type === "INPUT_COLLECTION" && userInput) {
+  } else if (isInputField && userInput) {
     const valConfig = currentNode.config?.validation || {};
     let parsedVal = userInput;
     let isValid = true;
@@ -603,7 +676,7 @@ async function processTurn({
     }
 
     if (!isValid) {
-      executionLogs.push(`Validation failed on INPUT_COLLECTION '${currentNode.id}': '${userInput}'`);
+      executionLogs.push(`Validation failed on [${currentNode.type}] '${currentNode.id}': '${userInput}'`);
       return {
         handled: true,
         sessionKey,
@@ -621,7 +694,7 @@ async function processTurn({
       variableContext[currentNode.config.variable] = parsedVal;
     }
 
-    executionLogs.push(`User input saved on '${currentNode.id}': ${JSON.stringify(parsedVal)}`);
+    executionLogs.push(`User input saved on [${currentNode.type}] '${currentNode.id}': ${JSON.stringify(parsedVal)}`);
 
     // Advance to next node
     const nextTargets = transitionsFrom.get(currentNode.id) || [];
@@ -669,7 +742,7 @@ async function processTurn({
       continue;
     }
 
-    if (currentNode.type === "BUSINESS_ACTION") {
+    if (currentNode.type === "BUSINESS_ACTION" || currentNode.type === "TRANSACTION" || currentNode.type === "BOOKING") {
       const actionName = currentNode.config?.action;
       const rawInputs = currentNode.config?.inputs || {};
       const resolvedInputs = {};
@@ -696,7 +769,121 @@ async function processTurn({
       continue;
     }
 
-    if (currentNode.type === "BUTTON_MENU") {
+    if (currentNode.type === "API_INTEGRATION") {
+      const { method = "GET", url = "", headers = {}, body = {}, outputMappings = {}, mockResponse = null, successTargetNodeId = null } = currentNode.config || {};
+      executionLogs.push(`API_INTEGRATION [${method}] '${url}'`);
+
+      // Safe mock or sandbox response mapping
+      const resolvedResponse = mockResponse || {
+        status: "SUCCESS",
+        timestamp: new Date().toISOString(),
+        data: { id: "ext_" + Math.random().toString(36).substring(2, 8) }
+      };
+
+      for (const [resKey, varTarget] of Object.entries(outputMappings)) {
+        if (resolvedResponse[resKey] !== undefined) {
+          collectedData[varTarget] = resolvedResponse[resKey];
+          variableContext[varTarget] = resolvedResponse[resKey];
+        } else if (resolvedResponse.data && resolvedResponse.data[resKey] !== undefined) {
+          collectedData[varTarget] = resolvedResponse.data[resKey];
+          variableContext[varTarget] = resolvedResponse.data[resKey];
+        }
+      }
+
+      const nextTargets = transitionsFrom.get(currentNode.id) || [];
+      currentNode = successTargetNodeId ? nodeMap.get(successTargetNodeId) : (nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null);
+      continue;
+    }
+
+    if (currentNode.type === "PAYMENT") {
+      const amountVar = currentNode.config?.amountVariable;
+      const rawAmount = amountVar ? variableContext[amountVar] : currentNode.config?.amount;
+      const amount = Number(rawAmount) || 5000;
+      const currency = currentNode.config?.currency || "INR";
+      const desc = interpolateVariables(currentNode.config?.description || "Payment Deposit", variableContext);
+
+      const payRes = executeBusinessAction("GENERATE_PAYMENT_LINK", { amount, currency, description: desc }, { propertyId, tenantId });
+      collectedData.payment_link = payRes.payment_link;
+      collectedData.payment_id = payRes.payment_id;
+      collectedData.payment_status = payRes.payment_status;
+      variableContext.payment_link = payRes.payment_link;
+      variableContext.payment_id = payRes.payment_id;
+      variableContext.payment_status = payRes.payment_status;
+
+      const outputMappings = currentNode.config?.outputs || {};
+      for (const [outKey, varTarget] of Object.entries(outputMappings)) {
+        if (payRes[outKey] !== undefined) {
+          collectedData[varTarget] = payRes[outKey];
+          variableContext[varTarget] = payRes[outKey];
+        }
+      }
+
+      if (currentNode.config?.prompt) {
+        const prompt = interpolateVariables(currentNode.config.prompt, variableContext);
+        accumulatedReplies.push(prompt);
+      }
+
+      const nextTargets = transitionsFrom.get(currentNode.id) || [];
+      currentNode = nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null;
+      continue;
+    }
+
+    if (currentNode.type === "QUOTATION") {
+      if (currentNode.config?.action) {
+        const rawInputs = currentNode.config?.inputs || {};
+        const resolvedInputs = {};
+        for (const [k, v] of Object.entries(rawInputs)) {
+          resolvedInputs[k] = typeof v === "string" ? interpolateVariables(v, variableContext) : v;
+        }
+        const outputs = executeBusinessAction(currentNode.config.action, resolvedInputs, { propertyId, tenantId });
+        const outputMappings = currentNode.config?.outputs || {};
+        for (const [outKey, varTarget] of Object.entries(outputMappings)) {
+          if (outputs[outKey] !== undefined) {
+            collectedData[varTarget] = outputs[outKey];
+            variableContext[varTarget] = outputs[outKey];
+          }
+        }
+      }
+
+      if (currentNode.config?.text) {
+        const text = interpolateVariables(currentNode.config.text, variableContext);
+        if (text) accumulatedReplies.push(text);
+      }
+
+      const nextTargets = transitionsFrom.get(currentNode.id) || [];
+      currentNode = nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null;
+      continue;
+    }
+
+    if (currentNode.type === "CONFIRMATION") {
+      const prompt = interpolateVariables(currentNode.config?.prompt || "Please confirm your selection:", variableContext);
+      accumulatedReplies.push(prompt);
+
+      const rawOptions = currentNode.config?.options && currentNode.config.options.length > 0
+        ? currentNode.config.options
+        : [
+            { id: "opt_confirm", title: "Confirm & Proceed ✅", value: "CONFIRM" },
+            { id: "opt_modify", title: "Modify Details ✏️", value: "MODIFY" },
+            { id: "opt_staff", title: "Talk to Staff 💬", value: "STAFF" }
+          ];
+
+      const formattedOptions = rawOptions.map(o => ({
+        id: o.id,
+        title: interpolateVariables(o.title || o.id, variableContext).slice(0, 20),
+        value: o.value || o.id
+      }));
+
+      interactivePayload = {
+        type: formattedOptions.length <= 3 ? "button" : "list",
+        prompt,
+        options: formattedOptions
+      };
+
+      // Halt loop and wait for user response on this confirmation node
+      break;
+    }
+
+    if (currentNode.type === "BUTTON_MENU" || currentNode.type === "SELECTION") {
       const prompt = interpolateVariables(currentNode.config?.prompt || "Please choose:", variableContext);
       accumulatedReplies.push(prompt);
 
@@ -717,7 +904,7 @@ async function processTurn({
       break;
     }
 
-    if (currentNode.type === "INPUT_COLLECTION") {
+    if (currentNode.type === "INPUT_COLLECTION" || currentNode.type === "QUESTION") {
       const prompt = interpolateVariables(currentNode.config?.prompt || "Please enter information:", variableContext);
       accumulatedReplies.push(prompt);
 
@@ -725,7 +912,7 @@ async function processTurn({
       break;
     }
 
-    if (currentNode.type === "HANDOFF") {
+    if (currentNode.type === "HANDOFF" || currentNode.type === "HANDOVER") {
       const msg = interpolateVariables(
         currentNode.config?.handoffMessage || "🔔 Transferring you to a live team member...",
         variableContext

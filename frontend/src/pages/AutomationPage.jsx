@@ -10,12 +10,16 @@ import {
   UploadCloud,
   AlertCircle,
   Radio,
-  Trash2
+  Trash2,
+  GitBranch,
+  BotMessageSquare
 } from 'lucide-react';
 import { formatIndianDate, formatIndianTime } from '../utils/indianTime';
+import AutoReplyBotPage from './AutoReplyBotPage';
 
 export default function AutomationPage() {
   const { token } = useAuth();
+  const [subTab, setSubTab] = useState('STUDIO'); // 'STUDIO' | 'LIFECYCLE'
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
@@ -500,16 +504,85 @@ export default function AutomationPage() {
 
   return (
     <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '28px 24px' }}>
-      {/* Page Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
-        <div>
-          <h1 style={{ fontSize: '1.65rem', fontWeight: 800, color: '#171719', letterSpacing: '-0.02em' }}>
-            Booking Lifecycle Automation
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '4px' }}>
-            Continuous hands-free WhatsApp messaging synchronized with live Google Sheets, Excel (.xlsx/.xls), or CSV booking dates.
-          </p>
+      {/* Top Module Sub-Navigation Switcher */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: '24px',
+        padding: '6px 8px',
+        background: '#FFFFFF',
+        borderRadius: '10px',
+        border: '1px solid #E5E5E8',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+        flexWrap: 'wrap',
+        gap: '12px'
+      }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={() => setSubTab('STUDIO')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 18px',
+              borderRadius: '8px',
+              border: subTab === 'STUDIO' ? '1px solid #2F5219' : '1px solid transparent',
+              background: subTab === 'STUDIO' ? '#2F5219' : 'transparent',
+              color: subTab === 'STUDIO' ? '#FFFFFF' : '#4B5563',
+              fontWeight: 600,
+              fontSize: '0.86rem',
+              cursor: 'pointer',
+              boxShadow: subTab === 'STUDIO' ? '0 2px 6px rgba(47,82,25,0.2)' : 'none'
+            }}
+          >
+            <GitBranch size={16} />
+            <span>Visual Workflows Engine &amp; Studio</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setSubTab('LIFECYCLE')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 18px',
+              borderRadius: '8px',
+              border: subTab === 'LIFECYCLE' ? '1px solid #2F5219' : '1px solid transparent',
+              background: subTab === 'LIFECYCLE' ? '#2F5219' : 'transparent',
+              color: subTab === 'LIFECYCLE' ? '#FFFFFF' : '#4B5563',
+              fontWeight: 600,
+              fontSize: '0.86rem',
+              cursor: 'pointer',
+              boxShadow: subTab === 'LIFECYCLE' ? '0 2px 6px rgba(47,82,25,0.2)' : 'none'
+            }}
+          >
+            <Sheet size={16} />
+            <span>Guest Lifecycle Triggers (Google Sheets)</span>
+          </button>
         </div>
+        <div style={{ fontSize: '0.8rem', color: '#6B7280', paddingRight: '8px' }}>
+          {subTab === 'STUDIO' ? '🎨 Drag-and-drop conversational customer journeys' : '📅 Automatic date-based message dispatches'}
+        </div>
+      </div>
+
+      {subTab === 'STUDIO' ? (
+        <div style={{ marginTop: '-20px' }}>
+          <AutoReplyBotPage />
+        </div>
+      ) : (
+        <>
+          {/* Page Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
+            <div>
+              <h1 style={{ fontSize: '1.65rem', fontWeight: 800, color: '#171719', letterSpacing: '-0.02em' }}>
+                Booking Lifecycle Automation
+              </h1>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '4px' }}>
+                Continuous hands-free WhatsApp messaging synchronized with live Google Sheets, Excel (.xlsx/.xls), or CSV booking dates.
+              </p>
+            </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button
@@ -1203,6 +1276,8 @@ export default function AutomationPage() {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

@@ -33,6 +33,7 @@ router.post("/flows/conversation-templates/:slug/clone", authenticateToken, flow
 // Single Flow Operations
 router.get("/flows/conversation-flows/:id", authenticateToken, flowController.getFlowById);
 router.put("/flows/conversation-flows/:id", authenticateToken, flowController.updateFlow);
+router.post("/flows/conversation-flows/:id/duplicate", authenticateToken, flowController.duplicateFlow);
 router.post("/flows/conversation-flows/:id/draft", authenticateToken, flowController.saveFlowDraft);
 router.post("/flows/conversation-flows/:id/validate", authenticateToken, flowController.validateFlow);
 router.post("/flows/conversation-flows/:id/publish", authenticateToken, flowController.publishFlow);
@@ -41,5 +42,10 @@ router.post("/flows/conversation-flows/:id/archive", authenticateToken, flowCont
 router.post("/flows/conversation-flows/:id/rollback", authenticateToken, flowController.rollbackFlow);
 router.get("/flows/conversation-flows/:id/versions", authenticateToken, flowController.listVersions);
 router.get("/flows/conversation-flows/:id/analytics", authenticateToken, flowController.getFlowAnalytics);
+router.get("/flows/conversation-flows/:id/executions", authenticateToken, flowController.listFlowExecutions);
+
+// Global Executions & Audit Trace
+router.get("/flows/executions", authenticateToken, flowController.listFlowExecutions);
+router.get("/flows/executions/:sessionId", authenticateToken, flowController.getExecutionDetails);
 
 module.exports = router;
