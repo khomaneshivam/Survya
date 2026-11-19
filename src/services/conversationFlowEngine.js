@@ -750,8 +750,32 @@ async function processTurn({
       }
     } else if (valConfig.type === "NUMBER") {
       const num = Number(String(userInput).replace(/[^0-9.]/g, ""));
-      if (isNaN(num)) isValid = false;
-      else parsedVal = num;
+      if (isNaN(num)) {
+        isValid = false;
+      } else {
+        if (valConfig.min !== undefined && num < Number(valConfig.min)) isValid = false;
+        if (valConfig.max !== undefined && num > Number(valConfig.max)) isValid = false;
+        parsedVal = num;
+      }
+    } else if (valConfig.type === "EMAIL") {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(String(userInput).trim())) {
+        isValid = false;
+      } else {
+        parsedVal = String(userInput).trim().toLowerCase();
+      }
+    } else if (valConfig.type === "PHONE") {
+      const digits = String(userInput).replace(/\D/g, "");
+      if (digits.length < (valConfig.minDigits || 10) || digits.length > (valConfig.maxDigits || 15)) {
+        isValid = false;
+      } else {
+        parsedVal = digits;
+      }
+    } else if (valConfig.type === "REGEX" && valConfig.regex) {
+      try {
+        const re = new RegExp(valConfig.regex);
+        if (!re.test(String(userInput).trim())) isValid = false;
+      } catch (e) {}
     } else if (valConfig.type === "TEXT" && valConfig.minLength) {
       if (String(userInput).trim().length < valConfig.minLength) {
         isValid = false;

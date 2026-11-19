@@ -45,6 +45,7 @@ import {
 
 import FlowCanvas from '../components/flow-studio/FlowCanvas';
 import NodeInspectorDrawer from '../components/flow-studio/NodeInspectorDrawer';
+import StepJourneyDesigner from '../components/flow-studio/StepJourneyDesigner';
 import FlowTemplatesModal from '../components/flow-studio/FlowTemplatesModal';
 import FlowVersionsModal from '../components/flow-studio/FlowVersionsModal';
 import FlowSimulatorPanel from '../components/flow-studio/FlowSimulatorPanel';
@@ -181,6 +182,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
   const [publishing, setPublishing] = useState(false);
   const [validationReport, setValidationReport] = useState(null);
   const [validationModalOpen, setValidationModalOpen] = useState(false);
+  const [builderDesignerView, setBuilderDesignerView] = useState('STEPS'); // 'STEPS' | 'CANVAS'
 
   // Auth Headers helper
   const getAuthHeaders = useCallback(() => {
@@ -1222,6 +1224,59 @@ export default function AutoReplyBotPage({ onNavigate }) {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              {/* Dual View Toggle: Step-by-Step Guided Journey vs Visual Node Canvas */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                background: '#F1F5F9',
+                padding: '3px',
+                borderRadius: '8px',
+                border: '1px solid #CBD5E1'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setBuilderDesignerView('STEPS')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '5px 12px',
+                    fontSize: '0.8rem',
+                    fontWeight: builderDesignerView === 'STEPS' ? 700 : 500,
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: builderDesignerView === 'STEPS' ? '#FFFFFF' : 'transparent',
+                    color: builderDesignerView === 'STEPS' ? '#2F5219' : '#64748B',
+                    cursor: 'pointer',
+                    boxShadow: builderDesignerView === 'STEPS' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                  }}
+                >
+                  <Layers size={14} />
+                  <span>Step-by-Step Flow List</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBuilderDesignerView('CANVAS')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '5px 12px',
+                    fontSize: '0.8rem',
+                    fontWeight: builderDesignerView === 'CANVAS' ? 700 : 500,
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: builderDesignerView === 'CANVAS' ? '#FFFFFF' : 'transparent',
+                    color: builderDesignerView === 'CANVAS' ? '#2F5219' : '#64748B',
+                    cursor: 'pointer',
+                    boxShadow: builderDesignerView === 'CANVAS' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                  }}
+                >
+                  <GitBranch size={14} />
+                  <span>Visual Graph Canvas</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={handleValidateFlow}
@@ -1311,39 +1366,51 @@ export default function AutoReplyBotPage({ onNavigate }) {
             </div>
           </div>
 
-          {/* Canvas & Drawer Container */}
-          <div style={{
-            display: 'flex',
-            height: '760px',
-            background: '#FFFFFF',
-            borderRadius: '12px',
-            border: '1px solid #E5E5E8',
-            overflow: 'hidden',
-            position: 'relative'
-          }}>
-            <div style={{ flex: 1, height: '100%', position: 'relative' }}>
-              <FlowCanvas
-                nodes={currentNodes}
-                transitions={currentTransitions}
-                selectedNodeId={selectedNodeId}
-                onSelectNode={setSelectedNodeId}
-                onUpdateNodes={setCurrentNodes}
-                onUpdateTransitions={setCurrentTransitions}
-              />
-            </div>
+          {/* Main Flow Editor Area: Step-by-Step Journey View or Visual Node Canvas */}
+          {builderDesignerView === 'STEPS' ? (
+            <StepJourneyDesigner
+              nodes={currentNodes}
+              transitions={currentTransitions}
+              onUpdateNodes={setCurrentNodes}
+              onUpdateTransitions={setCurrentTransitions}
+              onSelectNode={setSelectedNodeId}
+              selectedNodeId={selectedNodeId}
+              onOpenSimulator={() => setStudioMode('SIMULATOR')}
+            />
+          ) : (
+            <div style={{
+              display: 'flex',
+              height: '760px',
+              background: '#FFFFFF',
+              borderRadius: '12px',
+              border: '1px solid #E5E5E8',
+              overflow: 'hidden',
+              position: 'relative'
+            }}>
+              <div style={{ flex: 1, height: '100%', position: 'relative' }}>
+                <FlowCanvas
+                  nodes={currentNodes}
+                  transitions={currentTransitions}
+                  selectedNodeId={selectedNodeId}
+                  onSelectNode={setSelectedNodeId}
+                  onUpdateNodes={setCurrentNodes}
+                  onUpdateTransitions={setCurrentTransitions}
+                />
+              </div>
 
-            {selectedNodeId && currentNodes.find(n => n.id === selectedNodeId) && (
-              <NodeInspectorDrawer
-                node={currentNodes.find(n => n.id === selectedNodeId)}
-                nodes={currentNodes}
-                variables={currentVariables}
-                onUpdateNode={updated => {
-                  setCurrentNodes(nodes => nodes.map(n => n.id === updated.id ? updated : n));
-                }}
-                onClose={() => setSelectedNodeId(null)}
-              />
-            )}
-          </div>
+              {selectedNodeId && currentNodes.find(n => n.id === selectedNodeId) && (
+                <NodeInspectorDrawer
+                  node={currentNodes.find(n => n.id === selectedNodeId)}
+                  nodes={currentNodes}
+                  variables={currentVariables}
+                  onUpdateNode={updated => {
+                    setCurrentNodes(nodes => nodes.map(n => n.id === updated.id ? updated : n));
+                  }}
+                  onClose={() => setSelectedNodeId(null)}
+                />
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1820,12 +1887,62 @@ export default function AutoReplyBotPage({ onNavigate }) {
 
       {/* MODE 6: LEGACY CHANNEL SETTINGS & DIRECT RULES */}
       {studioMode === 'LEGACY' && (
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1.4fr) minmax(380px, 1fr)',
-        gap: '24px',
-        alignItems: 'start'
-      }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{
+          background: '#F3F6EE',
+          border: '1.5px solid #2F5219',
+          borderRadius: '12px',
+          padding: '14px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '14px',
+          boxShadow: '0 2px 6px rgba(47,82,25,0.08)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#2F5219', color: '#FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Sparkles size={20} />
+            </div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: '0.94rem', color: '#171719' }}>
+                Looking to customize your conversation journey, questions &amp; buttons?
+              </div>
+              <div style={{ fontSize: '0.82rem', color: '#475569', marginTop: '2px' }}>
+                You no longer need to use static button fields! Use the modern <strong>Step-by-Step Flow Designer</strong> to configure any questions, data validations, and dynamic buttons.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setStudioMode('BUILDER')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 18px',
+              background: '#2F5219',
+              color: '#FFFFFF',
+              borderRadius: '8px',
+              border: 'none',
+              fontSize: '0.84rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              boxShadow: '0 2px 5px rgba(47,82,25,0.2)'
+            }}
+          >
+            <span>Open Step-by-Step Flow Designer</span>
+            <span>➔</span>
+          </button>
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1.4fr) minmax(380px, 1fr)',
+          gap: '24px',
+          alignItems: 'start'
+        }}>
         {/* Left Column: Configuration Workspace */}
         <div style={{
           background: '#FFFFFF',
@@ -3190,6 +3307,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
             </form>
           </div>
         </div>
+      </div>
       </div>
       )}
 
