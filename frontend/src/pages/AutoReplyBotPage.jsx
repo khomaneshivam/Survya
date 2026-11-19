@@ -174,6 +174,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
   const [currentTransitions, setCurrentTransitions] = useState([]);
   const [currentVariables, setCurrentVariables] = useState({});
   const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [activeSimulatedNodeId, setActiveSimulatedNodeId] = useState(null);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [templatesModalOpen, setTemplatesModalOpen] = useState(false);
   const [versionsModalOpen, setVersionsModalOpen] = useState(false);
@@ -1301,7 +1302,13 @@ export default function AutoReplyBotPage({ onNavigate }) {
 
               <button
                 type="button"
-                onClick={() => setStudioMode('SIMULATOR')}
+                onClick={() => {
+                  if (builderDesignerView === 'CANVAS') {
+                    setSimulatorOpen(prev => !prev);
+                  } else {
+                    setStudioMode('SIMULATOR');
+                  }
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1310,14 +1317,14 @@ export default function AutoReplyBotPage({ onNavigate }) {
                   fontSize: '0.82rem',
                   fontWeight: 600,
                   borderRadius: '6px',
-                  border: '1px solid #FDE68A',
-                  background: '#FEF3C7',
-                  color: '#92400E',
+                  border: simulatorOpen && builderDesignerView === 'CANVAS' ? '1px solid #2F5219' : '1px solid #FDE68A',
+                  background: simulatorOpen && builderDesignerView === 'CANVAS' ? '#E8F5E9' : '#FEF3C7',
+                  color: simulatorOpen && builderDesignerView === 'CANVAS' ? '#2F5219' : '#92400E',
                   cursor: 'pointer'
                 }}
               >
                 <Smartphone size={14} />
-                <span>Zero-Cost Simulator</span>
+                <span>{simulatorOpen && builderDesignerView === 'CANVAS' ? 'Close Simulator' : 'Zero-Cost Simulator'}</span>
               </button>
 
               <button
@@ -1396,6 +1403,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
                   onSelectNode={setSelectedNodeId}
                   onUpdateNodes={setCurrentNodes}
                   onUpdateTransitions={setCurrentTransitions}
+                  activeSimulatedNodeId={activeSimulatedNodeId}
                 />
               </div>
 
@@ -1409,6 +1417,18 @@ export default function AutoReplyBotPage({ onNavigate }) {
                   }}
                   onClose={() => setSelectedNodeId(null)}
                 />
+              )}
+
+              {simulatorOpen && (
+                <div style={{ width: '380px', height: '100%', borderLeft: '1px solid #E5E5E8', position: 'relative', zIndex: 10 }}>
+                  <FlowSimulatorPanel
+                    flow={activeFlow}
+                    currentNodes={currentNodes}
+                    currentTransitions={currentTransitions}
+                    token={token}
+                    onActiveNodeChange={setActiveSimulatedNodeId}
+                  />
+                </div>
               )}
             </div>
           )}
@@ -1832,6 +1852,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
             currentNodes={currentNodes}
             currentTransitions={currentTransitions}
             token={token}
+            onActiveNodeChange={setActiveSimulatedNodeId}
           />
         </div>
       )}

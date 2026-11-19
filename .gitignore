@@ -9,3 +9,5 @@ data/*.sqlite3
 uploads/
 ssl/
 .DS_Store
+repomix-output.xml
+dist/

@@ -18,7 +18,8 @@ export default function FlowSimulatorPanel({
   flow,
   currentNodes = [],
   currentTransitions = [],
-  token
+  token,
+  onActiveNodeChange
 }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -34,12 +35,20 @@ export default function FlowSimulatorPanel({
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Clear highlight on unmount
+  useEffect(() => {
+    return () => {
+      onActiveNodeChange?.(null);
+    };
+  }, [onActiveNodeChange]);
+
   // Initial trigger
   const startSimulation = async () => {
     setSimulating(true);
     setMessages([]);
     setExecutionTrace([]);
     setSimulationState(null);
+    onActiveNodeChange?.(null);
 
     try {
       const res = await fetch('/api/flows/conversation-flows/simulate', {
@@ -80,6 +89,10 @@ export default function FlowSimulatorPanel({
           nodes: currentNodes,
           transitions: currentTransitions
         });
+
+        if (data.result.currentNodeId) {
+          onActiveNodeChange?.(data.result.currentNodeId);
+        }
 
         setExecutionTrace(data.result.executionLogs || []);
       }
@@ -147,6 +160,10 @@ export default function FlowSimulatorPanel({
           nodes: currentNodes,
           transitions: currentTransitions
         });
+
+        if (data.result.currentNodeId) {
+          onActiveNodeChange?.(data.result.currentNodeId);
+        }
 
         setExecutionTrace(prev => [
           ...prev,

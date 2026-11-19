@@ -4,14 +4,7 @@ import {
   History,
   RefreshCw,
   Search,
-  Filter,
-  CheckCircle2,
   Clock,
-  AlertTriangle,
-  PhoneCall,
-  User,
-  ChevronRight,
-  ArrowRight,
   Database,
   Smartphone
 } from 'lucide-react';

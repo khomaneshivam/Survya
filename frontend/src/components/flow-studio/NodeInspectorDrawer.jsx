@@ -1,16 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   X,
   Plus,
   Trash2,
   AlertTriangle,
-  Info,
-  Sliders,
-  Zap,
-  Tag,
-  CheckCircle2,
-  ExternalLink
+  AlertCircle,
+  Tag
 } from 'lucide-react';
+import { validateFlowGraph } from './flowGraphValidator';
 
 const APPROVED_ACTIONS = [
   { id: 'HOSPITALITY_CHECK_AVAILABILITY', label: '🏨 Check Room Inventory Availability', desc: 'Validates sellable room counts between check-in and check-out dates' },
@@ -31,9 +28,68 @@ export default function NodeInspectorDrawer({
   onUpdateNode,
   onClose
 }) {
-  if (!node) return null;
-
+  // Call hooks unconditionally at top level (preserves React Rules of Hooks)
   const [activeTab, setActiveTab] = useState('config'); // 'config' | 'variables' | 'json'
+  const [variablePickerField, setVariablePickerField] = useState(null); // field key targeted for variable insertion
+
+  // Collect available variables from system and upstream graph nodes
+  const availableVariables = useMemo(() => {
+    const list = [
+      { key: 'contact.name', label: 'Guest / Customer Name', source: 'System' },
+      { key: 'contact.phone', label: 'Guest WhatsApp Number', source: 'System' },
+      { key: 'property.name', label: 'Business / Resort Name', source: 'System' },
+      { key: 'property.phone', label: 'Duty Desk Phone', source: 'System' }
+    ];
+
+    // Variables from props
+    Object.entries(variables || {}).forEach(([k, v]) => {
+      if (!list.some(item => item.key === k)) {
+        list.push({ key: k, label: v?.label || k, source: 'Session' });
+      }
+    });
+
+    // Upstream variables produced by nodes in this flow
+    (nodes || []).forEach(n => {
+      const c = n.config || {};
+      if ((n.type === 'COLLECT_INPUT' || n.type === 'INPUT_COLLECTION' || n.type === 'QUESTION') && (c.saveAs || c.variable)) {
+        const varName = c.saveAs || c.variable;
+        if (!list.some(item => item.key === varName)) {
+          list.push({ key: varName, label: `Collected from "${n.title || n.id}"`, source: 'Step Input' });
+        }
+      }
+      if (n.type === 'SET_VARIABLE' && c.targetVar) {
+        if (!list.some(item => item.key === c.targetVar)) {
+          list.push({ key: c.targetVar, label: `Set by "${n.title || n.id}"`, source: 'Variable' });
+        }
+      }
+      if (n.type === 'CATALOG_BOOKING' || n.type === 'BUSINESS_ACTION' || n.type === 'QUOTATION') {
+        const quoteVars = ['quote_total', 'quote_subtotal', 'tax_total', 'room_type_name', 'nights'];
+        quoteVars.forEach(qv => {
+          if (!list.some(item => item.key === qv)) {
+            list.push({ key: qv, label: `Quote Calculation (${qv})`, source: 'Catalog' });
+          }
+        });
+      }
+      if ((n.type === 'HTTP_WEBHOOK' || n.type === 'API_INTEGRATION') && Array.isArray(c.responseMappings)) {
+        c.responseMappings.forEach(rm => {
+          if (rm.mapToVariable && !list.some(item => item.key === rm.mapToVariable)) {
+            list.push({ key: rm.mapToVariable, label: `API Response (${rm.jsonPath || ''})`, source: 'Webhook' });
+          }
+        });
+      }
+    });
+
+    return list;
+  }, [nodes, variables]);
+
+  // Validation diagnostics for this specific node
+  const nodeIssues = useMemo(() => {
+    if (!node) return [];
+    const report = validateFlowGraph(nodes, []);
+    return report.allIssues.filter(i => i.nodeId === node.id);
+  }, [node, nodes]);
+
+  if (!node) return null;
 
   const handleTitleChange = (val) => {
     onUpdateNode({ ...node, title: val });
@@ -50,19 +106,13 @@ export default function NodeInspectorDrawer({
     onUpdateNode(updated);
   };
 
-  const handleNestedConfigChange = (parentKey, childKey, val) => {
-    const currParent = node.config?.[parentKey] || {};
-    const updated = {
-      ...node,
-      config: {
-        ...(node.config || {}),
-        [parentKey]: {
-          ...currParent,
-          [childKey]: val
-        }
-      }
-    };
-    onUpdateNode(updated);
+  // Helper to insert a variable chip into a specific string config field
+  const handleInsertVariable = (fieldKey, varKey) => {
+    const currentVal = node.config?.[fieldKey] || '';
+    const token = `{{${varKey}}}`;
+    const newVal = currentVal ? `${currentVal} ${token}` : token;
+    handleConfigChange(fieldKey, newVal);
+    setVariablePickerField(null);
   };
 
   // Button Options helpers
@@ -92,11 +142,10 @@ export default function NodeInspectorDrawer({
   const conditionRules = node.config?.rules || [];
 
   const handleAddConditionRule = () => {
-    const otherNodes = nodes.filter(n => n.id !== node.id);
     const newRule = {
-      operator: 'EQUALS',
-      value: '',
-      targetNodeId: otherNodes[0]?.id || ''
+      variable: 'lead_score',
+      operator: 'gte',
+      value: '50'
     };
     handleConfigChange('rules', [...conditionRules, newRule]);
   };
@@ -112,41 +161,61 @@ export default function NodeInspectorDrawer({
     handleConfigChange('rules', next);
   };
 
+  const isTrigger = ['START', 'TRIGGER_WHATSAPP', 'TRIGGER_EVENT'].includes(node.type);
+  const isMessage = ['SEND_MESSAGE', 'MESSAGE', 'BUTTON_MENU', 'CONFIRMATION'].includes(node.type);
+  const isIntake = ['COLLECT_INPUT', 'INPUT_COLLECTION', 'QUESTION'].includes(node.type);
+  const isCondition = node.type === 'CONDITION';
+  const isSetVar = node.type === 'SET_VARIABLE';
+  const isWaitDelay = node.type === 'WAIT_DELAY';
+  const isCrm = node.type === 'CRM_UPSERT';
+  const isBooking = ['CATALOG_BOOKING', 'BUSINESS_ACTION', 'QUOTATION', 'BOOKING', 'TRANSACTION'].includes(node.type);
+  const isWebhook = ['HTTP_WEBHOOK', 'API_INTEGRATION'].includes(node.type);
+  const isTemplate = node.type === 'SEND_TEMPLATE';
+  const isMetaFlow = node.type === 'SEND_WHATSAPP_FLOW';
+  const isHandoff = ['HUMAN_HANDOFF', 'HANDOFF'].includes(node.type);
+  const isEnd = node.type === 'END';
+
   return (
-    <div style={{
-      width: '420px',
-      background: '#FFFFFF',
-      borderLeft: '1px solid #E5E5E8',
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100%',
-      boxShadow: '-4px 0 16px rgba(0,0,0,0.06)',
-      zIndex: 20
-    }}>
-      {/* Header */}
-      <div style={{
-        padding: '16px 20px',
-        borderBottom: '1px solid #E5E5E8',
+    <div
+      style={{
+        width: '420px',
+        background: '#FFFFFF',
+        borderLeft: '1px solid #E5E5E8',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        background: '#FAFAFB'
-      }}>
-        <div>
+        flexDirection: 'column',
+        height: '100%',
+        boxShadow: '-4px 0 16px rgba(0,0,0,0.06)',
+        zIndex: 20
+      }}
+    >
+      {/* Drawer Header */}
+      <div
+        style={{
+          padding: '14px 18px',
+          borderBottom: '1px solid #E5E5E8',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: '#FAFAFB'
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0, marginRight: '10px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{
-              fontSize: '0.72rem',
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              padding: '2px 8px',
-              borderRadius: '6px',
-              background: '#EAEAEF',
-              color: '#343438'
-            }}>
+            <span
+              style={{
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                padding: '2px 8px',
+                borderRadius: '6px',
+                background: '#EAEAEF',
+                color: '#343438'
+              }}
+            >
               {node.type}
             </span>
-            <span style={{ fontSize: '0.78rem', color: '#8E8E93', fontFamily: 'monospace' }}>
+            <span style={{ fontSize: '0.74rem', color: '#8E8E93', fontFamily: 'monospace' }}>
               #{node.id}
             </span>
           </div>
@@ -155,7 +224,7 @@ export default function NodeInspectorDrawer({
             value={node.title || ''}
             onChange={(e) => handleTitleChange(e.target.value)}
             style={{
-              fontSize: '1rem',
+              fontSize: '0.96rem',
               fontWeight: 700,
               color: '#1C1C1E',
               border: 'none',
@@ -163,41 +232,74 @@ export default function NodeInspectorDrawer({
               outline: 'none',
               marginTop: '4px',
               width: '100%',
-              borderBottom: '1px dashed transparent'
+              borderBottom: '1px dashed #CBD5E1',
+              paddingBottom: '2px'
             }}
-            placeholder="Node Title..."
+            placeholder="Step Title..."
           />
         </div>
         <button
           type="button"
           onClick={onClose}
+          title="Close Inspector"
           style={{
             border: 'none',
             background: 'transparent',
             cursor: 'pointer',
             padding: '6px',
-            color: '#8E8E93'
+            color: '#8E8E93',
+            display: 'flex',
+            alignItems: 'center'
           }}
         >
           <X size={18} />
         </button>
       </div>
 
+      {/* Node Validation Diagnostics Banner */}
+      {nodeIssues.length > 0 && (
+        <div
+          style={{
+            background: nodeIssues.some(i => i.severity === 'error') ? '#FEF2F2' : '#FFFBEB',
+            borderBottom: `1px solid ${nodeIssues.some(i => i.severity === 'error') ? '#FCA5A5' : '#FDE68A'}`,
+            padding: '10px 16px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px'
+          }}
+        >
+          {nodeIssues.map((issue, idx) => (
+            <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', fontSize: '0.73rem' }}>
+              {issue.severity === 'error' ? (
+                <AlertCircle size={13} color="#EF4444" style={{ marginTop: '2px', flexShrink: 0 }} />
+              ) : (
+                <AlertTriangle size={13} color="#F59E0B" style={{ marginTop: '2px', flexShrink: 0 }} />
+              )}
+              <span style={{ color: issue.severity === 'error' ? '#991B1B' : '#92400E' }}>
+                {issue.message}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Tabs */}
-      <div style={{
-        display: 'flex',
-        borderBottom: '1px solid #E5E5E8',
-        padding: '0 16px',
-        background: '#FFFFFF'
-      }}>
-        {['config', 'variables', 'json'].map(tab => (
+      <div
+        style={{
+          display: 'flex',
+          borderBottom: '1px solid #E5E5E8',
+          padding: '0 16px',
+          background: '#FFFFFF'
+        }}
+      >
+        {['config', 'variables', 'json'].map((tab) => (
           <button
             key={tab}
             type="button"
             onClick={() => setActiveTab(tab)}
             style={{
               padding: '10px 14px',
-              fontSize: '0.82rem',
+              fontSize: '0.80rem',
               fontWeight: activeTab === tab ? 600 : 500,
               color: activeTab === tab ? '#2F5219' : '#67676B',
               border: 'none',
@@ -207,566 +309,600 @@ export default function NodeInspectorDrawer({
               textTransform: 'capitalize'
             }}
           >
-            {tab}
+            {tab === 'config' ? 'Step Setup' : tab === 'variables' ? 'Variables' : 'Raw JSON'}
           </button>
         ))}
       </div>
 
-      {/* Content Area */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+      {/* Tab 1: Config */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px' }}>
         {activeTab === 'config' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-            {/* START Node Config */}
-            {node.type === 'START' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+            {/* 1. TRIGGER NODES */}
+            {isTrigger && (
               <>
                 <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Trigger Type</label>
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Trigger Mode</label>
                   <select
                     className="form-input"
-                    value={node.config?.triggerType || 'INBOUND_ANY'}
+                    value={node.config?.triggerType || 'KEYWORD_MATCH'}
                     onChange={(e) => handleConfigChange('triggerType', e.target.value)}
                   >
-                    <option value="INBOUND_ANY">Inbound Any Message (Default Journey Entry)</option>
-                    <option value="KEYWORD_MATCH">Keyword Match (Intent detection)</option>
-                    <option value="WELCOME">Explicit Welcome Greeting</option>
+                    <option value="KEYWORD_MATCH">Keyword Match (Contains any specified keyword)</option>
+                    <option value="EXACT_MATCH">Exact Match (Customer message matches exactly)</option>
+                    <option value="FIRST_MESSAGE">First Inbound Contact (New Guest / Contact)</option>
+                    <option value="INBOUND_ANY">Inbound Any Message (Default Flow Entry)</option>
+                    <option value="REGEX">Regular Expression Pattern</option>
                   </select>
                 </div>
+
                 <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>
                     Trigger Keywords (Comma-separated)
                   </label>
                   <input
                     type="text"
                     className="form-input"
-                    value={Array.isArray(node.config?.triggerKeywords) ? node.config.triggerKeywords.join(', ') : (node.config?.triggerKeywords || '')}
-                    onChange={(e) => handleConfigChange('triggerKeywords', e.target.value.split(',').map(s => s.trim()).filter(Boolean))}
-                    placeholder="hi, hello, book, rates, room"
+                    value={(() => {
+                      const kw = node.config?.keywords || node.config?.triggerKeywords;
+                      return Array.isArray(kw) ? kw.join(', ') : (kw || '');
+                    })()}
+                    onChange={(e) => {
+                      const list = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+                      handleConfigChange('keywords', list);
+                      handleConfigChange('triggerKeywords', list);
+                    }}
+                    placeholder="hi, hello, book, rates, room, enquiry"
                   />
-                  <div style={{ fontSize: '0.75rem', color: '#8E8E93', marginTop: '4px' }}>
-                    Inbound messages containing any of these keywords will start this journey.
+                  <div style={{ fontSize: '0.73rem', color: '#8E8E93', marginTop: '4px' }}>
+                    Inbound WhatsApp messages matching these keywords will trigger this customer journey.
                   </div>
                 </div>
               </>
             )}
 
-            {/* MESSAGE Node Config */}
-            {node.type === 'MESSAGE' && (
-              <div className="form-group">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Message Content</label>
-                  <span style={{ fontSize: '0.74rem', color: '#8E8E93' }}>Supports *bold*, _italics_ & {`{{variables}}`}</span>
-                </div>
-                <textarea
-                  className="form-input"
-                  rows={6}
-                  value={node.config?.text || ''}
-                  onChange={(e) => handleConfigChange('text', e.target.value)}
-                  placeholder="Type conversational message here..."
-                  style={{ fontFamily: 'inherit', lineHeight: '1.45' }}
-                />
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
-                  <span style={{ fontSize: '0.72rem', color: '#67676B' }}>Quick Variables:</span>
-                  {['property.name', 'property.city', 'guest_name', 'check_in_date', 'quote_total', 'enquiry_id'].map(v => (
+            {/* 2. MESSAGING NODES (SEND_MESSAGE, MESSAGE, BUTTON_MENU, CONFIRMATION) */}
+            {isMessage && (
+              <>
+                <div className="form-group">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Message Content</label>
                     <button
-                      key={v}
                       type="button"
-                      onClick={() => handleConfigChange('text', (node.config?.text || '') + ` {{${v}}}`)}
+                      onClick={() => setVariablePickerField(variablePickerField === 'text' ? null : 'text')}
                       style={{
-                        padding: '2px 6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        border: '1px solid #E2E8F0',
+                        background: '#F8FAFC',
                         borderRadius: '4px',
-                        border: '1px solid #D1D1D6',
-                        background: '#F2F2F7',
-                        fontSize: '0.72rem',
+                        padding: '2px 6px',
+                        fontSize: '0.70rem',
+                        color: '#2F5219',
+                        fontWeight: 600,
                         cursor: 'pointer'
                       }}
                     >
-                      +{`{{${v}}}`}
+                      <Tag size={11} />
+                      <span>Insert Variable</span>
                     </button>
-                  ))}
-                </div>
-              </div>
-            )}
+                  </div>
 
-            {/* BUTTON_MENU Node Config */}
-            {node.type === 'BUTTON_MENU' && (
-              <>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Prompt Message</label>
+                  {/* Variable Picker Popover */}
+                  {variablePickerField === 'text' && (
+                    <div
+                      style={{
+                        margin: '6px 0',
+                        padding: '8px 10px',
+                        background: '#F8FAFC',
+                        borderRadius: '6px',
+                        border: '1px solid #CBD5E1',
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '6px',
+                        maxHeight: '120px',
+                        overflowY: 'auto'
+                      }}
+                    >
+                      {availableVariables.map((v) => (
+                        <button
+                          key={v.key}
+                          type="button"
+                          onClick={() => handleInsertVariable('text', v.key)}
+                          style={{
+                            fontSize: '0.72rem',
+                            padding: '3px 7px',
+                            borderRadius: '4px',
+                            background: '#FFFFFF',
+                            border: '1px solid #E2E8F0',
+                            color: '#166534',
+                            cursor: 'pointer',
+                            fontWeight: 600
+                          }}
+                        >
+                          {`{{${v.key}}}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   <textarea
                     className="form-input"
-                    rows={3}
-                    value={node.config?.prompt || ''}
-                    onChange={(e) => handleConfigChange('prompt', e.target.value)}
-                    placeholder="Please select an option:"
+                    rows={4}
+                    value={node.config?.text || node.config?.prompt || ''}
+                    onChange={(e) => {
+                      handleConfigChange('text', e.target.value);
+                      handleConfigChange('prompt', e.target.value);
+                    }}
+                    placeholder="Hello {{contact.name}}! Welcome to our resort..."
                   />
+                  <div style={{ fontSize: '0.73rem', color: '#8E8E93', marginTop: '4px' }}>
+                    Supports *bold*, _italics_, ~strike~ and dynamic {`{{variables}}`}.
+                  </div>
                 </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Assign Result to Variable</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={node.config?.variable || ''}
-                    onChange={(e) => handleConfigChange('variable', e.target.value)}
-                    placeholder="e.g. enquiry_type, selected_room"
-                  />
-                </div>
+
+                {/* Interactive Buttons / Options */}
                 <div className="form-group">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem', margin: 0 }}>
-                      Interactive Buttons / Options ({options.length}/10)
+                    <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem', margin: 0 }}>
+                      Interactive Options ({options.length}/10)
                     </label>
                     {options.length < 10 && (
                       <button
                         type="button"
                         onClick={handleAddOption}
-                        className="btn btn-outline"
-                        style={{ padding: '4px 10px', fontSize: '0.75rem', gap: '4px' }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          border: 'none',
+                          background: '#E8F5E9',
+                          color: '#2F5219',
+                          borderRadius: '4px',
+                          padding: '3px 8px',
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          cursor: 'pointer'
+                        }}
                       >
-                        <Plus size={13} /> Add Option
+                        <Plus size={12} />
+                        <span>Add Option</span>
                       </button>
                     )}
                   </div>
+
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {options.map((opt, idx) => {
-                      const isLong = (opt.title || '').length > 20;
-                      return (
-                        <div key={opt.id || idx} style={{
-                          padding: '10px',
-                          border: isLong ? '1px solid #DC2626' : '1px solid #E5E5E8',
-                          borderRadius: '8px',
-                          background: '#FAFAFB',
+                    {options.map((opt, i) => (
+                      <div
+                        key={opt.id || i}
+                        style={{
                           display: 'flex',
-                          flexDirection: 'column',
-                          gap: '6px'
-                        }}>
-                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                            <input
-                              type="text"
-                              value={opt.title || ''}
-                              onChange={(e) => handleUpdateOption(idx, 'title', e.target.value)}
-                              placeholder="Button Title (Max 20 chars)"
-                              className="form-input"
-                              style={{ flex: 1, fontSize: '0.82rem', padding: '6px 8px' }}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveOption(idx)}
-                              style={{ border: 'none', background: 'transparent', color: '#DC2626', cursor: 'pointer', padding: '4px' }}
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <input
-                              type="text"
-                              value={opt.value || ''}
-                              onChange={(e) => handleUpdateOption(idx, 'value', e.target.value)}
-                              placeholder="Value (e.g. BOOKING)"
-                              className="form-input"
-                              style={{ flex: 1, fontSize: '0.76rem', padding: '4px 8px', color: '#67676B' }}
-                            />
-                            <span style={{ fontSize: '0.7rem', color: isLong ? '#DC2626' : '#8E8E93', marginLeft: '8px' }}>
-                              {(opt.title || '').length}/20 chars
-                            </span>
-                          </div>
-                          {isLong && (
-                            <div style={{ fontSize: '0.7rem', color: '#DC2626', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <AlertTriangle size={12} /> WhatsApp limits button titles to 20 characters.
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '8px 10px',
+                          background: '#F8FAFC',
+                          borderRadius: '6px',
+                          border: '1px solid #E2E8F0'
+                        }}
+                      >
+                        <span style={{ fontSize: '0.72rem', color: '#94A3B8', fontWeight: 600 }}>#{i + 1}</span>
+                        <input
+                          type="text"
+                          className="form-input"
+                          style={{ flex: 1, padding: '4px 8px', fontSize: '0.76rem' }}
+                          value={opt.title || ''}
+                          onChange={(e) => handleUpdateOption(i, 'title', e.target.value)}
+                          placeholder="Button Label"
+                          maxLength={20}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveOption(i)}
+                          title="Delete option"
+                          style={{ border: 'none', background: 'transparent', color: '#EF4444', cursor: 'pointer', padding: '2px' }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+                    {options.length === 0 && (
+                      <div style={{ fontSize: '0.74rem', color: '#94A3B8', fontStyle: 'italic' }}>
+                        No buttons added. Message will send as plain text.
+                      </div>
+                    )}
                   </div>
                 </div>
               </>
             )}
 
-            {/* INPUT_COLLECTION Node Config */}
-            {node.type === 'INPUT_COLLECTION' && (
+            {/* 3. SEND TEMPLATE */}
+            {isTemplate && (
               <>
                 <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Prompt Message</label>
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Meta Approved Template Name</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={node.config?.templateName || ''}
+                    onChange={(e) => handleConfigChange('templateName', e.target.value)}
+                    placeholder="booking_confirmation_v1"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Language Code</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={node.config?.templateLanguage || 'en_US'}
+                    onChange={(e) => handleConfigChange('templateLanguage', e.target.value)}
+                    placeholder="en_US"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* 4. META FLOW SCREEN */}
+            {isMetaFlow && (
+              <>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Meta Flow ID</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={node.config?.metaFlowId || ''}
+                    onChange={(e) => handleConfigChange('metaFlowId', e.target.value)}
+                    placeholder="1064803546265989"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Flow Button CTA Label</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={node.config?.flowCta || 'Open Booking Form'}
+                    onChange={(e) => handleConfigChange('flowCta', e.target.value)}
+                    placeholder="Open Form"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* 5. DATA INTAKE (COLLECT_INPUT, INPUT_COLLECTION) */}
+            {isIntake && (
+              <>
+                <div className="form-group">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Question Prompt</label>
+                    <button
+                      type="button"
+                      onClick={() => setVariablePickerField(variablePickerField === 'prompt' ? null : 'prompt')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        border: '1px solid #E2E8F0',
+                        background: '#F8FAFC',
+                        borderRadius: '4px',
+                        padding: '2px 6px',
+                        fontSize: '0.70rem',
+                        color: '#2F5219',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <Tag size={11} />
+                      <span>Insert Variable</span>
+                    </button>
+                  </div>
+
+                  {variablePickerField === 'prompt' && (
+                    <div style={{ margin: '6px 0', padding: '8px 10px', background: '#F8FAFC', borderRadius: '6px', border: '1px solid #CBD5E1', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {availableVariables.map((v) => (
+                        <button key={v.key} type="button" onClick={() => handleInsertVariable('prompt', v.key)} style={{ fontSize: '0.72rem', padding: '3px 7px', borderRadius: '4px', background: '#FFFFFF', border: '1px solid #E2E8F0', color: '#166534', cursor: 'pointer', fontWeight: 600 }}>
+                          {`{{${v.key}}}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   <textarea
                     className="form-input"
                     rows={3}
                     value={node.config?.prompt || ''}
                     onChange={(e) => handleConfigChange('prompt', e.target.value)}
-                    placeholder="e.g. Please enter your Check-in date:"
+                    placeholder="Please enter your check-in date (e.g. tomorrow or YYYY-MM-DD):"
                   />
                 </div>
+
                 <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Target Variable Name</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={node.config?.variable || ''}
-                    onChange={(e) => handleConfigChange('variable', e.target.value)}
-                    placeholder="e.g. check_in_date, guest_name"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Data Validation Type</label>
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Input Validation Type</label>
                   <select
                     className="form-input"
-                    value={node.config?.validation?.type || 'TEXT'}
-                    onChange={(e) => handleNestedConfigChange('validation', 'type', e.target.value)}
+                    value={node.config?.inputType || node.config?.validation?.type || 'TEXT'}
+                    onChange={(e) => {
+                      handleConfigChange('inputType', e.target.value);
+                      handleConfigChange('validation', { ...(node.config?.validation || {}), type: e.target.value });
+                    }}
                   >
-                    <option value="DATE">Calendar Date (YYYY-MM-DD or relative like 'tomorrow')</option>
-                    <option value="GUEST_PARSER">Guest Count Parser (extracts adults & children)</option>
-                    <option value="NUMBER">Numeric Value</option>
-                    <option value="TEXT">Freeform Text</option>
+                    <option value="DATE">📅 Date (Today or future YYYY-MM-DD or "tomorrow")</option>
+                    <option value="GUEST_PARSER">👥 Guest Count (e.g. "2 adults", "family of 4")</option>
+                    <option value="NUMBER">🔢 Numeric Value (1 to 100)</option>
+                    <option value="PHONE">📱 Phone Number</option>
+                    <option value="EMAIL">✉️ Email Address</option>
+                    <option value="TEXT">📝 Freeform Text</option>
+                    <option value="REGEX">🔣 Custom Regex Pattern</option>
                   </select>
                 </div>
+
                 <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Validation Error Message</label>
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Save Answer As Variable Name</label>
                   <input
                     type="text"
                     className="form-input"
-                    value={node.config?.validation?.errorMessage || ''}
-                    onChange={(e) => handleNestedConfigChange('validation', 'errorMessage', e.target.value)}
-                    placeholder="⚠️ Please provide a valid response in the requested format."
+                    value={node.config?.saveAs || node.config?.variable || ''}
+                    onChange={(e) => {
+                      handleConfigChange('saveAs', e.target.value.trim());
+                      handleConfigChange('variable', e.target.value.trim());
+                    }}
+                    placeholder="check_in_date"
+                  />
+                  <div style={{ fontSize: '0.73rem', color: '#8E8E93', marginTop: '4px' }}>
+                    Available in downstream messages via {`{{${node.config?.saveAs || node.config?.variable || 'variable'}}}`}.
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Validation Retry Error Message</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={node.config?.retryMessage || node.config?.validation?.errorMessage || ''}
+                    onChange={(e) => {
+                      handleConfigChange('retryMessage', e.target.value);
+                      handleConfigChange('validation', { ...(node.config?.validation || {}), errorMessage: e.target.value });
+                    }}
+                    placeholder="⚠️ Please enter a valid date in YYYY-MM-DD format (e.g. 2026-12-01):"
                   />
                 </div>
               </>
             )}
 
-            {/* CONDITION Node Config */}
-            {node.type === 'CONDITION' && (
+            {/* 6. CONDITION & BRANCHING */}
+            {isCondition && (
               <>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Evaluate Variable</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={node.config?.variable || ''}
-                    onChange={(e) => handleConfigChange('variable', e.target.value)}
-                    placeholder="e.g. enquiry_type, is_available"
-                  />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem', margin: 0 }}>
+                    Evaluation Rules ({conditionRules.length})
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddConditionRule}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      border: 'none',
+                      background: '#E8F5E9',
+                      color: '#2F5219',
+                      borderRadius: '4px',
+                      padding: '3px 8px',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Plus size={12} />
+                    <span>Add Rule</span>
+                  </button>
                 </div>
-                <div className="form-group">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem', margin: 0 }}>
-                      Branching Rules ({conditionRules.length})
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handleAddConditionRule}
-                      className="btn btn-outline"
-                      style={{ padding: '4px 10px', fontSize: '0.75rem', gap: '4px' }}
-                    >
-                      <Plus size={13} /> Add Rule
-                    </button>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {conditionRules.map((rule, idx) => (
-                      <div key={idx} style={{
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {conditionRules.map((rule, idx) => (
+                    <div
+                      key={idx}
+                      style={{
                         padding: '10px',
-                        border: '1px solid #E5E5E8',
-                        borderRadius: '8px',
-                        background: '#FAFAFB',
+                        background: '#F8FAFC',
+                        borderRadius: '6px',
+                        border: '1px solid #E2E8F0',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '6px'
-                      }}>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <select
-                            value={rule.operator || 'EQUALS'}
-                            onChange={(e) => handleUpdateConditionRule(idx, 'operator', e.target.value)}
-                            className="form-input"
-                            style={{ flex: 1, fontSize: '0.78rem', padding: '4px 6px' }}
-                          >
-                            <option value="EQUALS">EQUALS</option>
-                            <option value="NOT_EQUALS">NOT EQUALS</option>
-                            <option value="CONTAINS">CONTAINS</option>
-                            <option value="GREATER_THAN">GREATER THAN</option>
-                            <option value="LESS_THAN">LESS THAN</option>
-                            <option value="EXISTS">EXISTS (NOT EMPTY)</option>
-                          </select>
-                          <input
-                            type="text"
-                            value={rule.value !== undefined ? String(rule.value) : ''}
-                            onChange={(e) => handleUpdateConditionRule(idx, 'value', e.target.value)}
-                            placeholder="Match Value"
-                            className="form-input"
-                            style={{ flex: 1, fontSize: '0.78rem', padding: '4px 6px' }}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveConditionRule(idx)}
-                            style={{ border: 'none', background: 'transparent', color: '#DC2626', cursor: 'pointer', padding: '4px' }}
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ fontSize: '0.74rem', color: '#8E8E93' }}>Target Node:</span>
-                          <select
-                            value={rule.targetNodeId || ''}
-                            onChange={(e) => handleUpdateConditionRule(idx, 'targetNodeId', e.target.value)}
-                            className="form-input"
-                            style={{ flex: 1, fontSize: '0.78rem', padding: '4px 6px' }}
-                          >
-                            <option value="">Select target...</option>
-                            {nodes.filter(n => n.id !== node.id).map(n => (
-                              <option key={n.id} value={n.id}>
-                                {n.title || n.id} ({n.type})
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <input
+                          type="text"
+                          className="form-input"
+                          style={{ flex: 1, padding: '4px 6px', fontSize: '0.75rem' }}
+                          value={rule.variable || ''}
+                          onChange={(e) => handleUpdateConditionRule(idx, 'variable', e.target.value)}
+                          placeholder="Variable (e.g. lead_score)"
+                        />
+                        <select
+                          className="form-input"
+                          style={{ width: '100px', padding: '4px 6px', fontSize: '0.75rem' }}
+                          value={rule.operator || 'eq'}
+                          onChange={(e) => handleUpdateConditionRule(idx, 'operator', e.target.value)}
+                        >
+                          <option value="eq">== (Equals)</option>
+                          <option value="neq">!= (Not Equal)</option>
+                          <option value="gt">&gt; (Greater)</option>
+                          <option value="gte">&gt;= (Greater/Equal)</option>
+                          <option value="lt">&lt; (Less)</option>
+                          <option value="contains">Contains</option>
+                          <option value="is_empty">Is Empty</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveConditionRule(idx)}
+                          style={{ border: 'none', background: 'transparent', color: '#EF4444', cursor: 'pointer', padding: '2px' }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
-                    ))}
-                  </div>
+                      <input
+                        type="text"
+                        className="form-input"
+                        style={{ padding: '4px 6px', fontSize: '0.75rem' }}
+                        value={rule.value || ''}
+                        onChange={(e) => handleUpdateConditionRule(idx, 'value', e.target.value)}
+                        placeholder="Value to compare (e.g. 50 or BOOKING)"
+                      />
+                    </div>
+                  ))}
+                  {conditionRules.length === 0 && (
+                    <div style={{ fontSize: '0.74rem', color: '#94A3B8', fontStyle: 'italic' }}>
+                      No rules configured. Add a rule to enable True/False branching.
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* 7. SET VARIABLE */}
+            {isSetVar && (
+              <>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Target Variable</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={node.config?.targetVar || ''}
+                    onChange={(e) => handleConfigChange('targetVar', e.target.value)}
+                    placeholder="lead_score"
+                  />
                 </div>
                 <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Fallback Default Target Node</label>
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Operation</label>
                   <select
-                    value={node.config?.defaultTargetNodeId || ''}
-                    onChange={(e) => handleConfigChange('defaultTargetNodeId', e.target.value)}
                     className="form-input"
+                    value={node.config?.operation || 'SET'}
+                    onChange={(e) => handleConfigChange('operation', e.target.value)}
                   >
-                    <option value="">Select fallback target...</option>
-                    {nodes.filter(n => n.id !== node.id).map(n => (
-                      <option key={n.id} value={n.id}>
-                        {n.title || n.id} ({n.type})
-                      </option>
-                    ))}
+                    <option value="SET">Set / Assign Value</option>
+                    <option value="INCREMENT">Increment (+)</option>
+                    <option value="DECREMENT">Decrement (-)</option>
+                    <option value="CLEAR">Clear / Reset</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Value</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={node.config?.value || ''}
+                    onChange={(e) => handleConfigChange('value', e.target.value)}
+                    placeholder="10"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* 8. WAIT / DELAY */}
+            {isWaitDelay && (
+              <>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Wait Duration</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input
+                      type="number"
+                      className="form-input"
+                      style={{ width: '90px' }}
+                      value={node.config?.durationValue || 2}
+                      onChange={(e) => handleConfigChange('durationValue', parseInt(e.target.value, 10) || 1)}
+                    />
+                    <select
+                      className="form-input"
+                      style={{ flex: 1 }}
+                      value={node.config?.durationUnit || 'HOURS'}
+                      onChange={(e) => handleConfigChange('durationUnit', e.target.value)}
+                    >
+                      <option value="MINUTES">Minutes</option>
+                      <option value="HOURS">Hours</option>
+                      <option value="DAYS">Days</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="checkbox"
+                    id="cancelOnReply"
+                    checked={node.config?.cancelOnUserReply !== false}
+                    onChange={(e) => handleConfigChange('cancelOnUserReply', e.target.checked)}
+                  />
+                  <label htmlFor="cancelOnReply" style={{ fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>
+                    Cancel timer and route to "If Replied Early" if customer sends message
+                  </label>
+                </div>
+              </>
+            )}
+
+            {/* 9. CRM UPSERT */}
+            {isCrm && (
+              <>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Pipeline</label>
+                  <select
+                    className="form-input"
+                    value={node.config?.pipeline || 'HOSPITALITY_ENQUIRIES'}
+                    onChange={(e) => handleConfigChange('pipeline', e.target.value)}
+                  >
+                    <option value="HOSPITALITY_ENQUIRIES">Hospitality Booking Enquiries</option>
+                    <option value="B2B_SALES">B2B SaaS Sales Deals</option>
+                    <option value="LEAD_GENERATION">General Lead Inbound</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Stage</label>
+                  <select
+                    className="form-input"
+                    value={node.config?.stage || 'QUALIFIED'}
+                    onChange={(e) => handleConfigChange('stage', e.target.value)}
+                  >
+                    <option value="NEW_LEAD">New Inbound Lead</option>
+                    <option value="QUALIFIED">Qualified Prospect</option>
+                    <option value="IN_DISCUSSION">In Discussion / Negotiation</option>
+                    <option value="WON">Deal Closed / Won</option>
                   </select>
                 </div>
               </>
             )}
 
-            {/* BUSINESS_ACTION Node Config */}
-            {node.type === 'BUSINESS_ACTION' && (
+            {/* 10. CATALOG & BOOKING */}
+            {isBooking && (
               <>
                 <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Registered System Action</label>
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Business Action</label>
                   <select
                     className="form-input"
                     value={node.config?.action || 'HOSPITALITY_CHECK_AVAILABILITY'}
                     onChange={(e) => handleConfigChange('action', e.target.value)}
                   >
-                    {APPROVED_ACTIONS.map(act => (
-                      <option key={act.id} value={act.id}>{act.label}</option>
-                    ))}
-                  </select>
-                  <div style={{ fontSize: '0.75rem', color: '#67676B', marginTop: '4px' }}>
-                    {APPROVED_ACTIONS.find(a => a.id === (node.config?.action || 'HOSPITALITY_CHECK_AVAILABILITY'))?.desc}
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Action Inputs (Variables)</label>
-                  <div style={{ background: '#FAFAFB', padding: '10px', borderRadius: '8px', border: '1px solid #E5E5E8' }}>
-                    <div style={{ fontSize: '0.74rem', color: '#67676B', marginBottom: '6px' }}>
-                      Pre-wired inputs from session state:
-                    </div>
-                    {Object.entries(node.config?.inputs || {}).map(([k, v]) => (
-                      <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '0.76rem' }}>
-                        <span style={{ fontWeight: 600 }}>{k}:</span>
-                        <span style={{ color: '#2F5219', fontFamily: 'monospace' }}>{String(v)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Action Outputs (Variable Assignment)</label>
-                  <div style={{ background: '#FAFAFB', padding: '10px', borderRadius: '8px', border: '1px solid #E5E5E8' }}>
-                    {Object.entries(node.config?.outputs || {}).map(([k, v]) => (
-                      <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '0.76rem' }}>
-                        <span style={{ fontWeight: 600 }}>{k} ➔</span>
-                        <span style={{ color: '#1E40AF', fontFamily: 'monospace' }}>{String(v)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* CONFIRMATION Node Config */}
-            {node.type === 'CONFIRMATION' && (
-              <>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Confirmation Prompt</label>
-                  <textarea
-                    className="form-input"
-                    rows={3}
-                    value={node.config?.prompt || ''}
-                    onChange={(e) => handleConfigChange('prompt', e.target.value)}
-                    placeholder="Would you like to confirm your selection and proceed?"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Assign Result to Variable</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={node.config?.variable || 'confirmation_choice'}
-                    onChange={(e) => handleConfigChange('variable', e.target.value)}
-                    placeholder="e.g. booking_confirmation_choice, b2b_confirm_choice"
-                  />
-                </div>
-                <div className="form-group">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem', margin: 0 }}>
-                      Action Choices ({options.length}/3)
-                    </label>
-                    {options.length < 3 && (
-                      <button
-                        type="button"
-                        onClick={handleAddOption}
-                        className="btn btn-outline"
-                        style={{ padding: '4px 10px', fontSize: '0.75rem', gap: '4px' }}
-                      >
-                        <Plus size={13} /> Add Choice
-                      </button>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {options.map((opt, idx) => (
-                      <div key={opt.id || idx} style={{
-                        padding: '10px',
-                        border: '1px solid #E5E5E8',
-                        borderRadius: '8px',
-                        background: '#FAFAFB',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px'
-                      }}>
-                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                          <input
-                            type="text"
-                            value={opt.title || ''}
-                            onChange={(e) => handleUpdateOption(idx, 'title', e.target.value)}
-                            placeholder="Title (Max 20 chars)"
-                            className="form-input"
-                            style={{ flex: 1, fontSize: '0.82rem', padding: '6px 8px' }}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveOption(idx)}
-                            style={{ border: 'none', background: 'transparent', color: '#DC2626', cursor: 'pointer', padding: '4px' }}
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                        <input
-                          type="text"
-                          value={opt.value || ''}
-                          onChange={(e) => handleUpdateOption(idx, 'value', e.target.value)}
-                          placeholder="Value (e.g. CONFIRM, MODIFY, STAFF)"
-                          className="form-input"
-                          style={{ fontSize: '0.76rem', padding: '4px 8px', color: '#67676B' }}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* PAYMENT Node Config */}
-            {node.type === 'PAYMENT' && (
-              <>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Dynamic Amount Variable</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={node.config?.amountVariable || 'quote_total'}
-                    onChange={(e) => handleConfigChange('amountVariable', e.target.value)}
-                    placeholder="e.g. quote_total, deposit_amount"
-                  />
-                  <div style={{ fontSize: '0.74rem', color: '#8E8E93', marginTop: '4px' }}>
-                    Resolves amount from session variable.
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Fallback Fixed Amount (₹)</label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    value={node.config?.amount || 5000}
-                    onChange={(e) => handleConfigChange('amount', Number(e.target.value) || 0)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Payment Gateway Provider</label>
-                  <select
-                    className="form-input"
-                    value={node.config?.paymentGateway || 'RAZORPAY'}
-                    onChange={(e) => handleConfigChange('paymentGateway', e.target.value)}
-                  >
-                    <option value="RAZORPAY">Razorpay UPI & Cards</option>
-                    <option value="SURVYA_PAY">Survya Payment Gateway</option>
-                    <option value="MOCK_SANDBOX">Test Mock Sandbox (Zero Fees)</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Payment Description</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={node.config?.description || 'Booking Deposit'}
-                    onChange={(e) => handleConfigChange('description', e.target.value)}
-                    placeholder="e.g. Advance Stay Deposit for {{matched_room_name}}"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Payment Prompt Message (Optional)</label>
-                  <textarea
-                    className="form-input"
-                    rows={3}
-                    value={node.config?.prompt || ''}
-                    onChange={(e) => handleConfigChange('prompt', e.target.value)}
-                    placeholder="💳 Complete deposit: {{payment_link}} (Ref: {{payment_id}})"
-                  />
-                </div>
-              </>
-            )}
-
-            {/* QUOTATION Node Config */}
-            {node.type === 'QUOTATION' && (
-              <>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Calculation Action</label>
-                  <select
-                    className="form-input"
-                    value={node.config?.action || 'HOSPITALITY_CALCULATE_QUOTE'}
-                    onChange={(e) => handleConfigChange('action', e.target.value)}
-                  >
-                    {APPROVED_ACTIONS.filter(a => String(a.id || '').includes('CALCULATE')).map(act => (
-                      <option key={act.id} value={act.id}>{act.label}</option>
+                    {APPROVED_ACTIONS.map(a => (
+                      <option key={a.id} value={a.id}>{a.label}</option>
                     ))}
                   </select>
                 </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Quotation Breakdown Template</label>
-                  <textarea
-                    className="form-input"
-                    rows={5}
-                    value={node.config?.text || ''}
-                    onChange={(e) => handleConfigChange('text', e.target.value)}
-                    placeholder="✨ *Estimated Quotation:*&#10;&#10;Charges: ₹{{quote_subtotal}}&#10;Taxes: ₹{{tax_total}}&#10;*Total: ₹{{quote_total}}*"
-                  />
-                </div>
               </>
             )}
 
-            {/* API_INTEGRATION Node Config */}
-            {node.type === 'API_INTEGRATION' && (
+            {/* 11. HTTP WEBHOOK */}
+            {isWebhook && (
               <>
                 <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>HTTP Method & Endpoint</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Method &amp; Endpoint URL</label>
+                  <div style={{ display: 'flex', gap: '6px' }}>
                     <select
                       className="form-input"
-                      style={{ width: '100px' }}
+                      style={{ width: '90px' }}
                       value={node.config?.method || 'POST'}
                       onChange={(e) => handleConfigChange('method', e.target.value)}
                     >
-                      <option value="GET">GET</option>
                       <option value="POST">POST</option>
+                      <option value="GET">GET</option>
                       <option value="PUT">PUT</option>
                     </select>
                     <input
@@ -775,81 +911,45 @@ export default function NodeInspectorDrawer({
                       style={{ flex: 1 }}
                       value={node.config?.url || ''}
                       onChange={(e) => handleConfigChange('url', e.target.value)}
-                      placeholder="https://api.crm.com/v1/leads"
+                      placeholder="https://api.example.com/v1/webhook"
                     />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Output Field Mappings (JSON ➔ Variables)</label>
-                  <div style={{ background: '#FAFAFB', padding: '10px', borderRadius: '8px', border: '1px solid #E5E5E8' }}>
-                    <div style={{ fontSize: '0.74rem', color: '#67676B', marginBottom: '6px' }}>
-                      Maps response keys to flow context variables:
-                    </div>
-                    {Object.entries(node.config?.outputMappings || { status: 'api_status' }).map(([k, v]) => (
-                      <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '0.76rem' }}>
-                        <span style={{ fontWeight: 600 }}>{k} ➔</span>
-                        <span style={{ color: '#1E40AF', fontFamily: 'monospace' }}>{String(v)}</span>
-                      </div>
-                    ))}
                   </div>
                 </div>
               </>
             )}
 
-            {/* HANDOFF Node Config */}
-            {node.type === 'HANDOFF' && (
+            {/* 12. STAFF HANDOFF */}
+            {isHandoff && (
               <>
                 <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Destination Team</label>
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Destination Team</label>
                   <select
                     className="form-input"
                     value={node.config?.team || 'FRONT_DESK'}
                     onChange={(e) => handleConfigChange('team', e.target.value)}
                   >
                     <option value="FRONT_DESK">Front Desk Concierge</option>
-                    <option value="RESERVATIONS">Reservations & Sales Desk</option>
+                    <option value="RESERVATIONS">Reservations &amp; Sales Desk</option>
                     <option value="SUPPORT">Guest Experience / Duty Manager</option>
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Assigned Staff Title</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={node.config?.assignedTo || ''}
-                    onChange={(e) => handleConfigChange('assignedTo', e.target.value)}
-                    placeholder="Front Desk Manager"
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Customer Handoff Notice</label>
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Customer Handoff Notice</label>
                   <textarea
                     className="form-input"
-                    rows={3}
+                    rows={2}
                     value={node.config?.handoffMessage || ''}
                     onChange={(e) => handleConfigChange('handoffMessage', e.target.value)}
                     placeholder="🔔 You are now connected with our Front Desk team..."
                   />
                 </div>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Pause Bot Automation (Minutes)</label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    value={node.config?.pauseAutomationMinutes || 180}
-                    onChange={(e) => handleConfigChange('pauseAutomationMinutes', parseInt(e.target.value, 10) || 60)}
-                  />
-                  <div style={{ fontSize: '0.75rem', color: '#8E8E93', marginTop: '4px' }}>
-                    Bot will remain silent for this contact until staff completes conversation or time elapses.
-                  </div>
-                </div>
               </>
             )}
 
-            {/* END Node Config */}
-            {node.type === 'END' && (
+            {/* 13. END JOURNEY */}
+            {isEnd && (
               <div className="form-group">
-                <label className="form-label" style={{ fontWeight: 600, fontSize: '0.82rem' }}>Farewell Message (Optional)</label>
+                <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Farewell Message (Optional)</label>
                 <textarea
                   className="form-input"
                   rows={3}
@@ -859,27 +959,38 @@ export default function NodeInspectorDrawer({
                 />
               </div>
             )}
+
           </div>
         )}
 
+        {/* Tab 2: Variables */}
         {activeTab === 'variables' && (
           <div>
-            <div style={{ fontSize: '0.82rem', fontWeight: 600, marginBottom: '10px' }}>
-              Available Session Variables
+            <div style={{ fontSize: '0.80rem', fontWeight: 600, marginBottom: '10px', color: '#1C1C1E' }}>
+              Available Session Variables ({availableVariables.length})
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {Object.entries(variables).map(([k, v]) => (
-                <div key={k} style={{
-                  padding: '8px 10px',
-                  background: '#F2F2F7',
-                  borderRadius: '6px',
-                  fontSize: '0.78rem'
-                }}>
-                  <div style={{ fontWeight: 700, fontFamily: 'monospace', color: '#2F5219' }}>
-                    {`{{${k}}}`}
+              {availableVariables.map((v) => (
+                <div
+                  key={v.key}
+                  style={{
+                    padding: '8px 10px',
+                    background: '#F8FAFC',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '6px',
+                    fontSize: '0.76rem'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 700, fontFamily: 'monospace', color: '#166534' }}>
+                      {`{{${v.key}}}`}
+                    </span>
+                    <span style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: '#E2E8F0', color: '#475569' }}>
+                      {v.source}
+                    </span>
                   </div>
-                  <div style={{ color: '#67676B', fontSize: '0.72rem', marginTop: '2px' }}>
-                    Type: {v.type || 'STRING'} • {v.label || k}
+                  <div style={{ color: '#64748B', fontSize: '0.72rem', marginTop: '2px' }}>
+                    {v.label}
                   </div>
                 </div>
               ))}
@@ -887,17 +998,20 @@ export default function NodeInspectorDrawer({
           </div>
         )}
 
+        {/* Tab 3: Raw JSON */}
         {activeTab === 'json' && (
           <div>
-            <pre style={{
-              background: '#1C1C1E',
-              color: '#34D399',
-              padding: '12px',
-              borderRadius: '8px',
-              fontSize: '0.75rem',
-              overflowX: 'auto',
-              maxHeight: '400px'
-            }}>
+            <pre
+              style={{
+                background: '#1C1C1E',
+                color: '#34D399',
+                padding: '12px',
+                borderRadius: '8px',
+                fontSize: '0.74rem',
+                overflowX: 'auto',
+                maxHeight: '450px'
+              }}
+            >
               {JSON.stringify(node, null, 2)}
             </pre>
           </div>

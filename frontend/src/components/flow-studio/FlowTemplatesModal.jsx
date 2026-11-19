@@ -3,7 +3,6 @@ import {
   X,
   Sparkles,
   ArrowRight,
-  Layers,
   CheckCircle2,
   Hotel,
   HelpCircle,
