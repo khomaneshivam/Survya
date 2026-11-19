@@ -587,12 +587,18 @@ async function processTurn({
   let transitions = [];
   let collectedData = {};
 
-  if (isSimulation && simulationState) {
-    session = { ...simulationState };
-    session.current_node_id = simulationState.current_node_id || simulationState.currentNodeId;
-    collectedData = { ...(session.collectedData || session.collected_data || {}) };
-    nodes = flowOverride?.nodes || session.nodes || [];
-    transitions = flowOverride?.transitions || session.transitions || [];
+  if (flowOverride) {
+    if (simulationState) {
+      session = { ...simulationState };
+      session.current_node_id = simulationState.current_node_id || simulationState.currentNodeId;
+      collectedData = { ...(session.collectedData || session.collected_data || {}) };
+      nodes = flowOverride?.nodes || session.nodes || [];
+      transitions = flowOverride?.transitions || session.transitions || [];
+    } else {
+      session = null;
+      nodes = flowOverride.nodes || [];
+      transitions = flowOverride.transitions || [];
+    }
   } else {
     // 1. Check for active session in DB
     session = db.prepare(`

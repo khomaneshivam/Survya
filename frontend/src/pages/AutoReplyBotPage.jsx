@@ -1553,7 +1553,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
                     gap: '12px'
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', color: '#64748B' }}>
-                      <span>Flow ID: <code>{flow.id.substring(0, 16)}...</code></span>
+                      <span>Flow ID: <code>{flow.uuid ? `${String(flow.uuid).substring(0, 14)}...` : `#${flow.id}`}</code></span>
                       <span>Active v{flow.published_version_number || flow.publishedVersionNumber || 1}</span>
                     </div>
 
@@ -3479,7 +3479,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
               justifyContent: 'space-between'
             }}>
               <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700 }}>
-                {editingRule.id.startsWith('dyn_') && !editingRule.title ? 'Create Dynamic Bot Rule' : 'Edit Dynamic Bot Rule'}
+                {String(editingRule?.id || '').startsWith('dyn_') && !editingRule?.title ? 'Create Dynamic Bot Rule' : 'Edit Dynamic Bot Rule'}
               </h3>
               <button
                 type="button"

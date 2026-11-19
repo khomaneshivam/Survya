@@ -735,7 +735,7 @@ export default function NodeInspectorDrawer({
                     value={node.config?.action || 'HOSPITALITY_CALCULATE_QUOTE'}
                     onChange={(e) => handleConfigChange('action', e.target.value)}
                   >
-                    {APPROVED_ACTIONS.filter(a => a.id.includes('CALCULATE')).map(act => (
+                    {APPROVED_ACTIONS.filter(a => String(a.id || '').includes('CALCULATE')).map(act => (
                       <option key={act.id} value={act.id}>{act.label}</option>
                     ))}
                   </select>

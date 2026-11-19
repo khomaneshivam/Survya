@@ -348,7 +348,7 @@ describe("SARVYA Chat Links & In-App Customer Messaging Module", () => {
 
   test("11. Stores guest contact number, recognizes returning number, and continues chat from past conversation", async () => {
     const sampleLink = db.prepare("SELECT * FROM chat_links WHERE id = ?").get(createdLinkIds[1]);
-    const guestPhone = "919988776655";
+    const guestPhone = "919988776691";
 
     // Clean up any test artifacts for this number
     db.prepare("DELETE FROM customer_replies WHERE from_phone = ?").run(guestPhone);

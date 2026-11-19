@@ -5,6 +5,7 @@ const { db, setSetting, getSetting } = require("../src/config/database");
 const webhookService = require("../src/services/webhookService");
 const metaWhatsAppService = require("../src/services/metaWhatsAppService");
 const { broadcastEngine } = require("../src/services/broadcastEngine");
+const config = require("../src/config/env");
 
 test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async (t) => {
   const basePhone = `919900${Date.now().toString().slice(-6)}`;
@@ -54,11 +55,11 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
 
     // Cleanup DB
     try {
-      db.prepare("DELETE FROM customer_replies WHERE from_phone LIKE '9199%'").run();
-      db.prepare("DELETE FROM flow_responses WHERE from_phone LIKE '9199%'").run();
-      db.prepare("DELETE FROM flow_tokens WHERE clean_phone LIKE '9199%'").run();
-      db.prepare("DELETE FROM booking_enquiries WHERE phone_e164 LIKE '+9199%' OR phone_e164 LIKE '9199%'").run();
-      db.prepare("DELETE FROM hospitality_chat_sessions WHERE phone LIKE '9199%'").run();
+      db.prepare("DELETE FROM customer_replies WHERE from_phone LIKE ?").run(`${basePhone}%`);
+      db.prepare("DELETE FROM flow_responses WHERE from_phone LIKE ?").run(`${basePhone}%`);
+      db.prepare("DELETE FROM flow_tokens WHERE clean_phone LIKE ?").run(`${basePhone}%`);
+      db.prepare("DELETE FROM booking_enquiries WHERE phone_e164 LIKE ? OR phone_e164 LIKE ?").run(`+${basePhone}%`, `${basePhone}%`);
+      db.prepare("DELETE FROM hospitality_chat_sessions WHERE phone LIKE ?").run(`${basePhone}%`);
     } catch (e) {}
   });
 
@@ -405,15 +406,21 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
     const postPayload = (endpoint, payload) => {
       return new Promise((resolve, reject) => {
         const bodyStr = JSON.stringify(payload);
+        const secret = config.META_APP_SECRET || getSetting("META_APP_SECRET") || "";
+        const headers = {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(bodyStr)
+        };
+        if (secret && !/placeholder|your_meta_app_secret|your_app_secret|dummy|optional/i.test(secret)) {
+          const crypto = require("crypto");
+          headers["x-hub-signature-256"] = "sha256=" + crypto.createHmac("sha256", secret).update(bodyStr).digest("hex");
+        }
         const req = http.request({
           hostname: "127.0.0.1",
           port,
           path: endpoint,
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Content-Length": Buffer.byteLength(bodyStr)
-          }
+          headers
         }, (res) => {
           let data = "";
           res.on("data", chunk => data += chunk);

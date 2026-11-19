@@ -27,6 +27,8 @@ describe("Security, Multi-Tenant Isolation & WhatsApp Broadcast Reliability Test
   const testPhone = "+919876543210";
   const suppressedPhone = "919999999999";
 
+  let origConfigMetaAppSecret = config.META_APP_SECRET;
+
   before(() => {
     // 1. Start ephemeral HTTP server
     server = app.listen(0);
@@ -104,6 +106,7 @@ describe("Security, Multi-Tenant Isolation & WhatsApp Broadcast Reliability Test
       db.prepare("DELETE FROM users WHERE email LIKE '%@ephemeral-test.internal' OR email LIKE '%@test.com' OR name LIKE '%Attacker%' OR name LIKE '%Test Verification%'").run();
       db.prepare("DELETE FROM contact_suppressions WHERE clean_phone = ?").run(suppressedPhone);
       db.prepare("DELETE FROM settings WHERE `key` = 'META_APP_SECRET'").run();
+      config.META_APP_SECRET = origConfigMetaAppSecret;
       db.prepare("DELETE FROM settings WHERE `key` = 'WEBHOOK_VERIFY_TOKEN' AND value = 'test_verify_token_123'").run();
     } catch (e) {
       console.warn("Test cleanup warning:", e.message);

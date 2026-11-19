@@ -4,7 +4,7 @@ const { db, getSetting, setSetting } = require("../src/config/database");
 const webhookService = require("../src/services/webhookService");
 const metaWhatsAppService = require("../src/services/metaWhatsAppService");
 
-describe("SARVYA WhatsApp Send Architecture & Cost Protection Test Suite", () => {
+describe("SARVYA WhatsApp Send Architecture & Cost Protection Test Suite", { concurrency: 1 }, () => {
   const testPhone = "919977889901";
   const botPhone = (getSetting("WHATSAPP_PHONE_NUMBER") || "918766590634").replace(/\D/g, "");
 

@@ -52,6 +52,12 @@ describe("SARVYA Real WhatsApp & In-App Messaging Complete Parity Test Suite", (
 
     // Enable auto-reply in settings for testing
     setSetting("AUTO_REPLY_ENABLED", "true");
+    setSetting("AUTO_REPLY_ENGINE_MODE", "HOSPITALITY_FLOW");
+
+    try {
+      db.prepare("DELETE FROM conversation_flow_sessions WHERE sender_phone = ?").run(guestPhone);
+      db.prepare("DELETE FROM hospitality_chat_sessions WHERE phone = ?").run(guestPhone);
+    } catch (e) {}
   });
 
   after(() => {
@@ -66,6 +72,7 @@ describe("SARVYA Real WhatsApp & In-App Messaging Complete Parity Test Suite", (
       db.prepare("DELETE FROM users WHERE id = ?").run(testUserId);
       db.prepare("DELETE FROM customer_replies WHERE from_phone = ? OR from_phone = ?").run(guestPhone, `+${guestPhone}`);
       db.prepare("DELETE FROM hospitality_chat_sessions WHERE phone = ?").run(guestPhone);
+      db.prepare("DELETE FROM conversation_flow_sessions WHERE sender_phone = ?").run(guestPhone);
     } catch (e) {}
   });
 

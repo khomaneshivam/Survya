@@ -7,13 +7,13 @@ const { db, setSetting, getSetting } = require("../src/config/database");
 const config = require("../src/config/env");
 const webhookService = require("../src/services/webhookService");
 
-describe("Dynamic Bot Options & Programmable Concierge Rules Test Suite", () => {
+describe("Dynamic Bot Options & Programmable Concierge Rules Test Suite", { concurrency: 1 }, () => {
   let server;
   let baseUrl;
   let adminToken;
   let testUserId = `admin_dyn_${Date.now()}`;
   const testPhone = "919307382099";
-  const guestPhone = "919988776655";
+  const guestPhone = "919988776622";
 
   before(async () => {
     server = app.listen(0);
@@ -32,7 +32,14 @@ describe("Dynamic Bot Options & Programmable Concierge Rules Test Suite", () => 
       { expiresIn: "1h" }
     );
 
-    // Ensure bot is enabled
+    // Ensure bot is enabled and test phone data is fresh
+    webhookService.resumeBotForPhone(guestPhone);
+    try {
+      db.prepare("DELETE FROM customer_replies WHERE from_phone = ? OR from_phone = ?").run(guestPhone, `+${guestPhone}`);
+      db.prepare("DELETE FROM conversation_flow_sessions WHERE sender_phone = ?").run(guestPhone);
+      db.prepare("DELETE FROM hospitality_chat_sessions WHERE phone = ?").run(guestPhone);
+    } catch (e) {}
+
     webhookService.saveAutoReplySettings({
       enabled: true,
       engineMode: "HOSPITALITY_FLOW",
@@ -130,17 +137,24 @@ describe("Dynamic Bot Options & Programmable Concierge Rules Test Suite", () => 
   });
 
   test("3. Dynamic Rule Engine matches CONTAINS trigger & interpolates template variables", async () => {
-    webhookService.resumeBotForPhone(guestPhone);
+    const phone = "919988776633";
+    webhookService.saveAutoReplySettings({
+      enabled: true,
+      engineMode: "HOSPITALITY_FLOW",
+      businessName: "KonkanTrip Beach Resort & Spa"
+    });
+    webhookService.resumeBotForPhone(phone);
+    db.prepare("DELETE FROM customer_replies WHERE from_phone = ?").run(phone);
 
     const rawMsg = {
-      from: guestPhone,
+      from: phone,
       id: `wamid_dyn_${Date.now()}`,
       timestamp: String(Math.floor(Date.now() / 1000)),
       type: "text",
       text: { body: "Can I know about scuba diving please?" }
     };
 
-    const saved = webhookService.saveCustomerReply(rawMsg, [{ wa_id: guestPhone, profile: { name: "Rahul Sharma" } }]);
+    const saved = webhookService.saveCustomerReply(rawMsg, [{ wa_id: phone, profile: { name: "Rahul Sharma" } }]);
     assert.ok(saved.saved);
 
     const result = await webhookService.processConversationalFlow(saved.reply, rawMsg, {});
@@ -154,17 +168,19 @@ describe("Dynamic Bot Options & Programmable Concierge Rules Test Suite", () => 
   });
 
   test("4. Dynamic Rule Engine handles STAFF_TAKEOVER action and pauses bot", async () => {
-    webhookService.resumeBotForPhone(guestPhone);
+    const phone = "919988776644";
+    webhookService.resumeBotForPhone(phone);
+    db.prepare("DELETE FROM customer_replies WHERE from_phone = ?").run(phone);
 
     const rawMsg = {
-      from: guestPhone,
+      from: phone,
       id: `wamid_dyn_vip_${Date.now()}`,
       timestamp: String(Math.floor(Date.now() / 1000)),
       type: "text",
       text: { body: "I need to speak to the manager immediately" }
     };
 
-    const saved = webhookService.saveCustomerReply(rawMsg, [{ wa_id: guestPhone, profile: { name: "Anita Deshmukh" } }]);
+    const saved = webhookService.saveCustomerReply(rawMsg, [{ wa_id: phone, profile: { name: "Anita Deshmukh" } }]);
     assert.ok(saved.saved);
 
     const result = await webhookService.processConversationalFlow(saved.reply, rawMsg, {});
@@ -175,11 +191,11 @@ describe("Dynamic Bot Options & Programmable Concierge Rules Test Suite", () => 
     assert.ok(result.replyText.includes("VIP concierge manager has been notified"));
 
     // Verify bot is paused for this phone
-    assert.equal(webhookService.isBotPausedForPhone(guestPhone), true);
+    assert.equal(webhookService.isBotPausedForPhone(phone), true);
 
     // Clean up pause state
-    webhookService.resumeBotForPhone(guestPhone);
-    assert.equal(webhookService.isBotPausedForPhone(guestPhone), false);
+    webhookService.resumeBotForPhone(phone);
+    assert.equal(webhookService.isBotPausedForPhone(phone), false);
   });
 
   test("5. Dynamic Rule Engine matches direct button click (dyn_<id>)", async () => {
@@ -242,18 +258,24 @@ describe("Dynamic Bot Options & Programmable Concierge Rules Test Suite", () => 
       }
     ];
 
-    webhookService.saveAutoReplySettings({ dynamicOptions: urlRule });
-    webhookService.resumeBotForPhone(guestPhone);
+    const phone = "919988776677";
+    webhookService.saveAutoReplySettings({
+      enabled: true,
+      engineMode: "HOSPITALITY_FLOW",
+      dynamicOptions: urlRule
+    });
+    webhookService.resumeBotForPhone(phone);
+    db.prepare("DELETE FROM customer_replies WHERE from_phone = ?").run(phone);
 
     const rawMsg = {
-      from: guestPhone,
+      from: phone,
       id: `wamid_dyn_menu_${Date.now()}`,
       timestamp: String(Math.floor(Date.now() / 1000)),
       type: "text",
       text: { body: "What food is on the dining menu?" }
     };
 
-    const saved = webhookService.saveCustomerReply(rawMsg, [{ wa_id: guestPhone, profile: { name: "Pooja" } }]);
+    const saved = webhookService.saveCustomerReply(rawMsg, [{ wa_id: phone, profile: { name: "Pooja" } }]);
     assert.ok(saved.saved);
 
     const result = await webhookService.processConversationalFlow(saved.reply, rawMsg, {});

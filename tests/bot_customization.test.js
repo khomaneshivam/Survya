@@ -8,7 +8,7 @@ const config = require("../src/config/env");
 const webhookService = require("../src/services/webhookService");
 const chatLinkService = require("../src/services/chatLinkService");
 
-describe("Conversational Concierge & Auto-Reply Bot Customization Test Suite", () => {
+describe("Conversational Concierge & Auto-Reply Bot Customization Test Suite", { concurrency: 1 }, () => {
   let server;
   let baseUrl;
   let adminToken;
@@ -47,17 +47,10 @@ describe("Conversational Concierge & Auto-Reply Bot Customization Test Suite", (
       category: "HOSPITALITY"
     });
     testLinkId = createdLink.id;
-  });
-
-  after(() => {
-    if (server) {
-      server.close();
-    }
-    // Clean up test settings to maintain complete test isolation
-    const { setSetting } = require("../src/config/database");
-    setSetting("AUTO_REPLY_ENGINE_MODE", "HOSPITALITY_FLOW");
-    setSetting("BOT_WELCOME_MESSAGE", "");
-    setSetting("BOT_BUSINESS_NAME", "KonkanTrip Beach Resort & Spa");
+    try {
+      db.prepare("DELETE FROM conversation_flow_sessions WHERE sender_phone = ?").run(guestPhone);
+      db.prepare("DELETE FROM hospitality_chat_sessions WHERE phone = ?").run(guestPhone);
+    } catch (e) {}
   });
 
   test("1. GET /api/replies/auto-reply-settings returns comprehensive bot configuration", async () => {
@@ -267,6 +260,13 @@ describe("Conversational Concierge & Auto-Reply Bot Customization Test Suite", (
     if (server) {
       server.close();
     }
+    const { setSetting } = require("../src/config/database");
+    setSetting("AUTO_REPLY_ENGINE_MODE", "HOSPITALITY_FLOW");
+    setSetting("AUTO_REPLY_ENABLED", "true");
+    setSetting("BOT_BUSINESS_NAME", "KonkanTrip Beach Resort & Spa");
+    setSetting("AUTO_REPLY_MESSAGE", "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message and our team will get back to you shortly.");
+    setSetting("BOT_WELCOME_MESSAGE", "👋 Hello {{name}}! Welcome to *{{business_name}}*.\n\nHow can we help you today? Select an option below or reply with your travel dates to check real-time availability and live rates! 👇");
+
     try {
       if (testLinkId) {
         db.prepare("DELETE FROM chat_links WHERE id = ?").run(testLinkId);
@@ -274,6 +274,8 @@ describe("Conversational Concierge & Auto-Reply Bot Customization Test Suite", (
       db.prepare("DELETE FROM chat_links WHERE slug LIKE 'custom-bot-test-%'").run();
       db.prepare("DELETE FROM users WHERE id = ?").run(testUserId);
       db.prepare("DELETE FROM customer_replies WHERE from_phone = ? OR from_phone = ?").run(guestPhone, `+${guestPhone}`);
+      db.prepare("DELETE FROM conversation_flow_sessions WHERE sender_phone = ?").run(guestPhone);
+      db.prepare("DELETE FROM hospitality_chat_sessions WHERE phone = ?").run(guestPhone);
     } catch (e) {}
   });
 });

@@ -18,6 +18,7 @@ describe("SARVYA Connect — WhatsApp Campaign, Custom Template Management & Rul
   let prevPhoneIdSetting;
   let prevWabaIdSetting;
   let prevAppSecretSetting;
+  let origConfigAppSecret;
 
   const createdTemplateIds = [];
   const createdCampaignIds = [];
@@ -30,6 +31,7 @@ describe("SARVYA Connect — WhatsApp Campaign, Custom Template Management & Rul
     prevPhoneIdSetting = getSetting("WHATSAPP_PHONE_NUMBER_ID");
     prevWabaIdSetting = getSetting("WHATSAPP_BUSINESS_ACCOUNT_ID");
     prevAppSecretSetting = getSetting("META_APP_SECRET");
+    origConfigAppSecret = config.META_APP_SECRET;
 
     setSetting("WHATSAPP_API_TOKEN", "test_sarvya_meta_token_123456");
     setSetting("WHATSAPP_BUSINESS_ACCOUNT_ID", "998877665544332");
@@ -143,6 +145,7 @@ describe("SARVYA Connect — WhatsApp Campaign, Custom Template Management & Rul
     if (prevPhoneIdSetting !== null && prevPhoneIdSetting !== undefined) setSetting("WHATSAPP_PHONE_NUMBER_ID", prevPhoneIdSetting);
     if (prevWabaIdSetting !== null && prevWabaIdSetting !== undefined) setSetting("WHATSAPP_BUSINESS_ACCOUNT_ID", prevWabaIdSetting);
     if (prevAppSecretSetting !== null && prevAppSecretSetting !== undefined) setSetting("META_APP_SECRET", prevAppSecretSetting);
+    config.META_APP_SECRET = origConfigAppSecret;
 
     if (server) server.close();
   });

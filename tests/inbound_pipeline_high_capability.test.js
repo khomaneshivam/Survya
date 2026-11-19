@@ -45,8 +45,8 @@ test("High-Capability Inbound Message & Trigger Pipeline Test Suite", async (t) 
     metaWhatsAppService.sendFlowMessage = origSendFlow;
 
     try {
-      db.prepare("DELETE FROM customer_replies WHERE from_phone LIKE '919777%'").run();
-      db.prepare("DELETE FROM flow_responses WHERE from_phone LIKE '919777%'").run();
+      db.prepare("DELETE FROM customer_replies WHERE from_phone LIKE ?").run(`${cleanPhone}%`);
+      db.prepare("DELETE FROM flow_responses WHERE from_phone LIKE ?").run(`${cleanPhone}%`);
     } catch (e) {}
   });
 

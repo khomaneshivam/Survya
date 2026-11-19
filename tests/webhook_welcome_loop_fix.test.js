@@ -104,6 +104,10 @@ test("WebhookService - getAutoReplySettings does not crash with unbound this", (
 });
 
 test("Conversation Flow - Second message loop resolution: text 'garden', '1', and '20th Nov' advance cleanly", async () => {
+  const { setSetting } = require("../src/config/database");
+  setSetting("AUTO_REPLY_ENABLED", "true");
+  setSetting("AUTO_REPLY_ENGINE_MODE", "FLOW_STUDIO");
+
   const phone = "919000000077";
   db.prepare("DELETE FROM conversation_flow_sessions WHERE sender_phone = ?").run(phone);
   db.prepare("DELETE FROM customer_replies WHERE from_phone = ?").run(phone);
@@ -140,7 +144,8 @@ test("Conversation Flow - Second message loop resolution: text 'garden', '1', an
   assert.equal(r4?.currentNodeId, "node_ask_checkout");
   assert.match(r4?.replyText, /Check-out Date/i);
 
-  // Clean up
+  // Clean up and reset engine mode back to default HOSPITALITY_FLOW
+  setSetting("AUTO_REPLY_ENGINE_MODE", "HOSPITALITY_FLOW");
   db.prepare("DELETE FROM conversation_flow_sessions WHERE sender_phone = ?").run(phone);
   db.prepare("DELETE FROM customer_replies WHERE from_phone = ?").run(phone);
 });

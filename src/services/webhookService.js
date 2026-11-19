@@ -1794,10 +1794,7 @@ class WebhookService {
       const isInteractiveAction = Boolean(interactiveActionId || isFlowReply);
 
       // 6b. Dynamic Conversation Flow & Automation Studio Engine
-      // If client is configured in FLOW_STUDIO, CONVERSATION_FLOW, or HOSPITALITY_FLOW mode, or an active studio session is open:
-      const isStudioMode = autoReplySettings.engineMode === "FLOW_STUDIO" || 
-                           autoReplySettings.engineMode === "CONVERSATION_FLOW" ||
-                           autoReplySettings.engineMode === "HOSPITALITY_FLOW";
+      // If client is configured in FLOW_STUDIO or CONVERSATION_FLOW mode, or an active studio session is open:
       const flowEngine = require("./conversationFlowEngine");
       let activeFlowSession = db.prepare(`
         SELECT id, last_interaction_at, expires_at FROM conversation_flow_sessions
@@ -1817,6 +1814,9 @@ class WebhookService {
           activeFlowSession = null;
         }
       }
+
+      const isStudioMode = autoReplySettings.engineMode === "FLOW_STUDIO" || 
+                           autoReplySettings.engineMode === "CONVERSATION_FLOW";
 
       const hasPublishedFlows = db.prepare(`
         SELECT id FROM conversation_flows
@@ -2277,7 +2277,7 @@ class WebhookService {
             replyText: customStaffMsg,
             replyStatus: "AUTO_REPLIED"
           });
-          return { success: true, handledBy: "DYNAMIC_OPTION_STAFF", replyText: customStaffMsg, messageId: sentMsgId };
+          return { success: true, handledBy: "DYNAMIC_OPTION_STAFF", replyText: customStaffMsg, messageId: sentMsgId, handoff: true };
         }
 
         if (dynAction === "DISPATCH_FLOW") {
