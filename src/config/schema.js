@@ -59,7 +59,11 @@ const TABLE_SCHEMAS = {
   "conversation_flow_templates": "CREATE TABLE IF NOT EXISTS `conversation_flow_templates` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `slug` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `description` text COLLATE utf8mb4_unicode_ci,\n  `industry` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'HOSPITALITY',\n  `category` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'BOOKING',\n  `nodes_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `transitions_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `variables_json` longtext COLLATE utf8mb4_unicode_ci,\n  `is_system` tinyint NOT NULL DEFAULT '1',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `idx_flow_template_slug` (`slug`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "conversation_flow_sessions": "CREATE TABLE IF NOT EXISTS `conversation_flow_sessions` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `session_key` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `property_id` bigint DEFAULT '1',\n  `channel` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'WHATSAPP',\n  `sender_phone` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `flow_id` bigint NOT NULL,\n  `flow_version_id` bigint NOT NULL,\n  `current_node_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `session_status` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'ACTIVE',\n  `collected_data_json` longtext COLLATE utf8mb4_unicode_ci,\n  `last_interaction_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `expires_at` datetime DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `idx_flow_session_key` (`session_key`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "conversation_flow_events": "CREATE TABLE IF NOT EXISTS `conversation_flow_events` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `session_id` bigint NOT NULL,\n  `flow_id` bigint NOT NULL,\n  `flow_version_id` bigint NOT NULL,\n  `node_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `node_type` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `event_type` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `payload_json` longtext COLLATE utf8mb4_unicode_ci,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_flow_events_session` (`session_id`),\n  KEY `idx_flow_events_flow` (`flow_id`, `created_at`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-  "flow_message_templates": "CREATE TABLE IF NOT EXISTS `flow_message_templates` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `property_id` bigint DEFAULT NULL,\n  `code` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `category` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'CONVERSATION',\n  `content` text COLLATE utf8mb4_unicode_ci NOT NULL,\n  `variables_json` text COLLATE utf8mb4_unicode_ci,\n  `buttons_json` text COLLATE utf8mb4_unicode_ci,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_flow_msg_tpl_code` (`tenant_id`, `code`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+  "flow_message_templates": "CREATE TABLE IF NOT EXISTS `flow_message_templates` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `property_id` bigint DEFAULT NULL,\n  `code` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `category` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'CONVERSATION',\n  `content` text COLLATE utf8mb4_unicode_ci NOT NULL,\n  `variables_json` text COLLATE utf8mb4_unicode_ci,\n  `buttons_json` text COLLATE utf8mb4_unicode_ci,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_flow_msg_tpl_code` (`tenant_id`, `code`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "crm_pipelines": "CREATE TABLE IF NOT EXISTS `crm_pipelines` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` int NOT NULL DEFAULT '1',\n  `name` varchar(120) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `slug` varchar(120) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `industry_type` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `stages_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `custom_fields_schema` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `active_status` tinyint(1) DEFAULT '1',\n  `delete_status` tinyint(1) DEFAULT '0',\n  `created_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_crm_pipelines_tenant` (`tenant_id`, `delete_status`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "crm_records": "CREATE TABLE IF NOT EXISTS `crm_records` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` int NOT NULL DEFAULT '1',\n  `pipeline_id` bigint NOT NULL,\n  `contact_phone` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `contact_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `contact_email` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `stage_key` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `lead_score` int DEFAULT '0',\n  `deal_value` double DEFAULT '0',\n  `tags_json` longtext COLLATE utf8mb4_unicode_ci,\n  `assigned_user_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `custom_attributes` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `source_flow_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `source_session_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `active_status` tinyint(1) DEFAULT '1',\n  `delete_status` tinyint(1) DEFAULT '0',\n  `created_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_crm_records_tenant_pipeline_stage` (`tenant_id`, `pipeline_id`, `stage_key`),\n  KEY `idx_crm_records_tenant_phone` (`tenant_id`, `contact_phone`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "workflow_triggers": "CREATE TABLE IF NOT EXISTS `workflow_triggers` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` int NOT NULL DEFAULT '1',\n  `flow_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `trigger_key` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `trigger_type` varchar(40) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `match_config_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `secret_token` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `priority` int DEFAULT '100',\n  `active_status` tinyint(1) DEFAULT '1',\n  `delete_status` tinyint(1) DEFAULT '0',\n  `created_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uniq_workflow_triggers_key` (`trigger_key`),\n  KEY `idx_workflow_triggers_lookup` (`tenant_id`, `trigger_type`, `active_status`, `delete_status`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "workflow_scheduled_jobs": "CREATE TABLE IF NOT EXISTS `workflow_scheduled_jobs` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` int NOT NULL DEFAULT '1',\n  `session_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `flow_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `resume_node_id` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `resume_handle` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT 'default',\n  `job_type` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT 'DELAY_RESUME',\n  `cancel_on_reply` tinyint(1) DEFAULT '1',\n  `run_at` datetime NOT NULL,\n  `status` varchar(24) COLLATE utf8mb4_unicode_ci DEFAULT 'PENDING',\n  `attempts` int DEFAULT '0',\n  `last_error` longtext COLLATE utf8mb4_unicode_ci,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_workflow_jobs_status_run` (`status`, `run_at`),\n  KEY `idx_workflow_jobs_session` (`session_id`, `status`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
 };
 
 const INDEXES = [
@@ -656,6 +660,92 @@ function seedDefaults(db, config) {
     seedFlowsAndTemplates(db);
   } catch (flowSeedErr) {
     console.warn("[Database] Notice on seeding conversation flow templates:", flowSeedErr.message);
+  }
+
+  // 11. Seed Default Dynamic CRM Pipelines
+  try {
+    const pipelineCount = db.prepare("SELECT COUNT(*) as count FROM crm_pipelines WHERE tenant_id = 1 AND delete_status = 0").get()?.count || 0;
+    if (pipelineCount === 0) {
+      const insertPipeline = db.prepare(`
+        INSERT INTO crm_pipelines (
+          tenant_id, name, slug, industry_type, stages_json, custom_fields_schema, active_status, delete_status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `);
+
+      // 1. B2B Sales Pipeline
+      insertPipeline.run(
+        1,
+        "B2B Sales Pipeline",
+        "b2b-sales-pipeline",
+        "B2B_SALES",
+        JSON.stringify([
+          { key: "NEW_LEAD", label: "New Lead", color: "#3B82F6", order: 1 },
+          { key: "MQL", label: "Marketing Qualified (MQL)", color: "#8B5CF6", order: 2 },
+          { key: "SQL", label: "Sales Qualified (SQL)", color: "#6366F1", order: 3 },
+          { key: "DEMO_BOOKED", label: "Demo Booked", color: "#F59E0B", order: 4 },
+          { key: "PROPOSAL_SENT", label: "Proposal Sent", color: "#EC4899", order: 5 },
+          { key: "WON", label: "Closed Won", color: "#10B981", order: 6 },
+          { key: "LOST", label: "Closed Lost", color: "#EF4444", order: 7 }
+        ]),
+        JSON.stringify([
+          { key: "company_name", label: "Company Name", type: "TEXT", required: true },
+          { key: "team_size", label: "Team Size", type: "TEXT" },
+          { key: "monthly_budget", label: "Monthly Budget (₹)", type: "NUMBER" },
+          { key: "decision_maker", label: "Decision Maker", type: "TEXT" },
+          { key: "demo_slot", label: "Demo Slot", type: "DATETIME" }
+        ])
+      );
+
+      // 2. Lead Generation Pipeline
+      insertPipeline.run(
+        1,
+        "Lead Generation Pipeline",
+        "lead-generation-pipeline",
+        "LEAD_GEN",
+        JSON.stringify([
+          { key: "NEW", label: "New Prospect", color: "#3B82F6", order: 1 },
+          { key: "ENGAGED", label: "Engaged in Chat", color: "#06B6D4", order: 2 },
+          { key: "QUALIFIED", label: "Qualified Lead", color: "#10B981", order: 3 },
+          { key: "NURTURING", label: "Nurturing Drip", color: "#8B5CF6", order: 4 },
+          { key: "CONVERTED", label: "Converted Customer", color: "#059669", order: 5 },
+          { key: "UNQUALIFIED", label: "Unqualified / Disqualified", color: "#6B7280", order: 6 }
+        ]),
+        JSON.stringify([
+          { key: "city", label: "City", type: "TEXT" },
+          { key: "service_interest", label: "Service Interest", type: "TEXT" },
+          { key: "timeline", label: "Timeline", type: "TEXT" },
+          { key: "ad_source", label: "Ad / Campaign Source", type: "TEXT" },
+          { key: "lead_notes", label: "Lead Notes", type: "TEXTAREA" }
+        ])
+      );
+
+      // 3. Universal Booking Pipeline
+      insertPipeline.run(
+        1,
+        "Universal Booking Pipeline",
+        "universal-booking-pipeline",
+        "BOOKING",
+        JSON.stringify([
+          { key: "INQUIRY", label: "Booking Inquiry", color: "#3B82F6", order: 1 },
+          { key: "AVAILABILITY_CHECKED", label: "Availability Checked", color: "#06B6D4", order: 2 },
+          { key: "QUOTED", label: "Quotation Sent", color: "#F59E0B", order: 3 },
+          { key: "PAYMENT_PENDING", label: "Payment Pending", color: "#EC4899", order: 4 },
+          { key: "CONFIRMED", label: "Booking Confirmed", color: "#10B981", order: 5 },
+          { key: "COMPLETED", label: "Stay/Service Completed", color: "#059669", order: 6 },
+          { key: "CANCELLED", label: "Cancelled", color: "#EF4444", order: 7 }
+        ]),
+        JSON.stringify([
+          { key: "entity_id", label: "Property / Business Entity ID", type: "NUMBER" },
+          { key: "catalog_item_id", label: "Room / Service Item ID", type: "NUMBER" },
+          { key: "booking_date", label: "Check-in / Booking Date", type: "DATE" },
+          { key: "checkout_date", label: "Check-out Date", type: "DATE" },
+          { key: "guest_or_slot_count", label: "Guests / Slots", type: "NUMBER" },
+          { key: "quote_total", label: "Estimated Quote Total", type: "NUMBER" }
+        ])
+      );
+    }
+  } catch (crmErr) {
+    console.warn("[Database] Notice on seeding CRM pipelines:", crmErr.message);
   }
 }
 

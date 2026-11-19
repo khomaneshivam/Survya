@@ -141,6 +141,22 @@ app.get(webhookAliases, webhookController.handleVerification);
 app.post(webhookAliases, webhookController.handleIncomingEvent);
 app.post(["/flows/exchange", "/webhooks/meta/flows", "/api/flows/exchange"], flowController.handleDataExchange);
 
+// Public Workflow Webhook Trigger Endpoints
+const workflowTriggerService = require("./src/services/workflow/workflowTriggerService");
+app.post(["/workflows/hooks/:triggerKey", "/v1/workflows/hooks/:triggerKey", "/api/v1/workflows/hooks/:triggerKey"], async (req, res) => {
+  try {
+    const result = await workflowTriggerService.executeWebhookTrigger(
+      req.params.triggerKey,
+      req.body,
+      req.headers
+    );
+    return res.status(result.statusCode || 200).json(result);
+  } catch (err) {
+    console.error("[Webhook Trigger Hook] Execution error:", err);
+    return res.status(500).json({ success: false, message: err.message || "Failed to execute webhook trigger" });
+  }
+});
+
 // Direct WhatsApp Link Redirect Helper (/c/:slug?redirect=whatsapp, /chat/:slug)
 app.get(["/c/:slug", "/chat/:slug"], (req, res, next) => {
   if (req.query.redirect === "whatsapp" || req.query.wa === "1") {

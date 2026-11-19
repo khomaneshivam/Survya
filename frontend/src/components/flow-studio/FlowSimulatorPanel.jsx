@@ -26,6 +26,7 @@ export default function FlowSimulatorPanel({
   const [simulating, setSimulating] = useState(false);
   const [simulationState, setSimulationState] = useState(null);
   const [executionTrace, setExecutionTrace] = useState([]);
+  const [pendingDelay, setPendingDelay] = useState(null);
   const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'variables' | 'trace'
 
   const chatEndRef = useRef(null);
@@ -48,6 +49,7 @@ export default function FlowSimulatorPanel({
     setMessages([]);
     setExecutionTrace([]);
     setSimulationState(null);
+    setPendingDelay(null);
     onActiveNodeChange?.(null);
 
     try {
@@ -72,6 +74,8 @@ export default function FlowSimulatorPanel({
       if (data.success && data.result) {
         const botReply = data.result.replyText;
         const interactive = data.result.replyInteractive;
+
+        setPendingDelay(data.result.pendingDelay || null);
 
         setMessages([
           { sender: 'user', text: 'Hi', timestamp: 'Just now' },
@@ -144,15 +148,19 @@ export default function FlowSimulatorPanel({
         const botReply = data.result.replyText;
         const interactive = data.result.replyInteractive;
 
-        setMessages(prev => [
-          ...prev,
-          {
-            sender: 'bot',
-            text: botReply,
-            interactive,
-            timestamp: 'Just now'
-          }
-        ]);
+        setPendingDelay(data.result.pendingDelay || null);
+
+        if (botReply) {
+          setMessages(prev => [
+            ...prev,
+            {
+              sender: 'bot',
+              text: botReply,
+              interactive,
+              timestamp: 'Just now'
+            }
+          ]);
+        }
 
         setSimulationState({
           currentNodeId: data.result.currentNodeId,
@@ -173,6 +181,71 @@ export default function FlowSimulatorPanel({
       }
     } catch (err) {
       console.error('Simulation turn error:', err);
+    } finally {
+      setSimulating(false);
+    }
+  };
+
+  const fastForwardDelay = async () => {
+    if (!pendingDelay) return;
+    setSimulating(true);
+
+    try {
+      const res = await fetch('/api/flows/conversation-flows/simulate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          senderPhone: '919876543210',
+          fastForward: true,
+          flowOverride: {
+            nodes: currentNodes,
+            transitions: currentTransitions
+          },
+          simulationState
+        })
+      });
+
+      const data = await res.json();
+      if (data.success && data.result) {
+        const botReply = data.result.replyText;
+        const interactive = data.result.replyInteractive;
+
+        setPendingDelay(data.result.pendingDelay || null);
+
+        if (botReply) {
+          setMessages(prev => [
+            ...prev,
+            {
+              sender: 'bot',
+              text: botReply,
+              interactive,
+              timestamp: 'Just now (Fast-Forwarded)'
+            }
+          ]);
+        }
+
+        setSimulationState({
+          currentNodeId: data.result.currentNodeId,
+          collectedData: data.result.collectedData,
+          nodes: currentNodes,
+          transitions: currentTransitions
+        });
+
+        if (data.result.currentNodeId) {
+          onActiveNodeChange?.(data.result.currentNodeId);
+        }
+
+        setExecutionTrace(prev => [
+          ...prev,
+          `⏩ Fast-Forwarded Delay (${pendingDelay.amount} ${pendingDelay.unit?.toLowerCase()})`,
+          ...(data.result.executionLogs || [])
+        ]);
+      }
+    } catch (err) {
+      console.error('Fast-forward error:', err);
     } finally {
       setSimulating(false);
     }
@@ -364,6 +437,56 @@ export default function FlowSimulatorPanel({
                 </div>
               </div>
             ))}
+            {/* Pending Delay Fast-Forward Pill */}
+            {pendingDelay && (
+              <div style={{
+                background: '#FEF3C7',
+                border: '1px solid #F59E0B',
+                borderRadius: '10px',
+                padding: '10px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '10px',
+                boxShadow: '0 2px 6px rgba(245,158,11,0.15)',
+                margin: '6px 0'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Clock size={16} color="#B45309" />
+                  <div>
+                    <div style={{ fontSize: '0.76rem', fontWeight: 700, color: '#92400E' }}>
+                      Timer Paused ({pendingDelay.amount} {pendingDelay.unit?.toLowerCase()})
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: '#B45309' }}>
+                      Simulated delay active
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={fastForwardDelay}
+                  disabled={simulating}
+                  style={{
+                    background: '#D97706',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '6px 10px',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    whiteSpace: 'nowrap'
+                  }}
+                  title="Fast-forward delay to next step"
+                >
+                  Fast-Forward ⏩
+                </button>
+              </div>
+            )}
+
             <div ref={chatEndRef} />
           </div>
         )}

@@ -1815,6 +1815,46 @@ class WebhookService {
         }
       }
 
+      // Check for pending delay jobs that should cancel on customer reply
+      try {
+        const pendingJobs = db.prepare(`
+          SELECT j.*, s.current_flow_id, s.current_node_id
+          FROM workflow_scheduled_jobs j
+          JOIN conversation_flow_sessions s ON j.session_id = s.id
+          WHERE s.sender_phone = ? AND j.status = 'PENDING' AND j.cancel_on_reply = 1
+        `).all(cleanPhone);
+
+        if (pendingJobs && pendingJobs.length > 0) {
+          for (const job of pendingJobs) {
+            console.log(`[Webhook Flow] Customer ${cleanPhone} replied early. Cancelling pending delay job #${job.id}.`);
+            db.prepare(`
+              UPDATE workflow_scheduled_jobs
+              SET status = 'CANCELLED', last_error = 'Customer replied before delay elapsed (cancel_on_reply)', updated_at = NOW()
+              WHERE id = ?
+            `).run(job.id);
+          }
+        }
+      } catch (delayErr) {
+        console.warn("[Webhook Flow] Cancel-on-reply check warning:", delayErr.message);
+      }
+
+      // Match multi-channel triggers if no active session
+      let matchedTrigger = null;
+      if (!activeFlowSession) {
+        try {
+          const workflowTriggerService = require("./workflow/workflowTriggerService");
+          matchedTrigger = workflowTriggerService.matchInboundTrigger(1, {
+            text: effectiveText,
+            phone: cleanPhone
+          });
+          if (matchedTrigger) {
+            console.log(`[Webhook Flow] Matched trigger '${matchedTrigger.triggerKey}' for flow ${matchedTrigger.flowId} (node: ${matchedTrigger.nodeId}).`);
+          }
+        } catch (trgErr) {
+          console.warn("[Webhook Flow] Trigger matching warning:", trgErr.message);
+        }
+      }
+
       const isStudioMode = autoReplySettings.engineMode === "FLOW_STUDIO" || 
                            autoReplySettings.engineMode === "CONVERSATION_FLOW";
 
@@ -1824,7 +1864,7 @@ class WebhookService {
         LIMIT 1
       `).get();
 
-      if (isStudioMode && (activeFlowSession || hasPublishedFlows)) {
+      if (isStudioMode && (activeFlowSession || hasPublishedFlows || matchedTrigger)) {
         // Universal Deduplication check for initial greeting
         if (!activeFlowSession && !isInteractiveAction && !isResumeKeyword) {
           if (autoReplySettings.mode === "ONCE_PER_CONTACT") {
@@ -1855,11 +1895,14 @@ class WebhookService {
             senderPhone: cleanPhone,
             userInput: effectiveText,
             userPayload: rawMsg?.interactive?.button_reply || rawMsg?.interactive?.list_reply || (interactiveActionId ? { id: interactiveActionId, title: effectiveText } : null),
+            startFlowId: matchedTrigger?.flowId || null,
+            startNodeId: matchedTrigger?.nodeId || null,
             context: {
               tenantId: 1,
               propertyId: 1,
               channel: "WHATSAPP",
-              isSimulation: isSimulation
+              isSimulation: isSimulation,
+              triggerKey: matchedTrigger?.triggerKey || null
             }
           });
 

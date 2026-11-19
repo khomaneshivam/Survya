@@ -7,6 +7,49 @@ const { db } = require("../config/database");
 const availabilityService = require("./hospitalityAvailabilityService");
 const pricingService = require("./hospitalityPricingService");
 const enquiryService = require("./enquiryService");
+const { getNodeExecutor } = require("./workflow/nodeExecutors");
+const { evaluateRules } = require("./workflow/expressionEvaluator");
+
+/**
+ * Resolves the next node in the graph matching an output handle or fallback edge.
+ */
+function findNextNode(currentNodeId, handle, transitions = [], nodeMap = new Map(), nodes = []) {
+  if (!currentNodeId || !Array.isArray(transitions)) return null;
+  const outbound = transitions.filter(t => t.source === currentNodeId);
+
+  if (outbound.length > 0) {
+    if (handle && handle !== "default") {
+      const match = outbound.find(t =>
+        t.sourceHandle === handle ||
+        String(t.optionId) === handle ||
+        String(t.condition) === handle ||
+        (handle === "true" && t.condition === true) ||
+        (handle === "false" && t.condition === false)
+      );
+      if (match && nodeMap.has(match.target)) {
+        return nodeMap.get(match.target);
+      }
+    }
+
+    // Default handle or first outbound transition
+    const defaultMatch = outbound.find(t => t.sourceHandle === "default" || !t.sourceHandle) || outbound[0];
+    if (defaultMatch && nodeMap.has(defaultMatch.target)) {
+      return nodeMap.get(defaultMatch.target);
+    }
+  }
+
+  // Fallback to sequential node in array ONLY if no specific handle was requested (default only)
+  if (!handle || handle === "default") {
+    if (Array.isArray(nodes) && nodes.length > 0) {
+      const curIdx = nodes.findIndex(n => n.id === currentNodeId);
+      if (curIdx >= 0 && curIdx < nodes.length - 1) {
+        return nodes[curIdx + 1];
+      }
+    }
+  }
+
+  return null;
+}
 
 /**
  * Safe variable interpolator for mustache-like syntax {{varName}} or {{obj.prop}}
@@ -558,6 +601,8 @@ async function processTurn({
   senderPhone,
   userInput = "",
   userPayload = null,
+  startFlowId = null,
+  startNodeId = null,
   context = {}
 }) {
   const {
@@ -686,13 +731,19 @@ async function processTurn({
         };
       }
 
-      // Match trigger keyword or fallback to default
+      // Match by startFlowId, trigger keyword, or fallback to default
       const inputLower = String(userInput || "").toLowerCase().trim();
-      let matchedFlow = publishedFlows.find(f => {
-        if (f.trigger_type === "INBOUND_ANY") return true;
-        const kwList = f.trigger_keywords_json ? JSON.parse(f.trigger_keywords_json) : [];
-        return kwList.some(kw => inputLower.includes(String(kw).toLowerCase()));
-      });
+      let matchedFlow = null;
+      if (startFlowId) {
+        matchedFlow = publishedFlows.find(f => String(f.id) === String(startFlowId));
+      }
+      if (!matchedFlow) {
+        matchedFlow = publishedFlows.find(f => {
+          if (f.trigger_type === "INBOUND_ANY") return true;
+          const kwList = f.trigger_keywords_json ? JSON.parse(f.trigger_keywords_json) : [];
+          return kwList.some(kw => inputLower.includes(String(kw).toLowerCase()));
+        });
+      }
 
       if (!matchedFlow) {
         matchedFlow = publishedFlows.find(f => f.is_default) || publishedFlows[0];
@@ -703,7 +754,9 @@ async function processTurn({
       nodes = JSON.parse(matchedFlow.nodes_json || "[]");
       transitions = JSON.parse(matchedFlow.transitions_json || "[]");
 
-      const startNode = nodes.find(n => n.type === "START") || nodes[0];
+      const startNode = (startNodeId ? nodes.find(n => n.id === startNodeId) : null) || 
+                        nodes.find(n => n.type === "START" || n.type === "TRIGGER_WHATSAPP" || n.type === "TRIGGER_EVENT") || 
+                        nodes[0];
 
       let timeoutMinutes = 1440;
       try {
@@ -773,11 +826,94 @@ async function processTurn({
 
   let accumulatedReplies = [];
   let interactivePayload = null;
+  let pendingDelay = null;
   let stepCount = 0;
   const maxSteps = 25; // prevent infinite loops
   let inputConsumed = false;
 
   // 3. Process Input on Waiting Node
+  if (!inputConsumed && (userInput || userPayload)) {
+    // 3a. Modern COLLECT_INPUT
+    if (currentNode.type === "COLLECT_INPUT") {
+      const intakeExec = getNodeExecutor("COLLECT_INPUT");
+      const execRes = await intakeExec.execute(currentNode, {
+        session: collectedData,
+        userInput,
+        userPayload,
+        variableContext,
+        isWaitingForThisNode: true
+      });
+
+      if (execRes.updatedData) {
+        for (const [k, v] of Object.entries(execRes.updatedData)) {
+          collectedData[k] = v;
+          variableContext[k] = v;
+        }
+      }
+      if (execRes.traceNote) executionLogs.push(execRes.traceNote);
+
+      if (execRes.action === "WAIT_FOR_INPUT") {
+        return {
+          handled: true,
+          sessionKey,
+          currentNodeId: currentNode.id,
+          sessionStatus: "ACTIVE",
+          replyText: execRes.replyMessages ? execRes.replyMessages.join("\n\n") : "Please try again.",
+          replyInteractive: null,
+          collectedData,
+          executionLogs
+        };
+      }
+
+      inputConsumed = true;
+      currentNode = findNextNode(currentNode.id, execRes.nextHandle || "valid", transitions, nodeMap, nodes);
+    }
+    // 3b. Modern SEND_MESSAGE with options
+    else if (currentNode.type === "SEND_MESSAGE" && (currentNode.config?.options || []).length > 0) {
+      const msgExec = getNodeExecutor("SEND_MESSAGE");
+      const execRes = await msgExec.execute(currentNode, {
+        session: collectedData,
+        userInput,
+        userPayload,
+        variableContext,
+        isWaitingForThisNode: true
+      });
+
+      if (execRes.updatedData) {
+        for (const [k, v] of Object.entries(execRes.updatedData)) {
+          collectedData[k] = v;
+          variableContext[k] = v;
+        }
+      }
+      if (execRes.traceNote) executionLogs.push(execRes.traceNote);
+
+      inputConsumed = true;
+      currentNode = findNextNode(currentNode.id, execRes.nextHandle || "default", transitions, nodeMap, nodes);
+    }
+    // 3c. Modern SEND_WHATSAPP_FLOW
+    else if (currentNode.type === "SEND_WHATSAPP_FLOW") {
+      const flowExec = getNodeExecutor("SEND_WHATSAPP_FLOW");
+      const execRes = await flowExec.execute(currentNode, {
+        session: collectedData,
+        userInput,
+        userPayload,
+        variableContext,
+        isWaitingForThisNode: true
+      });
+
+      if (execRes.updatedData) {
+        for (const [k, v] of Object.entries(execRes.updatedData)) {
+          collectedData[k] = v;
+          variableContext[k] = v;
+        }
+      }
+      if (execRes.traceNote) executionLogs.push(execRes.traceNote);
+
+      inputConsumed = true;
+      currentNode = findNextNode(currentNode.id, execRes.nextHandle || "submitted", transitions, nodeMap, nodes);
+    }
+  }
+
   const isMenuOrConfirmation = currentNode.type === "BUTTON_MENU" || currentNode.type === "SELECTION" || currentNode.type === "CONFIRMATION";
   const isInputField = currentNode.type === "INPUT_COLLECTION" || currentNode.type === "QUESTION";
 
@@ -914,6 +1050,65 @@ async function processTurn({
     stepCount++;
     executionLogs.push(`Executing node [${currentNode.type}] '${currentNode.id}': ${currentNode.title || ""}`);
 
+    // Modern Composable Node Executors Check
+    const modernTypes = new Set([
+      "TRIGGER_WHATSAPP", "TRIGGER_EVENT", "SEND_MESSAGE", "SEND_TEMPLATE",
+      "SEND_WHATSAPP_FLOW", "COLLECT_INPUT", "SET_VARIABLE", "WAIT_DELAY",
+      "CRM_UPSERT", "CATALOG_BOOKING", "HTTP_WEBHOOK", "HUMAN_HANDOFF"
+    ]);
+
+    if (modernTypes.has(currentNode.type)) {
+      const executor = getNodeExecutor(currentNode.type);
+      const execRes = await executor.execute(currentNode, {
+        session: collectedData,
+        userInput: inputConsumed ? "" : userInput,
+        userPayload: inputConsumed ? null : userPayload,
+        variableContext,
+        dryRun: Boolean(isSimulation),
+        fastForward: Boolean(context.fastForward),
+        tenantId,
+        propertyId,
+        senderPhone: normalizedPhone,
+        flowId: session?.flow_id || flow?.id || 1,
+        isWaitingForThisNode: false
+      });
+
+      if (execRes.replyMessages && execRes.replyMessages.length > 0) {
+        accumulatedReplies.push(...execRes.replyMessages);
+      }
+      if (execRes.replyInteractive) {
+        interactivePayload = execRes.replyInteractive;
+      }
+      if (execRes.updatedData) {
+        for (const [k, v] of Object.entries(execRes.updatedData)) {
+          collectedData[k] = v;
+          variableContext[k] = v;
+        }
+      }
+      if (execRes.traceNote) {
+        executionLogs.push(execRes.traceNote);
+      }
+      if (execRes.pendingDelay) {
+        pendingDelay = execRes.pendingDelay;
+      }
+
+      if (execRes.action === "WAIT_FOR_INPUT" || execRes.action === "WAIT_UNTIL") {
+        break;
+      }
+      if (execRes.action === "HANDOFF") {
+        status = "PAUSED_AGENT_HANDOFF";
+        break;
+      }
+      if (execRes.action === "COMPLETE") {
+        status = "COMPLETED";
+        break;
+      }
+
+      // Default: CONTINUE
+      currentNode = findNextNode(currentNode.id, execRes.nextHandle || "default", transitions, nodeMap, nodes);
+      continue;
+    }
+
     if (currentNode.type === "START") {
       const nextTargets = transitionsFrom.get(currentNode.id) || [];
       currentNode = nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null;
@@ -933,17 +1128,43 @@ async function processTurn({
       const varName = currentNode.config?.variable;
       const varValue = variableContext[varName];
       const rules = currentNode.config?.rules || [];
-      let targetNodeId = currentNode.config?.defaultTargetNodeId;
+      let targetNodeId = null;
 
+      let matchedRule = false;
       for (const rule of rules) {
-        if (evaluateConditionRule(varValue, rule.operator, rule.value)) {
+        if (rule.targetNodeId && evaluateConditionRule(varValue, rule.operator, rule.value)) {
           targetNodeId = rule.targetNodeId;
+          matchedRule = true;
           executionLogs.push(`Condition matched rule: ${varName} ${rule.operator} ${rule.value} -> ${targetNodeId}`);
           break;
         }
       }
 
-      currentNode = targetNodeId ? nodeMap.get(targetNodeId) : null;
+      if (!matchedRule && currentNode.config?.defaultTargetNodeId) {
+        targetNodeId = currentNode.config.defaultTargetNodeId;
+        executionLogs.push(`Condition using default target -> ${targetNodeId}`);
+      }
+
+      if (targetNodeId && nodeMap.has(targetNodeId)) {
+        currentNode = nodeMap.get(targetNodeId);
+        continue;
+      }
+
+      // Modern rule evaluation against handle transitions
+      const passes = evaluateRules(
+        rules.length > 0 ? rules : [{ variable: varName, operator: currentNode.config?.operator || "eq", value: currentNode.config?.value }],
+        currentNode.config?.matchMode || "ALL",
+        variableContext
+      );
+      const handle = passes ? "true" : "false";
+      const nextFromHandle = findNextNode(currentNode.id, handle, transitions, nodeMap, nodes);
+      if (nextFromHandle) {
+        executionLogs.push(`Condition evaluated to ${passes ? "TRUE" : "FALSE"} -> ${nextFromHandle.id} [Handle: ${handle}]`);
+        currentNode = nextFromHandle;
+        continue;
+      }
+
+      currentNode = null;
       continue;
     }
 
@@ -1248,9 +1469,56 @@ async function processTurn({
     sessionStatus: status,
     replyText: combinedReplyText,
     replyInteractive: interactivePayload,
+    pendingDelay,
     collectedData,
     executionLogs
   };
+}
+
+/**
+ * Resumes execution of a session halted at a scheduled delay timer or timeout.
+ */
+async function resumeScheduledNode({
+  sessionId,
+  resumeNodeId,
+  resumeHandle = "default",
+  context = {}
+}) {
+  const session = db.prepare("SELECT * FROM conversation_flow_sessions WHERE id = ? OR session_key = ?").get(sessionId, sessionId);
+  if (!session) {
+    throw new Error(`Scheduled resume failed: session "${sessionId}" not found.`);
+  }
+
+  const flowVersion = db.prepare("SELECT * FROM conversation_flow_versions WHERE id = ?").get(session.flow_version_id);
+  if (!flowVersion) {
+    throw new Error(`Scheduled resume failed: flow version "${session.flow_version_id}" not found.`);
+  }
+
+  const nodes = JSON.parse(flowVersion.nodes_json || "[]");
+  const transitions = JSON.parse(flowVersion.transitions_json || "[]");
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+  // Find target node from resumeNodeId + resumeHandle
+  const nextNode = findNextNode(resumeNodeId, resumeHandle, transitions, nodeMap, nodes);
+  if (!nextNode) {
+    throw new Error(`Scheduled resume failed: no transition found from node "${resumeNodeId}" with handle "${resumeHandle}".`);
+  }
+
+  // Update session current_node_id to target node before processing turn
+  db.prepare("UPDATE conversation_flow_sessions SET current_node_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(nextNode.id, session.id);
+
+  // Execute turn starting from target node
+  return processTurn({
+    senderPhone: session.sender_phone,
+    userInput: "",
+    userPayload: null,
+    context: {
+      ...context,
+      tenantId: session.tenant_id,
+      propertyId: session.property_id,
+      isScheduledResume: true
+    }
+  });
 }
 
 module.exports = {
@@ -1259,5 +1527,7 @@ module.exports = {
   parseGuestCounts,
   evaluateConditionRule,
   executeBusinessAction,
+  findNextNode,
+  resumeScheduledNode,
   processTurn
 };

@@ -598,6 +598,14 @@ function publishFlow(flowId, user = { id: "admin", name: "Administrator" }, tena
     versionId: draftVersion.id
   });
 
+  // Sync and index workflow triggers
+  try {
+    const workflowTriggerService = require("./workflow/workflowTriggerService");
+    workflowTriggerService.syncFlowTriggers(tenantId, flowId, draftVersion.nodes);
+  } catch (trgErr) {
+    console.warn(`[ConversationFlowService] Warning: Failed to sync triggers for flow ${flowId}:`, trgErr.message);
+  }
+
   return getFlowById(flowId, tenantId);
 }
 
@@ -613,6 +621,14 @@ function pauseFlow(flowId, user = { id: "admin", name: "Administrator" }, tenant
     SET status = 'PAUSED', updated_by = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(user.name || user.id || "admin", flowId);
+
+  // Deactivate triggers for paused flow
+  try {
+    const workflowTriggerService = require("./workflow/workflowTriggerService");
+    workflowTriggerService.deactivateFlowTriggers(tenantId, flowId);
+  } catch (trgErr) {
+    console.warn(`[ConversationFlowService] Warning: Failed to deactivate triggers for flow ${flowId}:`, trgErr.message);
+  }
 
   logAudit(tenantId, user.id, "PAUSE_CONVERSATION_FLOW", flowId, null);
   return getFlowById(flowId, tenantId);
@@ -630,6 +646,14 @@ function archiveFlow(flowId, user = { id: "admin", name: "Administrator" }, tena
     SET status = 'ARCHIVED', is_default = 0, updated_by = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(user.name || user.id || "admin", flowId);
+
+  // Deactivate triggers for archived flow
+  try {
+    const workflowTriggerService = require("./workflow/workflowTriggerService");
+    workflowTriggerService.deactivateFlowTriggers(tenantId, flowId);
+  } catch (trgErr) {
+    console.warn(`[ConversationFlowService] Warning: Failed to deactivate triggers for flow ${flowId}:`, trgErr.message);
+  }
 
   logAudit(tenantId, user.id, "ARCHIVE_CONVERSATION_FLOW", flowId, null);
   return getFlowById(flowId, tenantId);
@@ -866,6 +890,35 @@ function getFlowAnalytics(flowId, tenantId = 1) {
 
   const eventsCount = Number(db.prepare("SELECT COUNT(*) as count FROM conversation_flow_events WHERE flow_id = ?").get(flowId)?.count || 0);
 
+  // Compute per-node metrics map for visual graph analytics overlay
+  const nodeMetrics = {};
+  try {
+    const nodeEvents = db.prepare(`
+      SELECT node_id,
+             COUNT(*) as entered,
+             SUM(CASE WHEN event_type IN ('COMPLETE', 'COMPLETED') THEN 1 ELSE 0 END) as completed
+      FROM conversation_flow_events
+      WHERE flow_id = ?
+      GROUP BY node_id
+    `).all(flowId);
+
+    const dropoffMap = new Map((dropoffByNode || []).map(d => [d.current_node_id, Number(d.count || 0)]));
+
+    for (const row of nodeEvents) {
+      const entered = Number(row.entered || 0);
+      const completed = Number(row.completed || 0);
+      const dropoffs = dropoffMap.get(row.node_id) || 0;
+      nodeMetrics[row.node_id] = {
+        entered,
+        completed,
+        dropoffs,
+        dropoffRate: entered > 0 ? Math.round((dropoffs / entered) * 100) : 0
+      };
+    }
+  } catch (metricsErr) {
+    // Non-fatal fallback
+  }
+
   return {
     flowId,
     flowName: flow.name,
@@ -876,7 +929,8 @@ function getFlowAnalytics(flowId, tenantId = 1) {
     expiredSessions: Number(sessionSummary?.expired_sessions || 0),
     failedSessions: Number(sessionSummary?.failed_sessions || 0),
     totalEvents: eventsCount,
-    dropoffByNode
+    dropoffByNode,
+    nodeMetrics
   };
 }
 

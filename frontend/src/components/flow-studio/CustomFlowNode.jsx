@@ -344,6 +344,40 @@ function CustomFlowNodeComponent({ id, data, selected }) {
             <span>{data?.type === 'END' ? 'Terminal End Point' : 'Transfers to Live Agent'}</span>
           </div>
         )}
+
+        {/* Live Visual Analytics Overlay (Entered & Drop-off Rate) */}
+        {data?.showAnalyticsOverlay && (
+          <div
+            style={{
+              marginTop: '8px',
+              padding: '6px 8px',
+              background: '#F0FDF4',
+              border: '1px solid #BBF7D0',
+              borderRadius: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '0.68rem',
+              fontWeight: 600,
+              color: '#166534'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ color: '#15803D' }}>●</span>
+              <span>Entered: <strong>{data.metrics?.entered ?? 0}</strong></span>
+            </div>
+            <div
+              style={{
+                color: (data.metrics?.dropoffRate || 0) > 30 ? '#DC2626' : '#15803D',
+                background: (data.metrics?.dropoffRate || 0) > 30 ? '#FEE2E2' : '#DCFCE7',
+                padding: '2px 6px',
+                borderRadius: '4px'
+              }}
+            >
+              Drop-off: {data.metrics?.dropoffRate ?? 0}%
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Single Output Handle at Bottom Center for single-output nodes */}

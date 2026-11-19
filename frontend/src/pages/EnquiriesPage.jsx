@@ -26,7 +26,16 @@ import {
   Users,
   Phone,
   BedDouble,
-  Trash2
+  Trash2,
+  LayoutGrid,
+  List,
+  Sparkles,
+  TrendingUp,
+  Award,
+  Tag,
+  ExternalLink,
+  ChevronRight,
+  Kanban
 } from 'lucide-react';
 import { formatIndianDateTime } from '../utils/indianTime';
 
@@ -54,6 +63,16 @@ export default function EnquiriesPage() {
   const [contacts, setContacts] = useState([]);
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contactSearch, setContactSearch] = useState('');
+
+  // Dynamic Multi-Industry CRM Pipelines & Records State
+  const [pipelines, setPipelines] = useState([]);
+  const [activePipelineId, setActivePipelineId] = useState(null);
+  const [crmRecords, setCrmRecords] = useState([]);
+  const [crmLoading, setCrmLoading] = useState(false);
+  const [crmView, setCrmView] = useState('kanban'); // 'kanban' | 'table'
+  const [selectedRecord, setSelectedRecord] = useState(null);
+  const [recordSaving, setRecordSaving] = useState(false);
+  const [crmSearch, setCrmSearch] = useState('');
 
   // Modals
   const [showNewModal, setShowNewModal] = useState(false);
@@ -145,6 +164,72 @@ export default function EnquiriesPage() {
     loadEnquiries();
     loadMetadata();
   }, [loadEnquiries, loadMetadata]);
+
+  const loadPipelines = useCallback(async () => {
+    try {
+      const res = await fetch('/api/v1/crm/pipelines', { headers: getHeaders() });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setPipelines(data.data);
+        if (data.data.length > 0 && !activePipelineId) {
+          setActivePipelineId(data.data[0].id);
+        }
+      }
+    } catch (err) {
+      console.warn('Error loading CRM pipelines:', err.message);
+    }
+  }, [activePipelineId, getHeaders]);
+
+  const loadCrmRecords = useCallback(async (pipelineId) => {
+    if (!pipelineId) return;
+    setCrmLoading(true);
+    try {
+      let url = `/api/v1/crm/records?pipeline_id=${pipelineId}`;
+      if (crmSearch.trim()) {
+        url += `&search=${encodeURIComponent(crmSearch.trim())}`;
+      }
+      const res = await fetch(url, { headers: getHeaders() });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setCrmRecords(data.data);
+      }
+    } catch (err) {
+      console.warn('Error loading CRM records:', err.message);
+    } finally {
+      setCrmLoading(false);
+    }
+  }, [crmSearch, getHeaders]);
+
+  useEffect(() => {
+    if (crmTab === 'dynamic_crm') {
+      loadPipelines();
+    }
+  }, [crmTab, loadPipelines]);
+
+  useEffect(() => {
+    if (crmTab === 'dynamic_crm' && activePipelineId) {
+      loadCrmRecords(activePipelineId);
+    }
+  }, [crmTab, activePipelineId, loadCrmRecords]);
+
+  const handleUpdateRecordStage = async (recordId, newStageId) => {
+    try {
+      const res = await fetch(`/api/v1/crm/records/${recordId}/stage`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ stage_id: newStageId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        loadCrmRecords(activePipelineId);
+        if (selectedRecord && selectedRecord.id === recordId) {
+          setSelectedRecord(prev => ({ ...prev, stage_id: newStageId }));
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to update record stage:', err.message);
+    }
+  };
 
   useEffect(() => {
     if (crmTab === 'contacts') {
@@ -406,6 +491,7 @@ export default function EnquiriesPage() {
         ariaLabel="CRM sections"
         tabs={[
           { id: 'pipeline', label: 'Lead Pipeline', icon: Calendar, count: enquiries.length },
+          { id: 'dynamic_crm', label: 'Dynamic Pipelines', icon: LayoutGrid, count: crmRecords.length || null },
           { id: 'contacts', label: 'Contacts Directory', icon: Users, count: contacts.length || null }
         ]}
       />
@@ -512,6 +598,409 @@ export default function EnquiriesPage() {
               }
             ]}
           />
+        </>
+      )}
+
+      {/* 2. DYNAMIC CRM PIPELINES & KANBAN / TABLE VIEW */}
+      {crmTab === 'dynamic_crm' && (
+        <>
+          <FilterBar
+            left={
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <label style={{ fontSize: '0.80rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Pipeline:
+                  </label>
+                  <select
+                    className="form-input"
+                    value={activePipelineId || ''}
+                    onChange={(e) => setActivePipelineId(Number(e.target.value))}
+                    style={{ minWidth: '220px', padding: '6px 10px', fontSize: '0.82rem' }}
+                  >
+                    {pipelines.map(p => (
+                      <option key={p.id} value={p.id}>{p.name} ({p.industry})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <SearchInput
+                  value={crmSearch}
+                  onChange={(e) => setCrmSearch(e.target.value)}
+                  placeholder="Search deals, company, or phone..."
+                  style={{ width: 'min(260px, 100%)' }}
+                />
+              </div>
+            }
+            right={
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{
+                  display: 'flex',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  overflow: 'hidden'
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => setCrmView('kanban')}
+                    style={{
+                      padding: '6px 10px',
+                      background: crmView === 'kanban' ? 'var(--brand-primary, #2F5219)' : 'transparent',
+                      color: crmView === 'kanban' ? '#FFFFFF' : 'var(--text-secondary)',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '0.78rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    <LayoutGrid size={13} />
+                    <span>Kanban</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCrmView('table')}
+                    style={{
+                      padding: '6px 10px',
+                      background: crmView === 'table' ? 'var(--brand-primary, #2F5219)' : 'transparent',
+                      color: crmView === 'table' ? '#FFFFFF' : 'var(--text-secondary)',
+                      border: 'none',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '0.78rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    <List size={13} />
+                    <span>Table</span>
+                  </button>
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={() => loadCrmRecords(activePipelineId)}
+                  disabled={crmLoading}
+                  style={{ padding: '6px 10px' }}
+                >
+                  <RefreshCw size={13} className={crmLoading ? 'spin-slow' : ''} />
+                </Button>
+              </div>
+            }
+          />
+
+          {/* Current Pipeline Stats Bar */}
+          {(() => {
+            const totalPipelineValue = crmRecords.reduce((sum, r) => sum + Number(r.deal_value || 0), 0);
+            const avgScore = crmRecords.length > 0 
+              ? Math.round(crmRecords.reduce((sum, r) => sum + Number(r.lead_score || 0), 0) / crmRecords.length) 
+              : 0;
+
+            return (
+              <div style={{
+                display: 'flex',
+                gap: '12px',
+                flexWrap: 'wrap',
+                margin: '4px 0 12px 0'
+              }}>
+                <div style={{
+                  padding: '8px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-card, #FFFFFF)',
+                  border: '1px solid var(--border-color)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '0.80rem'
+                }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Total Deals:</span>
+                  <strong style={{ color: 'var(--text-primary)' }}>{crmRecords.length}</strong>
+                </div>
+
+                <div style={{
+                  padding: '8px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-card, #FFFFFF)',
+                  border: '1px solid var(--border-color)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '0.80rem'
+                }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Pipeline Value:</span>
+                  <strong style={{ color: 'var(--brand-primary, #2F5219)' }}>
+                    ₹{totalPipelineValue.toLocaleString('en-IN')}
+                  </strong>
+                </div>
+
+                <div style={{
+                  padding: '8px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-card, #FFFFFF)',
+                  border: '1px solid var(--border-color)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '0.80rem'
+                }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Avg Lead Score:</span>
+                  <strong style={{ color: avgScore >= 70 ? '#16A34A' : avgScore >= 40 ? '#D97706' : 'var(--text-primary)' }}>
+                    {avgScore} / 100
+                  </strong>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Kanban Board View */}
+          {crmView === 'kanban' && (
+            <div style={{
+              display: 'flex',
+              gap: '14px',
+              overflowX: 'auto',
+              paddingBottom: '16px',
+              minHeight: '480px'
+            }}>
+              {(() => {
+                const currentPipeline = pipelines.find(p => p.id === activePipelineId);
+                const stages = currentPipeline?.stages || [
+                  { id: 'lead', name: 'Lead Inflow', color: '#3B82F6' },
+                  { id: 'qualified', name: 'Qualified', color: '#10B981' },
+                  { id: 'proposal', name: 'Proposal Sent', color: '#8B5CF6' },
+                  { id: 'won', name: 'Closed Won', color: '#16A34A' }
+                ];
+
+                return stages.map((stg) => {
+                  const stageRecords = crmRecords.filter(r => r.stage_id === stg.id || r.stage_name === stg.name);
+                  const stageTotalVal = stageRecords.reduce((sum, r) => sum + Number(r.deal_value || 0), 0);
+
+                  return (
+                    <div
+                      key={stg.id}
+                      style={{
+                        width: '280px',
+                        minWidth: '280px',
+                        background: 'var(--bg-secondary, #F8FAFC)',
+                        borderRadius: 'var(--radius-lg, 12px)',
+                        border: '1px solid var(--border-color)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        maxHeight: '650px'
+                      }}
+                    >
+                      {/* Column Header */}
+                      <div style={{
+                        padding: '12px 14px',
+                        borderBottom: '1px solid var(--border-color)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: 'var(--bg-card, #FFFFFF)',
+                        borderRadius: '12px 12px 0 0'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{
+                            width: '10px',
+                            height: '10px',
+                            borderRadius: '50%',
+                            background: stg.color || '#2F5219'
+                          }} />
+                          <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {stg.name}
+                          </span>
+                        </div>
+                        <Badge tone="neutral">{stageRecords.length}</Badge>
+                      </div>
+
+                      {/* Column Subtotal */}
+                      {stageTotalVal > 0 && (
+                        <div style={{
+                          padding: '6px 14px',
+                          fontSize: '0.72rem',
+                          color: 'var(--text-secondary)',
+                          background: 'rgba(0,0,0,0.02)',
+                          borderBottom: '1px solid var(--border-color)'
+                        }}>
+                          Stage Total: ₹{stageTotalVal.toLocaleString('en-IN')}
+                        </div>
+                      )}
+
+                      {/* Cards Container */}
+                      <div style={{
+                        padding: '10px',
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px',
+                        flex: 1
+                      }}>
+                        {stageRecords.length === 0 ? (
+                          <div style={{
+                            padding: '24px 10px',
+                            textAlign: 'center',
+                            fontSize: '0.75rem',
+                            color: 'var(--text-muted)'
+                          }}>
+                            No records in this stage
+                          </div>
+                        ) : stageRecords.map((rec) => {
+                          const parsedTags = (() => {
+                            try {
+                              return typeof rec.tags === 'string' ? JSON.parse(rec.tags) : (rec.tags || []);
+                            } catch (e) {
+                              return [];
+                            }
+                          })();
+
+                          return (
+                            <div
+                              key={rec.id}
+                              onClick={() => setSelectedRecord(rec)}
+                              style={{
+                                background: 'var(--bg-card, #FFFFFF)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '8px',
+                                padding: '12px',
+                                cursor: 'pointer',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                                transition: 'all 0.15s ease',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '6px'
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                  {rec.title || rec.contact_name || 'Untitled Record'}
+                                </div>
+                                {rec.lead_score != null && (
+                                  <span style={{
+                                    fontSize: '0.70rem',
+                                    fontWeight: 700,
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    background: rec.lead_score >= 70 ? '#DCFCE7' : rec.lead_score >= 40 ? '#FEF3C7' : '#F1F5F9',
+                                    color: rec.lead_score >= 70 ? '#166534' : rec.lead_score >= 40 ? '#B45309' : '#475569'
+                                  }}>
+                                    Score: {rec.lead_score}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Phone size={11} />
+                                <span className="font-mono">{rec.contact_phone || '—'}</span>
+                              </div>
+
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                                <span style={{ fontSize: '0.80rem', fontWeight: 700, color: 'var(--brand-primary, #2F5219)' }}>
+                                  ₹{Number(rec.deal_value || 0).toLocaleString('en-IN')}
+                                </span>
+                                {rec.status && (
+                                  <Badge tone={rec.status === 'WON' ? 'green' : rec.status === 'LOST' ? 'coral' : 'blue'}>
+                                    {rec.status}
+                                  </Badge>
+                                )}
+                              </div>
+
+                              {parsedTags.length > 0 && (
+                                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginTop: '4px' }}>
+                                  {parsedTags.slice(0, 2).map((tg, i) => (
+                                    <span key={i} style={{
+                                      fontSize: '0.66rem',
+                                      padding: '1px 5px',
+                                      borderRadius: '3px',
+                                      background: '#F1F5F9',
+                                      color: '#475569'
+                                    }}>
+                                      {tg}
+                                    </span>
+                                  ))}
+                                  {parsedTags.length > 2 && (
+                                    <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)' }}>+{parsedTags.length - 2}</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
+
+          {/* Table View */}
+          {crmView === 'table' && (
+            <DataTable
+              rows={crmRecords}
+              keyField="id"
+              loading={crmLoading}
+              emptyMessage="No CRM records found in this pipeline."
+              onRowClick={(row) => setSelectedRecord(row)}
+              columns={[
+                {
+                  key: 'title',
+                  label: 'Deal / Record',
+                  sortable: true,
+                  render: (row) => (
+                    <div>
+                      <div style={{ fontWeight: 600 }}>{row.title || 'Untitled Record'}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{row.contact_name || ''}</div>
+                    </div>
+                  )
+                },
+                {
+                  key: 'contact_phone',
+                  label: 'WhatsApp Phone',
+                  render: (row) => <span className="font-mono">{row.contact_phone || '—'}</span>
+                },
+                {
+                  key: 'stage_name',
+                  label: 'Stage',
+                  sortable: true,
+                  render: (row) => <Badge tone="blue">{row.stage_name || row.stage_id}</Badge>
+                },
+                {
+                  key: 'lead_score',
+                  label: 'Lead Score',
+                  sortable: true,
+                  render: (row) => (
+                    <span style={{
+                      fontWeight: 700,
+                      color: (row.lead_score || 0) >= 70 ? '#16A34A' : (row.lead_score || 0) >= 40 ? '#D97706' : 'var(--text-secondary)'
+                    }}>
+                      {row.lead_score ?? '—'}
+                    </span>
+                  )
+                },
+                {
+                  key: 'deal_value',
+                  label: 'Deal Value',
+                  sortable: true,
+                  align: 'end',
+                  render: (row) => (
+                    <span className="tabular-nums" style={{ fontWeight: 700, color: 'var(--brand-primary, #2F5219)' }}>
+                      ₹{Number(row.deal_value || 0).toLocaleString('en-IN')}
+                    </span>
+                  )
+                },
+                {
+                  key: 'updated_at',
+                  label: 'Last Updated',
+                  sortable: true,
+                  render: (row) => (
+                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                      {row.updated_at ? formatIndianDateTime(row.updated_at) : '—'}
+                    </span>
+                  )
+                }
+              ]}
+            />
+          )}
         </>
       )}
 
@@ -1073,6 +1562,80 @@ export default function EnquiriesPage() {
           />
         </div>
       </Modal>
+
+      {/* Dynamic CRM Record Detail Drawer */}
+      <Drawer
+        isOpen={Boolean(selectedRecord)}
+        onClose={() => setSelectedRecord(null)}
+        title={selectedRecord?.title || 'CRM Record Details'}
+        subtitle={selectedRecord ? `Phone: ${selectedRecord.contact_phone} • Pipeline #${selectedRecord.pipeline_id}` : ''}
+        width="480px"
+        footer={
+          selectedRecord && (
+            <Button variant="secondary" onClick={() => setSelectedRecord(null)}>
+              Close
+            </Button>
+          )
+        }
+      >
+        {selectedRecord && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <Card>
+              <CardBody style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 600 }}>Change Stage</label>
+                  <select
+                    className="form-input"
+                    value={selectedRecord.stage_id}
+                    onChange={(e) => handleUpdateRecordStage(selectedRecord.id, e.target.value)}
+                  >
+                    {(pipelines.find(p => p.id === selectedRecord.pipeline_id)?.stages || []).map(stg => (
+                      <option key={stg.id} value={stg.id}>{stg.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 600 }}>Deal Value (₹)</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={selectedRecord.deal_value || 0}
+                      readOnly
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 600 }}>Lead Score (0-100)</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={selectedRecord.lead_score || 0}
+                      readOnly
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 600 }}>Associated Customer Phone</label>
+                  <div className="font-mono" style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--brand-primary, #2F5219)' }}>
+                    {selectedRecord.contact_phone}
+                  </div>
+                </div>
+
+                {selectedRecord.notes && (
+                  <div>
+                    <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 600 }}>Notes / Summary</label>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', background: '#F8FAFC', padding: '8px 10px', borderRadius: '6px' }}>
+                      {selectedRecord.notes}
+                    </div>
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 }

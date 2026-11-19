@@ -7,7 +7,12 @@ import {
   Hotel,
   HelpCircle,
   PhoneCall,
-  RotateCcw
+  RotateCcw,
+  Building2,
+  Target,
+  Calendar,
+  Layers,
+  Briefcase
 } from 'lucide-react';
 
 export default function FlowTemplatesModal({
@@ -17,23 +22,96 @@ export default function FlowTemplatesModal({
   onCloneTemplate,
   cloning = false
 }) {
-  const [selectedSlug, setSelectedSlug] = useState('hospitality-booking-quote-journey');
+  const [selectedSlug, setSelectedSlug] = useState('b2b-sales-qualification-demo');
   const [customName, setCustomName] = useState('');
+  const [industryFilter, setIndustryFilter] = useState('ALL');
 
   if (!isOpen) return null;
 
-  const selectedTpl = templates.find(t => t.slug === selectedSlug) || templates[0];
+  const filteredTemplates = templates.filter(t => {
+    if (industryFilter === 'ALL') return true;
+    if (industryFilter === 'B2B_SAAS') return t.industry === 'B2B_SAAS' || t.category === 'SALES';
+    if (industryFilter === 'LEAD_GEN') return t.industry === 'LEAD_GEN' || t.category === 'LEAD_GEN';
+    if (industryFilter === 'BOOKING') return (t.industry === 'BOOKING' || t.category === 'BOOKING') && t.industry !== 'HOSPITALITY';
+    if (industryFilter === 'HOSPITALITY') return t.industry === 'HOSPITALITY';
+    return true;
+  });
+
+  const selectedTpl = templates.find(t => t.slug === selectedSlug) || filteredTemplates[0] || templates[0];
 
   const handleUseTemplate = () => {
     if (!selectedTpl) return;
     onCloneTemplate(selectedTpl.slug, customName || `${selectedTpl.title} (Custom)`);
   };
 
-  const getTemplateIcon = (slug) => {
-    if (slug.includes('booking') || slug.includes('hospitality')) return Hotel;
+  const getTemplateIcon = (tpl) => {
+    const slug = tpl?.slug || '';
+    const ind = tpl?.industry || '';
+    if (ind === 'B2B_SAAS' || slug.includes('b2b') || slug.includes('sales')) return Building2;
+    if (ind === 'LEAD_GEN' || slug.includes('lead')) return Target;
+    if (ind === 'BOOKING' || slug.includes('booking')) return Calendar;
+    if (ind === 'HOSPITALITY' || slug.includes('hotel') || slug.includes('resort')) return Hotel;
     if (slug.includes('faq') || slug.includes('concierge')) return HelpCircle;
     return PhoneCall;
   };
+
+  const getTemplateCapabilities = (tpl) => {
+    const slug = tpl?.slug || '';
+    if (slug.includes('b2b-sales-qualification')) {
+      return [
+        'Dynamic team seat qualification & automatic lead score calculation',
+        'Conditional enterprise branching (SQL vs. MQL self-serve routing)',
+        'Automated deal upsert into B2B Sales Pipeline with calculated deal value',
+        'Outbound HTTP webhook notification & simulated follow-up delay'
+      ];
+    }
+    if (slug.includes('multi-channel-lead-gen')) {
+      return [
+        'Inbound Webhook & WhatsApp keyword multi-channel event triggering',
+        'Instant collateral delivery with PDF download link',
+        'Time-delayed nurture check-in with cancel-on-reply protection',
+        'Intelligent human growth consultant handoff on customer interest'
+      ];
+    }
+    if (slug.includes('universal-dynamic-booking')) {
+      return [
+        'Industry-agnostic catalog availability check (Rooms, Doctors, Equipment)',
+        'Date & customer contact conversational intake',
+        'Universal Booking Pipeline synchronization & deal tracking',
+        'Instant WhatsApp confirmation & booking reference generation'
+      ];
+    }
+    if (slug.includes('sales-quotation-b2b')) {
+      return [
+        'Interactive team seat & monthly volume selection',
+        'Dynamic quotation calculation with tax & SLA tier',
+        'CRM deal logging in B2B pipeline',
+        'Account executive notification and WhatsApp handoff'
+      ];
+    }
+    if (slug.includes('hospitality-booking')) {
+      return [
+        'Real-time room availability & dynamic seasonal rate engine',
+        'Natural language check-in / check-out date parsing',
+        'Automated quotation breakdown with GST taxes',
+        'Direct booking enquiry creation and staff escalation'
+      ];
+    }
+    return [
+      'Interactive WhatsApp buttons and option menus',
+      'Context-aware session variables and state persistence',
+      'Automated customer CRM profile tracking',
+      'Smooth fallback and human team escalation'
+    ];
+  };
+
+  const industries = [
+    { id: 'ALL', label: 'All Blueprints', icon: Layers },
+    { id: 'B2B_SAAS', label: 'B2B Sales', icon: Building2 },
+    { id: 'LEAD_GEN', label: 'Lead Gen & Drip', icon: Target },
+    { id: 'BOOKING', label: 'Universal Booking', icon: Calendar },
+    { id: 'HOSPITALITY', label: 'Hospitality', icon: Hotel }
+  ];
 
   return (
     <div style={{
@@ -97,6 +175,46 @@ export default function FlowTemplatesModal({
           </button>
         </div>
 
+        {/* Industry Filter Pills */}
+        <div style={{
+          padding: '10px 24px',
+          borderBottom: '1px solid #E5E5E8',
+          display: 'flex',
+          gap: '8px',
+          background: '#FAFAFB',
+          overflowX: 'auto'
+        }}>
+          {industries.map(ind => {
+            const Icon = ind.icon;
+            const active = industryFilter === ind.id;
+            return (
+              <button
+                key={ind.id}
+                type="button"
+                onClick={() => setIndustryFilter(ind.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  borderRadius: '20px',
+                  border: active ? '1px solid #2F5219' : '1px solid #E5E5E8',
+                  background: active ? '#2F5219' : '#FFFFFF',
+                  color: active ? '#FFFFFF' : '#48484A',
+                  fontSize: '0.78rem',
+                  fontWeight: active ? 700 : 500,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Icon size={14} />
+                <span>{ind.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Body Split */}
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           {/* Left: Template Cards */}
@@ -110,8 +228,12 @@ export default function FlowTemplatesModal({
             gap: '10px',
             background: '#F9F9FB'
           }}>
-            {templates.map(tpl => {
-              const Icon = getTemplateIcon(tpl.slug);
+            {filteredTemplates.length === 0 ? (
+              <div style={{ padding: '20px', textAlign: 'center', color: '#8E8E93', fontSize: '0.82rem' }}>
+                No templates found for this industry filter.
+              </div>
+            ) : filteredTemplates.map(tpl => {
+              const Icon = getTemplateIcon(tpl);
               const isSelected = selectedSlug === tpl.slug;
               return (
                 <div
@@ -148,12 +270,12 @@ export default function FlowTemplatesModal({
                     </span>
                   </div>
                   <div style={{ fontSize: '0.74rem', color: '#67676B', lineHeight: '1.4' }}>
-                    {tpl.description.slice(0, 85)}...
+                    {tpl.description ? tpl.description.slice(0, 85) + '...' : ''}
                   </div>
                   <div style={{ marginTop: '8px', display: 'flex', gap: '8px', fontSize: '0.7rem', color: '#8E8E93' }}>
-                    <span>{tpl.nodeCount || 10} steps</span>
+                    <span>{Array.isArray(tpl.nodes) ? tpl.nodes.length : (tpl.nodeCount || 8)} steps</span>
                     <span>•</span>
-                    <span style={{ textTransform: 'capitalize' }}>{tpl.category.toLowerCase()}</span>
+                    <span style={{ textTransform: 'capitalize' }}>{(tpl.category || 'general').toLowerCase()}</span>
                   </div>
                 </div>
               );
@@ -208,22 +330,12 @@ export default function FlowTemplatesModal({
                     Key Capabilities Included:
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', color: '#2F5219' }}>
-                      <CheckCircle2 size={14} />
-                      <span>Dynamic WhatsApp interactive button menu choices</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', color: '#2F5219' }}>
-                      <CheckCircle2 size={14} />
-                      <span>Natural language date intake with check-in & check-out validation</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', color: '#2F5219' }}>
-                      <CheckCircle2 size={14} />
-                      <span>Automated room inventory & live rate calculation</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', color: '#2F5219' }}>
-                      <CheckCircle2 size={14} />
-                      <span>Instant CRM enquiry creation and front-desk handoff</span>
-                    </div>
+                    {getTemplateCapabilities(selectedTpl).map((cap, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', color: '#2F5219' }}>
+                        <CheckCircle2 size={14} />
+                        <span>{cap}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
 

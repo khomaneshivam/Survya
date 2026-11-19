@@ -165,7 +165,8 @@ async function simulateTurn(req, res) {
       userPayload = null,
       simulationState = null,
       flowOverride = null,
-      propertyId = 1
+      propertyId = 1,
+      fastForward = false
     } = req.body;
 
     const result = await flowEngine.processTurn({
@@ -177,8 +178,10 @@ async function simulateTurn(req, res) {
         propertyId,
         channel: "WHATSAPP",
         isSimulation: true,
+        dryRun: true,
         simulationState,
-        flowOverride
+        flowOverride,
+        fastForward
       }
     });
 

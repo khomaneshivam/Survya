@@ -7,8 +7,10 @@ class SchedulerService {
   constructor() {
     this.intervalTimer = null;
     this.bookingIntervalTimer = null;
+    this.workflowJobsTimer = null;
     this.checkIntervalMs = 5000; // Check every 5 seconds
     this.isChecking = false;
+    this.isCheckingWorkflowJobs = false;
   }
 
   /**
@@ -20,6 +22,9 @@ class SchedulerService {
     }
     if (this.bookingIntervalTimer) {
       clearInterval(this.bookingIntervalTimer);
+    }
+    if (this.workflowJobsTimer) {
+      clearInterval(this.workflowJobsTimer);
     }
 
     console.log("[Scheduler] Background campaign scheduler started (polling every 5s)");
@@ -37,6 +42,19 @@ class SchedulerService {
 
     if (this.intervalTimer.unref) {
       this.intervalTimer.unref();
+    }
+
+    // 15-second loop for workflow delay scheduled jobs (WAIT_DELAY resumes)
+    this.checkWorkflowScheduledJobs().catch(err => {
+      console.error("[Scheduler] Initial workflow jobs check error:", err);
+    });
+    this.workflowJobsTimer = setInterval(() => {
+      this.checkWorkflowScheduledJobs().catch(err => {
+        console.error("[Scheduler] Workflow jobs polling check error:", err);
+      });
+    }, 15000);
+    if (this.workflowJobsTimer.unref) {
+      this.workflowJobsTimer.unref();
     }
 
     // Initialize and sync Evergreen Booking Lifecycle Campaign
@@ -223,6 +241,134 @@ class SchedulerService {
     if (this.bookingIntervalTimer) {
       clearInterval(this.bookingIntervalTimer);
       this.bookingIntervalTimer = null;
+    }
+    if (this.workflowJobsTimer) {
+      clearInterval(this.workflowJobsTimer);
+      this.workflowJobsTimer = null;
+    }
+  }
+
+  /**
+   * Scans and processes pending workflow delay jobs (WAIT_DELAY execution resumes)
+   */
+  async checkWorkflowScheduledJobs() {
+    if (this.isCheckingWorkflowJobs) return;
+    this.isCheckingWorkflowJobs = true;
+
+    try {
+      const pendingJobs = db.prepare(`
+        SELECT j.*, s.sender_phone, s.tenant_id, s.property_id, s.session_status, s.last_interaction_at
+        FROM workflow_scheduled_jobs j
+        JOIN conversation_flow_sessions s ON j.session_id = s.id
+        WHERE j.status = 'PENDING' AND j.run_at <= NOW()
+        ORDER BY j.run_at ASC
+        LIMIT 20
+      `).all();
+
+      if (!pendingJobs || pendingJobs.length === 0) return;
+
+      for (const job of pendingJobs) {
+        // Atomic claim
+        const claimRes = db.prepare(`
+          UPDATE workflow_scheduled_jobs
+          SET status = 'PROCESSING', attempts = attempts + 1, updated_at = NOW()
+          WHERE id = ? AND status = 'PENDING'
+        `).run(job.id);
+
+        if (!claimRes || claimRes.changes === 0) {
+          continue; // Claimed by another worker
+        }
+
+        const cleanPhone = String(job.sender_phone || "").replace(/\D/g, "");
+
+        // 1. Session status check
+        if (job.session_status !== "ACTIVE") {
+          db.prepare(`
+            UPDATE workflow_scheduled_jobs
+            SET status = 'CANCELLED', last_error = 'Session no longer active', updated_at = NOW()
+            WHERE id = ?
+          `).run(job.id);
+          continue;
+        }
+
+        // 2. Opt-out suppression check
+        const suppression = db.prepare(`
+          SELECT id FROM contact_suppressions
+          WHERE clean_phone = ?
+          LIMIT 1
+        `).get(cleanPhone);
+
+        if (suppression) {
+          db.prepare(`
+            UPDATE workflow_scheduled_jobs
+            SET status = 'CANCELLED', last_error = 'Recipient phone is in contact_suppressions (opt-out)', updated_at = NOW()
+            WHERE id = ?
+          `).run(job.id);
+          continue;
+        }
+
+        // 3. Meta 24-hour Customer Service Window Enforcement
+        let targetNodeType = "SEND_MESSAGE";
+        try {
+          const flow = db.prepare(`
+            SELECT v.nodes_json
+            FROM conversation_flows f
+            JOIN conversation_flow_versions v ON f.published_version_id = v.id
+            WHERE f.id = ?
+          `).get(job.flow_id);
+          if (flow?.nodes_json) {
+            const nodes = JSON.parse(flow.nodes_json || "[]");
+            const targetNode = nodes.find(n => n.id === job.resume_node_id);
+            if (targetNode) {
+              targetNodeType = targetNode.type;
+            }
+          }
+        } catch (e) {}
+
+        const lastInteractionMs = job.last_interaction_at ? new Date(job.last_interaction_at).getTime() : 0;
+        const isWithin24h = (Date.now() - lastInteractionMs) <= 24 * 60 * 60 * 1000;
+
+        // If target node is a free-form message and 24h window has passed, block free-form send
+        const isFreeformMessage = (targetNodeType === "SEND_MESSAGE" || targetNodeType === "MESSAGE" || targetNodeType === "BUTTON_MENU");
+        if (isFreeformMessage && !isWithin24h) {
+          console.log(`[Scheduler] Delay Job #${job.id}: 24-hour Meta messaging window closed for ${cleanPhone}. Free-form message blocked.`);
+          db.prepare(`
+            UPDATE workflow_scheduled_jobs
+            SET status = 'FAILED', last_error = 'WINDOW_CLOSED_24H: Meta 24-hour customer service window expired. Freeform message blocked.', updated_at = NOW()
+            WHERE id = ?
+          `).run(job.id);
+          continue;
+        }
+
+        // 4. Resume the scheduled node via conversationFlowEngine
+        try {
+          const flowEngine = require("./conversationFlowEngine");
+          const resumeResult = await flowEngine.resumeScheduledNode({
+            sessionId: job.session_id,
+            resumeNodeId: job.resume_node_id,
+            resumeHandle: job.resume_handle || "default"
+          });
+
+          db.prepare(`
+            UPDATE workflow_scheduled_jobs
+            SET status = 'COMPLETED', updated_at = NOW()
+            WHERE id = ?
+          `).run(job.id);
+
+          console.log(`[Scheduler] Successfully resumed delay job #${job.id} for session ${job.session_id} to node ${job.resume_node_id}. Handled: ${resumeResult?.handled}`);
+        } catch (execErr) {
+          console.error(`[Scheduler] Error resuming delay job #${job.id}:`, execErr.message);
+          db.prepare(`
+            UPDATE workflow_scheduled_jobs
+            SET status = 'FAILED', last_error = ?, updated_at = NOW()
+            WHERE id = ?
+          `).run(execErr.message, job.id);
+        }
+      }
+    } catch (err) {
+      console.error("[Scheduler] Error in checkWorkflowScheduledJobs:", err);
+    } finally {
+      this.isCheckingWorkflowJobs = false;
     }
   }
 }

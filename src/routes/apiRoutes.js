@@ -358,6 +358,26 @@ router.delete("/templates/:templateId", authenticateToken, requireAdmin, templat
 // =========================================================================
 router.use(require("./conversationFlowRoutes"));
 
+// Dynamic CRM Pipelines & Records Module
+router.use("/crm", require("./crmPipelineRoutes"));
+router.use("/v1/crm", require("./crmPipelineRoutes"));
+
+// Public Webhook Trigger Inbound Endpoint
+const workflowTriggerService = require("../services/workflow/workflowTriggerService");
+router.post(["/workflows/hooks/:triggerKey", "/v1/workflows/hooks/:triggerKey"], async (req, res) => {
+  try {
+    const result = await workflowTriggerService.executeWebhookTrigger(
+      req.params.triggerKey,
+      req.body,
+      req.headers
+    );
+    return res.status(result.statusCode || 200).json(result);
+  } catch (err) {
+    console.error("[Webhook Trigger Hook] Execution error:", err);
+    return res.status(500).json({ success: false, message: err.message || "Failed to execute webhook trigger" });
+  }
+});
+
 // =========================================================================
 // 6.5. WHATSAPP FLOWS MANAGEMENT (Protected & Scoped)
 // =========================================================================

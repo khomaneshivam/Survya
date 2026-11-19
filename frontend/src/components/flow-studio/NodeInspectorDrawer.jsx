@@ -5,7 +5,12 @@ import {
   Trash2,
   AlertTriangle,
   AlertCircle,
-  Tag
+  Tag,
+  Copy,
+  Check,
+  Link2,
+  Key,
+  ShieldCheck
 } from 'lucide-react';
 import { validateFlowGraph } from './flowGraphValidator';
 
@@ -31,6 +36,8 @@ export default function NodeInspectorDrawer({
   // Call hooks unconditionally at top level (preserves React Rules of Hooks)
   const [activeTab, setActiveTab] = useState('config'); // 'config' | 'variables' | 'json'
   const [variablePickerField, setVariablePickerField] = useState(null); // field key targeted for variable insertion
+  const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedSecret, setCopiedSecret] = useState(false);
 
   // Collect available variables from system and upstream graph nodes
   const availableVariables = useMemo(() => {
@@ -322,43 +329,168 @@ export default function NodeInspectorDrawer({
             {/* 1. TRIGGER NODES */}
             {isTrigger && (
               <>
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Trigger Mode</label>
-                  <select
-                    className="form-input"
-                    value={node.config?.triggerType || 'KEYWORD_MATCH'}
-                    onChange={(e) => handleConfigChange('triggerType', e.target.value)}
-                  >
-                    <option value="KEYWORD_MATCH">Keyword Match (Contains any specified keyword)</option>
-                    <option value="EXACT_MATCH">Exact Match (Customer message matches exactly)</option>
-                    <option value="FIRST_MESSAGE">First Inbound Contact (New Guest / Contact)</option>
-                    <option value="INBOUND_ANY">Inbound Any Message (Default Flow Entry)</option>
-                    <option value="REGEX">Regular Expression Pattern</option>
-                  </select>
-                </div>
+                {node.type === 'TRIGGER_EVENT' ? (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Event Trigger Type</label>
+                      <select
+                        className="form-input"
+                        value={node.config?.eventType || 'WEBHOOK'}
+                        onChange={(e) => handleConfigChange('eventType', e.target.value)}
+                      >
+                        <option value="WEBHOOK">Inbound Webhook (External API / Lead Form)</option>
+                        <option value="CRM_STATUS_CHANGE">CRM Stage Changed</option>
+                        <option value="PAYMENT_SUCCESS">Payment Completed</option>
+                        <option value="META_FLOW_SUBMITTED">Meta Flow Submitted</option>
+                      </select>
+                    </div>
 
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>
-                    Trigger Keywords (Comma-separated)
-                  </label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={(() => {
-                      const kw = node.config?.keywords || node.config?.triggerKeywords;
-                      return Array.isArray(kw) ? kw.join(', ') : (kw || '');
-                    })()}
-                    onChange={(e) => {
-                      const list = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
-                      handleConfigChange('keywords', list);
-                      handleConfigChange('triggerKeywords', list);
-                    }}
-                    placeholder="hi, hello, book, rates, room, enquiry"
-                  />
-                  <div style={{ fontSize: '0.73rem', color: '#8E8E93', marginTop: '4px' }}>
-                    Inbound WhatsApp messages matching these keywords will trigger this customer journey.
-                  </div>
-                </div>
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Unique Trigger Key</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={node.config?.triggerKey || `hook_${node.id}`}
+                        onChange={(e) => handleConfigChange('triggerKey', e.target.value)}
+                        placeholder="e.g. hook_lead_gen_drip"
+                      />
+                    </div>
+
+                    {/* Copyable Webhook URL and Secret Token */}
+                    <div style={{
+                      background: '#F8FAFC',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '8px',
+                      padding: '12px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 700, color: '#1E293B' }}>
+                        <Link2 size={14} color="#2F5219" />
+                        <span>Public Webhook Endpoint URL</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <input
+                          type="text"
+                          readOnly
+                          className="form-input"
+                          value={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/v1/workflows/hooks/${node.config?.triggerKey || `hook_${node.id}`}`}
+                          style={{ fontSize: '0.74rem', background: '#FFFFFF', fontFamily: 'monospace' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const url = `${window.location.origin}/api/v1/workflows/hooks/${node.config?.triggerKey || `hook_${node.id}`}`;
+                            navigator.clipboard?.writeText(url);
+                            setCopiedUrl(true);
+                            setTimeout(() => setCopiedUrl(false), 2000);
+                          }}
+                          style={{
+                            padding: '6px 10px',
+                            background: copiedUrl ? '#DCFCE7' : '#FFFFFF',
+                            border: '1px solid #CBD5E1',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            color: copiedUrl ? '#166534' : '#475569'
+                          }}
+                        >
+                          {copiedUrl ? <Check size={13} /> : <Copy size={13} />}
+                          <span>{copiedUrl ? 'Copied' : 'Copy'}</span>
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', fontWeight: 700, color: '#1E293B', marginTop: '4px' }}>
+                        <Key size={14} color="#D97706" />
+                        <span>Webhook Secret Token (Optional Authorization)</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <input
+                          type="text"
+                          className="form-input"
+                          value={node.config?.secretToken || node.data?.secretToken || 'sec_survya_token'}
+                          onChange={(e) => handleConfigChange('secretToken', e.target.value)}
+                          placeholder="Pass in header: x-webhook-secret"
+                          style={{ fontSize: '0.74rem', background: '#FFFFFF', fontFamily: 'monospace' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const sec = node.config?.secretToken || node.data?.secretToken || 'sec_survya_token';
+                            navigator.clipboard?.writeText(sec);
+                            setCopiedSecret(true);
+                            setTimeout(() => setCopiedSecret(false), 2000);
+                          }}
+                          style={{
+                            padding: '6px 10px',
+                            background: copiedSecret ? '#DCFCE7' : '#FFFFFF',
+                            border: '1px solid #CBD5E1',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            color: copiedSecret ? '#166534' : '#475569'
+                          }}
+                        >
+                          {copiedSecret ? <Check size={13} /> : <Copy size={13} />}
+                          <span>{copiedSecret ? 'Copied' : 'Copy'}</span>
+                        </button>
+                      </div>
+
+                      <div style={{ fontSize: '0.70rem', color: '#64748B', lineHeight: '1.4' }}>
+                        💡 Send a <code>POST</code> request with JSON body containing <code>{`{ "phone": "91...", ... }`}</code> to launch this journey.
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Trigger Mode</label>
+                      <select
+                        className="form-input"
+                        value={node.config?.triggerType || 'KEYWORD_MATCH'}
+                        onChange={(e) => handleConfigChange('triggerType', e.target.value)}
+                      >
+                        <option value="KEYWORD_MATCH">Keyword Match (Contains any specified keyword)</option>
+                        <option value="EXACT_MATCH">Exact Match (Customer message matches exactly)</option>
+                        <option value="FIRST_MESSAGE">First Inbound Contact (New Guest / Contact)</option>
+                        <option value="INBOUND_ANY">Inbound Any Message (Default Flow Entry)</option>
+                        <option value="REGEX">Regular Expression Pattern</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>
+                        Trigger Keywords (Comma-separated)
+                      </label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={(() => {
+                          const kw = node.config?.keywords || node.config?.triggerKeywords;
+                          return Array.isArray(kw) ? kw.join(', ') : (kw || '');
+                        })()}
+                        onChange={(e) => {
+                          const list = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+                          handleConfigChange('keywords', list);
+                          handleConfigChange('triggerKeywords', list);
+                        }}
+                        placeholder="hi, hello, book, rates, room, enquiry"
+                      />
+                      <div style={{ fontSize: '0.73rem', color: '#8E8E93', marginTop: '4px' }}>
+                        Inbound WhatsApp messages matching these keywords will trigger this customer journey.
+                      </div>
+                    </div>
+                  </>
+                )}
               </>
             )}
 

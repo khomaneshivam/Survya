@@ -805,6 +805,560 @@ const SALES_QUOTATION_B2B_VARIABLES = {
   payment_status: { type: "STRING", label: "Payment Status", defaultValue: "PENDING" }
 };
 
+// =========================================================================
+// 5. BLUEPRINT: B2B SALES QUALIFICATION & PIPELINE ROUTING
+// =========================================================================
+const B2B_SALES_QUALIFICATION_NODES = [
+  {
+    id: "b2b_start",
+    type: "TRIGGER_WHATSAPP",
+    title: "Inbound Keyword Trigger",
+    data: {
+      triggerType: "KEYWORD",
+      keywords: ["demo", "enterprise", "pricing", "sales", "b2b"],
+      matchType: "CONTAINS"
+    },
+    config: {
+      triggerType: "KEYWORD",
+      keywords: ["demo", "enterprise", "pricing", "sales", "b2b"],
+      matchType: "CONTAINS"
+    },
+    position: { x: 400, y: 50 }
+  },
+  {
+    id: "b2b_welcome",
+    type: "SEND_MESSAGE",
+    title: "Welcome & Value Prop",
+    data: {
+      messageText: "💼 *Welcome to Survya Enterprise Solutions!* 🚀\n\nI can qualify your requirements, prepare volume pricing, and connect you with a dedicated Solutions Architect. Let's get started!"
+    },
+    config: {
+      text: "💼 *Welcome to Survya Enterprise Solutions!* 🚀\n\nI can qualify your requirements, prepare volume pricing, and connect you with a dedicated Solutions Architect. Let's get started!"
+    },
+    position: { x: 400, y: 160 }
+  },
+  {
+    id: "b2b_ask_company",
+    type: "COLLECT_INPUT",
+    title: "Collect Company Name",
+    data: {
+      prompt: "🏢 What is the name of your organization or company?",
+      variable: "company_name",
+      validationType: "ANY"
+    },
+    config: {
+      prompt: "🏢 What is the name of your organization or company?",
+      variable: "company_name",
+      validation: { type: "ANY" }
+    },
+    position: { x: 400, y: 270 }
+  },
+  {
+    id: "b2b_ask_seats",
+    type: "COLLECT_INPUT",
+    title: "Collect Team Seats",
+    data: {
+      prompt: "👥 How many team seats or active agents do you anticipate deploying? (e.g. 10, 50, 200)",
+      variable: "team_seats",
+      validationType: "NUMBER"
+    },
+    config: {
+      prompt: "👥 How many team seats or active agents do you anticipate deploying? (e.g. 10, 50, 200)",
+      variable: "team_seats",
+      validation: { type: "NUMBER" }
+    },
+    position: { x: 400, y: 380 }
+  },
+  {
+    id: "b2b_set_score",
+    type: "SET_VARIABLE",
+    title: "Calculate Lead Score",
+    data: {
+      variable: "lead_score",
+      action: "SET",
+      value: "85"
+    },
+    config: {
+      variable: "lead_score",
+      action: "SET",
+      value: "85"
+    },
+    position: { x: 400, y: 490 }
+  },
+  {
+    id: "b2b_eval_tier",
+    type: "CONDITION",
+    title: "Evaluate Enterprise Threshold",
+    data: {
+      rules: [
+        { variable: "team_seats", operator: "GREATER_THAN_OR_EQUAL", value: 25 }
+      ],
+      conditionMatch: "ALL"
+    },
+    config: {
+      rules: [
+        { variable: "team_seats", operator: "GREATER_THAN_OR_EQUAL", value: 25 }
+      ],
+      conditionMatch: "ALL"
+    },
+    position: { x: 400, y: 600 }
+  },
+  {
+    id: "b2b_crm_sql",
+    type: "CRM_UPSERT",
+    title: "Record SQL Deal",
+    data: {
+      pipelineName: "B2B Sales Pipeline",
+      stageName: "Demo Scheduled",
+      dealValue: 60000,
+      leadScore: 90,
+      tags: ["Enterprise", "High Value"],
+      recordTitle: "{{company_name}} Enterprise Demo"
+    },
+    config: {
+      pipelineName: "B2B Sales Pipeline",
+      stageName: "Demo Scheduled",
+      dealValue: 60000,
+      leadScore: 90,
+      tags: ["Enterprise", "High Value"],
+      recordTitle: "{{company_name}} Enterprise Demo"
+    },
+    position: { x: 250, y: 720 }
+  },
+  {
+    id: "b2b_notify_webhook",
+    type: "HTTP_WEBHOOK",
+    title: "Notify Sales Webhook",
+    data: {
+      url: "https://api.example.com/webhooks/sales-alert",
+      method: "POST",
+      bodyTemplate: "{\"company\":\"{{company_name}}\",\"seats\":\"{{team_seats}}\"}"
+    },
+    config: {
+      url: "https://api.example.com/webhooks/sales-alert",
+      method: "POST",
+      bodyTemplate: "{\"company\":\"{{company_name}}\",\"seats\":\"{{team_seats}}\"}"
+    },
+    position: { x: 250, y: 830 }
+  },
+  {
+    id: "b2b_sql_message",
+    type: "SEND_MESSAGE",
+    title: "Send SQL Confirmation",
+    data: {
+      messageText: "🔥 *Priority Enterprise Demo Reserved!*\n\nThank you, *{{company_name}}*. Based on your {{team_seats}} team seats, an Enterprise Solutions Architect has been assigned to your account."
+    },
+    config: {
+      text: "🔥 *Priority Enterprise Demo Reserved!*\n\nThank you, *{{company_name}}*. Based on your {{team_seats}} team seats, an Enterprise Solutions Architect has been assigned to your account."
+    },
+    position: { x: 250, y: 940 }
+  },
+  {
+    id: "b2b_delay",
+    type: "WAIT_DELAY",
+    title: "Short Delay Before Follow-up",
+    data: {
+      delayAmount: 15,
+      delayUnit: "MINUTES",
+      cancelOnReply: true
+    },
+    config: {
+      delayAmount: 15,
+      delayUnit: "MINUTES",
+      cancelOnReply: true
+    },
+    position: { x: 250, y: 1050 }
+  },
+  {
+    id: "b2b_followup_msg",
+    type: "SEND_MESSAGE",
+    title: "Follow-up Availability Check",
+    data: {
+      messageText: "👋 Checking in from Survya! Would you prefer a morning (11 AM) or afternoon (3 PM IST) slot for your architecture walkthrough?"
+    },
+    config: {
+      text: "👋 Checking in from Survya! Would you prefer a morning (11 AM) or afternoon (3 PM IST) slot for your architecture walkthrough?"
+    },
+    position: { x: 250, y: 1160 }
+  },
+  {
+    id: "b2b_crm_mql",
+    type: "CRM_UPSERT",
+    title: "Record MQL Lead",
+    data: {
+      pipelineName: "B2B Sales Pipeline",
+      stageName: "Lead Inflow",
+      dealValue: 12000,
+      leadScore: 50,
+      tags: ["Starter", "Self-Serve"],
+      recordTitle: "{{company_name}} Starter"
+    },
+    config: {
+      pipelineName: "B2B Sales Pipeline",
+      stageName: "Lead Inflow",
+      dealValue: 12000,
+      leadScore: 50,
+      tags: ["Starter", "Self-Serve"],
+      recordTitle: "{{company_name}} Starter"
+    },
+    position: { x: 550, y: 720 }
+  },
+  {
+    id: "b2b_mql_message",
+    type: "SEND_MESSAGE",
+    title: "Send MQL Self-Serve Guide",
+    data: {
+      messageText: "✨ *Thank you, {{company_name}}!*\n\nWe've sent our self-service pricing details and developer quickstart to your number. Let us know if you need any assistance!"
+    },
+    config: {
+      text: "✨ *Thank you, {{company_name}}!*\n\nWe've sent our self-service pricing details and developer quickstart to your number. Let us know if you need any assistance!"
+    },
+    position: { x: 550, y: 830 }
+  },
+  {
+    id: "b2b_end",
+    type: "END",
+    title: "End Journey",
+    data: {
+      reason: "COMPLETED"
+    },
+    config: {
+      reason: "COMPLETED"
+    },
+    position: { x: 400, y: 1280 }
+  }
+];
+
+const B2B_SALES_QUALIFICATION_TRANSITIONS = [
+  { id: "e_b2b_1", source: "b2b_start", target: "b2b_welcome", sourceHandle: "default" },
+  { id: "e_b2b_2", source: "b2b_welcome", target: "b2b_ask_company", sourceHandle: "default" },
+  { id: "e_b2b_3", source: "b2b_ask_company", target: "b2b_ask_seats", sourceHandle: "default" },
+  { id: "e_b2b_4", source: "b2b_ask_seats", target: "b2b_set_score", sourceHandle: "default" },
+  { id: "e_b2b_5", source: "b2b_set_score", target: "b2b_eval_tier", sourceHandle: "default" },
+  { id: "e_b2b_6", source: "b2b_eval_tier", target: "b2b_crm_sql", sourceHandle: "true" },
+  { id: "e_b2b_7", source: "b2b_eval_tier", target: "b2b_crm_mql", sourceHandle: "false" },
+  { id: "e_b2b_8", source: "b2b_crm_sql", target: "b2b_notify_webhook", sourceHandle: "default" },
+  { id: "e_b2b_9", source: "b2b_notify_webhook", target: "b2b_sql_message", sourceHandle: "default" },
+  { id: "e_b2b_10", source: "b2b_sql_message", target: "b2b_delay", sourceHandle: "default" },
+  { id: "e_b2b_11", source: "b2b_delay", target: "b2b_followup_msg", sourceHandle: "default" },
+  { id: "e_b2b_12", source: "b2b_followup_msg", target: "b2b_end", sourceHandle: "default" },
+  { id: "e_b2b_13", source: "b2b_crm_mql", target: "b2b_mql_message", sourceHandle: "default" },
+  { id: "e_b2b_14", source: "b2b_mql_message", target: "b2b_end", sourceHandle: "default" }
+];
+
+const B2B_SALES_QUALIFICATION_VARIABLES = {
+  company_name: { type: "STRING", label: "Company Name" },
+  team_seats: { type: "NUMBER", label: "Team Seats", defaultValue: 10 },
+  lead_score: { type: "NUMBER", label: "Lead Score", defaultValue: 50 },
+  crm_record_id: { type: "NUMBER", label: "CRM Record ID" }
+};
+
+// =========================================================================
+// 6. BLUEPRINT: MULTI-CHANNEL LEAD GENERATION & SMART DRIP
+// =========================================================================
+const MULTI_CHANNEL_LEAD_GEN_NODES = [
+  {
+    id: "lead_start",
+    type: "TRIGGER_EVENT",
+    title: "Web Form or Inbound Trigger",
+    data: {
+      eventType: "WEBHOOK",
+      triggerKey: "hook_lead_gen_drip",
+      eventName: "lead_form_submitted"
+    },
+    config: {
+      eventType: "WEBHOOK",
+      triggerKey: "hook_lead_gen_drip",
+      eventName: "lead_form_submitted"
+    },
+    position: { x: 400, y: 50 }
+  },
+  {
+    id: "lead_welcome",
+    type: "SEND_MESSAGE",
+    title: "Instant Brochure Delivery",
+    data: {
+      messageText: "🎁 *Your Growth Playbook is Ready!*\n\nThank you for reaching out! You can download your copy directly here: https://survya.flex-us.com/resources/growth-playbook.pdf\n\nI'll check back in shortly to see if you have any questions."
+    },
+    config: {
+      text: "🎁 *Your Growth Playbook is Ready!*\n\nThank you for reaching out! You can download your copy directly here: https://survya.flex-us.com/resources/growth-playbook.pdf\n\nI'll check back in shortly to see if you have any questions."
+    },
+    position: { x: 400, y: 160 }
+  },
+  {
+    id: "lead_crm_upsert",
+    type: "CRM_UPSERT",
+    title: "Sync to Lead Pipeline",
+    data: {
+      pipelineName: "Lead Generation Pipeline",
+      stageName: "New Lead",
+      dealValue: 5000,
+      leadScore: 60,
+      tags: ["Inbound Web", "Playbook Download"],
+      recordTitle: "New Growth Playbook Lead"
+    },
+    config: {
+      pipelineName: "Lead Generation Pipeline",
+      stageName: "New Lead",
+      dealValue: 5000,
+      leadScore: 60,
+      tags: ["Inbound Web", "Playbook Download"],
+      recordTitle: "New Growth Playbook Lead"
+    },
+    position: { x: 400, y: 270 }
+  },
+  {
+    id: "lead_delay",
+    type: "WAIT_DELAY",
+    title: "30-Minute Nurture Delay",
+    data: {
+      delayAmount: 30,
+      delayUnit: "MINUTES",
+      cancelOnReply: true
+    },
+    config: {
+      delayAmount: 30,
+      delayUnit: "MINUTES",
+      cancelOnReply: true
+    },
+    position: { x: 400, y: 380 }
+  },
+  {
+    id: "lead_ask_feedback",
+    type: "COLLECT_INPUT",
+    title: "Ask for Feedback",
+    data: {
+      prompt: "👋 Quick question! Did you get a chance to review the playbook? Would you like us to share 3 custom ideas for your business? (Reply *Yes* or *No*)",
+      variable: "user_interest",
+      validationType: "ANY"
+    },
+    config: {
+      prompt: "👋 Quick question! Did you get a chance to review the playbook? Would you like us to share 3 custom ideas for your business? (Reply *Yes* or *No*)",
+      variable: "user_interest",
+      validation: { type: "ANY" }
+    },
+    position: { x: 400, y: 490 }
+  },
+  {
+    id: "lead_branch_interest",
+    type: "CONDITION",
+    title: "Branch on Interest",
+    data: {
+      rules: [
+        { variable: "user_interest", operator: "CONTAINS", value: "yes" }
+      ],
+      conditionMatch: "ANY"
+    },
+    config: {
+      rules: [
+        { variable: "user_interest", operator: "CONTAINS", value: "yes" }
+      ],
+      conditionMatch: "ANY"
+    },
+    position: { x: 400, y: 600 }
+  },
+  {
+    id: "lead_handoff",
+    type: "HUMAN_HANDOFF",
+    title: "Consultant Handoff",
+    data: {
+      prompt: "Awesome! Connecting you with our Senior Growth Consultant right now.",
+      department: "SALES"
+    },
+    config: {
+      prompt: "Awesome! Connecting you with our Senior Growth Consultant right now.",
+      department: "SALES"
+    },
+    position: { x: 250, y: 720 }
+  },
+  {
+    id: "lead_nurture_msg",
+    type: "SEND_MESSAGE",
+    title: "Gentle Nurture Note",
+    data: {
+      messageText: "No worries at all! Enjoy the playbook, and feel free to reach out anytime if questions pop up."
+    },
+    config: {
+      text: "No worries at all! Enjoy the playbook, and feel free to reach out anytime if questions pop up."
+    },
+    position: { x: 550, y: 720 }
+  },
+  {
+    id: "lead_end",
+    type: "END",
+    title: "End Drip",
+    data: {
+      reason: "COMPLETED"
+    },
+    config: {
+      reason: "COMPLETED"
+    },
+    position: { x: 400, y: 840 }
+  }
+];
+
+const MULTI_CHANNEL_LEAD_GEN_TRANSITIONS = [
+  { id: "e_lead_1", source: "lead_start", target: "lead_welcome", sourceHandle: "default" },
+  { id: "e_lead_2", source: "lead_welcome", target: "lead_crm_upsert", sourceHandle: "default" },
+  { id: "e_lead_3", source: "lead_crm_upsert", target: "lead_delay", sourceHandle: "default" },
+  { id: "e_lead_4", source: "lead_delay", target: "lead_ask_feedback", sourceHandle: "default" },
+  { id: "e_lead_5", source: "lead_ask_feedback", target: "lead_branch_interest", sourceHandle: "default" },
+  { id: "e_lead_6", source: "lead_branch_interest", target: "lead_handoff", sourceHandle: "true" },
+  { id: "e_lead_7", source: "lead_branch_interest", target: "lead_nurture_msg", sourceHandle: "false" },
+  { id: "e_lead_8", source: "lead_handoff", target: "lead_end", sourceHandle: "default" },
+  { id: "e_lead_9", source: "lead_nurture_msg", target: "lead_end", sourceHandle: "default" }
+];
+
+const MULTI_CHANNEL_LEAD_GEN_VARIABLES = {
+  user_interest: { type: "STRING", label: "User Interest Response" },
+  lead_score: { type: "NUMBER", label: "Lead Score", defaultValue: 60 }
+};
+
+// =========================================================================
+// 7. BLUEPRINT: UNIVERSAL DYNAMIC BOOKING & RESERVATION ENGINE
+// =========================================================================
+const UNIVERSAL_DYNAMIC_BOOKING_NODES = [
+  {
+    id: "ub_start",
+    type: "TRIGGER_WHATSAPP",
+    title: "Reservation Trigger",
+    data: {
+      triggerType: "KEYWORD",
+      keywords: ["book", "reserve", "appointment", "schedule", "stay"],
+      matchType: "CONTAINS"
+    },
+    config: {
+      triggerType: "KEYWORD",
+      keywords: ["book", "reserve", "appointment", "schedule", "stay"],
+      matchType: "CONTAINS"
+    },
+    position: { x: 400, y: 50 }
+  },
+  {
+    id: "ub_welcome",
+    type: "SEND_MESSAGE",
+    title: "Booking Welcome",
+    data: {
+      messageText: "🗓️ *Welcome to Dynamic Reservations!* ✨\n\nLet's check real-time availability and lock in your reservation in under 60 seconds."
+    },
+    config: {
+      text: "🗓️ *Welcome to Dynamic Reservations!* ✨\n\nLet's check real-time availability and lock in your reservation in under 60 seconds."
+    },
+    position: { x: 400, y: 160 }
+  },
+  {
+    id: "ub_catalog",
+    type: "CATALOG_BOOKING",
+    title: "Check Inventory Availability",
+    data: {
+      action: "CHECK_AVAILABILITY",
+      prompt: "Please select an available room or package:",
+      variable: "selected_item"
+    },
+    config: {
+      action: "CHECK_AVAILABILITY",
+      prompt: "Please select an available room or package:",
+      variable: "selected_item"
+    },
+    position: { x: 400, y: 270 }
+  },
+  {
+    id: "ub_date",
+    type: "COLLECT_INPUT",
+    title: "Input Reservation Date",
+    data: {
+      prompt: "📅 Please enter your requested date (e.g. YYYY-MM-DD or say *tomorrow*):",
+      variable: "booking_date",
+      validationType: "DATE"
+    },
+    config: {
+      prompt: "📅 Please enter your requested date (e.g. YYYY-MM-DD or say *tomorrow*):",
+      variable: "booking_date",
+      validation: { type: "DATE" }
+    },
+    position: { x: 400, y: 380 }
+  },
+  {
+    id: "ub_name",
+    type: "COLLECT_INPUT",
+    title: "Input Customer Name",
+    data: {
+      prompt: "👤 Please enter your full name for the booking confirmation:",
+      variable: "customer_name",
+      validationType: "ANY"
+    },
+    config: {
+      prompt: "👤 Please enter your full name for the booking confirmation:",
+      variable: "customer_name",
+      validation: { type: "ANY" }
+    },
+    position: { x: 400, y: 490 }
+  },
+  {
+    id: "ub_crm",
+    type: "CRM_UPSERT",
+    title: "Create Reservation Record",
+    data: {
+      pipelineName: "Universal Booking Pipeline",
+      stageName: "Booking Requested",
+      dealValue: 8500,
+      leadScore: 80,
+      tags: ["Dynamic Booking", "Direct WhatsApp"],
+      recordTitle: "{{customer_name}} - {{booking_date}}"
+    },
+    config: {
+      pipelineName: "Universal Booking Pipeline",
+      stageName: "Booking Requested",
+      dealValue: 8500,
+      leadScore: 80,
+      tags: ["Dynamic Booking", "Direct WhatsApp"],
+      recordTitle: "{{customer_name}} - {{booking_date}}"
+    },
+    position: { x: 400, y: 600 }
+  },
+  {
+    id: "ub_confirm_msg",
+    type: "SEND_MESSAGE",
+    title: "Booking Acknowledgment",
+    data: {
+      messageText: "✅ *Reservation Request Received!*\n\nDear *{{customer_name}}*, your booking for *{{booking_date}}* is recorded. Our team is verifying room allocation and will send instant confirmation shortly."
+    },
+    config: {
+      text: "✅ *Reservation Request Received!*\n\nDear *{{customer_name}}*, your booking for *{{booking_date}}* is recorded. Our team is verifying room allocation and will send instant confirmation shortly."
+    },
+    position: { x: 400, y: 710 }
+  },
+  {
+    id: "ub_end",
+    type: "END",
+    title: "End Booking Journey",
+    data: {
+      reason: "COMPLETED"
+    },
+    config: {
+      reason: "COMPLETED"
+    },
+    position: { x: 400, y: 820 }
+  }
+];
+
+const UNIVERSAL_DYNAMIC_BOOKING_TRANSITIONS = [
+  { id: "e_ub_1", source: "ub_start", target: "ub_welcome", sourceHandle: "default" },
+  { id: "e_ub_2", source: "ub_welcome", target: "ub_catalog", sourceHandle: "default" },
+  { id: "e_ub_3", source: "ub_catalog", target: "ub_date", sourceHandle: "available" },
+  { id: "e_ub_3b", source: "ub_catalog", target: "ub_date", sourceHandle: "default" },
+  { id: "e_ub_4", source: "ub_date", target: "ub_name", sourceHandle: "default" },
+  { id: "e_ub_5", source: "ub_name", target: "ub_crm", sourceHandle: "default" },
+  { id: "e_ub_6", source: "ub_crm", target: "ub_confirm_msg", sourceHandle: "default" },
+  { id: "e_ub_7", source: "ub_confirm_msg", target: "ub_end", sourceHandle: "default" }
+];
+
+const UNIVERSAL_DYNAMIC_BOOKING_VARIABLES = {
+  customer_name: { type: "STRING", label: "Customer Full Name" },
+  booking_date: { type: "DATE", label: "Reservation Date" },
+  selected_item: { type: "STRING", label: "Selected Catalog Item" }
+};
+
 const DEFAULT_FLOW_TEMPLATES = [
   {
     slug: "hospitality-booking-quote-journey",
@@ -826,6 +1380,39 @@ const DEFAULT_FLOW_TEMPLATES = [
     nodes: SALES_QUOTATION_B2B_NODES,
     transitions: SALES_QUOTATION_B2B_TRANSITIONS,
     variables: SALES_QUOTATION_B2B_VARIABLES,
+    is_system: 1
+  },
+  {
+    slug: "b2b-sales-qualification-demo",
+    title: "B2B Enterprise Sales Qualification & Auto-Routing",
+    description: "Multi-stage enterprise B2B sales funnel with seat intake, dynamic lead score calculation, CRM deal registration, automated webhook notification, and intelligent delayed follow-up.",
+    industry: "B2B_SAAS",
+    category: "SALES",
+    nodes: B2B_SALES_QUALIFICATION_NODES,
+    transitions: B2B_SALES_QUALIFICATION_TRANSITIONS,
+    variables: B2B_SALES_QUALIFICATION_VARIABLES,
+    is_system: 1
+  },
+  {
+    slug: "multi-channel-lead-gen-drip",
+    title: "Multi-Channel Lead Generation & Nurture Drip",
+    description: "Cross-channel lead capture from web forms and WhatsApp with instant brochure delivery, CRM contact sync, time-delayed nurture pulse, and customer response branching.",
+    industry: "LEAD_GEN",
+    category: "LEAD_GEN",
+    nodes: MULTI_CHANNEL_LEAD_GEN_NODES,
+    transitions: MULTI_CHANNEL_LEAD_GEN_TRANSITIONS,
+    variables: MULTI_CHANNEL_LEAD_GEN_VARIABLES,
+    is_system: 1
+  },
+  {
+    slug: "universal-dynamic-booking",
+    title: "Universal Dynamic Catalog Booking & Reservation Engine",
+    description: "Industry-agnostic booking engine supporting hotels, clinic appointments, rentals, and salon visits with catalog availability check, date intake, and pipeline synchronization.",
+    industry: "BOOKING",
+    category: "BOOKING",
+    nodes: UNIVERSAL_DYNAMIC_BOOKING_NODES,
+    transitions: UNIVERSAL_DYNAMIC_BOOKING_TRANSITIONS,
+    variables: UNIVERSAL_DYNAMIC_BOOKING_VARIABLES,
     is_system: 1
   },
   {

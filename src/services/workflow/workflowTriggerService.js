@@ -1,0 +1,296 @@
+const crypto = require("crypto");
+const { db } = require("../../config/database");
+
+/**
+ * Workflow Trigger Service
+ * Manages trigger indexing on flow publish, inbound trigger matching, and external webhook execution.
+ */
+class WorkflowTriggerService {
+  /**
+   * Syncs and indexes triggers for a published flow.
+   * Scans nodes for TRIGGER_WHATSAPP, TRIGGER_EVENT, and START nodes.
+   */
+  syncFlowTriggers(tenantId = 1, flowId, nodes = []) {
+    if (!flowId || !Array.isArray(nodes)) return;
+
+    // Remove existing triggers for this flow
+    db.prepare(`
+      DELETE FROM workflow_triggers
+      WHERE tenant_id = ? AND flow_id = ?
+    `).run(Number(tenantId) || 1, String(flowId));
+
+    const insertStmt = db.prepare(`
+      INSERT INTO workflow_triggers (
+        tenant_id, flow_id, trigger_key, trigger_type, match_config_json,
+        secret_token, priority, active_status, delete_status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW())
+    `);
+
+    for (const node of nodes) {
+      const type = node.type;
+      const data = node.data || {};
+
+      if (type === "TRIGGER_WHATSAPP" || type === "START") {
+        const triggerType = data.triggerType || "KEYWORD";
+        const rawKeywords = data.keywords || (data.keyword ? [data.keyword] : []);
+        const keywords = Array.isArray(rawKeywords)
+          ? rawKeywords.map(k => String(k).trim()).filter(Boolean)
+          : String(rawKeywords || "").split(",").map(k => k.trim()).filter(Boolean);
+
+        const matchType = data.matchType || "CONTAINS"; // EXACT, CONTAINS, REGEX
+        const triggerKey = data.triggerKey || `trg_${flowId}_${node.id}`.replace(/[^a-zA-Z0-9_]/g, "_");
+
+        const configJson = JSON.stringify({
+          nodeId: node.id,
+          nodeType: type,
+          keywords,
+          matchType,
+          ignoreCase: data.ignoreCase !== false,
+          priority: data.priority || 100
+        });
+
+        insertStmt.run(
+          Number(tenantId) || 1,
+          String(flowId),
+          triggerKey,
+          triggerType,
+          configJson,
+          null,
+          data.priority || 100
+        );
+      } else if (type === "TRIGGER_EVENT") {
+        const eventType = data.eventType || "WEBHOOK";
+        const triggerKey = data.triggerKey || `hook_${flowId}_${node.id}`.replace(/[^a-zA-Z0-9_]/g, "_");
+        const secret = data.secretToken || data.webhookSecret || crypto.randomBytes(16).toString("hex");
+
+        const configJson = JSON.stringify({
+          nodeId: node.id,
+          nodeType: type,
+          eventType,
+          eventName: data.eventName || "incoming_event",
+          payloadMapping: data.payloadMapping || {},
+          fieldMappings: data.fieldMappings || {}
+        });
+
+        insertStmt.run(
+          Number(tenantId) || 1,
+          String(flowId),
+          triggerKey,
+          eventType,
+          configJson,
+          secret,
+          data.priority || 50
+        );
+      }
+    }
+  }
+
+  /**
+   * Deactivates all triggers for an unpublished/paused/archived flow.
+   */
+  deactivateFlowTriggers(tenantId = 1, flowId) {
+    if (!flowId) return;
+    db.prepare(`
+      UPDATE workflow_triggers
+      SET active_status = 0, updated_at = NOW()
+      WHERE tenant_id = ? AND flow_id = ?
+    `).run(Number(tenantId) || 1, String(flowId));
+  }
+
+  /**
+   * Matches inbound message text against registered active triggers.
+   * Returns { flowId, nodeId, triggerKey, triggerType } or null.
+   */
+  matchInboundTrigger(tenantId = 1, { text = "", phone = "", event = null } = {}) {
+    const rawTriggers = db.prepare(`
+      SELECT t.*, f.status as flow_status
+      FROM workflow_triggers t
+      LEFT JOIN conversation_flows f ON t.flow_id = f.id
+      WHERE t.tenant_id = ? 
+        AND t.active_status = 1 
+        AND t.delete_status = 0
+        AND (f.status IS NULL OR f.status = 'PUBLISHED')
+      ORDER BY t.priority ASC, t.id ASC
+    `).all(Number(tenantId) || 1);
+
+    if (!rawTriggers || rawTriggers.length === 0) return null;
+
+    const normalizedText = String(text || "").trim();
+
+    for (const trg of rawTriggers) {
+      let config = {};
+      try {
+        config = JSON.parse(trg.match_config_json || "{}");
+      } catch (e) {
+        continue;
+      }
+
+      if (trg.trigger_type === "KEYWORD" || trg.trigger_type === "INBOUND_MESSAGE") {
+        const keywords = config.keywords || [];
+        if (!keywords || keywords.length === 0) {
+          // Empty keywords on a START node can act as default catch-all if explicitly configured
+          if (config.nodeType === "START" && config.isCatchAll) {
+            return {
+              flowId: trg.flow_id,
+              nodeId: config.nodeId,
+              triggerKey: trg.trigger_key,
+              triggerType: trg.trigger_type
+            };
+          }
+          continue;
+        }
+
+        const matchType = config.matchType || "CONTAINS";
+        const ignoreCase = config.ignoreCase !== false;
+        const testStr = ignoreCase ? normalizedText.toLowerCase() : normalizedText;
+
+        for (const kw of keywords) {
+          const targetKw = ignoreCase ? String(kw).toLowerCase().trim() : String(kw).trim();
+          if (!targetKw) continue;
+
+          let isMatch = false;
+          if (matchType === "EXACT") {
+            isMatch = (testStr === targetKw);
+          } else if (matchType === "REGEX") {
+            try {
+              const regex = new RegExp(targetKw, ignoreCase ? "i" : "");
+              isMatch = regex.test(normalizedText);
+            } catch (e) {
+              isMatch = false;
+            }
+          } else {
+            // Default: CONTAINS
+            isMatch = testStr.includes(targetKw);
+          }
+
+          if (isMatch) {
+            return {
+              flowId: trg.flow_id,
+              nodeId: config.nodeId,
+              triggerKey: trg.trigger_key,
+              triggerType: trg.trigger_type,
+              matchedKeyword: kw
+            };
+          }
+        }
+      } else if (trg.trigger_type === "EVENT" && event) {
+        if (config.eventName && config.eventName === event) {
+          return {
+            flowId: trg.flow_id,
+            nodeId: config.nodeId,
+            triggerKey: trg.trigger_key,
+            triggerType: trg.trigger_type
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Executes an external webhook trigger by triggerKey.
+   * POST /api/v1/workflows/hooks/:triggerKey
+   */
+  async executeWebhookTrigger(triggerKey, payload = {}, headers = {}) {
+    if (!triggerKey) {
+      return { success: false, statusCode: 400, message: "Missing triggerKey parameter" };
+    }
+
+    const trg = db.prepare(`
+      SELECT t.*, f.status as flow_status
+      FROM workflow_triggers t
+      LEFT JOIN conversation_flows f ON t.flow_id = f.id
+      WHERE t.trigger_key = ? 
+        AND t.active_status = 1 
+        AND t.delete_status = 0
+      LIMIT 1
+    `).get(String(triggerKey));
+
+    if (!trg || (trg.flow_status && trg.flow_status !== 'PUBLISHED')) {
+      return {
+        success: false,
+        statusCode: 404,
+        message: "Trigger key not found, inactive, or flow is not published"
+      };
+    }
+
+    // Verify secret token if configured
+    if (trg.secret_token) {
+      const providedSecret = headers["x-webhook-secret"] ||
+                             headers["authorization"]?.replace(/^Bearer\s+/i, "") ||
+                             payload.secret ||
+                             payload.secret_token;
+      if (!providedSecret || providedSecret !== trg.secret_token) {
+        return {
+          success: false,
+          statusCode: 401,
+          message: "Unauthorized: Invalid or missing webhook secret"
+        };
+      }
+    }
+
+    let config = {};
+    try {
+      config = JSON.parse(trg.match_config_json || "{}");
+    } catch (e) {
+      config = {};
+    }
+
+    // Extract recipient phone number
+    const rawPhone = payload.phone ||
+                     payload.to ||
+                     payload.recipient ||
+                     payload.customer_phone ||
+                     payload.contact?.phone ||
+                     payload.data?.phone;
+
+    if (!rawPhone) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: "Missing recipient phone in payload (expected 'phone', 'to', or 'customer_phone')"
+      };
+    }
+
+    const cleanPhone = String(rawPhone).replace(/\D/g, "");
+    if (!cleanPhone || cleanPhone.length < 8) {
+      return {
+        success: false,
+        statusCode: 400,
+        message: "Invalid recipient phone number format"
+      };
+    }
+
+    const conversationFlowEngine = require("../conversationFlowEngine");
+
+    // Process turn starting at target trigger node
+    const result = await conversationFlowEngine.processTurn({
+      senderPhone: cleanPhone,
+      userInput: payload.text || payload.message || "[Trigger Event: Inbound Webhook]",
+      userPayload: payload,
+      startFlowId: trg.flow_id,
+      startNodeId: config.nodeId,
+      context: {
+        tenantId: trg.tenant_id,
+        channel: "WEBHOOK",
+        triggerKey: trg.trigger_key,
+        externalPayload: payload,
+        isSimulation: Boolean(payload.isSimulation)
+      }
+    });
+
+    return {
+      success: true,
+      statusCode: 200,
+      flowId: trg.flow_id,
+      nodeId: config.nodeId,
+      recipientPhone: cleanPhone,
+      sessionId: result?.sessionId || null,
+      replyText: result?.replyText || null,
+      replyInteractive: result?.replyInteractive || null
+    };
+  }
+}
+
+module.exports = new WorkflowTriggerService();

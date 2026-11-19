@@ -54,6 +54,12 @@ async function testFreshDeployment() {
   const ratePlans = freshDb.prepare('SELECT * FROM hospitality_rate_plans').all();
   console.log('10. Rate plans seeded:', ratePlans.length);
 
+  const crmPipelines = freshDb.prepare('SELECT * FROM crm_pipelines').all();
+  console.log('11. CRM Pipelines seeded:', crmPipelines.length, '-', crmPipelines.map(p => p.name).join(', '));
+  if (crmPipelines.length < 3) {
+    throw new Error('Expected at least 3 seeded CRM pipelines');
+  }
+
   freshDb.close();
 
   // Cleanup test database

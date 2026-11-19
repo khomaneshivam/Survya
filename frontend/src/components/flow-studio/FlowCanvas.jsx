@@ -23,7 +23,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   AlertCircle,
-  Plus
+  Plus,
+  BarChart3
 } from 'lucide-react';
 
 import CustomFlowNode from './CustomFlowNode';
@@ -47,6 +48,7 @@ function FlowCanvasInner({
   transitions: sarvyaTransitions = [],
   selectedNodeId,
   activeSimulatedNodeId,
+  nodeMetrics = {},
   onSelectNode,
   onUpdateNodes,
   onUpdateTransitions
@@ -61,6 +63,7 @@ function FlowCanvasInner({
   // Canvas Settings & State
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [showMiniMap] = useState(true);
+  const [showAnalyticsOverlay, setShowAnalyticsOverlay] = useState(false);
   const [showValidationPopover, setShowValidationPopover] = useState(false);
 
   // Undo / Redo history stack (up to 30 snapshots)
@@ -205,6 +208,8 @@ function FlowCanvasInner({
           ...n.data,
           activeSimulatedNodeId,
           validationIssues: nodeIssues,
+          showAnalyticsOverlay,
+          metrics: nodeMetrics?.[n.id] || null,
           onDuplicateNode: (nodeId) => handleDuplicateNode(nodeId),
           onDeleteNode: (nodeId) => handleDeleteNode(nodeId)
         }
@@ -221,7 +226,7 @@ function FlowCanvasInner({
 
     setRfNodes(enrichedNodes);
     setRfEdges(enrichedEdges);
-  }, [sarvyaNodes, sarvyaTransitions, selectedNodeId, activeSimulatedNodeId, validationReport, handleDuplicateNode, handleDeleteNode, handleDeleteEdge]);
+  }, [sarvyaNodes, sarvyaTransitions, selectedNodeId, activeSimulatedNodeId, showAnalyticsOverlay, nodeMetrics, validationReport, handleDuplicateNode, handleDeleteNode, handleDeleteEdge]);
 
   // Auto-pan / center on simulated active node
   useEffect(() => {
@@ -604,6 +609,31 @@ function FlowCanvasInner({
                 }}
               >
                 <Redo2 size={13} />
+              </button>
+
+              <div style={{ width: '1px', height: '18px', background: '#E5E5E8', margin: '0 2px' }} />
+
+              {/* Analytics Overlay Toggle */}
+              <button
+                type="button"
+                onClick={() => setShowAnalyticsOverlay(!showAnalyticsOverlay)}
+                title="Toggle Live Visual Analytics Overlay"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '5px 9px',
+                  borderRadius: '6px',
+                  border: '1px solid #E2E8F0',
+                  background: showAnalyticsOverlay ? '#DCFCE7' : '#FFFFFF',
+                  color: showAnalyticsOverlay ? '#166534' : '#64748B',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                <BarChart3 size={13} color={showAnalyticsOverlay ? '#166534' : '#64748B'} />
+                <span>Analytics</span>
               </button>
 
               <div style={{ width: '1px', height: '18px', background: '#E5E5E8', margin: '0 2px' }} />
