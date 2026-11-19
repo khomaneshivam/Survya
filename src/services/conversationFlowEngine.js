@@ -142,6 +142,94 @@ function evaluateConditionRule(valA, operator, valB) {
 }
 
 /**
+ * Robust option matcher for buttons, lists, and quoted WhatsApp messages
+ */
+function matchOption(rawOptions, choiceValue, userInput, isInitialPreAnswer = false) {
+  if (!Array.isArray(rawOptions) || rawOptions.length === 0) return null;
+  const cVal = String(choiceValue || "").toLowerCase().trim();
+  const uInput = String(userInput || "").toLowerCase().trim();
+
+  // 1. If choiceValue is provided from userPayload (button/list click or explicit choice), match with highest priority
+  if (cVal && cVal !== uInput) {
+    const directMatch = rawOptions.find(o =>
+      String(o.id).toLowerCase() === cVal ||
+      String(o.value).toLowerCase() === cVal ||
+      String(o.title).toLowerCase() === cVal
+    );
+    if (directMatch) return directMatch;
+  }
+
+  // Extract lines from userInput if multiline (e.g. WhatsApp quoted reply)
+  const lines = String(userInput || "").split("\n").map(l => l.trim()).filter(Boolean);
+  const lastLine = lines.length > 0 ? lines[lines.length - 1].toLowerCase().trim() : "";
+
+  // 2. Direct match on last line of multiline userInput
+  if (lastLine) {
+    const lastLineMatch = rawOptions.find(o => {
+      const oId = String(o.id).toLowerCase();
+      const oVal = String(o.value).toLowerCase();
+      const oTitle = String(o.title).toLowerCase();
+      const oTitleClean = oTitle.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
+      const lastLineClean = lastLine.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
+      return (
+        oId === lastLine ||
+        oVal === lastLine ||
+        oTitle === lastLine ||
+        (oTitleClean && oTitleClean === lastLineClean)
+      );
+    });
+    if (lastLineMatch) return lastLineMatch;
+  }
+
+  // 3. Exact match on entire userInput
+  if (uInput) {
+    const exactMatch = rawOptions.find(o => {
+      const oId = String(o.id).toLowerCase();
+      const oVal = String(o.value).toLowerCase();
+      const oTitle = String(o.title).toLowerCase();
+      const oTitleClean = oTitle.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
+      const uInputClean = uInput.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
+      return (
+        oId === uInput ||
+        oVal === uInput ||
+        oTitle === uInput ||
+        (oTitleClean && oTitleClean === uInputClean)
+      );
+    });
+    if (exactMatch) return exactMatch;
+  }
+
+  // 4. Check if last line contains full option title (for quoted replies where button title was clicked)
+  if (lastLine) {
+    const lastLineContains = rawOptions.find(o => {
+      const oTitle = String(o.title).toLowerCase().trim();
+      const oTitleClean = oTitle.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
+      const lastLineClean = lastLine.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
+      return (
+        lastLine.includes(oTitle) ||
+        (oTitleClean && lastLineClean.includes(oTitleClean))
+      );
+    });
+    if (lastLineContains) return lastLineContains;
+  }
+
+  // If waiting node (not initial turn pre-answering), allow looser matching on title/keywords
+  if (!isInitialPreAnswer) {
+    const textToScan = cVal || uInput;
+    if (textToScan) {
+      const containsMatch = rawOptions.find(o => {
+        const oTitle = String(o.title).toLowerCase().trim();
+        const oTitleClean = oTitle.replace(/[\u{1F600}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
+        return textToScan.includes(oTitle) || (oTitleClean && textToScan.includes(oTitleClean));
+      });
+      if (containsMatch) return containsMatch;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Execute registered business actions safely
  */
 function executeBusinessAction(actionName, inputs = {}, context = {}) {
@@ -437,11 +525,11 @@ async function processTurn({
 
     if (session) {
       // Inactivity timeout / connection open limit check (Strict Mode)
-      let timeoutMinutes = 30;
+      let timeoutMinutes = 1440;
       try {
         const { getSetting } = require("../config/database");
-        timeoutMinutes = parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "30", 10);
-        if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 30;
+        timeoutMinutes = parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "1440", 10);
+        if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 1440;
       } catch (e) {}
 
       const lastInteractionTime = session.last_interaction_at ? new Date(session.last_interaction_at).getTime() : new Date(session.created_at).getTime();
@@ -533,11 +621,11 @@ async function processTurn({
 
       const startNode = nodes.find(n => n.type === "START") || nodes[0];
 
-      let timeoutMinutes = 30;
+      let timeoutMinutes = 1440;
       try {
         const { getSetting } = require("../config/database");
-        timeoutMinutes = parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "30", 10);
-        if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 30;
+        timeoutMinutes = parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "1440", 10);
+        if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 1440;
       } catch (e) {}
 
       // Create new session in DB with calculated expires_at (Strict Mode)
@@ -603,12 +691,13 @@ async function processTurn({
   let interactivePayload = null;
   let stepCount = 0;
   const maxSteps = 25; // prevent infinite loops
+  let inputConsumed = false;
 
   // 3. Process Input on Waiting Node
   const isMenuOrConfirmation = currentNode.type === "BUTTON_MENU" || currentNode.type === "SELECTION" || currentNode.type === "CONFIRMATION";
   const isInputField = currentNode.type === "INPUT_COLLECTION" || currentNode.type === "QUESTION";
 
-  if (isMenuOrConfirmation && userInput) {
+  if (isMenuOrConfirmation && (userInput || userPayload)) {
     const rawOptions = currentNode.config?.options && currentNode.config.options.length > 0
       ? currentNode.config.options
       : [
@@ -618,21 +707,15 @@ async function processTurn({
         ];
 
     const choiceValue = userPayload?.id || userPayload?.value || userInput;
-    const normInput = String(choiceValue).toLowerCase().trim();
-
-    const matchedOpt = rawOptions.find(o =>
-      String(o.id).toLowerCase() === normInput ||
-      String(o.value).toLowerCase() === normInput ||
-      String(o.title).toLowerCase() === normInput ||
-      normInput.includes(String(o.title).toLowerCase()) ||
-      normInput.includes(String(o.value).toLowerCase())
-    );
+    const matchedOpt = matchOption(rawOptions, choiceValue, userInput);
+    const normInput = String(choiceValue || userInput).toLowerCase().trim();
 
     const valToStore = matchedOpt ? matchedOpt.value : (normInput.includes("confirm") || normInput.includes("yes") || normInput.includes("pay") ? "CONFIRM" : normInput.includes("modify") || normInput.includes("change") ? "MODIFY" : normInput.includes("staff") || normInput.includes("human") || normInput.includes("agent") ? "STAFF" : userInput);
 
     const targetVar = currentNode.config?.variable || (currentNode.type === "CONFIRMATION" ? "confirmation_choice" : "menu_selection");
     collectedData[targetVar] = valToStore;
     variableContext[targetVar] = valToStore;
+    inputConsumed = true;
 
     executionLogs.push(`User answered [${currentNode.type}] '${currentNode.id}': selected '${valToStore}' into '${targetVar}'`);
 
@@ -693,6 +776,7 @@ async function processTurn({
       collectedData[currentNode.config.variable] = parsedVal;
       variableContext[currentNode.config.variable] = parsedVal;
     }
+    inputConsumed = true;
 
     executionLogs.push(`User input saved on [${currentNode.type}] '${currentNode.id}': ${JSON.stringify(parsedVal)}`);
 
@@ -856,9 +940,6 @@ async function processTurn({
     }
 
     if (currentNode.type === "CONFIRMATION") {
-      const prompt = interpolateVariables(currentNode.config?.prompt || "Please confirm your selection:", variableContext);
-      accumulatedReplies.push(prompt);
-
       const rawOptions = currentNode.config?.options && currentNode.config.options.length > 0
         ? currentNode.config.options
         : [
@@ -866,6 +947,24 @@ async function processTurn({
             { id: "opt_modify", title: "Modify Details ✏️", value: "MODIFY" },
             { id: "opt_staff", title: "Talk to Staff 💬", value: "STAFF" }
           ];
+
+      const choiceValue = userPayload?.id || userPayload?.value || userInput;
+      if (!inputConsumed && (userInput || userPayload)) {
+        const matchedOpt = matchOption(rawOptions, choiceValue, userInput, true);
+        if (matchedOpt) {
+          const targetVar = currentNode.config?.variable || "confirmation_choice";
+          collectedData[targetVar] = matchedOpt.value;
+          variableContext[targetVar] = matchedOpt.value;
+          inputConsumed = true;
+          executionLogs.push(`User input pre-answered [${currentNode.type}] '${currentNode.id}': selected '${matchedOpt.value}' into '${targetVar}'`);
+          const nextTargets = transitionsFrom.get(currentNode.id) || [];
+          currentNode = nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null;
+          continue;
+        }
+      }
+
+      const prompt = interpolateVariables(currentNode.config?.prompt || "Please confirm your selection:", variableContext);
+      accumulatedReplies.push(prompt);
 
       const formattedOptions = rawOptions.map(o => ({
         id: o.id,
@@ -884,10 +983,26 @@ async function processTurn({
     }
 
     if (currentNode.type === "BUTTON_MENU" || currentNode.type === "SELECTION") {
+      const rawOptions = currentNode.config?.options || [];
+      const choiceValue = userPayload?.id || userPayload?.value || userInput;
+
+      if (!inputConsumed && (userInput || userPayload)) {
+        const matchedOpt = matchOption(rawOptions, choiceValue, userInput, true);
+        if (matchedOpt) {
+          const targetVar = currentNode.config?.variable || "menu_selection";
+          collectedData[targetVar] = matchedOpt.value;
+          variableContext[targetVar] = matchedOpt.value;
+          inputConsumed = true;
+          executionLogs.push(`User intent pre-selected [${currentNode.type}] '${currentNode.id}': '${matchedOpt.value}' into '${targetVar}'`);
+          const nextTargets = transitionsFrom.get(currentNode.id) || [];
+          currentNode = nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null;
+          continue;
+        }
+      }
+
       const prompt = interpolateVariables(currentNode.config?.prompt || "Please choose:", variableContext);
       accumulatedReplies.push(prompt);
 
-      const rawOptions = currentNode.config?.options || [];
       const formattedOptions = rawOptions.map(o => ({
         id: o.id,
         title: interpolateVariables(o.title || o.id, variableContext).slice(0, 20), // 20 chars limit
@@ -942,11 +1057,11 @@ async function processTurn({
 
   // Update DB session if not in simulation mode
   if (!isSimulation && session) {
-    let timeoutMinutes = 30;
+    let timeoutMinutes = 1440;
     try {
       const { getSetting } = require("../config/database");
-      timeoutMinutes = parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "30", 10);
-      if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 30;
+      timeoutMinutes = parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "1440", 10);
+      if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 1440;
     } catch (e) {}
 
     db.prepare(`

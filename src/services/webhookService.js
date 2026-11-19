@@ -1794,8 +1794,10 @@ class WebhookService {
       const isInteractiveAction = Boolean(interactiveActionId || isFlowReply);
 
       // 6b. Dynamic Conversation Flow & Automation Studio Engine
-      // If client is configured in FLOW_STUDIO mode or an active studio session is open:
-      const isStudioMode = autoReplySettings.engineMode === "FLOW_STUDIO" || autoReplySettings.engineMode === "CONVERSATION_FLOW";
+      // If client is configured in FLOW_STUDIO, CONVERSATION_FLOW, or HOSPITALITY_FLOW mode, or an active studio session is open:
+      const isStudioMode = autoReplySettings.engineMode === "FLOW_STUDIO" || 
+                           autoReplySettings.engineMode === "CONVERSATION_FLOW" ||
+                           autoReplySettings.engineMode === "HOSPITALITY_FLOW";
       const flowEngine = require("./conversationFlowEngine");
       let activeFlowSession = db.prepare(`
         SELECT id, last_interaction_at, expires_at FROM conversation_flow_sessions
@@ -1805,7 +1807,7 @@ class WebhookService {
 
       // Check if previous session timed out (Connection Open Time Limit)
       if (activeFlowSession) {
-        const timeoutMins = autoReplySettings.sessionTimeoutMinutes || 30;
+        const timeoutMins = autoReplySettings.sessionTimeoutMinutes || 1440;
         const lastMs = activeFlowSession.last_interaction_at ? new Date(activeFlowSession.last_interaction_at).getTime() : 0;
         const expMs = activeFlowSession.expires_at ? new Date(activeFlowSession.expires_at).getTime() : null;
         const isSessionTimedOut = (expMs && Date.now() > expMs) || (Date.now() - lastMs > timeoutMins * 60 * 1000);
@@ -1852,7 +1854,7 @@ class WebhookService {
           const flowResult = await flowEngine.processTurn({
             senderPhone: cleanPhone,
             userInput: effectiveText,
-            userPayload: rawMsg?.interactive?.button_reply || rawMsg?.interactive?.list_reply || null,
+            userPayload: rawMsg?.interactive?.button_reply || rawMsg?.interactive?.list_reply || (interactiveActionId ? { id: interactiveActionId, title: effectiveText } : null),
             context: {
               tenantId: 1,
               propertyId: 1,
@@ -2428,6 +2430,12 @@ class WebhookService {
         effectiveText = "how to reach location directions";
       } else if (interactiveActionId === "btn_table_order") {
         effectiveText = "table order dining menu";
+      } else if (interactiveActionId === "opt_booking" || lower.includes("book a stay")) {
+        effectiveText = "Book a Stay";
+      } else if (interactiveActionId === "opt_rooms" || lower.includes("view villas")) {
+        effectiveText = "Show room options";
+      } else if (interactiveActionId === "opt_concierge" || lower.includes("ask concierge")) {
+        effectiveText = "Talk to Staff";
       } else if (interactiveActionId && interactiveActionId.startsWith("select_room_")) {
         const roomId = parseInt(interactiveActionId.replace("select_room_", ""), 10);
         try {
@@ -2439,8 +2447,9 @@ class WebhookService {
       // 7. Human Handoff Keyword / Staff Request
       if (
         interactiveActionId === "btn_staff" ||
+        interactiveActionId === "opt_concierge" ||
         (customBtn3 && lower === customBtn3) ||
-        /\b(call|phone|speak|talk|agent|human|manager|executive|desk|staff|someone|person|call back|help me|reception)\b/i.test(lower)
+        /\b(call|phone|speak|talk|agent|human|manager|executive|desk|staff|someone|person|call back|help me|reception|concierge)\b/i.test(lower)
       ) {
         // Pause bot for configured duration for this contact
         const pauseMins = autoReplySettings.takeoverPauseMinutes || 60;
@@ -3097,14 +3106,27 @@ class WebhookService {
    * Gets current auto-reply settings
    */
   getAutoReplySettings() {
+    const self = this;
+    const getDefaultOpts = () => {
+      try {
+        if (self && typeof self.getDefaultDynamicOptions === "function") {
+          return self.getDefaultDynamicOptions();
+        }
+      } catch (e) {}
+      if (WebhookService && WebhookService.prototype && typeof WebhookService.prototype.getDefaultDynamicOptions === "function") {
+        return WebhookService.prototype.getDefaultDynamicOptions();
+      }
+      return [];
+    };
+
     const rawOptions = (() => {
       try {
         const raw = getSetting("BOT_DYNAMIC_OPTIONS");
-        if (!raw) return this.getDefaultDynamicOptions();
+        if (!raw) return getDefaultOpts();
         const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) && parsed.length > 0 ? parsed : this.getDefaultDynamicOptions();
+        return Array.isArray(parsed) && parsed.length > 0 ? parsed : getDefaultOpts();
       } catch (e) {
-        return this.getDefaultDynamicOptions();
+        return getDefaultOpts();
       }
     })();
 
