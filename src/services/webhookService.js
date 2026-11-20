@@ -35,6 +35,12 @@ const sendFlowMessage = async (params) => {
   }
   return metaWhatsAppService.sendFlowMessage(params);
 };
+const sendMediaMessage = async (params) => {
+  if (params?.customCredentials?.isSimulation || isSandboxOrTestPhone(params?.to)) {
+    return { success: true, messageId: `mock_media_${Date.now()}` };
+  }
+  return metaWhatsAppService.sendMediaMessage(params);
+};
 const downloadAndSaveInboundMedia = (...args) => metaWhatsAppService.downloadAndSaveInboundMedia(...args);
 
 let hospitalityFlowEngine = null;
@@ -1925,6 +1931,7 @@ class WebhookService {
                     to: cleanPhone,
                     bodyText: flowResult.replyText,
                     buttons,
+                    headerMediaUrl: flowResult.replyInteractive?.mediaUrl || "",
                     footerText: autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa",
                     customCredentials
                   });
@@ -1942,6 +1949,7 @@ class WebhookService {
                       title: (flowResult.replyInteractive.listTitle || "Options").substring(0, 24),
                       rows: listRows
                     }],
+                    headerMediaUrl: flowResult.replyInteractive?.mediaUrl || "",
                     footerText: autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa",
                     customCredentials
                   });
@@ -1957,6 +1965,28 @@ class WebhookService {
                   sentMsgId = txtRes?.messageId || null;
                 } catch (txtErr) {
                   console.warn("[Webhook Flow] Flow interactive fallback text send note:", txtErr.message);
+                }
+              }
+            } else if (flowResult.replyInteractive?.mediaUrl) {
+              try {
+                const mediaRes = await sendMediaMessage({
+                  to: cleanPhone,
+                  type: flowResult.replyInteractive.mediaType?.toLowerCase() || 'image',
+                  mediaUrl: flowResult.replyInteractive.mediaUrl,
+                  caption: flowResult.replyText,
+                  customCredentials
+                });
+                sentMsgId = mediaRes?.messageId || null;
+              } catch (mediaErr) {
+                try {
+                  const txtRes = await sendTextMessage({
+                    to: cleanPhone,
+                    body: flowResult.replyText,
+                    customCredentials
+                  });
+                  sentMsgId = txtRes?.messageId || null;
+                } catch (txtErr) {
+                  console.warn("[Webhook Flow] Flow media fallback text send note:", txtErr.message);
                 }
               }
             } else {
@@ -2978,6 +3008,7 @@ class WebhookService {
                 bodyText: btnBody,
                 buttons,
                 headerText: "Plan Your Stay",
+                headerMediaUrl: autoReplySettings.welcomeMediaUrl || "",
                 footerText: "KonkanTrip Concierge",
                 customCredentials
               });
@@ -3226,6 +3257,7 @@ class WebhookService {
       fallbackMessage: fallbackMsg,
       businessName: getSetting("BOT_BUSINESS_NAME") || "KonkanTrip Beach Resort & Spa",
       welcomeMessage: getSetting("BOT_WELCOME_MESSAGE") || "👋 Hello {{name}}! Welcome to *{{business_name}}*.\n\nHow can we help you today? Select an option below or reply with your travel dates to check real-time availability and live rates! 👇",
+      welcomeMediaUrl: getSetting("BOT_WELCOME_MEDIA_URL") || "",
       button1: getSetting("BOT_WELCOME_BUTTON_1_LABEL") || "This Weekend",
       button2: getSetting("BOT_WELCOME_BUTTON_2_LABEL") || "Tomorrow (2 N)",
       button3: getSetting("BOT_WELCOME_BUTTON_3_LABEL") || "Talk to Staff",
@@ -3341,6 +3373,10 @@ class WebhookService {
     const welcome = payload.welcomeMessage || payload.welcome_message;
     if (welcome !== undefined && String(welcome).trim()) {
       setSetting("BOT_WELCOME_MESSAGE", String(welcome).trim());
+    }
+    if (payload.welcomeMediaUrl !== undefined || payload.welcome_media_url !== undefined) {
+      const media = payload.welcomeMediaUrl ?? payload.welcome_media_url;
+      setSetting("BOT_WELCOME_MEDIA_URL", String(media || "").trim());
     }
     if (payload.button1 !== undefined || payload.button_1 !== undefined || payload.welcomeButton1 !== undefined) {
       const b1 = payload.button1 ?? payload.button_1 ?? payload.welcomeButton1;

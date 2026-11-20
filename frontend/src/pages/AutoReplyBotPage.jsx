@@ -41,7 +41,9 @@ import {
   Tag,
   Copy,
   ChevronDown,
-  Layers
+  Layers,
+  Image,
+  Upload
 } from 'lucide-react';
 
 import FlowCanvas from '../components/flow-studio/FlowCanvas';
@@ -113,6 +115,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
     sessionTimeoutMinutes: 30,
     businessName: 'KonkanTrip Beach Resort & Spa',
     welcomeMessage: '👋 Hello {{name}}! Welcome to *{{business_name}}*.\n\nHow can we help you today? Select an option below or reply with your travel dates to check real-time availability and live rates! 👇',
+    welcomeMediaUrl: '',
     fallbackMessage: 'Hi {{name}}, thank you for reaching out to {{business_name}}! We have received your message and our team will get back to you shortly.',
     button1: 'This Weekend',
     button2: 'Tomorrow (2 N)',
@@ -192,6 +195,36 @@ export default function AutoReplyBotPage({ onNavigate }) {
     return activeToken ? { Authorization: `Bearer ${activeToken}` } : {};
   }, [token]);
 
+  // Upload greeting welcome photo
+  const [uploadingWelcomeMedia, setUploadingWelcomeMedia] = useState(false);
+  const handleUploadWelcomePhoto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingWelcomeMedia(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const tokenVal = token || localStorage.getItem('token');
+      const res = await fetch('/api/upload/media', {
+        method: 'POST',
+        headers: {
+          Authorization: tokenVal ? `Bearer ${tokenVal}` : ''
+        },
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Media upload failed');
+      }
+      setSettings(prev => ({ ...prev, welcomeMediaUrl: data.url || data.relativeUrl }));
+    } catch (err) {
+      alert(`Photo upload failed: ${err.message}`);
+    } finally {
+      setUploadingWelcomeMedia(false);
+      e.target.value = '';
+    }
+  };
+
   // Load flow details & canvas nodes
   const loadFlowDetails = useCallback(async (flowId) => {
     if (!flowId) return;
@@ -245,6 +278,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
           }));
           const loaded = {
             ...resData.data,
+            welcomeMediaUrl: resData.data.welcomeMediaUrl || '',
             fallbackMessage: resData.data.fallbackMessage || resData.data.message || '',
             message: resData.data.fallbackMessage || resData.data.message || '',
             dynamicOptions: loadedOptions
@@ -2315,6 +2349,110 @@ export default function AutoReplyBotPage({ onNavigate }) {
                   </p>
                 </div>
 
+                {/* Welcome Greeting Header Photo Attachment */}
+                <div style={{
+                  padding: '16px',
+                  background: '#F9FAFB',
+                  border: '1px solid #E5E7EB',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: '0.86rem', fontWeight: 700, color: '#111827', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Image size={16} color="#059669" />
+                        <span>Greeting Photo / Header Media (Optional)</span>
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: '#6B7280', marginTop: '2px' }}>
+                        Attach a resort cover photo or welcome banner shown at the top of your WhatsApp interactive buttons message.
+                      </div>
+                    </div>
+                    {settings.welcomeMediaUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setSettings(prev => ({ ...prev, welcomeMediaUrl: '' }))}
+                        style={{
+                          fontSize: '0.74rem',
+                          color: '#EF4444',
+                          background: '#FEE2E2',
+                          border: 'none',
+                          borderRadius: '4px',
+                          padding: '4px 8px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        <Trash2 size={12} />
+                        <span>Remove Photo</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                    {settings.welcomeMediaUrl && (
+                      <div style={{
+                        width: '90px',
+                        height: '70px',
+                        borderRadius: '6px',
+                        overflow: 'hidden',
+                        border: '1px solid #D1D5DB',
+                        flexShrink: 0,
+                        background: '#F3F4F6'
+                      }}>
+                        <img
+                          src={settings.welcomeMediaUrl}
+                          alt="Welcome Preview"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      </div>
+                    )}
+
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          value={settings.welcomeMediaUrl || ''}
+                          onChange={e => setSettings(prev => ({ ...prev, welcomeMediaUrl: e.target.value.trim() }))}
+                          placeholder="https://example.com/resort-welcome.jpg or /uploads/..."
+                          className="input-field"
+                          style={{ flex: 1, padding: '7px 10px', fontSize: '0.82rem' }}
+                        />
+                        <label style={{
+                          padding: '7px 12px',
+                          background: uploadingWelcomeMedia ? '#9CA3AF' : '#059669',
+                          color: '#FFFFFF',
+                          borderRadius: '6px',
+                          fontSize: '0.80rem',
+                          fontWeight: 600,
+                          cursor: uploadingWelcomeMedia ? 'not-allowed' : 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          flexShrink: 0
+                        }}>
+                          <Upload size={14} />
+                          <span>{uploadingWelcomeMedia ? 'Uploading...' : 'Upload Photo'}</span>
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            style={{ display: 'none' }}
+                            disabled={uploadingWelcomeMedia}
+                            onChange={handleUploadWelcomePhoto}
+                          />
+                        </label>
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#9CA3AF' }}>
+                        Supports JPG, PNG, WEBP. Uploaded images are stored securely on your server and linked automatically.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <label style={{ fontSize: '0.84rem', fontWeight: 600 }}>Welcome Message (Interactive / Hospitality)</label>
@@ -3023,6 +3161,16 @@ export default function AutoReplyBotPage({ onNavigate }) {
                     boxShadow: '0 1px 1px rgba(0,0,0,0.1)',
                     whiteSpace: 'pre-line'
                   }}>
+                    {settings.welcomeMediaUrl && (
+                      <div style={{ marginBottom: '8px', borderRadius: '6px', overflow: 'hidden' }}>
+                        <img
+                          src={settings.welcomeMediaUrl}
+                          alt="Welcome Photo"
+                          style={{ width: '100%', maxHeight: '140px', objectFit: 'cover', display: 'block' }}
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      </div>
+                    )}
                     {settings.welcomeMessage
                       .replace(/\{\{name\}\}/g, 'Guest')
                       .replace(/\{\{business_name\}\}/g, settings.businessName || 'KonkanTrip Beach Resort & Spa')}

@@ -977,6 +977,16 @@ async function sendMediaMessage({ to, type = "image", mediaId, mediaUrl, caption
     mediaObject.filename = filename;
   }
 
+  if (customCredentials?.isSimulation || creds?.isSimulation) {
+    return {
+      success: true,
+      messageId: `mock_media_${Date.now()}`,
+      recipient: cleanTo,
+      type: mediaType,
+      mediaObject
+    };
+  }
+
   const url = `${getMetaBaseUrl()}/${creds.phoneNumberId}/messages`;
   const payload = {
     messaging_product: "whatsapp",
@@ -1211,7 +1221,12 @@ async function sendFlowMessage({
     }
   };
 
-  if (headerText && String(headerText).trim()) {
+  if (headerMediaUrl && String(headerMediaUrl).trim()) {
+    interactive.header = {
+      type: "image",
+      image: { link: String(headerMediaUrl).trim() }
+    };
+  } else if (headerText && String(headerText).trim()) {
     interactive.header = {
       type: "text",
       text: String(headerText).trim().substring(0, 60)
@@ -1335,6 +1350,7 @@ async function sendInteractiveButtons({
   bodyText,
   buttons = [],
   headerText = "",
+  headerMediaUrl = "",
   footerText = "",
   customCredentials = null
 }) {
@@ -1375,7 +1391,12 @@ async function sendInteractiveButtons({
     }
   };
 
-  if (headerText && String(headerText).trim()) {
+  if (headerMediaUrl && String(headerMediaUrl).trim()) {
+    interactive.header = {
+      type: "image",
+      image: { link: String(headerMediaUrl).trim() }
+    };
+  } else if (headerText && String(headerText).trim()) {
     interactive.header = {
       type: "text",
       text: String(headerText).trim().substring(0, 60)
@@ -1385,6 +1406,15 @@ async function sendInteractiveButtons({
   if (footerText && String(footerText).trim()) {
     interactive.footer = {
       text: String(footerText).trim().substring(0, 60)
+    };
+  }
+
+  if (customCredentials?.isSimulation || creds?.isSimulation) {
+    return {
+      success: true,
+      messageId: `mock_btn_${Date.now()}`,
+      recipient: cleanTo,
+      interactive
     };
   }
 
@@ -1507,7 +1537,12 @@ async function sendInteractiveList({
     }
   };
 
-  if (headerText && String(headerText).trim()) {
+  if (headerMediaUrl && String(headerMediaUrl).trim()) {
+    interactive.header = {
+      type: "image",
+      image: { link: String(headerMediaUrl).trim() }
+    };
+  } else if (headerText && String(headerText).trim()) {
     interactive.header = {
       type: "text",
       text: String(headerText).trim().substring(0, 60)
@@ -1517,6 +1552,15 @@ async function sendInteractiveList({
   if (footerText && String(footerText).trim()) {
     interactive.footer = {
       text: String(footerText).trim().substring(0, 60)
+    };
+  }
+
+  if (customCredentials?.isSimulation || creds?.isSimulation) {
+    return {
+      success: true,
+      messageId: `mock_btn_${Date.now()}`,
+      recipient: cleanTo,
+      interactive
     };
   }
 

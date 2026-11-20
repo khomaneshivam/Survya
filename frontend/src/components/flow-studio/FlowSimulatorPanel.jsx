@@ -395,6 +395,18 @@ export default function FlowSimulatorPanel({
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word'
                 }}>
+                  {/* Photo / Media Attachment preview in WhatsApp bubble */}
+                  {(m.interactive?.mediaUrl || m.mediaUrl) && (
+                    <div style={{ marginBottom: '8px', borderRadius: '6px', overflow: 'hidden' }}>
+                      <img
+                        src={m.interactive?.mediaUrl || m.mediaUrl}
+                        alt="Message attachment"
+                        style={{ width: '100%', maxHeight: '160px', objectFit: 'cover', display: 'block' }}
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                    </div>
+                  )}
+
                   {m.text}
 
                   {/* Interactive Buttons */}

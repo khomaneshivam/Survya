@@ -46,6 +46,27 @@ const edgeTypes = {
 const EMPTY_OBJECT = Object.freeze({});
 const EMPTY_ARRAY = Object.freeze([]);
 
+// Safe deep cloner avoiding circular structures / DOM fibers
+function safeDeepClone(val) {
+  if (!val) return val;
+  try {
+    const seen = new WeakSet();
+    return JSON.parse(JSON.stringify(val, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (typeof Node !== 'undefined' && value instanceof Node) return undefined;
+        if (typeof Element !== 'undefined' && value instanceof Element) return undefined;
+        if ('__reactFiber' in value || 'stateNode' in value) return undefined;
+        if (seen.has(value)) return undefined;
+        seen.add(value);
+      }
+      return value;
+    }));
+  } catch (e) {
+    if (Array.isArray(val)) return val.map(v => (typeof v === 'object' && v !== null ? { ...v } : v));
+    return typeof val === 'object' && val !== null ? { ...val } : val;
+  }
+}
+
 function FlowCanvasInner({
   nodes: sarvyaNodes = EMPTY_ARRAY,
   transitions: sarvyaTransitions = EMPTY_ARRAY,
@@ -87,8 +108,8 @@ function FlowCanvasInner({
   const recordHistory = useCallback((nodes, transitions) => {
     const past = historyRef.current.past;
     past.push({
-      nodes: JSON.parse(JSON.stringify(nodes)),
-      transitions: JSON.parse(JSON.stringify(transitions))
+      nodes: safeDeepClone(nodes),
+      transitions: safeDeepClone(transitions)
     });
     if (past.length > 30) past.shift();
     historyRef.current.future = [];
@@ -99,8 +120,8 @@ function FlowCanvasInner({
   const handleUndo = useCallback(() => {
     if (historyRef.current.past.length === 0) return;
     const currentSnapshot = {
-      nodes: JSON.parse(JSON.stringify(sarvyaNodes)),
-      transitions: JSON.parse(JSON.stringify(sarvyaTransitions))
+      nodes: safeDeepClone(sarvyaNodes),
+      transitions: safeDeepClone(sarvyaTransitions)
     };
     historyRef.current.future.push(currentSnapshot);
 
@@ -119,8 +140,8 @@ function FlowCanvasInner({
   const handleRedo = useCallback(() => {
     if (historyRef.current.future.length === 0) return;
     const currentSnapshot = {
-      nodes: JSON.parse(JSON.stringify(sarvyaNodes)),
-      transitions: JSON.parse(JSON.stringify(sarvyaTransitions))
+      nodes: safeDeepClone(sarvyaNodes),
+      transitions: safeDeepClone(sarvyaTransitions)
     };
     historyRef.current.past.push(currentSnapshot);
 
@@ -146,7 +167,7 @@ function FlowCanvasInner({
 
       const newId = `node_${original.type.toLowerCase()}_${Date.now().toString(36)}`;
       const duplicated = {
-        ...JSON.parse(JSON.stringify(original)),
+        ...safeDeepClone(original),
         id: newId,
         title: `${original.title || original.type} (Copy)`,
         position: {

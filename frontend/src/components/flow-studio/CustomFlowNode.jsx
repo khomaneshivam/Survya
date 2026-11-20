@@ -263,6 +263,39 @@ function CustomFlowNodeComponent({ id, data, selected }) {
         >
           {data?.title || nodeDef.label}
         </div>
+
+        {/* Media Thumbnail Preview */}
+        {(data?.config?.mediaUrl || data?.mediaUrl) && (
+          <div style={{
+            margin: '4px 0 6px 0',
+            borderRadius: '6px',
+            overflow: 'hidden',
+            height: '52px',
+            background: '#F1F5F9',
+            border: '1px solid #E2E8F0',
+            position: 'relative'
+          }}>
+            <img
+              src={data?.config?.mediaUrl || data?.mediaUrl}
+              alt="Step media"
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              onError={(e) => { e.target.style.display = 'none'; }}
+            />
+            <div style={{
+              position: 'absolute',
+              bottom: '2px',
+              right: '4px',
+              fontSize: '0.60rem',
+              fontWeight: 700,
+              background: 'rgba(0,0,0,0.65)',
+              color: '#FFFFFF',
+              padding: '1px 4px',
+              borderRadius: '3px'
+            }}>
+              {data?.config?.mediaType || 'PHOTO'}
+            </div>
+          </div>
+        )}
         <div
           style={{
             fontSize: '0.74rem',

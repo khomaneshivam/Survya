@@ -10,7 +10,11 @@ import {
   Check,
   Link2,
   Key,
-  ShieldCheck
+  ShieldCheck,
+  Image,
+  Upload,
+  FileText,
+  Video
 } from 'lucide-react';
 import { validateFlowGraph } from './flowGraphValidator';
 
@@ -28,6 +32,25 @@ const APPROVED_ACTIONS = [
 
 const EMPTY_OBJECT = Object.freeze({});
 const EMPTY_ARRAY = Object.freeze([]);
+
+function safeFormatNodeJson(val) {
+  if (!val) return '{}';
+  try {
+    const seen = new WeakSet();
+    return JSON.stringify(val, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (typeof Node !== 'undefined' && value instanceof Node) return '[DOM Node]';
+        if (typeof Element !== 'undefined' && value instanceof Element) return '[DOM Element]';
+        if ('__reactFiber' in value || 'stateNode' in value) return '[React Fiber]';
+        if (seen.has(value)) return '[Circular]';
+        seen.add(value);
+      }
+      return value;
+    }, 2);
+  } catch (err) {
+    return `// Note: Failed to preview raw node: ${err.message}`;
+  }
+}
 
 export default function NodeInspectorDrawer({
   node,
@@ -123,6 +146,42 @@ export default function NodeInspectorDrawer({
     const newVal = currentVal ? `${currentVal} ${token}` : token;
     handleConfigChange(fieldKey, newVal);
     setVariablePickerField(null);
+  };
+
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const handleUploadMedia = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingMedia(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/upload/media', {
+        method: 'POST',
+        headers: {
+          Authorization: token ? `Bearer ${token}` : ''
+        },
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Upload failed');
+      }
+      handleConfigChange('mediaUrl', data.url || data.relativeUrl);
+      if (file.type.startsWith('image/')) {
+        handleConfigChange('mediaType', 'IMAGE');
+      } else if (file.type === 'application/pdf') {
+        handleConfigChange('mediaType', 'DOCUMENT');
+      } else if (file.type.startsWith('video/')) {
+        handleConfigChange('mediaType', 'VIDEO');
+      }
+    } catch (err) {
+      alert(`Media upload failed: ${err.message}`);
+    } finally {
+      setUploadingMedia(false);
+      e.target.value = '';
+    }
   };
 
   // Button Options helpers
@@ -575,6 +634,111 @@ export default function NodeInspectorDrawer({
                   />
                   <div style={{ fontSize: '0.73rem', color: '#8E8E93', marginTop: '4px' }}>
                     Supports *bold*, _italics_, ~strike~ and dynamic {`{{variables}}`}.
+                  </div>
+                </div>
+
+                {/* Photo / Media Attachment */}
+                <div style={{
+                  padding: '12px',
+                  background: '#F8FAFC',
+                  borderRadius: '6px',
+                  border: '1px solid #E2E8F0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Image size={13} color="#2F5219" />
+                      <span>Photo / Media Attachment (Optional)</span>
+                    </label>
+                    {node.config?.mediaUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleConfigChange('mediaUrl', '');
+                          handleConfigChange('caption', '');
+                        }}
+                        style={{ border: 'none', background: 'transparent', color: '#EF4444', cursor: 'pointer', fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '2px' }}
+                      >
+                        <Trash2 size={11} /> Remove
+                      </button>
+                    )}
+                  </div>
+
+                  {node.config?.mediaUrl && (
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <div style={{ width: '64px', height: '48px', borderRadius: '4px', overflow: 'hidden', border: '1px solid #CBD5E1', flexShrink: 0, background: '#FFFFFF' }}>
+                        <img
+                          src={node.config.mediaUrl}
+                          alt="Attachment preview"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0, fontSize: '0.73rem', color: '#64748B', wordBreak: 'break-all' }}>
+                        {node.config.mediaUrl}
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      style={{ flex: 1, fontSize: '0.76rem', padding: '5px 8px' }}
+                      value={node.config?.mediaUrl || ''}
+                      onChange={(e) => handleConfigChange('mediaUrl', e.target.value.trim())}
+                      placeholder="Photo URL (https://... or /uploads/...)"
+                    />
+                    <label style={{
+                      padding: '5px 10px',
+                      background: uploadingMedia ? '#94A3B8' : '#2F5219',
+                      color: '#FFFFFF',
+                      borderRadius: '4px',
+                      fontSize: '0.74rem',
+                      fontWeight: 600,
+                      cursor: uploadingMedia ? 'not-allowed' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      flexShrink: 0
+                    }}>
+                      <Upload size={12} />
+                      <span>{uploadingMedia ? 'Uploading...' : 'Upload'}</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,application/pdf,video/mp4"
+                        style={{ display: 'none' }}
+                        disabled={uploadingMedia}
+                        onChange={handleUploadMedia}
+                      />
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '6px' }}>
+                    <div>
+                      <select
+                        className="form-input"
+                        style={{ fontSize: '0.74rem', padding: '4px 6px' }}
+                        value={node.config?.mediaType || 'IMAGE'}
+                        onChange={(e) => handleConfigChange('mediaType', e.target.value)}
+                      >
+                        <option value="IMAGE">📷 Image</option>
+                        <option value="DOCUMENT">📄 Document (PDF)</option>
+                        <option value="VIDEO">🎥 Video</option>
+                      </select>
+                    </div>
+                    <div>
+                      <input
+                        type="text"
+                        className="form-input"
+                        style={{ fontSize: '0.74rem', padding: '4px 6px' }}
+                        value={node.config?.caption || ''}
+                        onChange={(e) => handleConfigChange('caption', e.target.value)}
+                        placeholder="Caption (optional)"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -1147,7 +1311,7 @@ export default function NodeInspectorDrawer({
                 maxHeight: '450px'
               }}
             >
-              {JSON.stringify(node, null, 2)}
+              {safeFormatNodeJson(node)}
             </pre>
           </div>
         )}

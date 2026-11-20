@@ -21,7 +21,9 @@ import {
   FileSpreadsheet,
   ToggleLeft,
   ToggleRight,
-  X
+  X,
+  Image,
+  Upload
 } from 'lucide-react';
 
 const DOMAIN_ICONS = {
@@ -64,6 +66,7 @@ export default function CatalogInventoryPage() {
   const [notification, setNotification] = useState(null);
 
   // Form State
+  const [uploadingItemImage, setUploadingItemImage] = useState(false);
   const [itemForm, setItemForm] = useState({
     title: '',
     category_id: '',
@@ -71,6 +74,7 @@ export default function CatalogInventoryPage() {
     base_price: '',
     tax_rate: 5,
     short_description: '',
+    image_url: '',
     sku: '',
     max_adults: 2,
     max_children: 1,
@@ -82,6 +86,33 @@ export default function CatalogInventoryPage() {
     stock_quantity: 20,
     duration_minutes: 30
   });
+
+  const handleUploadItemPhoto = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingItemImage(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/upload/media', {
+        method: 'POST',
+        headers: {
+          Authorization: token ? `Bearer ${token}` : ''
+        },
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Media upload failed');
+      }
+      setItemForm(prev => ({ ...prev, image_url: data.url || data.relativeUrl }));
+    } catch (err) {
+      showToast(`Upload failed: ${err.message}`, 'error');
+    } finally {
+      setUploadingItemImage(false);
+      e.target.value = '';
+    }
+  };
 
   const [categoryName, setCategoryName] = useState('');
 
@@ -427,6 +458,7 @@ export default function CatalogInventoryPage() {
                 base_price: '',
                 tax_rate: currentEntity?.domain === 'HOSPITALITY' ? 12 : 5,
                 short_description: '',
+                image_url: '',
                 sku: '',
                 max_adults: 2,
                 max_children: 1,
@@ -671,6 +703,16 @@ export default function CatalogInventoryPage() {
                         {/* Title & SKU */}
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            {item.image_url && (
+                              <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--border-color)', flexShrink: 0, background: '#F8FAFC' }}>
+                                <img
+                                  src={item.image_url}
+                                  alt={item.title}
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                  onError={(e) => { e.target.style.display = 'none'; }}
+                                />
+                              </div>
+                            )}
                             {item.dietary_flag === 'VEG' && (
                               <span title="Vegetarian" style={{ width: '14px', height: '14px', border: '1px solid #16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                                 <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16A34A' }} />
@@ -787,6 +829,7 @@ export default function CatalogInventoryPage() {
                                   base_price: item.base_price,
                                   tax_rate: item.tax_rate || 5,
                                   short_description: item.short_description || '',
+                                  image_url: item.image_url || '',
                                   sku: item.sku || '',
                                   max_adults: item.max_adults || 2,
                                   max_children: item.max_children || 1,
@@ -1213,6 +1256,69 @@ export default function CatalogInventoryPage() {
                   </div>
                 </div>
               )}
+
+              {/* Item Photo / Image */}
+              <div style={{ marginBottom: '14px', padding: '12px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label className="sarvya-field-label" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Image size={14} color="#059669" />
+                    <span>Item Photo / Image (Optional)</span>
+                  </label>
+                  {itemForm.image_url && (
+                    <button
+                      type="button"
+                      onClick={() => setItemForm({ ...itemForm, image_url: '' })}
+                      style={{ border: 'none', background: 'transparent', color: '#EF4444', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px' }}
+                    >
+                      <Trash2 size={11} /> Remove
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  {itemForm.image_url && (
+                    <div style={{ width: '48px', height: '48px', borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--border-color)', flexShrink: 0, background: '#FFFFFF' }}>
+                      <img
+                        src={itemForm.image_url}
+                        alt="Item preview"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        onError={(e) => { e.target.style.display = 'none'; }}
+                      />
+                    </div>
+                  )}
+                  <input
+                    type="text"
+                    placeholder="https://... or /uploads/..."
+                    value={itemForm.image_url}
+                    onChange={(e) => setItemForm({ ...itemForm, image_url: e.target.value.trim() })}
+                    className="sarvya-input"
+                    style={{ flex: 1, fontSize: '12px' }}
+                  />
+                  <label style={{
+                    padding: '6px 12px',
+                    background: uploadingItemImage ? '#9CA3AF' : 'var(--primary-color, #2F5219)',
+                    color: '#FFFFFF',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: uploadingItemImage ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    flexShrink: 0
+                  }}>
+                    <Upload size={12} />
+                    <span>{uploadingItemImage ? 'Uploading...' : 'Upload'}</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      style={{ display: 'none' }}
+                      disabled={uploadingItemImage}
+                      onChange={handleUploadItemPhoto}
+                    />
+                  </label>
+                </div>
+              </div>
 
               <div style={{ marginBottom: '18px' }}>
                 <label className="sarvya-field-label">Short Description</label>
