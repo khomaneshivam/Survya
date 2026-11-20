@@ -43,7 +43,8 @@ import {
   ChevronDown,
   Layers,
   Image,
-  Upload
+  Upload,
+  Phone
 } from 'lucide-react';
 
 import FlowCanvas from '../components/flow-studio/FlowCanvas';
