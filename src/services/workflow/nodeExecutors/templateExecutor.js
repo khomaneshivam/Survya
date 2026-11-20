@@ -6,7 +6,7 @@ const { db } = require('../../../config/database');
  */
 async function execute(node, context) {
   const { session = {}, dryRun = false, tenantId = 1, senderPhone = '' } = context;
-  const config = node.config || {};
+  const config = { ...(node.data || {}), ...(node.config || {}) };
   const templateName = config.templateName || '';
 
   if (!templateName) {
@@ -42,7 +42,20 @@ async function execute(node, context) {
     };
   }
 
-  // Live Mode: Record message in whatsapp_messages & ledger if not simulation
+  // Live Mode: Dispatch via whatsappMessagingService & log
+  try {
+    const whatsappMessagingService = require('../../whatsappMessagingService');
+    await whatsappMessagingService.sendOneToOneMessage({
+      to: senderPhone,
+      type: 'TEMPLATE',
+      templateIdOrName: templateName,
+      variables: resolvedParams,
+      tenantId
+    }).catch(err => {
+      console.warn(`[templateExecutor] Note on sendOneToOneMessage:`, err.message);
+    });
+  } catch (e) {}
+
   try {
     const msgId = `flow_tpl_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     db.prepare(`

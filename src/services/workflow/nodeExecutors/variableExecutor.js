@@ -5,9 +5,9 @@ const { computeVariable, getPath } = require('../expressionEvaluator');
  */
 async function execute(node, context) {
   const { session = {}, variableContext } = context;
-  const config = node.config || {};
+  const config = { ...(node.data || {}), ...(node.config || {}) };
   const targetVar = config.targetVar || config.variable || 'temp_var';
-  const operation = config.operation || 'set';
+  const operation = config.operation || config.action || 'set';
   const rawValue = config.value !== undefined ? config.value : '';
 
   const evalContext = variableContext || session;

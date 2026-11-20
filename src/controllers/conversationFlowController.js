@@ -87,7 +87,11 @@ async function publishFlow(req, res) {
     const data = flowService.publishFlow(flowId, user, tenantId);
     return res.json({ success: true, message: "Flow published successfully", ...data });
   } catch (err) {
-    return res.status(400).json({ success: false, error: err.message });
+    return res.status(400).json({
+      success: false,
+      error: err.message,
+      validationErrors: err.validationErrors || []
+    });
   }
 }
 

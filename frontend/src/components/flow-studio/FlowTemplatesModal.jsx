@@ -12,7 +12,11 @@ import {
   Target,
   Calendar,
   Layers,
-  Briefcase
+  Briefcase,
+  UtensilsCrossed,
+  LifeBuoy,
+  ReceiptText,
+  Video
 } from 'lucide-react';
 
 export default function FlowTemplatesModal({
@@ -31,9 +35,12 @@ export default function FlowTemplatesModal({
   const filteredTemplates = templates.filter(t => {
     if (industryFilter === 'ALL') return true;
     if (industryFilter === 'B2B_SAAS') return t.industry === 'B2B_SAAS' || t.category === 'SALES';
-    if (industryFilter === 'LEAD_GEN') return t.industry === 'LEAD_GEN' || t.category === 'LEAD_GEN';
+    if (industryFilter === 'LEAD_GEN') return t.industry === 'LEAD_GEN' || t.category === 'LEAD_GEN' || t.industry === 'EVENTS';
     if (industryFilter === 'BOOKING') return (t.industry === 'BOOKING' || t.category === 'BOOKING') && t.industry !== 'HOSPITALITY';
     if (industryFilter === 'HOSPITALITY') return t.industry === 'HOSPITALITY';
+    if (industryFilter === 'D2C_ECOMMERCE') return t.industry === 'D2C_ECOMMERCE' || t.category === 'ORDERS';
+    if (industryFilter === 'SUPPORT') return t.industry === 'SUPPORT' || t.category === 'SUPPORT';
+    if (industryFilter === 'FINTECH') return t.industry === 'FINTECH' || t.category === 'BILLING';
     return true;
   });
 
@@ -47,6 +54,10 @@ export default function FlowTemplatesModal({
   const getTemplateIcon = (tpl) => {
     const slug = tpl?.slug || '';
     const ind = tpl?.industry || '';
+    if (ind === 'D2C_ECOMMERCE' || slug.includes('restaurant') || slug.includes('order')) return UtensilsCrossed;
+    if (ind === 'SUPPORT' || slug.includes('support') || slug.includes('triage')) return LifeBuoy;
+    if (ind === 'FINTECH' || slug.includes('recovery') || slug.includes('payment') || slug.includes('renewal')) return ReceiptText;
+    if (ind === 'EVENTS' || slug.includes('webinar') || slug.includes('event')) return Video;
     if (ind === 'B2B_SAAS' || slug.includes('b2b') || slug.includes('sales')) return Building2;
     if (ind === 'LEAD_GEN' || slug.includes('lead')) return Target;
     if (ind === 'BOOKING' || slug.includes('booking')) return Calendar;
@@ -57,6 +68,38 @@ export default function FlowTemplatesModal({
 
   const getTemplateCapabilities = (tpl) => {
     const slug = tpl?.slug || '';
+    if (slug.includes('restaurant-order') || slug.includes('d2c')) {
+      return [
+        'Interactive cuisine & combo food item selection menu',
+        'Customer delivery address and landmark intake',
+        'Prepaid instant UPI/Card link vs. Cash on Delivery (COD) branching',
+        'Automated order sync into D2C Orders CRM Pipeline'
+      ];
+    }
+    if (slug.includes('customer-support') || slug.includes('triage')) {
+      return [
+        'Automated complaint categorization (Billing, Tech, Delivery)',
+        'Detailed issue & order tracking identifier intake',
+        'High-urgency priority condition detection',
+        'Automatic L2 Supervisor Human Handoff with SLA guarantees'
+      ];
+    }
+    if (slug.includes('payment-recovery') || slug.includes('renewal')) {
+      return [
+        'Invoice due webhook and automated payment reminder pulse',
+        'Interactive choice: Pay Now, 7-Day Extension, or Billing Handoff',
+        'Instant payment gateway link delivery with receipt generation',
+        'CRM subscription pipeline status sync with grace period tracking'
+      ];
+    }
+    if (slug.includes('webinar') || slug.includes('event')) {
+      return [
+        'Interactive attendee name and professional role qualification',
+        'CXO / Founder VIP attendee condition tagging and high lead scoring',
+        'Instant calendar invite link (.ics) and Zoom room pass delivery',
+        'Automated 24h pre-event reminder message pulse'
+      ];
+    }
     if (slug.includes('b2b-sales-qualification')) {
       return [
         'Dynamic team seat qualification & automatic lead score calculation',
@@ -110,6 +153,9 @@ export default function FlowTemplatesModal({
     { id: 'B2B_SAAS', label: 'B2B Sales', icon: Building2 },
     { id: 'LEAD_GEN', label: 'Lead Gen & Drip', icon: Target },
     { id: 'BOOKING', label: 'Universal Booking', icon: Calendar },
+    { id: 'D2C_ECOMMERCE', label: 'D2C Orders', icon: UtensilsCrossed },
+    { id: 'SUPPORT', label: 'Support & SLA', icon: LifeBuoy },
+    { id: 'FINTECH', label: 'Billing & Renewal', icon: ReceiptText },
     { id: 'HOSPITALITY', label: 'Hospitality', icon: Hotel }
   ];
 

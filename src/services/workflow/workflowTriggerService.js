@@ -28,11 +28,25 @@ class WorkflowTriggerService {
 
     for (const node of nodes) {
       const type = node.type;
-      const data = node.data || {};
+      const data = { ...(node.config || {}), ...(node.data || {}) };
 
       if (type === "TRIGGER_WHATSAPP" || type === "START") {
-        const triggerType = data.triggerType || "KEYWORD";
-        const rawKeywords = data.keywords || (data.keyword ? [data.keyword] : []);
+        const rawTriggerType = String(data.triggerType || "KEYWORD").toUpperCase();
+        let triggerType = "KEYWORD";
+        let isCatchAll = false;
+        let isCtwa = false;
+
+        if (["INBOUND_ANY", "FIRST_MESSAGE", "CATCH_ALL"].includes(rawTriggerType)) {
+          triggerType = "CATCH_ALL";
+          isCatchAll = true;
+        } else if (rawTriggerType === "CTWA_AD" || rawTriggerType === "AD_REFERRAL") {
+          triggerType = "CTWA_AD";
+          isCtwa = true;
+        } else {
+          triggerType = "KEYWORD";
+        }
+
+        const rawKeywords = data.keywords || data.triggerKeywords || (data.keyword ? [data.keyword] : []);
         const keywords = Array.isArray(rawKeywords)
           ? rawKeywords.map(k => String(k).trim()).filter(Boolean)
           : String(rawKeywords || "").split(",").map(k => k.trim()).filter(Boolean);
@@ -40,13 +54,17 @@ class WorkflowTriggerService {
         const matchType = data.matchType || "CONTAINS"; // EXACT, CONTAINS, REGEX
         const triggerKey = data.triggerKey || `trg_${flowId}_${node.id}`.replace(/[^a-zA-Z0-9_]/g, "_");
 
+        const priorityVal = data.priority || (isCatchAll ? 999 : 100);
+
         const configJson = JSON.stringify({
           nodeId: node.id,
           nodeType: type,
           keywords,
           matchType,
           ignoreCase: data.ignoreCase !== false,
-          priority: data.priority || 100
+          isCatchAll,
+          isCtwa,
+          priority: priorityVal
         });
 
         insertStmt.run(
@@ -56,7 +74,7 @@ class WorkflowTriggerService {
           triggerType,
           configJson,
           null,
-          data.priority || 100
+          priorityVal
         );
       } else if (type === "TRIGGER_EVENT") {
         const eventType = data.eventType || "WEBHOOK";
@@ -101,7 +119,7 @@ class WorkflowTriggerService {
    * Matches inbound message text against registered active triggers.
    * Returns { flowId, nodeId, triggerKey, triggerType } or null.
    */
-  matchInboundTrigger(tenantId = 1, { text = "", phone = "", event = null } = {}) {
+  matchInboundTrigger(tenantId = 1, { text = "", phone = "", event = null, referral = null } = {}) {
     const rawTriggers = db.prepare(`
       SELECT t.*, f.status as flow_status
       FROM workflow_triggers t
@@ -116,6 +134,7 @@ class WorkflowTriggerService {
     if (!rawTriggers || rawTriggers.length === 0) return null;
 
     const normalizedText = String(text || "").trim();
+    let catchAllTrigger = null;
 
     for (const trg of rawTriggers) {
       let config = {};
@@ -125,18 +144,35 @@ class WorkflowTriggerService {
         continue;
       }
 
+      // 1. CTWA (Click-to-WhatsApp Ad) Referral Trigger
+      if (trg.trigger_type === "CTWA_AD" && referral) {
+        return {
+          flowId: trg.flow_id,
+          nodeId: config.nodeId,
+          triggerKey: trg.trigger_key,
+          triggerType: trg.trigger_type,
+          referral
+        };
+      }
+
+      // 2. Catch-All Trigger (save for fallback if no keyword matches)
+      if (trg.trigger_type === "CATCH_ALL" || config.isCatchAll) {
+        if (!catchAllTrigger) {
+          catchAllTrigger = {
+            flowId: trg.flow_id,
+            nodeId: config.nodeId,
+            triggerKey: trg.trigger_key,
+            triggerType: trg.trigger_type
+          };
+        }
+        continue;
+      }
+
+      // 3. Keyword Match
       if (trg.trigger_type === "KEYWORD" || trg.trigger_type === "INBOUND_MESSAGE") {
         const keywords = config.keywords || [];
         if (!keywords || keywords.length === 0) {
-          // Empty keywords on a START node can act as default catch-all if explicitly configured
-          if (config.nodeType === "START" && config.isCatchAll) {
-            return {
-              flowId: trg.flow_id,
-              nodeId: config.nodeId,
-              triggerKey: trg.trigger_key,
-              triggerType: trg.trigger_type
-            };
-          }
+          // A keyword trigger with no keywords defined does not match any inbound message
           continue;
         }
 
@@ -183,6 +219,11 @@ class WorkflowTriggerService {
           };
         }
       }
+    }
+
+    // Return catch-all trigger if text is present but didn't match specific keyword
+    if (catchAllTrigger && normalizedText.length > 0) {
+      return catchAllTrigger;
     }
 
     return null;

@@ -58,6 +58,7 @@ export default function CustomFlowEdge({
       <BaseEdge
         id={id}
         path={edgePath}
+        interactionWidth={24}
         style={{
           stroke: strokeColor,
           strokeWidth,
@@ -73,6 +74,9 @@ export default function CustomFlowEdge({
             pointerEvents: 'all',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'center',
+            minWidth: '24px',
+            minHeight: '24px',
             gap: '4px',
             zIndex: 10
           }}

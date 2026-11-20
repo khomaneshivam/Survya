@@ -497,9 +497,14 @@ export default function StepJourneyDesigner({
     }
     setSavingTemplate(true);
     try {
+      const activeToken = localStorage.getItem('token');
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {})
+      };
       const res = await fetch('/api/flows/conversation-templates', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           title: templateTitle.trim(),
           description: templateDesc || 'Custom template saved from Studio Designer',

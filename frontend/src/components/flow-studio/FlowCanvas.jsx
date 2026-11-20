@@ -417,24 +417,60 @@ function FlowCanvasInner({
     [sarvyaNodes, onUpdateNodes]
   );
 
+  const connectingNodeRef = useRef(null);
+
+  // Edge Reconnection handler
+  const onReconnect = useCallback(
+    (oldEdge, newConnection) => {
+      if (!newConnection.source || !newConnection.target) return;
+      if (newConnection.source === newConnection.target) return;
+
+      recordHistory(sarvyaNodes, sarvyaTransitions);
+
+      const nextTransitions = sarvyaTransitions.map((t) => {
+        if (t.id === oldEdge.id || (t.source === oldEdge.source && t.target === oldEdge.target && (t.sourceHandle || 'default') === (oldEdge.sourceHandle || 'default'))) {
+          return {
+            ...t,
+            source: newConnection.source,
+            target: newConnection.target,
+            sourceHandle: newConnection.sourceHandle || 'default',
+            targetHandle: newConnection.targetHandle || 'target'
+          };
+        }
+        return t;
+      });
+
+      onUpdateTransitions(nextTransitions);
+    },
+    [sarvyaNodes, sarvyaTransitions, onUpdateTransitions, recordHistory]
+  );
+
   // Edge Connection drawn by user
   const onConnect = useCallback(
     (connection) => {
+      if (!connection.source || !connection.target) return;
+      // Prevent self-loops
+      if (connection.source === connection.target) return;
+
       recordHistory(sarvyaNodes, sarvyaTransitions);
 
+      const srcHandle = connection.sourceHandle || 'default';
+
       let label = '';
-      if (connection.sourceHandle === 'true') label = 'True';
-      else if (connection.sourceHandle === 'false') label = 'False';
-      else if (connection.sourceHandle === 'valid') label = 'Valid';
-      else if (connection.sourceHandle === 'max_retries') label = 'Retry Max';
-      else if (connection.sourceHandle === 'available') label = 'Available';
-      else if (connection.sourceHandle === 'unavailable') label = 'Unavailable';
-      else if (connection.sourceHandle === 'after_delay') label = 'After Delay';
-      else if (connection.sourceHandle === 'early_reply') label = 'Early Reply';
+      if (srcHandle === 'true') label = 'True';
+      else if (srcHandle === 'false') label = 'False';
+      else if (srcHandle === 'valid') label = 'Valid';
+      else if (srcHandle === 'max_retries') label = 'Retry Max';
+      else if (srcHandle === 'available') label = 'Available';
+      else if (srcHandle === 'unavailable') label = 'Unavailable';
+      else if (srcHandle === 'after_delay') label = 'After Delay';
+      else if (srcHandle === 'early_reply' || srcHandle === 'replied_early') label = 'Early Reply';
+      else if (srcHandle === 'success') label = 'Success';
+      else if (srcHandle === 'failure' || srcHandle === 'error') label = 'Error';
       else {
         // Check if handle matches button option
         const srcNode = sarvyaNodes.find((n) => n.id === connection.source);
-        const opt = (srcNode?.config?.options || []).find((o) => o.id === connection.sourceHandle);
+        const opt = (srcNode?.config?.options || []).find((o) => o.id === srcHandle);
         if (opt) label = opt.title || '';
       }
 
@@ -442,15 +478,79 @@ function FlowCanvasInner({
         id: `t_${connection.source}_${connection.target}_${Date.now()}`,
         source: connection.source,
         target: connection.target,
-        sourceHandle: connection.sourceHandle || 'default',
+        sourceHandle: srcHandle,
         targetHandle: connection.targetHandle || 'target',
         label
       };
 
-      const nextTransitions = [...sarvyaTransitions, newTransition];
+      // Replace existing edge on the same source and sourceHandle if it's a single-branch handle
+      const singleBranchHandles = new Set([
+        'default', 'true', 'false', 'valid', 'max_retries', 'available',
+        'unavailable', 'after_delay', 'early_reply', 'replied_early', 'success', 'failure', 'error', 'delivered'
+      ]);
+      const isSingleBranch = singleBranchHandles.has(srcHandle);
+
+      let nextTransitions;
+      if (isSingleBranch) {
+        nextTransitions = sarvyaTransitions.filter(
+          (t) => !(t.source === connection.source && (t.sourceHandle || 'default') === srcHandle)
+        );
+        nextTransitions.push(newTransition);
+      } else {
+        nextTransitions = [...sarvyaTransitions, newTransition];
+      }
+
       onUpdateTransitions(nextTransitions);
     },
     [sarvyaNodes, sarvyaTransitions, onUpdateTransitions, recordHistory]
+  );
+
+  const onConnectStart = useCallback((_, { nodeId, handleId, handleType }) => {
+    connectingNodeRef.current = { nodeId, handleId, handleType };
+  }, []);
+
+  const onConnectEnd = useCallback(
+    (event) => {
+      if (!connectingNodeRef.current) return;
+      const { nodeId, handleId, handleType } = connectingNodeRef.current;
+      connectingNodeRef.current = null;
+
+      if (handleType !== 'source') return;
+
+      const targetIsPane = event.target?.classList?.contains('react-flow__pane');
+      if (targetIsPane && reactFlow) {
+        const position = reactFlow.screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY
+        });
+
+        recordHistory(sarvyaNodes, sarvyaTransitions);
+
+        const newId = `node_send_message_${Date.now().toString(36)}`;
+        const newNode = {
+          id: newId,
+          type: 'SEND_MESSAGE',
+          title: 'Next Message',
+          config: { text: 'Hello! How can we help you next?' },
+          position: {
+            x: Math.round(position.x),
+            y: Math.round(position.y)
+          }
+        };
+
+        const newTransition = {
+          id: `t_${nodeId}_${newId}_${Date.now()}`,
+          source: nodeId,
+          target: newId,
+          sourceHandle: handleId || 'default'
+        };
+
+        onUpdateNodes([...sarvyaNodes, newNode]);
+        onUpdateTransitions([...sarvyaTransitions, newTransition]);
+        onSelectNode(newId);
+      }
+    },
+    [reactFlow, sarvyaNodes, sarvyaTransitions, onUpdateNodes, onUpdateTransitions, onSelectNode, recordHistory]
   );
 
   // Auto-Layout with Dagre
@@ -522,6 +622,10 @@ function FlowCanvasInner({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
+          onReconnect={onReconnect}
+          edgesReconnectable={true}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
           onNodeDragStop={onNodeDragStop}

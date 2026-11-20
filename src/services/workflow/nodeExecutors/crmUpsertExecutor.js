@@ -6,13 +6,14 @@ const { interpolateTemplate, getPath } = require('../expressionEvaluator');
  */
 async function execute(node, context) {
   const { session = {}, dryRun = false, tenantId = 1, senderPhone = '', variableContext } = context;
-  const config = node.config || {};
+  const config = { ...(node.data || {}), ...(node.config || {}) };
   const evalContext = variableContext || session;
 
   const phone = senderPhone || getPath(evalContext, 'contact.phone') || getPath(evalContext, 'phone') || '919876543210';
-  const name = getPath(evalContext, 'contact.name') || getPath(evalContext, 'name') || getPath(evalContext, 'guest_name') || 'Guest';
+  const name = getPath(evalContext, 'contact.name') || getPath(evalContext, 'name') || getPath(evalContext, 'guest_name') || getPath(evalContext, 'customer_name') || 'Guest';
   const email = getPath(evalContext, 'contact.email') || getPath(evalContext, 'email') || null;
-  const stageKey = config.stage || 'NEW_LEAD';
+  const stageKey = config.stage || config.stageName || config.stageKey || 'NEW_LEAD';
+  const pipelineNameOrSlug = config.pipeline || config.pipelineName || config.pipelineId || 'b2b-sales-pipeline';
   const leadScore = Number(getPath(evalContext, 'lead_score') || config.leadScore || 0);
   const dealValue = Number(getPath(evalContext, 'deal_value') || getPath(evalContext, 'quote_total') || config.dealValue || 0);
 
@@ -24,12 +25,23 @@ async function execute(node, context) {
     }
   }
 
-  // Merge any session keys that match known CRM pipeline fields
-  const commonFields = ['company_name', 'team_size', 'monthly_budget', 'decision_maker', 'demo_slot', 'city', 'service_interest', 'timeline', 'ad_source', 'check_in_date', 'check_out_date', 'guest_count'];
+  // Merge any session keys that match known CRM pipeline fields or collected input
+  const commonFields = [
+    'company_name', 'team_size', 'team_seats', 'monthly_budget', 'decision_maker',
+    'demo_slot', 'city', 'service_interest', 'timeline', 'ad_source', 'check_in_date',
+    'check_out_date', 'guest_count', 'booking_date', 'selected_item', 'customer_name'
+  ];
   for (const f of commonFields) {
     const val = getPath(evalContext, f);
     if (val !== undefined && customAttrs[f] === undefined) {
       customAttrs[f] = val;
+    }
+  }
+
+  // Also include all scalar session keys
+  for (const [k, v] of Object.entries(evalContext)) {
+    if (!k.startsWith('_') && typeof v !== 'object' && v !== undefined && v !== null && customAttrs[k] === undefined) {
+      customAttrs[k] = v;
     }
   }
 

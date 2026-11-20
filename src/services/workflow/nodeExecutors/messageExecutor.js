@@ -5,7 +5,7 @@ const { interpolateTemplate } = require('../expressionEvaluator');
  */
 async function execute(node, context) {
   const { session = {}, userInput = '', userPayload = null, isWaitingForThisNode = false } = context;
-  const config = node.config || {};
+  const config = { ...(node.data || {}), ...(node.config || {}) };
   const options = Array.isArray(config.options) ? config.options : [];
 
   // If we were already waiting at this message node for an option click / reply:
@@ -64,7 +64,7 @@ async function execute(node, context) {
   }
 
   // First time entering this node: compile and return reply message
-  const textRaw = config.text || config.prompt || '';
+  const textRaw = config.text || config.messageText || config.prompt || '';
   const renderedText = interpolateTemplate(textRaw, context.variableContext || session);
 
   const reply = {

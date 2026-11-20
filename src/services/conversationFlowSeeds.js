@@ -1359,6 +1359,532 @@ const UNIVERSAL_DYNAMIC_BOOKING_VARIABLES = {
   selected_item: { type: "STRING", label: "Selected Catalog Item" }
 };
 
+// =========================================================================
+// 8. BLUEPRINT: D2C FOOD & RESTAURANT ORDERING (COD & PREPAID)
+// =========================================================================
+const D2C_RESTAURANT_ORDER_NODES = [
+  {
+    id: "order_start",
+    type: "TRIGGER_WHATSAPP",
+    title: "Food Order Trigger",
+    config: {
+      triggerType: "KEYWORD",
+      keywords: ["order", "menu", "food", "hungry", "tasty"],
+      matchType: "CONTAINS"
+    },
+    position: { x: 400, y: 50 }
+  },
+  {
+    id: "order_welcome",
+    type: "SEND_MESSAGE",
+    title: "Menu & Cuisine Selection",
+    config: {
+      text: "🍔 *Welcome to TastyBites Kitchen!* 🍕\n\nFreshly prepared meals delivered straight to your door in 30 minutes. What are you craving today?",
+      variable: "selected_category",
+      options: [
+        { id: "opt_combos", title: "Special Combos 🍱", value: "COMBOS" },
+        { id: "opt_burgers", title: "Burgers & Fries 🍔", value: "BURGERS" },
+        { id: "opt_pizza", title: "Woodfired Pizza 🍕", value: "PIZZA" }
+      ]
+    },
+    position: { x: 400, y: 170 }
+  },
+  {
+    id: "order_ask_address",
+    type: "COLLECT_INPUT",
+    title: "Input Delivery Address",
+    config: {
+      prompt: "📍 Please share your full delivery address and landmark:",
+      saveAs: "delivery_address",
+      inputType: "TEXT"
+    },
+    position: { x: 400, y: 300 }
+  },
+  {
+    id: "order_ask_payment",
+    type: "SEND_MESSAGE",
+    title: "Select Payment Method",
+    config: {
+      text: "💳 Order Total: *₹599* (Incl. Taxes & Delivery)\n\nHow would you like to pay?",
+      variable: "payment_method",
+      options: [
+        { id: "pay_online", title: "Pay Online / UPI ⚡", value: "ONLINE" },
+        { id: "pay_cod", title: "Cash on Delivery 💵", value: "COD" }
+      ]
+    },
+    position: { x: 400, y: 430 }
+  },
+  {
+    id: "order_branch_pay",
+    type: "CONDITION",
+    title: "Branch on Payment Mode",
+    config: {
+      rules: [
+        { variable: "payment_method", operator: "EQUALS", value: "ONLINE" }
+      ],
+      matchMode: "ALL"
+    },
+    position: { x: 400, y: 560 }
+  },
+  {
+    id: "order_online_pay",
+    type: "SEND_MESSAGE",
+    title: "Prepaid Instant Link",
+    config: {
+      text: "⚡ Click here to complete your instant payment: https://survya.flex-us.com/pay/order-tasty?amt=599\n\nYour order is locked in as *Prepaid VIP*."
+    },
+    position: { x: 250, y: 680 }
+  },
+  {
+    id: "order_cod_confirm",
+    type: "SEND_MESSAGE",
+    title: "COD Order Placed",
+    config: {
+      text: "💵 *Cash on Delivery Confirmed!*\n\nPlease keep exact change of *₹599* ready for our delivery rider."
+    },
+    position: { x: 550, y: 680 }
+  },
+  {
+    id: "order_crm_upsert",
+    type: "CRM_UPSERT",
+    title: "Sync Order to CRM",
+    config: {
+      pipeline: "d2c-orders-pipeline",
+      stage: "ORDER_PLACED",
+      dealValue: 599,
+      leadScore: 80,
+      tags: ["D2C Food", "WhatsApp Order"],
+      recordTitle: "Food Order #{{sender_phone}}"
+    },
+    position: { x: 400, y: 800 }
+  },
+  {
+    id: "order_end",
+    type: "END",
+    title: "Order Completed",
+    config: {
+      farewellMessage: "🎉 Your order is being prepared! Tracking updates will arrive shortly."
+    },
+    position: { x: 400, y: 920 }
+  }
+];
+
+const D2C_RESTAURANT_ORDER_TRANSITIONS = [
+  { id: "e_ord_1", source: "order_start", target: "order_welcome", sourceHandle: "default" },
+  { id: "e_ord_2", source: "order_welcome", target: "order_ask_address", sourceHandle: "default" },
+  { id: "e_ord_3", source: "order_ask_address", target: "order_ask_payment", sourceHandle: "valid" },
+  { id: "e_ord_4", source: "order_ask_payment", target: "order_branch_pay", sourceHandle: "default" },
+  { id: "e_ord_5", source: "order_branch_pay", target: "order_online_pay", sourceHandle: "true" },
+  { id: "e_ord_6", source: "order_branch_pay", target: "order_cod_confirm", sourceHandle: "false" },
+  { id: "e_ord_7", source: "order_online_pay", target: "order_crm_upsert", sourceHandle: "default" },
+  { id: "e_ord_8", source: "order_cod_confirm", target: "order_crm_upsert", sourceHandle: "default" },
+  { id: "e_ord_9", source: "order_crm_upsert", target: "order_end", sourceHandle: "default" }
+];
+
+const D2C_RESTAURANT_ORDER_VARIABLES = {
+  selected_category: { type: "STRING", label: "Selected Category", defaultValue: "COMBOS" },
+  delivery_address: { type: "STRING", label: "Delivery Address" },
+  payment_method: { type: "STRING", label: "Payment Mode", defaultValue: "ONLINE" }
+};
+
+// =========================================================================
+// 9. BLUEPRINT: CUSTOMER SUPPORT TRIAGE & PRIORITY SLA ROUTER
+// =========================================================================
+const CUSTOMER_SUPPORT_TRIAGE_NODES = [
+  {
+    id: "sup_start",
+    type: "TRIGGER_WHATSAPP",
+    title: "Support Request Trigger",
+    config: {
+      triggerType: "KEYWORD",
+      keywords: ["support", "help", "issue", "complaint", "broken"],
+      matchType: "CONTAINS"
+    },
+    position: { x: 400, y: 50 }
+  },
+  {
+    id: "sup_welcome",
+    type: "SEND_MESSAGE",
+    title: "Issue Category Intake",
+    config: {
+      text: "👋 *Customer Support Desk*\n\nWe're here to help resolve your issue swiftly. What area do you need help with?",
+      variable: "support_category",
+      options: [
+        { id: "cat_billing", title: "Billing & Refund 💰", value: "BILLING" },
+        { id: "cat_tech", title: "Technical Glitch 🛠️", value: "TECHNICAL" },
+        { id: "cat_delivery", title: "Delivery Status 🚚", value: "DELIVERY" }
+      ]
+    },
+    position: { x: 400, y: 170 }
+  },
+  {
+    id: "sup_ask_details",
+    type: "COLLECT_INPUT",
+    title: "Input Issue Details",
+    config: {
+      prompt: "📝 Please describe your issue in detail (include any invoice or tracking numbers):",
+      saveAs: "issue_details",
+      inputType: "TEXT"
+    },
+    position: { x: 400, y: 300 }
+  },
+  {
+    id: "sup_eval_urgency",
+    type: "CONDITION",
+    title: "Check Priority SLA",
+    config: {
+      rules: [
+        { variable: "support_category", operator: "EQUALS", value: "BILLING" },
+        { variable: "issue_details", operator: "CONTAINS", value: "urgent" }
+      ],
+      matchMode: "ANY"
+    },
+    position: { x: 400, y: 430 }
+  },
+  {
+    id: "sup_escalate_human",
+    type: "HUMAN_HANDOFF",
+    title: "L2 Priority Escalation",
+    config: {
+      team: "L2_SUPPORT",
+      handoffMessage: "🚨 This inquiry has been marked *High Priority*. Transferring you immediately to a Senior Support Supervisor (Target SLA: < 15 mins)."
+    },
+    position: { x: 250, y: 560 }
+  },
+  {
+    id: "sup_crm_ticket",
+    type: "CRM_UPSERT",
+    title: "Register Support Ticket",
+    config: {
+      pipeline: "support-tickets-pipeline",
+      stage: "TICKET_CREATED",
+      dealValue: 0,
+      leadScore: 40,
+      tags: ["Support", "Automated Triage"],
+      recordTitle: "Ticket: {{support_category}} - {{sender_phone}}"
+    },
+    position: { x: 550, y: 560 }
+  },
+  {
+    id: "sup_auto_reply",
+    type: "SEND_MESSAGE",
+    title: "Ticket Acknowledgment",
+    config: {
+      text: "✅ *Support Ticket Logged!*\n\nOur team is reviewing your ticket for {{support_category}}. We will update you directly here."
+    },
+    position: { x: 550, y: 680 }
+  },
+  {
+    id: "sup_end",
+    type: "END",
+    title: "End Triage Session",
+    config: {
+      farewellMessage: "Thank you for reaching out. We will get your issue resolved quickly!"
+    },
+    position: { x: 400, y: 800 }
+  }
+];
+
+const CUSTOMER_SUPPORT_TRIAGE_TRANSITIONS = [
+  { id: "e_sup_1", source: "sup_start", target: "sup_welcome", sourceHandle: "default" },
+  { id: "e_sup_2", source: "sup_welcome", target: "sup_ask_details", sourceHandle: "default" },
+  { id: "e_sup_3", source: "sup_ask_details", target: "sup_eval_urgency", sourceHandle: "valid" },
+  { id: "e_sup_4", source: "sup_eval_urgency", target: "sup_escalate_human", sourceHandle: "true" },
+  { id: "e_sup_5", source: "sup_eval_urgency", target: "sup_crm_ticket", sourceHandle: "false" },
+  { id: "e_sup_6", source: "sup_crm_ticket", target: "sup_auto_reply", sourceHandle: "default" },
+  { id: "e_sup_7", source: "sup_auto_reply", target: "sup_end", sourceHandle: "default" },
+  { id: "e_sup_8", source: "sup_escalate_human", target: "sup_end", sourceHandle: "default" }
+];
+
+const CUSTOMER_SUPPORT_TRIAGE_VARIABLES = {
+  support_category: { type: "STRING", label: "Issue Category", defaultValue: "BILLING" },
+  issue_details: { type: "STRING", label: "Issue Description" }
+};
+
+// =========================================================================
+// 10. BLUEPRINT: PAYMENT RECOVERY & SUBSCRIPTION RENEWAL REMINDER
+// =========================================================================
+const PAYMENT_RECOVERY_RENEWAL_NODES = [
+  {
+    id: "pay_start",
+    type: "TRIGGER_EVENT",
+    title: "Invoice Due Trigger",
+    config: {
+      eventType: "WEBHOOK",
+      triggerKey: "hook_invoice_due",
+      eventName: "invoice_payment_due"
+    },
+    position: { x: 400, y: 50 }
+  },
+  {
+    id: "pay_welcome",
+    type: "SEND_MESSAGE",
+    title: "Renewal Invoice Reminder",
+    config: {
+      text: "⚠️ *Invoice Due Reminder*\n\nDear subscriber, your plan renewal invoice of *₹2,499* is due today. Renew now to maintain uninterrupted access.",
+      variable: "renewal_choice",
+      options: [
+        { id: "opt_pay_now", title: "Pay Invoice Now 💳", value: "PAY_NOW" },
+        { id: "opt_extend", title: "Request 7-Day Grace ⏳", value: "EXTEND" },
+        { id: "opt_agent", title: "Talk to Billing 💬", value: "BILLING_AGENT" }
+      ]
+    },
+    position: { x: 400, y: 170 }
+  },
+  {
+    id: "pay_branch_choice",
+    type: "CONDITION",
+    title: "Check Renewal Intent",
+    config: {
+      rules: [
+        { variable: "renewal_choice", operator: "EQUALS", value: "PAY_NOW" }
+      ],
+      matchMode: "ALL"
+    },
+    position: { x: 400, y: 300 }
+  },
+  {
+    id: "pay_send_link",
+    type: "SEND_MESSAGE",
+    title: "Send Payment Gateway Link",
+    config: {
+      text: "💳 Click here to settle your invoice via UPI / Card: https://survya.flex-us.com/pay/inv-renew-2026?amt=2499\n\nReceipt will be issued instantly."
+    },
+    position: { x: 250, y: 420 }
+  },
+  {
+    id: "pay_check_extend",
+    type: "CONDITION",
+    title: "Check Grace Request",
+    config: {
+      rules: [
+        { variable: "renewal_choice", operator: "EQUALS", value: "EXTEND" }
+      ],
+      matchMode: "ALL"
+    },
+    position: { x: 550, y: 420 }
+  },
+  {
+    id: "pay_grace_granted",
+    type: "SEND_MESSAGE",
+    title: "Grace Period Confirmed",
+    config: {
+      text: "⏳ *7-Day Grace Period Activated!*\n\nYour services remain fully active until next week. We'll send a reminder before the grace period ends."
+    },
+    position: { x: 450, y: 550 }
+  },
+  {
+    id: "pay_crm_grace",
+    type: "CRM_UPSERT",
+    title: "Update Renewal Grace",
+    config: {
+      pipeline: "subscription-renewal-pipeline",
+      stage: "GRACE_PERIOD",
+      dealValue: 2499,
+      leadScore: 65,
+      tags: ["Grace Extension", "Renewal"]
+    },
+    position: { x: 450, y: 670 }
+  },
+  {
+    id: "pay_handoff",
+    type: "HUMAN_HANDOFF",
+    title: "Billing Team Escalation",
+    config: {
+      team: "BILLING_TEAM",
+      handoffMessage: "Connecting you with an Account Manager to discuss plan customization or billing questions."
+    },
+    position: { x: 700, y: 550 }
+  },
+  {
+    id: "pay_crm_paid",
+    type: "CRM_UPSERT",
+    title: "Mark Payment Initiated",
+    config: {
+      pipeline: "subscription-renewal-pipeline",
+      stage: "PAYMENT_INITIATED",
+      dealValue: 2499,
+      leadScore: 95,
+      tags: ["Renewal", "Payment Initiated"]
+    },
+    position: { x: 250, y: 550 }
+  },
+  {
+    id: "pay_end",
+    type: "END",
+    title: "End Reminder Session",
+    config: {
+      farewellMessage: "Thank you for your ongoing partnership with us!"
+    },
+    position: { x: 400, y: 800 }
+  }
+];
+
+const PAYMENT_RECOVERY_RENEWAL_TRANSITIONS = [
+  { id: "e_pay_1", source: "pay_start", target: "pay_welcome", sourceHandle: "default" },
+  { id: "e_pay_2", source: "pay_welcome", target: "pay_branch_choice", sourceHandle: "default" },
+  { id: "e_pay_3", source: "pay_branch_choice", target: "pay_send_link", sourceHandle: "true" },
+  { id: "e_pay_4", source: "pay_branch_choice", target: "pay_check_extend", sourceHandle: "false" },
+  { id: "e_pay_5", source: "pay_send_link", target: "pay_crm_paid", sourceHandle: "default" },
+  { id: "e_pay_6", source: "pay_crm_paid", target: "pay_end", sourceHandle: "default" },
+  { id: "e_pay_7", source: "pay_check_extend", target: "pay_grace_granted", sourceHandle: "true" },
+  { id: "e_pay_8", source: "pay_check_extend", target: "pay_handoff", sourceHandle: "false" },
+  { id: "e_pay_9", source: "pay_grace_granted", target: "pay_crm_grace", sourceHandle: "default" },
+  { id: "e_pay_10", source: "pay_crm_grace", target: "pay_end", sourceHandle: "default" },
+  { id: "e_pay_11", source: "pay_handoff", target: "pay_end", sourceHandle: "default" }
+];
+
+const PAYMENT_RECOVERY_RENEWAL_VARIABLES = {
+  renewal_choice: { type: "STRING", label: "Renewal Choice", defaultValue: "PAY_NOW" }
+};
+
+// =========================================================================
+// 11. BLUEPRINT: EVENT & WEBINAR REGISTRATION ENGINE
+// =========================================================================
+const EVENT_WEBINAR_REGISTRATION_NODES = [
+  {
+    id: "event_start",
+    type: "TRIGGER_WHATSAPP",
+    title: "Webinar Registration Trigger",
+    config: {
+      triggerType: "KEYWORD",
+      keywords: ["webinar", "register", "event", "summit", "conference"],
+      matchType: "CONTAINS"
+    },
+    position: { x: 400, y: 50 }
+  },
+  {
+    id: "event_welcome",
+    type: "SEND_MESSAGE",
+    title: "Webinar Overview & Intro",
+    config: {
+      text: "🚀 *Welcome to the AI & Business Growth Summit 2026!*\n\nJoin 5,000+ industry leaders this Thursday at 4 PM IST. Let's reserve your complimentary delegate pass in under 30 seconds."
+    },
+    position: { x: 400, y: 170 }
+  },
+  {
+    id: "event_ask_name",
+    type: "COLLECT_INPUT",
+    title: "Input Attendee Name",
+    config: {
+      prompt: "👤 Please enter your full name for the delegate pass:",
+      saveAs: "attendee_name",
+      inputType: "TEXT"
+    },
+    position: { x: 400, y: 300 }
+  },
+  {
+    id: "event_ask_role",
+    type: "SEND_MESSAGE",
+    title: "Select Job Role",
+    config: {
+      text: "💼 What best describes your primary business role?",
+      variable: "attendee_role",
+      options: [
+        { id: "role_cxo", title: "Founder / CEO / CXO 👑", value: "CXO" },
+        { id: "role_manager", title: "Product / Team Lead 🎯", value: "LEAD" },
+        { id: "role_individual", title: "Developer / Creator 💻", value: "CREATOR" }
+      ]
+    },
+    position: { x: 400, y: 430 }
+  },
+  {
+    id: "event_eval_vip",
+    type: "CONDITION",
+    title: "Check VIP Delegate Status",
+    config: {
+      rules: [
+        { variable: "attendee_role", operator: "EQUALS", value: "CXO" }
+      ],
+      matchMode: "ALL"
+    },
+    position: { x: 400, y: 560 }
+  },
+  {
+    id: "event_set_vip_score",
+    type: "SET_VARIABLE",
+    title: "Assign VIP Lead Score",
+    config: {
+      targetVar: "lead_score",
+      operation: "SET",
+      value: 95
+    },
+    position: { x: 250, y: 680 }
+  },
+  {
+    id: "event_crm_reg",
+    type: "CRM_UPSERT",
+    title: "Record Webinar Registration",
+    config: {
+      pipeline: "event-attendees-pipeline",
+      stage: "REGISTERED",
+      dealValue: 0,
+      leadScore: 70,
+      tags: ["Webinar 2026", "Registered Attendee"],
+      recordTitle: "Attendee: {{attendee_name}}"
+    },
+    position: { x: 400, y: 800 }
+  },
+  {
+    id: "event_confirm_pass",
+    type: "SEND_MESSAGE",
+    title: "Instant Delegate Pass Delivery",
+    config: {
+      text: "🎟️ *Registration Confirmed, {{attendee_name}}!*\n\n📅 Date: Thursday, 4 PM IST\n🔗 Zoom Access Link: https://survya.flex-us.com/events/summit2026/room\n\nAdd to calendar: https://survya.flex-us.com/events/summit2026/calendar.ics"
+    },
+    position: { x: 400, y: 920 }
+  },
+  {
+    id: "event_delay_pulse",
+    type: "WAIT_DELAY",
+    title: "Pre-Event Reminder Delay",
+    config: {
+      delayAmount: 24,
+      delayUnit: "HOURS",
+      cancelOnReply: false
+    },
+    position: { x: 400, y: 1040 }
+  },
+  {
+    id: "event_reminder_msg",
+    type: "SEND_MESSAGE",
+    title: "1-Hour Countdown Reminder",
+    config: {
+      text: "⏰ *Reminder:* The Summit begins in 1 hour! Have your questions ready. See you inside: https://survya.flex-us.com/events/summit2026/room"
+    },
+    position: { x: 400, y: 1160 }
+  },
+  {
+    id: "event_end",
+    type: "END",
+    title: "End Registration Journey",
+    config: {
+      farewellMessage: "See you at the summit!"
+    },
+    position: { x: 400, y: 1280 }
+  }
+];
+
+const EVENT_WEBINAR_REGISTRATION_TRANSITIONS = [
+  { id: "e_ev_1", source: "event_start", target: "event_welcome", sourceHandle: "default" },
+  { id: "e_ev_2", source: "event_welcome", target: "event_ask_name", sourceHandle: "default" },
+  { id: "e_ev_3", source: "event_ask_name", target: "event_ask_role", sourceHandle: "valid" },
+  { id: "e_ev_4", source: "event_ask_role", target: "event_eval_vip", sourceHandle: "default" },
+  { id: "e_ev_5", source: "event_eval_vip", target: "event_set_vip_score", sourceHandle: "true" },
+  { id: "e_ev_6", source: "event_eval_vip", target: "event_crm_reg", sourceHandle: "false" },
+  { id: "e_ev_7", source: "event_set_vip_score", target: "event_crm_reg", sourceHandle: "default" },
+  { id: "e_ev_8", source: "event_crm_reg", target: "event_confirm_pass", sourceHandle: "default" },
+  { id: "e_ev_9", source: "event_confirm_pass", target: "event_delay_pulse", sourceHandle: "default" },
+  { id: "e_ev_10", source: "event_delay_pulse", target: "event_reminder_msg", sourceHandle: "default" },
+  { id: "e_ev_11", source: "event_reminder_msg", target: "event_end", sourceHandle: "default" }
+];
+
+const EVENT_WEBINAR_REGISTRATION_VARIABLES = {
+  attendee_name: { type: "STRING", label: "Attendee Full Name" },
+  attendee_role: { type: "STRING", label: "Job Role", defaultValue: "CXO" },
+  lead_score: { type: "NUMBER", label: "Lead Score", defaultValue: 70 }
+};
+
 const DEFAULT_FLOW_TEMPLATES = [
   {
     slug: "hospitality-booking-quote-journey",
@@ -1435,6 +1961,50 @@ const DEFAULT_FLOW_TEMPLATES = [
     nodes: STAFF_HANDOFF_NODES,
     transitions: STAFF_HANDOFF_TRANSITIONS,
     variables: STAFF_HANDOFF_VARIABLES,
+    is_system: 1
+  },
+  {
+    slug: "d2c-restaurant-order-cod-prepaid",
+    title: "D2C Food & Restaurant Order (COD & Prepaid)",
+    description: "Complete WhatsApp food ordering system with menu item selection, delivery address intake, prepaid vs COD payment routing, and instant order tracking.",
+    industry: "D2C_ECOMMERCE",
+    category: "ORDERS",
+    nodes: D2C_RESTAURANT_ORDER_NODES,
+    transitions: D2C_RESTAURANT_ORDER_TRANSITIONS,
+    variables: D2C_RESTAURANT_ORDER_VARIABLES,
+    is_system: 1
+  },
+  {
+    slug: "customer-support-triage-sla",
+    title: "Customer Support Triage & Priority SLA Router",
+    description: "Intelligent ticketing triage categorizing customer complaints, detecting high-priority escalation, enforcing SLA routing, and handing off VIP cases to live staff.",
+    industry: "SUPPORT",
+    category: "SUPPORT",
+    nodes: CUSTOMER_SUPPORT_TRIAGE_NODES,
+    transitions: CUSTOMER_SUPPORT_TRIAGE_TRANSITIONS,
+    variables: CUSTOMER_SUPPORT_TRIAGE_VARIABLES,
+    is_system: 1
+  },
+  {
+    slug: "payment-recovery-renewal-reminder",
+    title: "Payment Recovery & Subscription Renewal Reminder",
+    description: "Automated recovery and renewal workflow reminding customers of pending invoices, offering 7-day extensions, and reducing subscriber churn.",
+    industry: "FINTECH",
+    category: "BILLING",
+    nodes: PAYMENT_RECOVERY_RENEWAL_NODES,
+    transitions: PAYMENT_RECOVERY_RENEWAL_TRANSITIONS,
+    variables: PAYMENT_RECOVERY_RENEWAL_VARIABLES,
+    is_system: 1
+  },
+  {
+    slug: "event-webinar-registration",
+    title: "Event & Live Webinar Registration Engine",
+    description: "High-conversion event registration with attendee qualification, calendar link delivery, VIP attendee tagging, and automated pre-event reminder pulses.",
+    industry: "EVENTS",
+    category: "LEAD_GEN",
+    nodes: EVENT_WEBINAR_REGISTRATION_NODES,
+    transitions: EVENT_WEBINAR_REGISTRATION_TRANSITIONS,
+    variables: EVENT_WEBINAR_REGISTRATION_VARIABLES,
     is_system: 1
   }
 ];

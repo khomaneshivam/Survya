@@ -1864,7 +1864,12 @@ class WebhookService {
         LIMIT 1
       `).get();
 
-      if (isStudioMode && (activeFlowSession || hasPublishedFlows || matchedTrigger)) {
+      // STRICT ROUTING PRIORITY:
+      // 1. Any active session or matched published flow trigger ALWAYS routes to Conversation Flow Engine.
+      // 2. If configured in studio mode and published flows exist, routes to Conversation Flow Engine.
+      const shouldRunFlowEngine = activeFlowSession || matchedTrigger || (isStudioMode && hasPublishedFlows);
+
+      if (shouldRunFlowEngine) {
         // Universal Deduplication check for initial greeting
         if (!activeFlowSession && !isInteractiveAction && !isResumeKeyword) {
           if (autoReplySettings.mode === "ONCE_PER_CONTACT") {
@@ -1909,9 +1914,10 @@ class WebhookService {
           if (flowResult && flowResult.handled && flowResult.replyText) {
             let sentMsgId = null;
             if (flowResult.replyInteractive && flowResult.replyInteractive.options?.length > 0) {
+              // WhatsApp limits: Button title <= 20 chars, List row title <= 24 chars
               const buttons = flowResult.replyInteractive.options.map(o => ({
-                id: o.id,
-                title: o.title
+                id: String(o.id || "").substring(0, 256),
+                title: String(o.title || o.id || "Option").trim().substring(0, 20)
               }));
               try {
                 if (buttons.length <= 3) {
@@ -1924,13 +1930,17 @@ class WebhookService {
                   });
                   sentMsgId = bRes?.messageId || null;
                 } else {
+                  const listRows = flowResult.replyInteractive.options.map(o => ({
+                    id: String(o.id || "").substring(0, 256),
+                    title: String(o.title || o.id || "Option").trim().substring(0, 24)
+                  }));
                   const lRes = await sendInteractiveList({
                     to: cleanPhone,
                     bodyText: flowResult.replyText,
-                    buttonText: "Choose Option",
+                    buttonText: (flowResult.replyInteractive.listButtonText || "Choose Option").substring(0, 20),
                     sections: [{
-                      title: "Options",
-                      rows: buttons.map(b => ({ id: b.id, title: b.title }))
+                      title: (flowResult.replyInteractive.listTitle || "Options").substring(0, 24),
+                      rows: listRows
                     }],
                     footerText: autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa",
                     customCredentials

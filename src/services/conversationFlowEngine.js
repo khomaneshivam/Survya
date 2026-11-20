@@ -11,34 +11,83 @@ const { getNodeExecutor } = require("./workflow/nodeExecutors");
 const { evaluateRules } = require("./workflow/expressionEvaluator");
 
 /**
- * Resolves the next node in the graph matching an output handle or fallback edge.
+ * Resolves the next node in the graph matching an output handle or fallback edge with handle aliasing.
  */
-function findNextNode(currentNodeId, handle, transitions = [], nodeMap = new Map(), nodes = []) {
+function resolveNextTransition(currentNodeId, handle, transitions = [], nodeMap = new Map(), nodes = []) {
   if (!currentNodeId || !Array.isArray(transitions)) return null;
-  const outbound = transitions.filter(t => t.source === currentNodeId);
 
-  if (outbound.length > 0) {
-    if (handle && handle !== "default") {
-      const match = outbound.find(t =>
-        t.sourceHandle === handle ||
-        String(t.optionId) === handle ||
-        String(t.condition) === handle ||
-        (handle === "true" && t.condition === true) ||
-        (handle === "false" && t.condition === false)
-      );
-      if (match && nodeMap.has(match.target)) {
-        return nodeMap.get(match.target);
+  const outbound = transitions
+    .filter(t => (t.source || t.from) === currentNodeId)
+    .map(t => ({
+      ...t,
+      source: t.source || t.from,
+      target: t.target || t.to,
+      sourceHandle: t.sourceHandle || (t.optionId ? String(t.optionId) : null) || (t.condition !== undefined ? String(t.condition) : 'default')
+    }));
+
+  if (outbound.length === 0) {
+    if (!handle || handle === "default") {
+      if (Array.isArray(nodes) && nodes.length > 0) {
+        const curIdx = nodes.findIndex(n => n.id === currentNodeId);
+        if (curIdx >= 0 && curIdx < nodes.length - 1) {
+          return nodes[curIdx + 1];
+        }
       }
     }
+    return null;
+  }
 
-    // Default handle or first outbound transition
-    const defaultMatch = outbound.find(t => t.sourceHandle === "default" || !t.sourceHandle) || outbound[0];
-    if (defaultMatch && nodeMap.has(defaultMatch.target)) {
-      return nodeMap.get(defaultMatch.target);
+  // Handle Aliasing
+  const aliasMap = {
+    'early_reply': ['early_reply', 'replied_early'],
+    'replied_early': ['replied_early', 'early_reply'],
+    'failure': ['failure', 'error', 'unavailable'],
+    'error': ['error', 'failure', 'unavailable'],
+    'valid': ['valid', 'success', 'true', 'default'],
+    'success': ['success', 'valid', 'true', 'default'],
+    'true': ['true', 'valid', 'success'],
+    'false': ['false', 'failure', 'error', 'unavailable'],
+    'timeout': ['timeout', 'after_delay'],
+    'after_delay': ['after_delay', 'timeout']
+  };
+
+  const handleAliases = handle ? (aliasMap[handle] || [handle]) : ['default'];
+
+  // 1. Direct handle match or alias match
+  for (const h of handleAliases) {
+    const match = outbound.find(t =>
+      t.sourceHandle === h ||
+      String(t.optionId) === h ||
+      String(t.condition) === h ||
+      (h === "true" && t.condition === true) ||
+      (h === "false" && t.condition === false)
+    );
+    if (match) {
+      if (nodeMap && typeof nodeMap.has === "function" && nodeMap.has(match.target)) {
+        return nodeMap.get(match.target);
+      }
+      return { id: match.target, targetNodeId: match.target };
     }
   }
 
-  // Fallback to sequential node in array ONLY if no specific handle was requested (default only)
+  // 2. Default handle match
+  const defaultMatch = outbound.find(t => t.sourceHandle === "default" || !t.sourceHandle);
+  if (defaultMatch) {
+    if (nodeMap && typeof nodeMap.has === "function" && nodeMap.has(defaultMatch.target)) {
+      return nodeMap.get(defaultMatch.target);
+    }
+    return { id: defaultMatch.target, targetNodeId: defaultMatch.target };
+  }
+
+  // 3. If there is only one outbound edge, route along it as universal fallback
+  if (outbound.length === 1) {
+    if (nodeMap && typeof nodeMap.has === "function" && nodeMap.has(outbound[0].target)) {
+      return nodeMap.get(outbound[0].target);
+    }
+    return { id: outbound[0].target, targetNodeId: outbound[0].target };
+  }
+
+  // 4. Sequential fallback if nodes array provided
   if (!handle || handle === "default") {
     if (Array.isArray(nodes) && nodes.length > 0) {
       const curIdx = nodes.findIndex(n => n.id === currentNodeId);
@@ -49,6 +98,10 @@ function findNextNode(currentNodeId, handle, transitions = [], nodeMap = new Map
   }
 
   return null;
+}
+
+function findNextNode(currentNodeId, handle, transitions = [], nodeMap = new Map(), nodes = []) {
+  return resolveNextTransition(currentNodeId, handle, transitions, nodeMap, nodes);
 }
 
 /**
@@ -831,7 +884,45 @@ async function processTurn({
   const maxSteps = 25; // prevent infinite loops
   let inputConsumed = false;
 
-  // 3. Process Input on Waiting Node
+  // 3. Global Escape Keywords Handling (cancel, restart, reset, menu)
+  const normInput = String(userInput || "").trim().toLowerCase();
+  const isGlobalCancel = ["cancel", "stop", "exit"].includes(normInput);
+  const isGlobalRestart = ["restart", "reset", "menu", "/start", "/menu"].includes(normInput);
+
+  if (isGlobalCancel) {
+    if (!isSimulation && session?.id) {
+      try {
+        db.prepare("UPDATE conversation_flow_sessions SET session_status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(session.id);
+      } catch (e) {}
+    }
+    return {
+      handled: true,
+      sessionKey,
+      currentNodeId: currentNode?.id || null,
+      sessionStatus: "CANCELLED",
+      collectedData,
+      replyText: "Conversation cancelled. Type 'hi' anytime to start again.",
+      executionLogs: [...executionLogs, "Customer requested global cancellation ('cancel'). Session terminated."]
+    };
+  }
+
+  if (isGlobalRestart) {
+    const startNode = nodes.find(n => n.type === "TRIGGER_WHATSAPP" || n.type === "START") || nodes[0];
+    currentNode = startNode;
+    collectedData = {};
+    Object.keys(variableContext).forEach(k => {
+      if (!['sender_phone', 'property'].includes(k)) delete variableContext[k];
+    });
+    if (!isSimulation && session?.id) {
+      try {
+        db.prepare("UPDATE conversation_flow_sessions SET current_node_id = ?, collected_data_json = '{}', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(startNode.id, session.id);
+      } catch (e) {}
+    }
+    executionLogs.push(`Customer requested restart ('${normInput}'). Reset state and restarted from ${startNode.id}.`);
+    inputConsumed = true;
+  }
+
+  // 4. Process Input on Waiting Node
   if (!inputConsumed && (userInput || userPayload)) {
     // 3a. Modern COLLECT_INPUT
     if (currentNode.type === "COLLECT_INPUT") {
@@ -1528,6 +1619,7 @@ module.exports = {
   evaluateConditionRule,
   executeBusinessAction,
   findNextNode,
+  resolveNextTransition,
   resumeScheduledNode,
   processTurn
 };

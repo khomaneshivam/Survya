@@ -133,12 +133,15 @@ function CustomFlowNodeComponent({ id, data, selected }) {
           position={Position.Top}
           id="target"
           style={{
-            top: '-5px',
+            top: '-7px',
             background: '#94A3B8',
-            width: '10px',
-            height: '10px',
+            width: '14px',
+            height: '14px',
+            borderRadius: '50%',
             border: '2px solid #FFFFFF',
-            zIndex: 10
+            boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+            zIndex: 10,
+            cursor: 'crosshair'
           }}
         />
       )}
@@ -311,12 +314,15 @@ function CustomFlowNodeComponent({ id, data, selected }) {
                   style={{
                     top: '50%',
                     transform: 'translateY(-50%)',
-                    right: '-5px',
+                    right: '-19px',
                     background: h.color || nodeDef.color,
-                    width: '9px',
-                    height: '9px',
+                    width: '14px',
+                    height: '14px',
+                    borderRadius: '50%',
                     border: '2px solid #FFFFFF',
-                    zIndex: 10
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+                    zIndex: 10,
+                    cursor: 'crosshair'
                   }}
                 />
               </div>
@@ -387,12 +393,15 @@ function CustomFlowNodeComponent({ id, data, selected }) {
           position={Position.Bottom}
           id={handles[0]?.id || 'default'}
           style={{
-            bottom: '-5px',
+            bottom: '-7px',
             background: handles[0]?.color || nodeDef.color,
-            width: '10px',
-            height: '10px',
+            width: '14px',
+            height: '14px',
+            borderRadius: '50%',
             border: '2px solid #FFFFFF',
-            zIndex: 10
+            boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+            zIndex: 10,
+            cursor: 'crosshair'
           }}
         />
       )}

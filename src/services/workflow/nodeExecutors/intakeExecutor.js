@@ -30,6 +30,7 @@ function parseDateInput(inputStr, referenceDate = new Date()) {
 
   // Relative keywords
   const ref = new Date(referenceDate);
+  const refYear = ref.getFullYear();
   if (raw === 'today' || raw === 'aaj') {
     return ref.toISOString().split('T')[0];
   }
@@ -42,6 +43,80 @@ function parseDateInput(inputStr, referenceDate = new Date()) {
     return ref.toISOString().split('T')[0];
   }
 
+  // Month dictionary
+  const months = {
+    jan: 1, january: 1,
+    feb: 2, february: 2,
+    mar: 3, march: 3,
+    apr: 4, april: 4,
+    may: 5,
+    jun: 6, june: 6,
+    jul: 7, july: 7,
+    aug: 8, august: 8,
+    sep: 9, sept: 9, september: 9,
+    oct: 10, october: 10,
+    nov: 11, november: 11,
+    dec: 12, december: 12
+  };
+
+  // Pattern: "20 nov", "20 november", "20 nov 2026", "nov 20", "november 20"
+  const monthDayMatch = raw.match(/^(\d{1,2})\s+([a-z]+)(?:\s+(\d{4}))?$/) ||
+                        raw.match(/^([a-z]+)\s+(\d{1,2})(?:\s+(\d{4}))?$/);
+  if (monthDayMatch) {
+    let day, monthStr, yearStr;
+    if (/^\d/.test(monthDayMatch[1])) {
+      day = Number(monthDayMatch[1]);
+      monthStr = monthDayMatch[2];
+      yearStr = monthDayMatch[3];
+    } else {
+      monthStr = monthDayMatch[1];
+      day = Number(monthDayMatch[2]);
+      yearStr = monthDayMatch[3];
+    }
+    const monthNum = months[monthStr];
+    if (monthNum && day >= 1 && day <= 31) {
+      let y = yearStr ? Number(yearStr) : refYear;
+      const candidate = new Date(y, monthNum - 1, day);
+      if (!yearStr && candidate < new Date(ref.getFullYear(), ref.getMonth(), ref.getDate())) {
+        y += 1;
+      }
+      const mStr = String(monthNum).padStart(2, '0');
+      const dStr = String(day).padStart(2, '0');
+      return `${y}-${mStr}-${dStr}`;
+    }
+  }
+
+  // DD/MM or DD-MM (without year)
+  const dmMatch = raw.match(/^(\d{1,2})[-/](\d{1,2})$/);
+  if (dmMatch) {
+    const d = Number(dmMatch[1]);
+    const m = Number(dmMatch[2]);
+    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+      let y = refYear;
+      const candidate = new Date(y, m - 1, d);
+      if (candidate < new Date(ref.getFullYear(), ref.getMonth(), ref.getDate())) {
+        y += 1;
+      }
+      return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    }
+  }
+
+  // Fallback: standard Date.parse
+  const parsed = new Date(raw);
+  if (!isNaN(parsed.getTime())) {
+    let y = parsed.getFullYear();
+    if (y < refYear) {
+      y = refYear;
+      const candidate = new Date(y, parsed.getMonth(), parsed.getDate());
+      if (candidate < new Date(ref.getFullYear(), ref.getMonth(), ref.getDate())) {
+        y += 1;
+      }
+    }
+    const m = String(parsed.getMonth() + 1).padStart(2, '0');
+    const d = String(parsed.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
   return null;
 }
 
@@ -50,9 +125,9 @@ function parseDateInput(inputStr, referenceDate = new Date()) {
  */
 async function execute(node, context) {
   const { session = {}, userInput = '', isWaitingForThisNode = false } = context;
-  const config = node.config || {};
+  const config = { ...(node.data || {}), ...(node.config || {}) };
   const varName = config.saveAs || config.variable || 'user_input';
-  const inputType = String(config.inputType || config.validation?.type || 'TEXT').toUpperCase();
+  const inputType = String(config.inputType || config.validationType || config.validation?.type || 'TEXT').toUpperCase();
   const maxRetries = Number(config.maxRetries || 3);
   const retryKey = `_retries_${node.id}`;
 

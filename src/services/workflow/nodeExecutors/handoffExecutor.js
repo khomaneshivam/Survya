@@ -5,14 +5,14 @@ const { interpolateTemplate } = require('../expressionEvaluator');
  */
 async function execute(node, context) {
   const { session = {}, variableContext } = context;
-  const config = node.config || {};
+  const config = { ...(node.data || {}), ...(node.config || {}) };
   const evalContext = variableContext || session;
 
   const defaultMsg = '🔔 You are now connected with our human team. A specialist will assist you shortly.';
-  const handoffMsgRaw = config.handoffMessage || defaultMsg;
+  const handoffMsgRaw = config.handoffMessage || config.prompt || config.text || defaultMsg;
   const renderedMsg = interpolateTemplate(handoffMsgRaw, evalContext);
 
-  const team = config.team || 'FRONT_DESK';
+  const team = config.team || config.department || 'FRONT_DESK';
   const assignedTo = config.assignedTo || 'Duty Agent';
 
   return {

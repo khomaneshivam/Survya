@@ -84,8 +84,13 @@ export function toReactFlowGraph(sarvyaNodes = [], sarvyaTransitions = [], optio
   const safeNodes = Array.isArray(sarvyaNodes) ? sarvyaNodes : [];
   const safeTransitions = Array.isArray(sarvyaTransitions) ? sarvyaTransitions : [];
 
+  const nodeDefMap = new Map();
+  safeNodes.forEach((node) => {
+    nodeDefMap.set(String(node.id), getNodeDefinition(node.type));
+  });
+
   let rfNodes = safeNodes.map((node, index) => {
-    const nodeDef = getNodeDefinition(node.type);
+    const nodeDef = nodeDefMap.get(String(node.id)) || getNodeDefinition(node.type);
     const rawClone = JSON.parse(JSON.stringify(node));
 
     const pos = (node.position && typeof node.position.x === 'number' && typeof node.position.y === 'number')
@@ -111,7 +116,18 @@ export function toReactFlowGraph(sarvyaNodes = [], sarvyaTransitions = [], optio
 
   const rfEdges = safeTransitions.map((t, idx) => {
     const edgeId = t.id || `e_${t.source}_${t.target}_${idx}`;
-    const sourceHandle = t.sourceHandle || (t.optionId ? String(t.optionId) : null) || (t.condition !== undefined ? String(t.condition) : null) || 'default';
+    let sourceHandle = t.sourceHandle || (t.optionId ? String(t.optionId) : null) || (t.condition !== undefined ? String(t.condition) : null);
+
+    // If sourceHandle is missing or 'default', check if the source node has output handles defined
+    const srcDef = nodeDefMap.get(String(t.source));
+    if ((!sourceHandle || sourceHandle === 'default') && srcDef?.getOutputHandles) {
+      const srcNode = safeNodes.find((n) => String(n.id) === String(t.source));
+      const handles = srcDef.getOutputHandles(srcNode);
+      if (handles && handles.length === 1) {
+        sourceHandle = handles[0].id;
+      }
+    }
+    if (!sourceHandle) sourceHandle = 'default';
 
     let label = t.label || t.conditionLabel || '';
     if (!label) {
@@ -122,7 +138,9 @@ export function toReactFlowGraph(sarvyaNodes = [], sarvyaTransitions = [], optio
       else if (sourceHandle === 'available') label = 'Available';
       else if (sourceHandle === 'unavailable') label = 'Unavailable';
       else if (sourceHandle === 'after_delay') label = 'Delay Expired';
-      else if (sourceHandle === 'early_reply') label = 'Replied Early';
+      else if (sourceHandle === 'early_reply' || sourceHandle === 'replied_early') label = 'Replied Early';
+      else if (sourceHandle === 'success') label = 'Success';
+      else if (sourceHandle === 'failure' || sourceHandle === 'error') label = 'Error';
     }
 
     return {
@@ -154,24 +172,54 @@ export function toReactFlowGraph(sarvyaNodes = [], sarvyaTransitions = [], optio
 
 /**
  * Outbound Converter: Serializes React Flow nodes & edges back to SARVYA's { nodes, transitions }
- * Preserves user-assigned positions, handle bindings, variables, and conditions.
+ * Preserves user-assigned positions, handle bindings, variables, and conditions while stripping internal UI props.
  */
 export function toSarvyaGraph(rfNodes = [], rfEdges = []) {
   const safeRfNodes = Array.isArray(rfNodes) ? rfNodes : [];
   const safeRfEdges = Array.isArray(rfEdges) ? rfEdges : [];
 
+  const STANDARD_HANDLES = new Set([
+    'default',
+    'true',
+    'false',
+    'valid',
+    'max_retries',
+    'invalid_fallback',
+    'available',
+    'unavailable',
+    'success',
+    'failure',
+    'error',
+    'after_delay',
+    'early_reply',
+    'replied_early',
+    'delivered',
+    'submitted',
+    'fallback'
+  ]);
+
   const sarvyaNodes = safeRfNodes.map((rfNode) => {
     const raw = rfNode.data?.raw || {};
     const merged = { ...raw, ...(rfNode.data || {}) };
 
-    // Clean up internal React Flow UI flags
-    delete merged.raw;
-    delete merged.selected;
-    delete merged.dragging;
+    // Clean up internal React Flow and Studio UI properties
+    const keysToRemove = [
+      'raw',
+      'selected',
+      'dragging',
+      'resolvedType',
+      'validationIssues',
+      'activeSimulatedNodeId',
+      'showAnalyticsOverlay',
+      'metrics',
+      'onDuplicateNode',
+      'onDeleteNode'
+    ];
+    keysToRemove.forEach((k) => delete merged[k]);
 
     return {
       ...merged,
-      id: rfNode.id,
+      id: String(rfNode.id),
       type: rfNode.data?.type || raw.type || 'SEND_MESSAGE',
       title: rfNode.data?.title || raw.title || '',
       config: rfNode.data?.config || raw.config || {},
@@ -186,8 +234,8 @@ export function toSarvyaGraph(rfNodes = [], rfEdges = []) {
     const rawData = rfEdge.data || {};
     const transition = {
       id: rfEdge.id || `t_${rfEdge.source}_${rfEdge.target}_${idx}`,
-      source: rfEdge.source,
-      target: rfEdge.target
+      source: String(rfEdge.source),
+      target: String(rfEdge.target)
     };
 
     if (rfEdge.sourceHandle && rfEdge.sourceHandle !== 'default') {
@@ -214,10 +262,7 @@ export function toSarvyaGraph(rfNodes = [], rfEdges = []) {
 
     if (rawData.optionId) {
       transition.optionId = rawData.optionId;
-    } else if (
-      rfEdge.sourceHandle &&
-      !['true', 'false', 'default', 'valid', 'max_retries', 'available', 'unavailable', 'success', 'failure', 'after_delay', 'early_reply'].includes(rfEdge.sourceHandle)
-    ) {
+    } else if (rfEdge.sourceHandle && !STANDARD_HANDLES.has(rfEdge.sourceHandle)) {
       transition.optionId = rfEdge.sourceHandle;
     }
 

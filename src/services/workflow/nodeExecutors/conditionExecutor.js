@@ -5,14 +5,15 @@ const { evaluateRules, evaluateSingleRule, getPath } = require('../expressionEva
  */
 async function execute(node, context) {
   const { session = {}, variableContext } = context;
-  const config = node.config || {};
+  const config = { ...(node.data || {}), ...(node.config || {}) };
   const evalContext = variableContext || session;
 
   const rules = Array.isArray(config.rules) ? config.rules : [];
+  const matchMode = config.matchMode || config.conditionMatch || 'ALL';
   let passes = false;
 
   if (rules.length > 0) {
-    passes = evaluateRules(rules, config.matchMode || 'ALL', evalContext);
+    passes = evaluateRules(rules, matchMode, evalContext);
   } else if (config.variable) {
     // Legacy single rule fallback
     const val = getPath(evalContext, config.variable);

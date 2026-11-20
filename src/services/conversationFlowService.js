@@ -37,22 +37,29 @@ function validateFlowGraph(nodes, transitions, variables = {}) {
     else nodeMap.set(n.id, n);
   });
 
-  // 1. START node check
-  const startNodes = nodes.filter(n => n.type === "START");
-  if (startNodes.length === 0) {
-    errors.push("Flow must have exactly one 'START' node.");
-  } else if (startNodes.length > 1) {
-    errors.push(`Flow has ${startNodes.length} 'START' nodes. Only one is permitted.`);
+  // 1. Trigger node check (START, TRIGGER_WHATSAPP, or TRIGGER_EVENT)
+  const triggerTypes = new Set(["START", "TRIGGER_WHATSAPP", "TRIGGER_EVENT"]);
+  const triggerNodes = nodes.filter(n => triggerTypes.has(n.type));
+  if (triggerNodes.length === 0) {
+    errors.push("Flow must have at least one trigger node (START, TRIGGER_WHATSAPP, or TRIGGER_EVENT).");
+  } else if (triggerNodes.length > 1) {
+    warnings.push(`Flow contains ${triggerNodes.length} trigger nodes. Execution will begin at the matching trigger.`);
   }
 
-  // 2. END or HANDOFF terminal check
-  const terminalNodes = nodes.filter(n => n.type === "END" || n.type === "HANDOFF");
+  // 2. Terminal node check (END, HANDOFF, or HUMAN_HANDOFF)
+  const terminalTypes = new Set(["END", "HANDOFF", "HUMAN_HANDOFF"]);
+  const terminalNodes = nodes.filter(n => terminalTypes.has(n.type));
   if (terminalNodes.length === 0) {
     warnings.push("Flow has no terminal 'END' or 'HANDOFF' node. Conversations may not terminate cleanly.");
   }
 
   // 3. Transitions validity
-  const validTransitions = Array.isArray(transitions) ? transitions : [];
+  const validTransitions = (Array.isArray(transitions) ? transitions : []).map(t => ({
+    ...t,
+    source: t.source || t.from,
+    target: t.target || t.to
+  }));
+
   validTransitions.forEach((t, idx) => {
     if (!t.source || !nodeMap.has(t.source)) {
       errors.push(`Transition #${idx + 1} has invalid or missing source node '${t.source}'.`);
@@ -62,40 +69,44 @@ function validateFlowGraph(nodes, transitions, variables = {}) {
     }
   });
 
-  // 4. Reachability from START node
-  if (startNodes.length === 1) {
-    const startId = startNodes[0].id;
+  // 4. Reachability from trigger nodes
+  if (triggerNodes.length > 0) {
     const visited = new Set();
-    const queue = [startId];
-    visited.add(startId);
+    const queue = [];
+
+    triggerNodes.forEach(trg => {
+      visited.add(trg.id);
+      queue.push(trg.id);
+    });
 
     // Build adjacency list
     const adj = new Map();
     nodes.forEach(n => adj.set(n.id, []));
 
     validTransitions.forEach(t => {
-      if (adj.has(t.source)) {
+      if (adj.has(t.source) && t.target) {
         adj.get(t.source).push(t.target);
       }
     });
 
-    // Also include condition rule branch targets and API targets
+    // Also include condition rule branch targets, defaultTargetNodeId, and API targets
     nodes.forEach(n => {
-      if ((n.type === "CONDITION" || n.type === "CONFIRMATION") && n.config?.rules) {
-        (n.config.rules || []).forEach(r => {
-          if (r.targetNodeId && nodeMap.has(r.targetNodeId)) {
-            adj.get(n.id).push(r.targetNodeId);
+      const cfg = n.config || n.data || {};
+      if ((n.type === "CONDITION" || n.type === "CONFIRMATION") && cfg.rules) {
+        (cfg.rules || []).forEach(r => {
+          const tId = r.targetNodeId || r.target;
+          if (tId && nodeMap.has(tId)) {
+            adj.get(n.id).push(tId);
           }
         });
-        if (n.config.defaultTargetNodeId && nodeMap.has(n.config.defaultTargetNodeId)) {
-          adj.get(n.id).push(n.config.defaultTargetNodeId);
+        const defTId = cfg.defaultTargetNodeId || cfg.defaultTarget;
+        if (defTId && nodeMap.has(defTId)) {
+          adj.get(n.id).push(defTId);
         }
       }
-      if (n.type === "API_INTEGRATION" && n.config?.successTargetNodeId) {
-        if (nodeMap.has(n.config.successTargetNodeId)) adj.get(n.id).push(n.config.successTargetNodeId);
-      }
-      if (n.type === "API_INTEGRATION" && n.config?.failureTargetNodeId) {
-        if (nodeMap.has(n.config.failureTargetNodeId)) adj.get(n.id).push(n.config.failureTargetNodeId);
+      if (n.type === "API_INTEGRATION" || n.type === "HTTP_WEBHOOK") {
+        if (cfg.successTargetNodeId && nodeMap.has(cfg.successTargetNodeId)) adj.get(n.id).push(cfg.successTargetNodeId);
+        if (cfg.failureTargetNodeId && nodeMap.has(cfg.failureTargetNodeId)) adj.get(n.id).push(cfg.failureTargetNodeId);
       }
     });
 
@@ -112,7 +123,7 @@ function validateFlowGraph(nodes, transitions, variables = {}) {
 
     const unreached = nodes.filter(n => !visited.has(n.id));
     if (unreached.length > 0) {
-      warnings.push(`${unreached.length} node(s) are disconnected and cannot be reached from START: ${unreached.map(n => n.id).join(", ")}`);
+      warnings.push(`${unreached.length} node(s) are disconnected and cannot be reached from any trigger: ${unreached.map(n => n.id).join(", ")}`);
     }
   }
 
@@ -126,42 +137,49 @@ function validateFlowGraph(nodes, transitions, variables = {}) {
     "ASSIGN_STAFF",
     "B2B_CALCULATE_SALES_QUOTE",
     "B2B_CREATE_SALES_DEAL",
-    "GENERATE_PAYMENT_LINK"
+    "GENERATE_PAYMENT_LINK",
+    "CHECK_AVAILABILITY",
+    "CALCULATE_QUOTE",
+    "CREATE_BOOKING",
+    "PROCESS_PAYMENT"
   ]);
 
   nodes.forEach(n => {
+    const cfg = n.config || n.data || {};
+
     if (n.type === "BUTTON_MENU" || n.type === "SELECTION" || n.type === "CONFIRMATION") {
-      const opts = n.config?.options || [];
+      const opts = cfg.options || [];
       if (opts.length === 0 && n.type !== "CONFIRMATION") {
         errors.push(`Menu node '${n.id}' must have at least one option.`);
       } else if (opts.length > 10) {
         warnings.push(`Menu node '${n.id}' has ${opts.length} options (WhatsApp interactive list maximum is 10).`);
       }
-      opts.forEach((o, oIdx) => {
+      opts.forEach(o => {
         if (o.title && o.title.length > 20) {
-          warnings.push(`Button title '${o.title}' on node '${n.id}' exceeds WhatsApp 20-character limit (${o.title.length} chars). It may be truncated.`);
+          warnings.push(`Button title '${o.title}' on node '${n.id}' exceeds WhatsApp 20-character limit (${o.title.length} chars). It will be truncated.`);
         }
       });
     }
 
     if (n.type === "CONDITION") {
-      const rules = n.config?.rules || [];
-      if (rules.length === 0 && !n.config?.defaultTargetNodeId) {
+      const rules = cfg.rules || [];
+      if (rules.length === 0 && !cfg.defaultTargetNodeId && !cfg.variable) {
         errors.push(`Condition node '${n.id}' has no evaluation rules and no default target.`);
       }
     }
 
-    if (n.type === "BUSINESS_ACTION" || n.type === "TRANSACTION" || n.type === "BOOKING") {
-      const actionName = n.config?.action;
+    // Only legacy BUSINESS_ACTION / TRANSACTION / BOOKING requires strict action validation
+    if (n.type === "BUSINESS_ACTION" || n.type === "TRANSACTION") {
+      const actionName = cfg.action;
       if (!actionName) {
         errors.push(`Action node '${n.id}' does not specify an 'action'.`);
-      } else if (!APPROVED_ACTIONS.has(actionName)) {
-        errors.push(`Action node '${n.id}' specifies unapproved action '${actionName}'. Must be one of: ${Array.from(APPROVED_ACTIONS).join(", ")}`);
+      } else if (!APPROVED_ACTIONS.has(actionName) && !actionName.startsWith("HOSPITALITY_") && !actionName.startsWith("B2B_")) {
+        warnings.push(`Action node '${n.id}' specifies custom action '${actionName}'.`);
       }
     }
 
-    if (n.type === "INPUT_COLLECTION" || n.type === "QUESTION") {
-      if (!n.config?.variable) {
+    if (n.type === "INPUT_COLLECTION" || n.type === "QUESTION" || n.type === "COLLECT_INPUT") {
+      if (!cfg.variable && !cfg.saveAs) {
         warnings.push(`Input Collection node '${n.id}' does not specify a target variable. User input will not be stored.`);
       }
     }
@@ -348,37 +366,49 @@ function createFlow(data, user = { id: "admin", name: "Administrator" }) {
 
   const flowId = res.lastInsertRowid || db.prepare("SELECT id FROM conversation_flows WHERE uuid = ?").get(flowUuid)?.id;
 
-  // Starter nodes if not provided
-  const nodes = initialNodes || [
+  const rawNodes = data.nodes || data.initialNodes;
+  const rawTransitions = data.transitions || data.initialTransitions;
+  const rawVars = data.variables || data.initialVariables;
+
+  // Modern starter nodes if not provided
+  const nodes = rawNodes || [
     {
-      id: "node_start",
-      type: "START",
-      title: "Conversation Start",
-      config: { triggerType: trigger_type, triggerKeywords: trigger_keywords },
+      id: "node_trigger",
+      type: "TRIGGER_WHATSAPP",
+      title: "WhatsApp Keyword Trigger",
+      config: {
+        triggerType: trigger_type || "KEYWORD",
+        keywords: Array.isArray(trigger_keywords) && trigger_keywords.length > 0 ? trigger_keywords : ["hi", "hello"],
+        matchType: "CONTAINS"
+      },
       position: { x: 300, y: 50 }
     },
     {
       id: "node_welcome",
-      type: "MESSAGE",
+      type: "SEND_MESSAGE",
       title: "Welcome Greeting",
-      config: { text: "Hello! Welcome to our automated concierge." },
-      position: { x: 300, y: 160 }
+      config: { text: "Hello! Welcome to our automated concierge. How can we assist you today?" },
+      position: { x: 300, y: 180 }
     },
     {
       id: "node_end",
       type: "END",
       title: "End Conversation",
       config: { farewellMessage: "Thank you for reaching out!" },
-      position: { x: 300, y: 280 }
+      position: { x: 300, y: 310 }
     }
   ];
 
-  const transitions = initialTransitions || [
-    { id: "t_init_1", source: "node_start", target: "node_welcome" },
-    { id: "t_init_2", source: "node_welcome", target: "node_end" }
-  ];
+  const transitions = (rawTransitions || [
+    { id: "t_init_1", source: "node_trigger", target: "node_welcome", sourceHandle: "default" },
+    { id: "t_init_2", source: "node_welcome", target: "node_end", sourceHandle: "default" }
+  ]).map(t => ({
+    ...t,
+    source: t.source || t.from,
+    target: t.target || t.to
+  }));
 
-  const variables = initialVariables || {};
+  const variables = rawVars || {};
 
   const validationReport = validateFlowGraph(nodes, transitions, variables);
 
@@ -471,7 +501,13 @@ function saveFlowDraft(flowId, data, user = { id: "admin", name: "Administrator"
 
   const { nodes = [], transitions = [], variables = {}, changelog = "Updated draft via Visual Builder" } = data;
 
-  const validationReport = validateFlowGraph(nodes, transitions, variables);
+  const normalizedTransitions = (Array.isArray(transitions) ? transitions : []).map(t => ({
+    ...t,
+    source: t.source || t.from,
+    target: t.target || t.to
+  }));
+
+  const validationReport = validateFlowGraph(nodes, normalizedTransitions, variables);
 
   // Check current draft version
   let draftVersion = null;
@@ -493,7 +529,7 @@ function saveFlowDraft(flowId, data, user = { id: "admin", name: "Administrator"
       flowId,
       nextVer,
       JSON.stringify(nodes),
-      JSON.stringify(transitions),
+      JSON.stringify(normalizedTransitions),
       JSON.stringify(variables),
       JSON.stringify(validationReport),
       changelog
@@ -515,7 +551,7 @@ function saveFlowDraft(flowId, data, user = { id: "admin", name: "Administrator"
       WHERE id = ?
     `).run(
       JSON.stringify(nodes),
-      JSON.stringify(transitions),
+      JSON.stringify(normalizedTransitions),
       JSON.stringify(variables),
       JSON.stringify(validationReport),
       changelog,
@@ -531,7 +567,12 @@ function saveFlowDraft(flowId, data, user = { id: "admin", name: "Administrator"
 
   logAudit(tenantId, user.id, "SAVE_FLOW_DRAFT", flowId, { nodeCount: nodes.length, isValid: validationReport.isValid });
 
-  return getFlowById(flowId, tenantId);
+  const updatedFlow = getFlowById(flowId, tenantId);
+  return {
+    success: true,
+    ...updatedFlow,
+    validationReport
+  };
 }
 
 /**
@@ -566,7 +607,10 @@ function publishFlow(flowId, user = { id: "admin", name: "Administrator" }, tena
   // Validate prior to publishing
   const report = validateFlowGraph(draftVersion.nodes, draftVersion.transitions, draftVersion.variables);
   if (!report.isValid) {
-    throw new Error(`Cannot publish flow with validation errors: ${report.errors.join("; ")}`);
+    const err = new Error(`Cannot publish flow with validation errors: ${report.errors.join("; ")}`);
+    err.validationErrors = report.errors;
+    err.validationReport = report;
+    throw err;
   }
 
   // Snapshot this version as PUBLISHED

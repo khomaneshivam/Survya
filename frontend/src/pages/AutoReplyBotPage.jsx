@@ -388,26 +388,43 @@ export default function AutoReplyBotPage({ onNavigate }) {
           category: 'CUSTOM',
           nodes: [
             {
-              id: 'node_start',
-              type: 'START',
-              title: 'Start Conversation',
-              position: { x: 80, y: 150 },
-              config: {}
+              id: 'node_trigger',
+              type: 'TRIGGER_WHATSAPP',
+              title: 'WhatsApp Trigger',
+              position: { x: 100, y: 150 },
+              config: {
+                triggerType: 'KEYWORD',
+                keywords: ['hi', 'hello'],
+                matchType: 'CONTAINS'
+              }
             },
             {
               id: 'node_welcome',
-              type: 'MESSAGE',
+              type: 'SEND_MESSAGE',
               title: 'Welcome Message',
-              position: { x: 340, y: 150 },
-              config: { text: 'Hello {{name}}! Welcome to {{property.name}}. How can we assist you today?' }
+              position: { x: 380, y: 150 },
+              config: { text: 'Hello! Welcome to our automated service. How can we assist you today?' }
+            },
+            {
+              id: 'node_end',
+              type: 'END',
+              title: 'End Conversation',
+              position: { x: 660, y: 150 },
+              config: { farewellMessage: 'Thank you for reaching out!' }
             }
           ],
           transitions: [
             {
-              id: 'trans_start_welcome',
-              from: 'node_start',
-              to: 'node_welcome',
-              type: 'ALWAYS'
+              id: 't_trg_welcome',
+              source: 'node_trigger',
+              target: 'node_welcome',
+              sourceHandle: 'default'
+            },
+            {
+              id: 't_welcome_end',
+              source: 'node_welcome',
+              target: 'node_end',
+              sourceHandle: 'default'
             }
           ],
           variables: {}
