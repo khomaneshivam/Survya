@@ -1171,6 +1171,11 @@ export default function InboxPage({ onNavigate }) {
 
           const isOutbound = r.message_type === 'outbound';
           const incomingText = r.message_body || r.message_text || '';
+          const isAutoOutbound = Boolean(
+            r.user_id === 'bot' ||
+            r.source === 'CONVERSATION_FLOW' ||
+            r.reply_status === 'AUTO_REPLIED'
+          );
 
           // Determine if media exists or can be extracted from raw_payload or media_url
           let resolvedMediaUrl = r.media_url || null;
@@ -1194,7 +1199,7 @@ export default function InboxPage({ onNavigate }) {
           if (isOutbound) {
             convos[phoneKey].messages.push({
               id: r.id || `out_${Math.random()}`,
-              from_phone: 'Agent',
+              from_phone: isAutoOutbound ? 'Auto-Reply Bot' : 'Agent',
               text: incomingText || r.reply_text || '',
               media_url: resolvedMediaUrl,
               media_type: resolvedMediaType,
@@ -1202,6 +1207,7 @@ export default function InboxPage({ onNavigate }) {
               time: r.received_at,
               is_outbound: true,
               status: r.reply_status || 'SENT',
+              is_auto: isAutoOutbound,
               campaign_name: r.campaign_name || null
             });
           } else {
@@ -1221,27 +1227,49 @@ export default function InboxPage({ onNavigate }) {
               });
             }
 
-            // If an auto-reply was sent to this message
-            if (r.reply_text) {
-              convos[phoneKey].messages.push({
-                id: `${r.id}_reply`,
-                from_phone: 'Agent',
-                text: r.reply_text,
-                media_url: null, // Critical: do NOT duplicate customer's incoming media onto agent text auto-reply
-                media_type: null,
-                media_caption: null,
-                time: r.reply_sent_at || r.received_at,
-                is_outbound: true,
-                status: r.reply_status || 'SENT',
-                is_auto: r.reply_status === 'AUTO_REPLIED'
-              });
+            // If an auto-reply was recorded on this inbound row, only synthesize a message bubble
+            // if NO outbound record already exists in the conversation timeline with this text
+            if (r.reply_text && r.reply_text.trim()) {
+              const trimmedReply = r.reply_text.trim();
+              const hasMatchingOutbound = customerReplies.some(other =>
+                String(other.from_phone).replace(/\D/g, '') === phoneKey &&
+                other.message_type === 'outbound' &&
+                ((other.message_body && other.message_body.trim() === trimmedReply) ||
+                 (other.reply_text && other.reply_text.trim() === trimmedReply))
+              );
+
+              if (!hasMatchingOutbound) {
+                convos[phoneKey].messages.push({
+                  id: `${r.id}_reply`,
+                  from_phone: 'Auto-Reply Bot',
+                  text: r.reply_text,
+                  media_url: null, // Critical: do NOT duplicate customer's incoming media onto agent text auto-reply
+                  media_type: null,
+                  media_caption: null,
+                  time: r.reply_sent_at || r.received_at,
+                  is_outbound: true,
+                  status: r.reply_status || 'SENT',
+                  is_auto: true
+                });
+              }
             }
           }
         });
 
-        // Sort messages chronologically (oldest at top, newest at bottom)
+        // Sort messages chronologically (oldest at top, newest at bottom) and deduplicate consecutive identical outbound replies
         Object.values(convos).forEach(c => {
           c.messages.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+          c.messages = c.messages.filter((m, idx, arr) => {
+            if (idx === 0) return true;
+            const prev = arr[idx - 1];
+            if (m.is_outbound && prev.is_outbound && m.text && prev.text && m.text.trim() === prev.text.trim()) {
+              const diffMs = Math.abs(new Date(m.time).getTime() - new Date(prev.time).getTime());
+              if (isNaN(diffMs) || diffMs < 10000) {
+                return false;
+              }
+            }
+            return true;
+          });
           if (c.messages.length > 0) {
             const last = c.messages[c.messages.length - 1];
             const isLastVideo = last.media_type === 'video' || (last.media_url && /\.(mp4|3gp|mov|webm)(\?.*)?$/i.test(last.media_url));

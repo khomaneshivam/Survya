@@ -724,7 +724,7 @@ async function processTurn({
       transitions = flowOverride.transitions || [];
     }
   } else {
-    // 1. Check for active session in DB
+    // 1. Check for active session in DB with strict expiration check
     session = db.prepare(`
       SELECT * FROM conversation_flow_sessions
       WHERE session_key = ? AND session_status = 'ACTIVE'
@@ -732,7 +732,6 @@ async function processTurn({
     `).get(sessionKey);
 
     if (session) {
-      // Inactivity timeout / connection open limit check (Strict Mode)
       let timeoutMinutes = 1440;
       try {
         const { getSetting } = require("../config/database");
@@ -740,15 +739,16 @@ async function processTurn({
         if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 1440;
       } catch (e) {}
 
-      const lastInteractionTime = session.last_interaction_at ? new Date(session.last_interaction_at).getTime() : new Date(session.created_at).getTime();
-      const expiresAtTime = session.expires_at ? new Date(session.expires_at).getTime() : null;
-      const isSessionTimedOut = (expiresAtTime && Date.now() > expiresAtTime) || (Date.now() - lastInteractionTime > timeoutMinutes * 60 * 1000);
+      // Check whether session expired in DB or exceeded inactivity window
+      const expCheck = db.prepare("SELECT (? IS NOT NULL AND ? <= NOW()) as is_expired").get(session.expires_at, session.expires_at);
+      const lastMs = session.last_interaction_at ? new Date(session.last_interaction_at).getTime() : new Date(session.created_at).getTime();
+      const isSessionTimedOut = Boolean(expCheck?.is_expired) || (Date.now() - lastMs > timeoutMinutes * 60 * 1000);
 
       if (isSessionTimedOut) {
         // Silently mark old session as EXPIRED in DB (Strict mode: NO auto message sent)
         db.prepare(`
           UPDATE conversation_flow_sessions
-          SET session_status = 'EXPIRED', updated_at = CURRENT_TIMESTAMP
+          SET session_status = 'EXPIRED', updated_at = NOW()
           WHERE id = ?
         `).run(session.id);
 
@@ -756,7 +756,7 @@ async function processTurn({
           db.prepare(`
             INSERT INTO conversation_flow_events (
               session_id, flow_id, flow_version_id, node_id, node_type, event_type, payload_json, created_at
-            ) VALUES (?, ?, ?, ?, 'SESSION_TIMEOUT', 'EXPIRED', ?, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, 'SESSION_TIMEOUT', 'EXPIRED', ?, NOW())
           `).run(
             session.id,
             session.flow_id,
@@ -773,6 +773,10 @@ async function processTurn({
         // Load flow & pinned version
         flow = db.prepare("SELECT * FROM conversation_flows WHERE id = ?").get(session.flow_id);
         flowVersion = db.prepare("SELECT * FROM conversation_flow_versions WHERE id = ?").get(session.flow_version_id);
+
+        if (!flowVersion && flow) {
+          flowVersion = db.prepare("SELECT * FROM conversation_flow_versions WHERE flow_id = ? ORDER BY version_number DESC, id DESC LIMIT 1").get(flow.id);
+        }
 
         if (flowVersion) {
           nodes = JSON.parse(flowVersion.nodes_json || "[]");
@@ -850,16 +854,16 @@ async function processTurn({
           session_key, tenant_id, property_id, channel, sender_phone,
           flow_id, flow_version_id, current_node_id, session_status,
           collected_data_json, last_interaction_at, expires_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', '{}', CURRENT_TIMESTAMP, DATE_ADD(CURRENT_TIMESTAMP, INTERVAL ? MINUTE), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', '{}', NOW(), DATE_ADD(NOW(), INTERVAL ? MINUTE), NOW(), NOW())
         ON DUPLICATE KEY UPDATE
           flow_id = VALUES(flow_id),
           flow_version_id = VALUES(flow_version_id),
           current_node_id = VALUES(current_node_id),
           session_status = 'ACTIVE',
           collected_data_json = '{}',
-          last_interaction_at = CURRENT_TIMESTAMP,
-          expires_at = DATE_ADD(CURRENT_TIMESTAMP, INTERVAL ? MINUTE),
-          updated_at = CURRENT_TIMESTAMP
+          last_interaction_at = NOW(),
+          expires_at = DATE_ADD(NOW(), INTERVAL ? MINUTE),
+          updated_at = NOW()
       `).run(
         sessionKey,
         tenantId,
@@ -1145,6 +1149,10 @@ async function processTurn({
       const dateStr = parseDateInput(userInput);
       if (!dateStr) {
         isValid = false;
+        validationErrorMsg = valConfig.errorMessage || "⚠️ Please enter a valid date in YYYY-MM-DD format (or say *tomorrow*), or reply 'menu' to return to the main menu.";
+        if (!validationErrorMsg.toLowerCase().includes("menu")) {
+          validationErrorMsg += " (or reply 'menu' to return to the main menu)";
+        }
       } else {
         parsedVal = dateStr;
       }
@@ -1611,9 +1619,9 @@ async function processTurn({
     db.prepare(`
       UPDATE conversation_flow_sessions
       SET current_node_id = ?, session_status = ?, collected_data_json = ?,
-          last_interaction_at = CURRENT_TIMESTAMP,
-          expires_at = DATE_ADD(CURRENT_TIMESTAMP, INTERVAL ? MINUTE),
-          updated_at = CURRENT_TIMESTAMP
+          last_interaction_at = NOW(),
+          expires_at = DATE_ADD(NOW(), INTERVAL ? MINUTE),
+          updated_at = NOW()
       WHERE id = ?
     `).run(
       finalNodeId,

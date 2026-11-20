@@ -105,6 +105,11 @@ test("Deep Root-Cause Fixes & Dynamic Workflow Integration Suite", async (t) => 
     assert.ok(publishResult);
     assert.equal(publishResult.flow.status, "PUBLISHED");
     assert.ok(publishResult.publishedVersion);
+
+    // Clean up test flow and triggers so it does not pollute subsequent tests
+    db.prepare("DELETE FROM workflow_triggers WHERE flow_id = ?").run(String(flowId));
+    db.prepare("DELETE FROM conversation_flow_versions WHERE flow_id = ?").run(flowId);
+    db.prepare("DELETE FROM conversation_flows WHERE id = ?").run(flowId);
   });
 
   await t.test("3. toReactFlowGraph / toSarvyaGraph roundtrip sanitization", async () => {

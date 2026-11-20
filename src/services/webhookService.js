@@ -599,7 +599,7 @@ class WebhookService {
     const existing = db.prepare("SELECT id FROM customer_replies WHERE wa_message_id = ?").get(waMessageId);
     if (existing) {
       console.log(`[Webhook] Duplicate message ID skipped: ${waMessageId}`);
-      return { saved: false, id: existing.id };
+      return { saved: false, id: existing.id, duplicate: true };
     }
 
     const fromPhone = String(msg.from || "").trim();
@@ -1816,25 +1816,56 @@ class WebhookService {
       const isInteractiveAction = Boolean(interactiveActionId || isFlowReply);
 
       // 6b. Dynamic Conversation Flow & Automation Studio Engine
-      // If client is configured in FLOW_STUDIO or CONVERSATION_FLOW mode, or an active studio session is open:
+      // STRICT WATERFALL: Active Session First -> Trigger Matching -> Default Published Flow -> Legacy Fallback
       const flowEngine = require("./conversationFlowEngine");
-      let activeFlowSession = db.prepare(`
-        SELECT id, current_node_id, last_interaction_at, expires_at FROM conversation_flow_sessions
-        WHERE sender_phone = ? AND session_status = 'ACTIVE'
-        LIMIT 1
-      `).get(cleanPhone);
 
-      // Check if previous session timed out (Connection Open Time Limit)
-      if (activeFlowSession) {
-        const timeoutMins = autoReplySettings.sessionTimeoutMinutes || 1440;
-        const lastMs = activeFlowSession.last_interaction_at ? new Date(activeFlowSession.last_interaction_at).getTime() : 0;
-        const expMs = activeFlowSession.expires_at ? new Date(activeFlowSession.expires_at).getTime() : null;
-        const isSessionTimedOut = (expMs && Date.now() > expMs) || (Date.now() - lastMs > timeoutMins * 60 * 1000);
-        if (isSessionTimedOut) {
-          console.log(`[Webhook Flow] Previous session #${activeFlowSession.id} for ${cleanPhone} timed out (${timeoutMins}m limit). Expired silently with ZERO auto-messages.`);
-          db.prepare("UPDATE conversation_flow_sessions SET session_status = 'EXPIRED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(activeFlowSession.id);
-          activeFlowSession = null;
-        }
+      // 1. ACTIVE SESSION FIRST: Lookup using strict expiration check against NOW()
+      let activeFlowSession = null;
+      try {
+        activeFlowSession = db.prepare(`
+          SELECT s.*, f.status as flow_status, f.name as flow_name
+          FROM conversation_flow_sessions s
+          JOIN conversation_flows f ON s.flow_id = f.id
+          WHERE s.sender_phone = ? 
+            AND s.session_status = 'ACTIVE' 
+            AND (s.expires_at IS NULL OR s.expires_at > NOW())
+          ORDER BY s.id DESC
+          LIMIT 1
+        `).get(cleanPhone);
+      } catch (sessErr) {
+        console.warn("[Webhook Flow] Active session lookup note:", sessErr.message);
+      }
+
+      // Check global escape/reset words if active session exists
+      const normInputLower = String(effectiveText || "").trim().toLowerCase();
+      const isResetKeyword = ["restart", "reset", "menu", "/start", "/menu", "main menu"].includes(normInputLower);
+      const isCancelKeyword = ["cancel", "stop", "exit"].includes(normInputLower);
+
+      if (activeFlowSession && isResetKeyword) {
+        console.log(`[Webhook Flow] Customer ${cleanPhone} requested reset ('${normInputLower}'). Expiring session #${activeFlowSession.id} for fresh start.`);
+        try {
+          db.prepare("UPDATE conversation_flow_sessions SET session_status = 'EXPIRED', updated_at = NOW() WHERE id = ?").run(activeFlowSession.id);
+        } catch (e) {}
+        activeFlowSession = null;
+      }
+
+      if (activeFlowSession && isCancelKeyword) {
+        console.log(`[Webhook Flow] Customer ${cleanPhone} requested cancellation ('${normInputLower}'). Terminating session #${activeFlowSession.id}.`);
+        try {
+          db.prepare("UPDATE conversation_flow_sessions SET session_status = 'CANCELLED', updated_at = NOW() WHERE id = ?").run(activeFlowSession.id);
+        } catch (e) {}
+        try {
+          await sendTextMessage({
+            to: cleanPhone,
+            body: "Conversation cancelled. Type 'hi' anytime to start again.",
+            customCredentials
+          });
+        } catch (e) {}
+        return {
+          success: true,
+          cancelled: true,
+          replyText: "Conversation cancelled."
+        };
       }
 
       // Check for pending delay jobs that should cancel on customer reply
@@ -1860,7 +1891,7 @@ class WebhookService {
         console.warn("[Webhook Flow] Cancel-on-reply check warning:", delayErr.message);
       }
 
-      // Match multi-channel triggers ONLY if no active session AND this is not an interactive button click
+      // 2. TRIGGER MATCHING: Run ONLY if NO active session AND not an interactive button click
       let matchedTrigger = null;
       if (!activeFlowSession && !isInteractiveAction) {
         try {
@@ -1883,16 +1914,21 @@ class WebhookService {
                            autoReplySettings.engineMode === "CONVERSATION_FLOW" ||
                            autoReplySettings.engineMode === "HOSPITALITY_FLOW";
 
-      const hasPublishedFlows = db.prepare(`
-        SELECT id FROM conversation_flows
-        WHERE tenant_id = 1 AND status = 'PUBLISHED'
-        LIMIT 1
-      `).get();
+      let defaultPublishedFlow = null;
+      try {
+        defaultPublishedFlow = db.prepare(`
+          SELECT id FROM conversation_flows
+          WHERE tenant_id = 1 AND status = 'PUBLISHED'
+          ORDER BY is_default DESC, priority DESC, id ASC
+          LIMIT 1
+        `).get();
+      } catch (fErr) {}
 
       // STRICT ROUTING PRIORITY:
-      // 1. Any active session or matched published flow trigger ALWAYS routes to Conversation Flow Engine.
-      // 2. If configured in studio mode and published flows exist, routes to Conversation Flow Engine.
-      const shouldRunFlowEngine = activeFlowSession || matchedTrigger || (isStudioMode && hasPublishedFlows);
+      // 1. Any active session ALWAYS resumes its active flow.
+      // 2. Otherwise matched published flow trigger routes to that flow.
+      // 3. Otherwise if in studio mode and published flow exists, routes to default flow.
+      const shouldRunFlowEngine = Boolean(activeFlowSession || matchedTrigger || (isStudioMode && defaultPublishedFlow));
 
       if (shouldRunFlowEngine) {
         // Universal Deduplication check for initial or repeated generic greeting:
@@ -1925,12 +1961,15 @@ class WebhookService {
           }
         }
         try {
+          const targetFlowId = activeFlowSession ? activeFlowSession.flow_id : (matchedTrigger?.flowId || defaultPublishedFlow?.id || null);
+          const targetNodeId = activeFlowSession ? null : (matchedTrigger?.nodeId || null);
+
           const flowResult = await flowEngine.processTurn({
             senderPhone: cleanPhone,
             userInput: effectiveText,
             userPayload: rawMsg?.interactive?.button_reply || rawMsg?.interactive?.list_reply || (interactiveActionId ? { id: interactiveActionId, title: effectiveText } : null),
-            startFlowId: matchedTrigger?.flowId || null,
-            startNodeId: matchedTrigger?.nodeId || null,
+            startFlowId: targetFlowId,
+            startNodeId: targetNodeId,
             phoneNumberId: incomingPhoneId,
             context: {
               tenantId: 1,
@@ -2028,14 +2067,14 @@ class WebhookService {
             }
 
             const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
-            const botReplyId = `bot_flow_${Date.now()}`;
+            const botReplyId = sentMsgId || `bot_flow_${Date.now()}`;
             try {
               db.prepare(`
                 INSERT INTO customer_replies (
                   wa_message_id, from_phone, customer_name, message_type,
                   message_body, reply_text, reply_sent_at, reply_status,
                   link_id, source, is_read, user_id, received_at
-                ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'CONVERSATION_FLOW', 1, 'bot', ?)
+                ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'AUTO_REPLIED', ?, 'CONVERSATION_FLOW', 1, 'bot', ?)
               `).run(botReplyId, cleanPhone, replyRecord.customer_name || "Guest", flowResult.replyText, flowResult.replyText, nowIso, replyRecord.link_id || null, nowIso);
             } catch (e) {}
 

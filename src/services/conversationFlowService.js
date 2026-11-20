@@ -334,7 +334,7 @@ function createFlow(data, user = { id: "admin", name: "Administrator" }) {
     description = "",
     category = "HOSPITALITY_ENQUIRY",
     trigger_type = "KEYWORD_MATCH",
-    trigger_keywords = ["book", "stay", "room"],
+    trigger_keywords = [],
     is_default = 0,
     priority = 10,
     initialNodes = null,
@@ -926,6 +926,23 @@ function createFlowFromTemplate(templateSlug, data = {}, user = { id: "admin", n
   const transitions = JSON.parse(tpl.transitions_json || "[]");
   const variables = tpl.variables_json ? JSON.parse(tpl.variables_json) : {};
 
+  // Extract keywords intelligently without hardcoding ["book", "stay", "room"]
+  let keywords = data.trigger_keywords;
+  if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+    const trgNode = nodes.find(n => n.type === "TRIGGER_WHATSAPP" || n.type === "START");
+    if (trgNode?.config?.keywords && Array.isArray(trgNode.config.keywords) && trgNode.config.keywords.length > 0) {
+      keywords = trgNode.config.keywords;
+    } else if (tpl.category === "B2B_SALES" || tpl.industry === "B2B_SALES") {
+      keywords = ["pricing", "plans", "quote", "demo", "sales", "enterprise", "b2b"];
+    } else if (tpl.category === "DINING") {
+      keywords = ["menu", "order", "food", "table", "dining"];
+    } else if (tpl.category === "HOSPITALITY_ENQUIRY" || tpl.industry === "HOSPITALITY") {
+      keywords = ["book", "stay", "room", "reservation", "resort", "villa"];
+    } else {
+      keywords = [];
+    }
+  }
+
   return createFlow({
     tenant_id: tenantId,
     property_id: data.property_id || 1,
@@ -933,7 +950,7 @@ function createFlowFromTemplate(templateSlug, data = {}, user = { id: "admin", n
     description: data.description || tpl.description,
     category: tpl.category || "HOSPITALITY_ENQUIRY",
     trigger_type: data.trigger_type || "KEYWORD_MATCH",
-    trigger_keywords: data.trigger_keywords || ["book", "stay", "room"],
+    trigger_keywords: keywords,
     is_default: data.is_default ? 1 : 0,
     priority: data.priority || 10,
     initialNodes: nodes,
