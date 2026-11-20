@@ -186,6 +186,18 @@ async function archiveFlow(req, res) {
   }
 }
 
+async function deleteFlow(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const user = req.user || { id: "admin", name: "Administrator" };
+    const flowId = req.params.id;
+    const result = flowService.deleteFlow(flowId, user, tenantId);
+    return res.json(result);
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
 async function rollbackFlow(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
@@ -385,6 +397,7 @@ module.exports = {
   publishFlow,
   pauseFlow,
   archiveFlow,
+  deleteFlow,
   rollbackFlow,
   listVersions,
   getFlowAnalytics,

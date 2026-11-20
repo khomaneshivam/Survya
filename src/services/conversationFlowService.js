@@ -505,7 +505,8 @@ function updateFlow(flowId, data, user = { id: "admin", name: "Administrator" },
   // If line changed and flow is published, re-sync active triggers
   if (flow.status === "PUBLISHED" && targetPhoneId !== flow.phone_number_id) {
     try {
-      const activeNodes = current.publishedVersion?.nodes || current.draftVersion?.nodes || [];
+      const currentFlow = getFlowById(flowId, tenantId);
+      const activeNodes = currentFlow?.publishedVersion?.nodes || currentFlow?.draftVersion?.nodes || [];
       const workflowTriggerService = require("./workflow/workflowTriggerService");
       workflowTriggerService.syncFlowTriggers(tenantId, flowId, activeNodes, targetPhoneId);
     } catch (trgErr) {
@@ -769,6 +770,48 @@ function archiveFlow(flowId, user = { id: "admin", name: "Administrator" }, tena
 
   logAudit(tenantId, user.id, "ARCHIVE_CONVERSATION_FLOW", flowId, null);
   return getFlowById(flowId, tenantId);
+}
+
+/**
+ * Permanently delete a flow and its associated versions, triggers, and sessions.
+ */
+function deleteFlow(flowId, user = { id: "admin", name: "Administrator" }, tenantId = 1) {
+  const flow = db.prepare("SELECT * FROM conversation_flows WHERE id = ? AND tenant_id = ?").get(flowId, tenantId);
+  if (!flow) {
+    throw new Error("Conversation flow not found.");
+  }
+
+  // 1. Deactivate & remove workflow triggers
+  try {
+    const workflowTriggerService = require("./workflow/workflowTriggerService");
+    workflowTriggerService.deactivateFlowTriggers(tenantId, flowId);
+  } catch (e) {}
+
+  try {
+    db.prepare("DELETE FROM workflow_triggers WHERE flow_id = ? AND tenant_id = ?").run(String(flowId), tenantId);
+  } catch (e) {}
+
+  // 2. Clean up events and sessions
+  try {
+    db.prepare("DELETE FROM conversation_flow_events WHERE flow_id = ?").run(flowId);
+    db.prepare("DELETE FROM conversation_flow_sessions WHERE flow_id = ?").run(flowId);
+  } catch (e) {}
+
+  // 3. Delete versions
+  try {
+    db.prepare("DELETE FROM conversation_flow_versions WHERE flow_id = ?").run(flowId);
+  } catch (e) {}
+
+  // 4. Delete the flow record itself
+  db.prepare("DELETE FROM conversation_flows WHERE id = ? AND tenant_id = ?").run(flowId, tenantId);
+
+  logAudit(tenantId, user.id, "DELETE_CONVERSATION_FLOW", flowId, { name: flow.name });
+
+  return {
+    success: true,
+    message: `Flow "${flow.name}" deleted successfully.`,
+    deletedFlowId: flowId
+  };
 }
 
 /**
@@ -1196,6 +1239,7 @@ module.exports = {
   assignFlowToLine,
   pauseFlow,
   archiveFlow,
+  deleteFlow,
   rollbackFlow,
   listVersions,
   listTemplates,

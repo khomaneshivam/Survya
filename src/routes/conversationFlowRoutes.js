@@ -58,6 +58,8 @@ router.post("/flows/conversation-flows/:id/validate", authenticateToken, flowCon
 router.post("/flows/conversation-flows/:id/publish", authenticateToken, flowController.publishFlow);
 router.post("/flows/conversation-flows/:id/pause", authenticateToken, flowController.pauseFlow);
 router.post("/flows/conversation-flows/:id/archive", authenticateToken, flowController.archiveFlow);
+router.delete("/flows/conversation-flows/:id", authenticateToken, flowController.deleteFlow);
+router.post("/flows/conversation-flows/:id/delete", authenticateToken, flowController.deleteFlow);
 router.post("/flows/conversation-flows/:id/rollback", authenticateToken, flowController.rollbackFlow);
 router.get("/flows/conversation-flows/:id/versions", authenticateToken, flowController.listVersions);
 router.get("/flows/conversation-flows/:id/analytics", authenticateToken, flowController.getFlowAnalytics);

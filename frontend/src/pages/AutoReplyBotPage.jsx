@@ -57,6 +57,7 @@ import MessageTemplatesStudio from '../components/flow-studio/MessageTemplatesSt
 import FlowAnalyticsPanel from '../components/flow-studio/FlowAnalyticsPanel';
 import FlowExecutionsModal from '../components/flow-studio/FlowExecutionsModal';
 import AiFlowGeneratorModal from '../components/flow-studio/AiFlowGeneratorModal';
+import HospitalityImageUploadModule from '../components/HospitalityImageUploadModule';
 
 function TabSaveFooter({ hasUnsavedChanges, saving, onSave }) {
   return (
@@ -194,6 +195,29 @@ export default function AutoReplyBotPage({ onNavigate }) {
   const [aiRefinePrompt, setAiRefinePrompt] = useState('');
   const [refiningWithAi, setRefiningWithAi] = useState(false);
   const [connectedLines, setConnectedLines] = useState([]);
+  const [hasFlowUnsavedChanges, setHasFlowUnsavedChanges] = useState(false);
+  const [lastSavedTime, setLastSavedTime] = useState(null);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameForm, setRenameForm] = useState({ name: '', description: '', category: 'HOSPITALITY_ENQUIRY' });
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [flowToDelete, setFlowToDelete] = useState(null);
+  const [studioToast, setStudioToast] = useState(null);
+  const [showAiRefineBar, setShowAiRefineBar] = useState(false);
+
+  const showStudioToast = useCallback((msg, type = 'success') => {
+    setStudioToast({ message: msg, type });
+    setTimeout(() => setStudioToast(null), 3500);
+  }, []);
+
+  const handleUpdateNodes = useCallback((newNodes) => {
+    setCurrentNodes(newNodes);
+    setHasFlowUnsavedChanges(true);
+  }, []);
+
+  const handleUpdateTransitions = useCallback((newTransitions) => {
+    setCurrentTransitions(newTransitions);
+    setHasFlowUnsavedChanges(true);
+  }, []);
 
   // Auth Headers helper
   const getAuthHeaders = useCallback(() => {
@@ -241,6 +265,11 @@ export default function AutoReplyBotPage({ onNavigate }) {
       if (data.success && data.flow) {
         setActiveFlow(data.flow);
         setActiveFlowId(data.flow.id);
+        setRenameForm({
+          name: data.flow.name || '',
+          description: data.flow.description || '',
+          category: data.flow.category || 'HOSPITALITY_ENQUIRY'
+        });
         const version = data.draftVersion || data.publishedVersion;
         if (version) {
           setCurrentNodes(version.nodes || []);
@@ -248,6 +277,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
           setCurrentVariables(version.variables || {});
           setSelectedNodeId((version.nodes || [])[0]?.id || null);
         }
+        setHasFlowUnsavedChanges(false);
       }
     } catch (err) {
       console.error('Failed to load flow details:', err);
@@ -335,7 +365,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
   }, [getAuthHeaders, loadFlowDetails]);
 
   // Flow Studio Actions
-  const handleSaveFlowDraft = async () => {
+  const handleSaveFlowDraft = useCallback(async () => {
     if (!activeFlowId) return;
     setSavingDraft(true);
     try {
@@ -352,25 +382,40 @@ export default function AutoReplyBotPage({ onNavigate }) {
       });
       const data = await res.json();
       if (data.success) {
-        setSaveSuccess(true);
-        setTimeout(() => setSaveSuccess(false), 3000);
+        setHasFlowUnsavedChanges(false);
+        setLastSavedTime(new Date());
+        showStudioToast('Flow draft saved successfully.');
         loadFlowDetails(activeFlowId);
       } else {
-        alert(data.error || 'Failed to save draft');
+        showStudioToast(data.error || 'Failed to save draft', 'error');
       }
     } catch (e) {
-      alert(e.message);
+      showStudioToast(e.message, 'error');
     } finally {
       setSavingDraft(false);
     }
-  };
+  }, [activeFlowId, currentNodes, currentTransitions, currentVariables, getAuthHeaders, loadFlowDetails, showStudioToast]);
+
+  // Global Ctrl+S / Cmd+S shortcut to save draft
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        if (studioMode === 'BUILDER' && activeFlowId) {
+          e.preventDefault();
+          handleSaveFlowDraft();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [studioMode, activeFlowId, handleSaveFlowDraft]);
 
   const handlePublishFlow = async () => {
     if (!activeFlowId) return;
     setPublishing(true);
     try {
       const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
-      // Save draft first
+      // 1. Save draft first
       await fetch(`/api/flows/conversation-flows/${activeFlowId}/draft`, {
         method: 'POST',
         headers,
@@ -382,23 +427,98 @@ export default function AutoReplyBotPage({ onNavigate }) {
         })
       });
 
+      // 2. Publish flow
       const res = await fetch(`/api/flows/conversation-flows/${activeFlowId}/publish`, {
         method: 'POST',
         headers
       });
       const data = await res.json();
       if (data.success) {
-        setSaveSuccess(true);
-        setTimeout(() => setSaveSuccess(false), 4000);
+        setHasFlowUnsavedChanges(false);
+        setLastSavedTime(new Date());
+        showStudioToast('🎉 Flow published to live WhatsApp line successfully!');
         loadFlowDetails(activeFlowId);
         loadData();
       } else {
-        alert(data.error || 'Failed to publish flow');
+        if (data.report) {
+          setValidationReport(data.report);
+          setValidationModalOpen(true);
+        } else {
+          showStudioToast(data.error || 'Failed to publish flow', 'error');
+        }
       }
     } catch (e) {
-      alert(e.message);
+      showStudioToast(e.message, 'error');
     } finally {
       setPublishing(false);
+    }
+  };
+
+  const handleDeleteFlow = (flowId, flowName) => {
+    const targetId = flowId || activeFlowId;
+    const targetName = flowName || activeFlow?.name || 'this flow';
+    setFlowToDelete({ id: targetId, name: targetName });
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteFlow = async () => {
+    if (!flowToDelete) return;
+    const { id: targetId, name: targetName } = flowToDelete;
+    setShowDeleteModal(false);
+    try {
+      const headers = getAuthHeaders();
+      const res = await fetch(`/api/flows/conversation-flows/${targetId}`, {
+        method: 'DELETE',
+        headers
+      });
+      const data = await res.json();
+      if (data.success) {
+        showStudioToast(`Flow "${targetName}" deleted successfully.`);
+        const remaining = flowsList.filter(f => f.id !== targetId);
+        setFlowsList(remaining);
+        if (activeFlowId === targetId) {
+          if (remaining.length > 0) {
+            setActiveFlowId(remaining[0].id);
+            loadFlowDetails(remaining[0].id);
+          } else {
+            handleCreateNewFlow();
+          }
+        }
+      } else {
+        showStudioToast(data.error || 'Failed to delete flow', 'error');
+      }
+    } catch (e) {
+      showStudioToast(e.message, 'error');
+    } finally {
+      setFlowToDelete(null);
+    }
+  };
+
+  const handleRenameFlow = async (e) => {
+    if (e) e.preventDefault();
+    if (!activeFlowId || !renameForm.name.trim()) return;
+    try {
+      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      const res = await fetch(`/api/flows/conversation-flows/${activeFlowId}`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({
+          name: renameForm.name.trim(),
+          description: renameForm.description,
+          category: renameForm.category
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.flow) {
+        setActiveFlow(data.flow);
+        setFlowsList(prev => prev.map(f => f.id === activeFlowId ? { ...f, name: data.flow.name, description: data.flow.description } : f));
+        showStudioToast('Flow details updated successfully.');
+        setShowRenameModal(false);
+      } else {
+        showStudioToast(data.error || 'Failed to update flow details', 'error');
+      }
+    } catch (e) {
+      showStudioToast(e.message, 'error');
     }
   };
 
@@ -567,10 +687,14 @@ export default function AutoReplyBotPage({ onNavigate }) {
       const data = await res.json();
       if (data.success && data.flow) {
         setFlowsList(prev => [data.flow, ...prev]);
+        setActiveFlowId(data.flow.id);
         loadFlowDetails(data.flow.id);
+        showStudioToast(`Flow duplicated as "${data.flow.name}".`);
+      } else {
+        showStudioToast(data.error || 'Failed to duplicate flow', 'error');
       }
     } catch (e) {
-      alert(e.message);
+      showStudioToast(e.message, 'error');
     }
   };
 
@@ -591,13 +715,12 @@ export default function AutoReplyBotPage({ onNavigate }) {
           phone_number_id: data.flow.phone_number_id,
           assigned_phone_display_name: data.flow.assigned_phone_display_name
         } : f));
-        setSaveSuccess(true);
-        setTimeout(() => setSaveSuccess(false), 3000);
+        showStudioToast(phoneNumberId ? `Bound flow to line ${data.flow.assigned_phone_display_name || phoneNumberId}` : 'Set flow to global line routing');
       } else {
-        alert(data.error || 'Failed to update phone line assignment');
+        showStudioToast(data.error || 'Failed to update phone line assignment', 'error');
       }
     } catch (err) {
-      alert(err.message);
+      showStudioToast(err.message, 'error');
     }
   };
 
@@ -1143,9 +1266,10 @@ export default function AutoReplyBotPage({ onNavigate }) {
           {[
             { id: 'BUILDER', label: 'Visual Flow Builder', icon: GitBranch, color: '#2F5219' },
             { id: 'LIBRARY', label: 'Flows & Blueprints', icon: Library, color: '#2563EB' },
+            { id: 'HOSPITALITY_MEDIA', label: 'Hospitality Gallery & Images', icon: Image, color: '#059669' },
             { id: 'MESSAGES', label: 'Message Templates', icon: MessageSquare, color: '#7C3AED' },
             { id: 'SIMULATOR', label: 'Test Simulator', icon: Smartphone, color: '#D97706' },
-            { id: 'ANALYTICS', label: 'Analytics & Reports', icon: BarChart3, color: '#059669' },
+            { id: 'ANALYTICS', label: 'Analytics & Reports', icon: BarChart3, color: '#0284C7' },
             { id: 'LEGACY', label: 'Channel Settings & Rules', icon: Sliders, color: '#475569' }
           ].map(m => {
             const Icon = m.icon;
@@ -1208,17 +1332,25 @@ export default function AutoReplyBotPage({ onNavigate }) {
             background: '#FFFFFF',
             borderRadius: '12px',
             border: '1px solid #E5E5E8',
-            padding: '12px 18px',
+            padding: '14px 18px',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
+            flexDirection: 'column',
             gap: '12px',
             boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#67676B' }}>Flow:</span>
+            {/* ROW 1: Flow Selector & Direct Flow Actions */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '12px',
+              paddingBottom: '12px',
+              borderBottom: '1px solid #F1F5F9'
+            }}>
+              {/* Left: Flow Switcher + New + Rename + Duplicate + Delete */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#475569' }}>Flow:</span>
                 <select
                   value={activeFlowId || ''}
                   onChange={e => {
@@ -1234,310 +1366,464 @@ export default function AutoReplyBotPage({ onNavigate }) {
                     border: '1px solid #CBD5E1',
                     background: '#FFFFFF',
                     color: '#1E293B',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    minWidth: '220px',
+                    maxWidth: '320px'
                   }}
                 >
                   {flowsList.map(f => (
                     <option key={f.id} value={f.id}>
-                      {f.name} ({f.status === 'PUBLISHED' ? 'Published' : 'Draft'})
+                      {f.status === 'PUBLISHED' ? '🟢' : '🟡'} {f.name} ({f.status === 'PUBLISHED' ? 'Live' : 'Draft'}{f.phone_number_id ? ' • Line' : ''})
                     </option>
                   ))}
                 </select>
+
+                {/* + New Flow */}
+                <button
+                  type="button"
+                  onClick={handleCreateNewFlow}
+                  title="Create a new conversation workflow"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '6px 11px',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    borderRadius: '6px',
+                    border: '1px solid #86EFAC',
+                    background: '#F0FDF4',
+                    color: '#166534',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Plus size={14} />
+                  <span>New Flow</span>
+                </button>
+
+                {/* Rename Flow */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (activeFlow) {
+                      setRenameForm({
+                        name: activeFlow.name || '',
+                        description: activeFlow.description || '',
+                        category: activeFlow.category || 'HOSPITALITY_ENQUIRY'
+                      });
+                      setShowRenameModal(true);
+                    }
+                  }}
+                  title="Rename flow and edit description"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '6px 10px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    borderRadius: '6px',
+                    border: '1px solid #CBD5E1',
+                    background: '#FFFFFF',
+                    color: '#334155',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Edit2 size={13} color="#475569" />
+                  <span>Rename</span>
+                </button>
+
+                {/* Duplicate Flow */}
+                <button
+                  type="button"
+                  onClick={handleDuplicateFlow}
+                  title="Duplicate active flow as a new draft"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '6px 10px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    borderRadius: '6px',
+                    border: '1px solid #CBD5E1',
+                    background: '#FFFFFF',
+                    color: '#334155',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Copy size={13} color="#2563EB" />
+                  <span>Duplicate</span>
+                </button>
+
+                {/* Delete Flow */}
+                <button
+                  type="button"
+                  onClick={() => handleDeleteFlow(activeFlowId, activeFlow?.name)}
+                  title="Permanently delete this flow"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '6px 10px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    borderRadius: '6px',
+                    border: '1px solid #FEE2E2',
+                    background: '#FEF2F2',
+                    color: '#DC2626',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Trash2 size={13} color="#DC2626" />
+                  <span>Delete</span>
+                </button>
+
+                {/* Status Badge */}
+                {activeFlow && (
+                  <span style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    borderRadius: '12px',
+                    textTransform: 'uppercase',
+                    background: activeFlow.status === 'PUBLISHED' ? '#DCFCE7' : '#FEF3C7',
+                    color: activeFlow.status === 'PUBLISHED' ? '#166534' : '#92400E',
+                    border: activeFlow.status === 'PUBLISHED' ? '1px solid #BBF7D0' : '1px solid #FDE68A'
+                  }}>
+                    {activeFlow.status === 'PUBLISHED' ? 'Published' : 'Draft'}
+                  </span>
+                )}
+
+                {/* Save Status / Unsaved Changes Indicator */}
+                {hasFlowUnsavedChanges ? (
+                  <span style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    padding: '3px 8px',
+                    borderRadius: '12px',
+                    background: '#FEF3C7',
+                    color: '#B45309',
+                    border: '1px solid #FDE68A'
+                  }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#D97706' }} />
+                    Unsaved Changes
+                  </span>
+                ) : lastSavedTime ? (
+                  <span style={{ fontSize: '0.74rem', color: '#64748B' }}>
+                    Saved at {lastSavedTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                ) : null}
               </div>
 
-              {activeFlow && (
-                <span style={{
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                  padding: '3px 8px',
-                  borderRadius: '12px',
-                  textTransform: 'uppercase',
-                  background: activeFlow.status === 'PUBLISHED' ? '#DCFCE7' : '#FEF3C7',
-                  color: activeFlow.status === 'PUBLISHED' ? '#166534' : '#92400E',
-                  border: activeFlow.status === 'PUBLISHED' ? '1px solid #BBF7D0' : '1px solid #FDE68A'
-                }}>
-                  {activeFlow.status === 'PUBLISHED' ? 'Published' : 'Draft'}
-                </span>
-              )}
+              {/* Right: Line Assignment + Hospitality Photos Jump Button */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                {activeFlow && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Phone size={13} color="#2F5219" />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#67676B' }}>WhatsApp Line:</span>
+                    <select
+                      value={activeFlow.phone_number_id || ''}
+                      onChange={e => handleAssignLine(activeFlow.id, e.target.value)}
+                      title="Bind flow to a specific WhatsApp Business phone number line"
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        borderRadius: '6px',
+                        border: '1px solid #CBD5E1',
+                        background: activeFlow.phone_number_id ? '#F0FDF4' : '#FFFFFF',
+                        color: activeFlow.phone_number_id ? '#166534' : '#334155',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="">All Lines (Global)</option>
+                      {connectedLines.map(line => (
+                        <option key={line.phoneNumberId} value={line.phoneNumberId}>
+                          {line.displayName} ({line.phoneNumber})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
-              {activeFlow && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Phone size={13} color="#2F5219" />
-                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#67676B' }}>WhatsApp Line:</span>
-                  <select
-                    value={activeFlow.phone_number_id || ''}
-                    onChange={e => handleAssignLine(activeFlow.id, e.target.value)}
-                    title="Bind flow to a specific WhatsApp Business phone number line"
-                    style={{
-                      padding: '4px 10px',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      borderRadius: '6px',
-                      border: '1px solid #CBD5E1',
-                      background: activeFlow.phone_number_id ? '#F0FDF4' : '#FFFFFF',
-                      color: activeFlow.phone_number_id ? '#166534' : '#334155',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="">All Lines (Global)</option>
-                    {connectedLines.map(line => (
-                      <option key={line.phoneNumberId} value={line.phoneNumberId}>
-                        {line.displayName} ({line.phoneNumber})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setAiModalOpen(true)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 14px',
-                  fontSize: '0.82rem',
-                  fontWeight: 700,
-                  borderRadius: '6px',
-                  border: '1px solid #86EFAC',
-                  background: 'linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)',
-                  color: '#166534',
-                  cursor: 'pointer',
-                  boxShadow: '0 1px 3px rgba(34, 197, 94, 0.2)'
-                }}
-              >
-                <Sparkles size={14} color="#15803D" />
-                <span>✨ Generate with AI</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setTemplatesModalOpen(true)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 12px',
-                  fontSize: '0.82rem',
-                  borderRadius: '6px',
-                  border: '1px solid #E2E8F0',
-                  background: '#F8FAFC',
-                  color: '#334155',
-                  cursor: 'pointer'
-                }}
-              >
-                <Sparkles size={14} color="#6366F1" />
-                <span>Blueprints</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setVersionsModalOpen(true)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 12px',
-                  fontSize: '0.82rem',
-                  borderRadius: '6px',
-                  border: '1px solid #E2E8F0',
-                  background: '#F8FAFC',
-                  color: '#334155',
-                  cursor: 'pointer'
-                }}
-              >
-                <History size={14} color="#64748B" />
-                <span>Version History</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setExecutionsModalOpen(true)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 12px',
-                  fontSize: '0.82rem',
-                  borderRadius: '6px',
-                  border: '1px solid #E2E8F0',
-                  background: '#F8FAFC',
-                  color: '#334155',
-                  cursor: 'pointer'
-                }}
-              >
-                <Clock size={14} color="#0D9488" />
-                <span>Execution Logs</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDuplicateFlow}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 12px',
-                  fontSize: '0.82rem',
-                  borderRadius: '6px',
-                  border: '1px solid #E2E8F0',
-                  background: '#F8FAFC',
-                  color: '#334155',
-                  cursor: 'pointer'
-                }}
-              >
-                <Copy size={14} color="#2563EB" />
-                <span>Duplicate</span>
-              </button>
+                {/* Quick Jump to Hospitality Photo Gallery */}
+                <button
+                  type="button"
+                  onClick={() => setStudioMode('HOSPITALITY_MEDIA')}
+                  title="Upload or view hospitality room photos and property gallery"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '5px 11px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    borderRadius: '6px',
+                    border: '1px solid #A7F3D0',
+                    background: '#ECFDF5',
+                    color: '#047857',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Image size={13} color="#059669" />
+                  <span>Resort Photos</span>
+                </button>
+              </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              {/* Dual View Toggle: Step-by-Step Guided Journey vs Visual Node Canvas */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                background: '#F1F5F9',
-                padding: '3px',
-                borderRadius: '8px',
-                border: '1px solid #CBD5E1'
-              }}>
+            {/* ROW 2: Designer View Toggle, AI Tools & Save / Publish Actions */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '10px'
+            }}>
+              {/* Left: View Switcher & AI / Blueprints / Logs */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                {/* View Switcher: Steps vs Canvas */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: '#F1F5F9',
+                  padding: '3px',
+                  borderRadius: '8px',
+                  border: '1px solid #CBD5E1'
+                }}>
+                  <button
+                    type="button"
+                    onClick={() => setBuilderDesignerView('STEPS')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '5px 11px',
+                      fontSize: '0.78rem',
+                      fontWeight: builderDesignerView === 'STEPS' ? 700 : 500,
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: builderDesignerView === 'STEPS' ? '#FFFFFF' : 'transparent',
+                      color: builderDesignerView === 'STEPS' ? '#2F5219' : '#64748B',
+                      cursor: 'pointer',
+                      boxShadow: builderDesignerView === 'STEPS' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                    }}
+                  >
+                    <Layers size={13} />
+                    <span>Step List</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBuilderDesignerView('CANVAS')}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '5px 11px',
+                      fontSize: '0.78rem',
+                      fontWeight: builderDesignerView === 'CANVAS' ? 700 : 500,
+                      borderRadius: '6px',
+                      border: 'none',
+                      background: builderDesignerView === 'CANVAS' ? '#FFFFFF' : 'transparent',
+                      color: builderDesignerView === 'CANVAS' ? '#2F5219' : '#64748B',
+                      cursor: 'pointer',
+                      boxShadow: builderDesignerView === 'CANVAS' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                    }}
+                  >
+                    <GitBranch size={13} />
+                    <span>Visual Canvas</span>
+                  </button>
+                </div>
+
+                {/* AI Generate */}
                 <button
                   type="button"
-                  onClick={() => setBuilderDesignerView('STEPS')}
+                  onClick={() => setAiModalOpen(true)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    padding: '5px 12px',
+                    gap: '5px',
+                    padding: '6px 12px',
                     fontSize: '0.8rem',
-                    fontWeight: builderDesignerView === 'STEPS' ? 700 : 500,
+                    fontWeight: 700,
                     borderRadius: '6px',
-                    border: 'none',
-                    background: builderDesignerView === 'STEPS' ? '#FFFFFF' : 'transparent',
-                    color: builderDesignerView === 'STEPS' ? '#2F5219' : '#64748B',
+                    border: '1px solid #86EFAC',
+                    background: 'linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)',
+                    color: '#166534',
                     cursor: 'pointer',
-                    boxShadow: builderDesignerView === 'STEPS' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                    boxShadow: '0 1px 3px rgba(34, 197, 94, 0.2)'
                   }}
                 >
-                  <Layers size={14} />
-                  <span>Step-by-Step Flow List</span>
+                  <Sparkles size={13} color="#15803D" />
+                  <span>✨ Generate with AI</span>
                 </button>
+
+                {/* Blueprints */}
                 <button
                   type="button"
-                  onClick={() => setBuilderDesignerView('CANVAS')}
+                  onClick={() => setTemplatesModalOpen(true)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    padding: '5px 12px',
+                    gap: '5px',
+                    padding: '6px 11px',
                     fontSize: '0.8rem',
-                    fontWeight: builderDesignerView === 'CANVAS' ? 700 : 500,
                     borderRadius: '6px',
-                    border: 'none',
-                    background: builderDesignerView === 'CANVAS' ? '#FFFFFF' : 'transparent',
-                    color: builderDesignerView === 'CANVAS' ? '#2F5219' : '#64748B',
-                    cursor: 'pointer',
-                    boxShadow: builderDesignerView === 'CANVAS' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                    border: '1px solid #E2E8F0',
+                    background: '#F8FAFC',
+                    color: '#334155',
+                    cursor: 'pointer'
                   }}
                 >
-                  <GitBranch size={14} />
-                  <span>Visual Graph Canvas</span>
+                  <Sparkles size={13} color="#6366F1" />
+                  <span>Blueprints</span>
+                </button>
+
+                {/* Version History */}
+                <button
+                  type="button"
+                  onClick={() => setVersionsModalOpen(true)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '6px 11px',
+                    fontSize: '0.8rem',
+                    borderRadius: '6px',
+                    border: '1px solid #E2E8F0',
+                    background: '#F8FAFC',
+                    color: '#334155',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <History size={13} color="#64748B" />
+                  <span>Versions</span>
+                </button>
+
+                {/* Execution Logs */}
+                <button
+                  type="button"
+                  onClick={() => setExecutionsModalOpen(true)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '6px 11px',
+                    fontSize: '0.8rem',
+                    borderRadius: '6px',
+                    border: '1px solid #E2E8F0',
+                    background: '#F8FAFC',
+                    color: '#334155',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Clock size={13} color="#0D9488" />
+                  <span>Logs</span>
                 </button>
               </div>
 
-              <button
-                type="button"
-                onClick={handleValidateFlow}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 14px',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  borderRadius: '6px',
-                  border: '1px solid #CBD5E1',
-                  background: '#FFFFFF',
-                  color: '#334155',
-                  cursor: 'pointer'
-                }}
-              >
-                <CheckSquare size={14} color="#059669" />
-                <span>Validate Graph</span>
-              </button>
+              {/* Right: Validate, Simulator, Save Draft, Publish */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={handleValidateFlow}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '6px 12px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    borderRadius: '6px',
+                    border: '1px solid #CBD5E1',
+                    background: '#FFFFFF',
+                    color: '#334155',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <CheckSquare size={13} color="#059669" />
+                  <span>Validate</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (builderDesignerView === 'CANVAS') {
-                    setSimulatorOpen(prev => !prev);
-                  } else {
-                    setStudioMode('SIMULATOR');
-                  }
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 14px',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  borderRadius: '6px',
-                  border: simulatorOpen && builderDesignerView === 'CANVAS' ? '1px solid #2F5219' : '1px solid #FDE68A',
-                  background: simulatorOpen && builderDesignerView === 'CANVAS' ? '#E8F5E9' : '#FEF3C7',
-                  color: simulatorOpen && builderDesignerView === 'CANVAS' ? '#2F5219' : '#92400E',
-                  cursor: 'pointer'
-                }}
-              >
-                <Smartphone size={14} />
-                <span>{simulatorOpen && builderDesignerView === 'CANVAS' ? 'Close Simulator' : 'Zero-Cost Simulator'}</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (builderDesignerView === 'CANVAS') {
+                      setSimulatorOpen(prev => !prev);
+                    } else {
+                      setStudioMode('SIMULATOR');
+                    }
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '6px 12px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    borderRadius: '6px',
+                    border: simulatorOpen && builderDesignerView === 'CANVAS' ? '1px solid #2F5219' : '1px solid #FDE68A',
+                    background: simulatorOpen && builderDesignerView === 'CANVAS' ? '#E8F5E9' : '#FEF3C7',
+                    color: simulatorOpen && builderDesignerView === 'CANVAS' ? '#2F5219' : '#92400E',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <Smartphone size={13} />
+                  <span>{simulatorOpen && builderDesignerView === 'CANVAS' ? 'Close Simulator' : 'Simulator'}</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={handleSaveFlowDraft}
-                disabled={savingDraft}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 14px',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  borderRadius: '6px',
-                  border: '1px solid #CBD5E1',
-                  background: '#FFFFFF',
-                  color: '#1E293B',
-                  cursor: 'pointer'
-                }}
-              >
-                {savingDraft ? <RotateCcw size={14} className="spin" /> : <Save size={14} />}
-                <span>{savingDraft ? 'Saving...' : 'Save Draft'}</span>
-              </button>
+                {/* Save Draft Button (with Ctrl+S hint) */}
+                <button
+                  type="button"
+                  onClick={handleSaveFlowDraft}
+                  disabled={savingDraft}
+                  title="Save current flow draft (Shortcut: Ctrl+S or Cmd+S)"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '6px 14px',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    borderRadius: '6px',
+                    border: '1px solid #CBD5E1',
+                    background: hasFlowUnsavedChanges ? '#FEF3C7' : '#FFFFFF',
+                    color: hasFlowUnsavedChanges ? '#92400E' : '#1E293B',
+                    cursor: 'pointer',
+                    boxShadow: hasFlowUnsavedChanges ? '0 1px 4px rgba(217, 119, 6, 0.2)' : 'none'
+                  }}
+                >
+                  {savingDraft ? <RotateCcw size={13} className="spin" /> : <Save size={13} />}
+                  <span>{savingDraft ? 'Saving...' : hasFlowUnsavedChanges ? 'Save Draft *' : 'Save Draft'}</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={handlePublishFlow}
-                disabled={publishing}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '7px 16px',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: '#2F5219',
-                  color: '#FFFFFF',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(47,82,25,0.25)'
-                }}
-              >
-                {publishing ? <RotateCcw size={14} className="spin" /> : <Play size={14} />}
-                <span>{publishing ? 'Publishing...' : 'Publish to Live'}</span>
-              </button>
+                {/* Publish to Live Button */}
+                <button
+                  type="button"
+                  onClick={handlePublishFlow}
+                  disabled={publishing}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '7px 16px',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: '#2F5219',
+                    color: '#FFFFFF',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 6px rgba(47,82,25,0.25)'
+                  }}
+                >
+                  {publishing ? <RotateCcw size={14} className="spin" /> : <Play size={14} />}
+                  <span>{publishing ? 'Publishing...' : 'Publish to Live'}</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1628,8 +1914,8 @@ export default function AutoReplyBotPage({ onNavigate }) {
             <StepJourneyDesigner
               nodes={currentNodes}
               transitions={currentTransitions}
-              onUpdateNodes={setCurrentNodes}
-              onUpdateTransitions={setCurrentTransitions}
+              onUpdateNodes={handleUpdateNodes}
+              onUpdateTransitions={handleUpdateTransitions}
               onSelectNode={setSelectedNodeId}
               selectedNodeId={selectedNodeId}
               onOpenSimulator={() => setStudioMode('SIMULATOR')}
@@ -1650,8 +1936,8 @@ export default function AutoReplyBotPage({ onNavigate }) {
                   transitions={currentTransitions}
                   selectedNodeId={selectedNodeId}
                   onSelectNode={setSelectedNodeId}
-                  onUpdateNodes={setCurrentNodes}
-                  onUpdateTransitions={setCurrentTransitions}
+                  onUpdateNodes={handleUpdateNodes}
+                  onUpdateTransitions={handleUpdateTransitions}
                   activeSimulatedNodeId={activeSimulatedNodeId}
                 />
               </div>
@@ -1663,6 +1949,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
                   variables={currentVariables}
                   onUpdateNode={updated => {
                     setCurrentNodes(nodes => nodes.map(n => n.id === updated.id ? updated : n));
+                    setHasFlowUnsavedChanges(true);
                   }}
                   onClose={() => setSelectedNodeId(null)}
                 />
@@ -1906,7 +2193,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
 
                       <button
                         type="button"
-                        onClick={() => handleArchiveFlow(flow.id, flow.name)}
+                        onClick={() => handleDeleteFlow(flow.id, flow.name)}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -1919,7 +2206,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
                           fontSize: '0.8rem',
                           cursor: 'pointer'
                         }}
-                        title="Archive Flow"
+                        title="Delete Flow Permanently"
                       >
                         <Trash2 size={14} />
                       </button>
@@ -2030,6 +2317,11 @@ export default function AutoReplyBotPage({ onNavigate }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* MODE 2.5: HOSPITALITY PHOTO & ROOM GALLERY HUB */}
+      {studioMode === 'HOSPITALITY_MEDIA' && (
+        <HospitalityImageUploadModule token={token} propertyId={1} />
       )}
 
       {/* MODE 3: MESSAGE TEMPLATES STUDIO */}
@@ -3848,6 +4140,245 @@ export default function AutoReplyBotPage({ onNavigate }) {
           token={token}
           onClose={() => setExecutionsModalOpen(false)}
         />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && flowToDelete && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.5)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '14px',
+            width: '100%',
+            maxWidth: '440px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '20px 24px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '14px'
+            }}>
+              <div style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '10px',
+                background: '#FEE2E2',
+                color: '#DC2626',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <Trash2 size={20} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '1.05rem', fontWeight: 700, color: '#171719' }}>
+                  Delete Conversation Flow?
+                </h3>
+                <p style={{ margin: 0, fontSize: '0.84rem', color: '#64748B', lineHeight: 1.5 }}>
+                  Are you sure you want to permanently delete <strong>"{flowToDelete.name}"</strong>?
+                  <br />
+                  This will remove all associated triggers, session states, and version history. This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div style={{
+              padding: '14px 24px',
+              borderTop: '1px solid #E5E5E8',
+              background: '#FAFAFB',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '10px'
+            }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setFlowToDelete(null);
+                }}
+                className="btn btn-secondary"
+                style={{ fontSize: '0.84rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteFlow}
+                style={{
+                  background: '#DC2626',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '8px 16px',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Trash2 size={14} />
+                <span>Delete Permanently</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rename Flow Modal */}
+      {showRenameModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.5)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
+        }}>
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '14px',
+            width: '100%',
+            maxWidth: '480px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '18px 24px',
+              borderBottom: '1px solid #E5E5E8',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Edit2 size={18} color="#2F5219" />
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#171719' }}>
+                  Rename &amp; Edit Flow Details
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRenameModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#67676B' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleRenameFlow}>
+              <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151' }}>
+                    Flow Name <span style={{ color: '#DC2626' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={renameForm.name}
+                    onChange={e => setRenameForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g. Resort Booking & Concierge"
+                    className="input-field"
+                    style={{ width: '100%', padding: '9px 12px', fontSize: '0.88rem', marginTop: '5px' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151' }}>
+                    Category
+                  </label>
+                  <select
+                    value={renameForm.category}
+                    onChange={e => setRenameForm(prev => ({ ...prev, category: e.target.value }))}
+                    className="input-field"
+                    style={{ width: '100%', padding: '9px 12px', fontSize: '0.88rem', marginTop: '5px' }}
+                  >
+                    <option value="HOSPITALITY_ENQUIRY">Hospitality &amp; Resort</option>
+                    <option value="B2B_SALES">B2B Sales &amp; Inquiries</option>
+                    <option value="LEAD_GENERATION">Lead Generation</option>
+                    <option value="CUSTOMER_SUPPORT">Customer Support</option>
+                    <option value="GENERAL">General</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#374151' }}>
+                    Description
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={renameForm.description}
+                    onChange={e => setRenameForm(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Describe what this customer journey handles..."
+                    className="input-field"
+                    style={{ width: '100%', padding: '9px 12px', fontSize: '0.86rem', marginTop: '5px', resize: 'vertical' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{
+                padding: '14px 24px',
+                borderTop: '1px solid #E5E5E8',
+                background: '#FAFAFB',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setShowRenameModal(false)}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.84rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ fontSize: '0.84rem', background: '#2F5219', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Save size={14} />
+                  <span>Save Changes</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Studio Toast Notification */}
+      {studioToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          zIndex: 99999,
+          background: studioToast.type === 'error' ? '#EF4444' : '#1E293B',
+          color: '#FFFFFF',
+          padding: '12px 20px',
+          borderRadius: '10px',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          fontSize: '0.88rem',
+          fontWeight: 600
+        }}>
+          {studioToast.type === 'error' ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} color="#86EFAC" />}
+          <span>{studioToast.message}</span>
+        </div>
       )}
 
       {/* Admin Dynamic Rule Edit / Create Modal */}
