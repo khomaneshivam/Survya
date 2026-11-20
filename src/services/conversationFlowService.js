@@ -230,6 +230,8 @@ function listFlows(tenantId = 1, options = {}) {
     SELECT 
       f.*,
       p.name as property_name,
+      wpn.display_name as assigned_phone_display_name,
+      wpn.phone_number as assigned_phone_number,
       pv.version_number as published_version_number,
       pv.published_at as last_published_at,
       dv.version_number as draft_version_number,
@@ -237,6 +239,7 @@ function listFlows(tenantId = 1, options = {}) {
       (SELECT COUNT(*) FROM conversation_flow_sessions s WHERE s.flow_id = f.id) as total_sessions_count
     FROM conversation_flows f
     LEFT JOIN properties p ON p.id = f.property_id
+    LEFT JOIN waba_phone_numbers wpn ON wpn.phone_number_id = f.phone_number_id
     LEFT JOIN conversation_flow_versions pv ON pv.id = f.published_version_id
     LEFT JOIN conversation_flow_versions dv ON dv.id = f.current_draft_version_id
     WHERE ${whereClause}
@@ -266,9 +269,12 @@ function listFlows(tenantId = 1, options = {}) {
  */
 function getFlowById(flowId, tenantId = 1) {
   const flow = db.prepare(`
-    SELECT f.*, p.name as property_name
+    SELECT f.*, p.name as property_name,
+           wpn.display_name as assigned_phone_display_name,
+           wpn.phone_number as assigned_phone_number
     FROM conversation_flows f
     LEFT JOIN properties p ON p.id = f.property_id
+    LEFT JOIN waba_phone_numbers wpn ON wpn.phone_number_id = f.phone_number_id
     WHERE f.id = ? AND f.tenant_id = ?
     LIMIT 1
   `).get(flowId, tenantId);
@@ -323,6 +329,7 @@ function createFlow(data, user = { id: "admin", name: "Administrator" }) {
   const {
     tenant_id = 1,
     property_id = 1,
+    phone_number_id = null,
     name,
     description = "",
     category = "HOSPITALITY_ENQUIRY",
@@ -339,20 +346,22 @@ function createFlow(data, user = { id: "admin", name: "Administrator" }) {
     throw new Error("Flow name is required.");
   }
 
+  const targetPhoneId = (!phone_number_id || phone_number_id === "ALL" || phone_number_id === "null") ? null : String(phone_number_id).trim();
   const flowUuid = "flow_" + crypto.randomBytes(8).toString("hex");
 
   const insertFlow = db.prepare(`
     INSERT INTO conversation_flows (
-      uuid, tenant_id, property_id, name, description, category,
+      uuid, tenant_id, property_id, phone_number_id, name, description, category,
       trigger_type, trigger_keywords_json, status, is_default, priority,
       created_by, updated_by, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `);
 
   const res = insertFlow.run(
     flowUuid,
     tenant_id,
     property_id || null,
+    targetPhoneId,
     String(name).trim(),
     description || "",
     category,
@@ -454,9 +463,14 @@ function updateFlow(flowId, data, user = { id: "admin", name: "Administrator" },
     trigger_type = flow.trigger_type,
     trigger_keywords = flow.trigger_keywords_json ? JSON.parse(flow.trigger_keywords_json) : [],
     property_id = flow.property_id,
+    phone_number_id = flow.phone_number_id,
     is_default = flow.is_default,
     priority = flow.priority
   } = data;
+
+  const targetPhoneId = phone_number_id !== undefined
+    ? ((!phone_number_id || phone_number_id === "ALL" || phone_number_id === "null") ? null : String(phone_number_id).trim())
+    : flow.phone_number_id;
 
   // If this flow is being set as default, clear default on other flows with same category & tenant
   if (is_default) {
@@ -470,7 +484,7 @@ function updateFlow(flowId, data, user = { id: "admin", name: "Administrator" },
   db.prepare(`
     UPDATE conversation_flows
     SET name = ?, description = ?, category = ?, trigger_type = ?,
-        trigger_keywords_json = ?, property_id = ?, is_default = ?, priority = ?,
+        trigger_keywords_json = ?, property_id = ?, phone_number_id = ?, is_default = ?, priority = ?,
         updated_by = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND tenant_id = ?
   `).run(
@@ -480,6 +494,7 @@ function updateFlow(flowId, data, user = { id: "admin", name: "Administrator" },
     trigger_type,
     JSON.stringify(Array.isArray(trigger_keywords) ? trigger_keywords : []),
     property_id || null,
+    targetPhoneId,
     is_default ? 1 : 0,
     Number(priority || 10),
     user.name || user.id || "admin",
@@ -487,7 +502,18 @@ function updateFlow(flowId, data, user = { id: "admin", name: "Administrator" },
     tenantId
   );
 
-  logAudit(tenantId, user.id, "UPDATE_CONVERSATION_FLOW_METADATA", flowId, { name });
+  // If line changed and flow is published, re-sync active triggers
+  if (flow.status === "PUBLISHED" && targetPhoneId !== flow.phone_number_id) {
+    try {
+      const activeNodes = current.publishedVersion?.nodes || current.draftVersion?.nodes || [];
+      const workflowTriggerService = require("./workflow/workflowTriggerService");
+      workflowTriggerService.syncFlowTriggers(tenantId, flowId, activeNodes, targetPhoneId);
+    } catch (trgErr) {
+      console.warn(`[ConversationFlowService] Warning re-syncing triggers for flow ${flowId}:`, trgErr.message);
+    }
+  }
+
+  logAudit(tenantId, user.id, "UPDATE_CONVERSATION_FLOW_METADATA", flowId, { name, phone_number_id: targetPhoneId });
 
   return getFlowById(flowId, tenantId);
 }
@@ -645,10 +671,52 @@ function publishFlow(flowId, user = { id: "admin", name: "Administrator" }, tena
   // Sync and index workflow triggers
   try {
     const workflowTriggerService = require("./workflow/workflowTriggerService");
-    workflowTriggerService.syncFlowTriggers(tenantId, flowId, draftVersion.nodes);
+    workflowTriggerService.syncFlowTriggers(tenantId, flowId, draftVersion.nodes, flow.phone_number_id);
   } catch (trgErr) {
     console.warn(`[ConversationFlowService] Warning: Failed to sync triggers for flow ${flowId}:`, trgErr.message);
   }
+
+  return getFlowById(flowId, tenantId);
+}
+
+/**
+ * Assign or rebind a flow to a specific WhatsApp Business Phone Line (or ALL lines)
+ */
+function assignFlowToLine(flowId, phoneNumberId, user = { id: "admin", name: "Administrator" }, tenantId = 1) {
+  const current = getFlowById(flowId, tenantId);
+  const flow = current.flow;
+  const targetPhoneId = (!phoneNumberId || phoneNumberId === "ALL" || phoneNumberId === "null") ? null : String(phoneNumberId).trim();
+
+  let assignedPhone = null;
+  if (targetPhoneId) {
+    assignedPhone = db.prepare("SELECT * FROM waba_phone_numbers WHERE phone_number_id = ?").get(targetPhoneId);
+    if (!assignedPhone) {
+      throw new Error(`WhatsApp Business Phone ID '${targetPhoneId}' was not found in registered lines.`);
+    }
+  }
+
+  db.prepare(`
+    UPDATE conversation_flows
+    SET phone_number_id = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND tenant_id = ?
+  `).run(targetPhoneId, user.name || user.id || "admin", flowId, tenantId);
+
+  // If the flow is already published, immediately re-sync triggers with the targetPhoneId
+  if (flow.status === "PUBLISHED") {
+    try {
+      const activeNodes = current.publishedVersion?.nodes || current.draftVersion?.nodes || [];
+      const workflowTriggerService = require("./workflow/workflowTriggerService");
+      workflowTriggerService.syncFlowTriggers(tenantId, flowId, activeNodes, targetPhoneId);
+    } catch (trgErr) {
+      console.warn(`[ConversationFlowService] Warning re-syncing triggers for flow ${flowId} after line assignment:`, trgErr.message);
+    }
+  }
+
+  logAudit(tenantId, user.id, "ASSIGN_FLOW_TO_PHONE_LINE", flowId, {
+    previousPhoneId: flow.phone_number_id,
+    newPhoneId: targetPhoneId,
+    displayName: assignedPhone?.display_name || "ALL_LINES"
+  });
 
   return getFlowById(flowId, tenantId);
 }
@@ -1125,6 +1193,7 @@ module.exports = {
   saveFlowDraft,
   validateFlow,
   publishFlow,
+  assignFlowToLine,
   pauseFlow,
   archiveFlow,
   rollbackFlow,

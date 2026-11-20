@@ -22,7 +22,9 @@ const SENSITIVE_KEYS = new Set([
   "WHATSAPP_API_TOKEN",
   "META_APP_SECRET",
   "WEBHOOK_VERIFY_TOKEN",
-  "JWT_SECRET"
+  "JWT_SECRET",
+  "GEMINI_API_KEY",
+  "OPENAI_API_KEY"
 ]);
 
 /**
@@ -147,6 +149,24 @@ async function updateSettings(req, res) {
     }
     if (req.body?.SETTLEMENT_INSTANT_PAYOUTS !== undefined) {
       setSetting("SETTLEMENT_INSTANT_PAYOUTS", String(req.body.SETTLEMENT_INSTANT_PAYOUTS).trim());
+    }
+
+    // AI Flow Architect Credentials & Models
+    if (req.body?.AI_PROVIDER !== undefined) {
+      const prov = String(req.body.AI_PROVIDER).trim().toUpperCase();
+      setSetting("AI_PROVIDER", prov === "OPENAI" ? "OPENAI" : "GEMINI");
+    }
+    if (req.body?.GEMINI_API_KEY !== undefined && req.body.GEMINI_API_KEY.trim() && !req.body.GEMINI_API_KEY.includes("••••")) {
+      setSetting("GEMINI_API_KEY", req.body.GEMINI_API_KEY.trim());
+    }
+    if (req.body?.GEMINI_MODEL !== undefined && req.body.GEMINI_MODEL.trim()) {
+      setSetting("GEMINI_MODEL", req.body.GEMINI_MODEL.trim());
+    }
+    if (req.body?.OPENAI_API_KEY !== undefined && req.body.OPENAI_API_KEY.trim() && !req.body.OPENAI_API_KEY.includes("••••")) {
+      setSetting("OPENAI_API_KEY", req.body.OPENAI_API_KEY.trim());
+    }
+    if (req.body?.OPENAI_MODEL !== undefined && req.body.OPENAI_MODEL.trim()) {
+      setSetting("OPENAI_MODEL", req.body.OPENAI_MODEL.trim());
     }
 
     const updated = getAllSettings();

@@ -5,6 +5,73 @@
 
 const flowService = require("../services/conversationFlowService");
 const flowEngine = require("../services/conversationFlowEngine");
+const aiFlowGenerator = require("../services/workflow/aiFlowGeneratorService");
+
+async function getAiCapabilities(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const propertyId = req.query.propertyId || 1;
+    const data = aiFlowGenerator.getAiCapabilities(tenantId, propertyId);
+    return res.json(data);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+async function generateFlowWithAi(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const user = req.user || { id: "admin", name: "Administrator" };
+    const { prompt, propertyId, phoneNumberId, autoPublish } = req.body;
+
+    const result = await aiFlowGenerator.generateFlowFromPrompt({
+      prompt,
+      tenantId,
+      propertyId: propertyId || 1,
+      phoneNumberId,
+      autoPublish: Boolean(autoPublish),
+      user
+    });
+
+    return res.status(201).json(result);
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
+async function refineFlowWithAi(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const user = req.user || { id: "admin", name: "Administrator" };
+    const flowId = req.params.id || req.body.flowId;
+    const { prompt } = req.body;
+
+    const result = await aiFlowGenerator.refineFlowWithAi({
+      flowId,
+      prompt,
+      tenantId,
+      user
+    });
+
+    return res.json(result);
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
+async function assignFlowToLine(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const user = req.user || { id: "admin", name: "Administrator" };
+    const flowId = req.params.id;
+    const { phoneNumberId } = req.body;
+
+    const result = flowService.assignFlowToLine(flowId, phoneNumberId, user, tenantId);
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
 
 async function listFlows(req, res) {
   try {
@@ -329,5 +396,9 @@ module.exports = {
   cloneTemplate,
   listMessageTemplates,
   saveMessageTemplate,
-  deleteMessageTemplate
+  deleteMessageTemplate,
+  getAiCapabilities,
+  generateFlowWithAi,
+  refineFlowWithAi,
+  assignFlowToLine
 };

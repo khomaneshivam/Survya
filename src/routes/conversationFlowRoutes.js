@@ -9,6 +9,24 @@ const flowController = require("../controllers/conversationFlowController");
 const { authenticateToken, requireAdmin } = require("../middleware/authMiddleware");
 
 // =========================================================================
+// AI FLOW ARCHITECT (PROMPT-TO-WORKFLOW & ITERATIVE REFINER)
+// =========================================================================
+
+// Live system capabilities introspector (rooms, catalog, CRM pipelines, templates, lines, AI status)
+router.get("/flows/ai/capabilities", authenticateToken, flowController.getAiCapabilities);
+
+// 1-Click Prompt-to-Workflow Generator Grounded in Live System APIs
+router.post("/flows/ai/generate", authenticateToken, flowController.generateFlowWithAi);
+
+// Prompt-based conversational refiner
+router.post("/flows/ai/refine", authenticateToken, flowController.refineFlowWithAi);
+router.post("/flows/conversation-flows/:id/refine", authenticateToken, flowController.refineFlowWithAi);
+
+// Direct WhatsApp Business Phone Line Assignment
+router.patch("/flows/conversation-flows/:id/assign-line", authenticateToken, flowController.assignFlowToLine);
+router.post("/flows/conversation-flows/:id/assign-line", authenticateToken, flowController.assignFlowToLine);
+
+// =========================================================================
 // CONVERSATION FLOWS (STUDIO BUILDER & LIFECYCLE)
 // =========================================================================
 

@@ -656,6 +656,7 @@ async function processTurn({
   userPayload = null,
   startFlowId = null,
   startNodeId = null,
+  phoneNumberId = null,
   context = {}
 }) {
   const {
@@ -666,6 +667,8 @@ async function processTurn({
     simulationState = null,
     flowOverride = null
   } = context;
+
+  const effectivePhoneNumberId = phoneNumberId || context.phoneNumberId || null;
 
   const normalizedPhone = String(senderPhone || "").replace(/\D/g, "");
   const sessionKey = `${channel}:${normalizedPhone}:${tenantId}`;
@@ -1159,6 +1162,7 @@ async function processTurn({
         fastForward: Boolean(context.fastForward),
         tenantId,
         propertyId,
+        phoneNumberId: effectivePhoneNumberId || flow?.phone_number_id || null,
         senderPhone: normalizedPhone,
         flowId: session?.flow_id || flow?.id || 1,
         isWaitingForThisNode: false

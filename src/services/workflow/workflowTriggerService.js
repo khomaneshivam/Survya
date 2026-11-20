@@ -10,8 +10,19 @@ class WorkflowTriggerService {
    * Syncs and indexes triggers for a published flow.
    * Scans nodes for TRIGGER_WHATSAPP, TRIGGER_EVENT, and START nodes.
    */
-  syncFlowTriggers(tenantId = 1, flowId, nodes = []) {
+  syncFlowTriggers(tenantId = 1, flowId, nodes = [], phoneNumberId = undefined) {
     if (!flowId || !Array.isArray(nodes)) return;
+
+    let targetPhoneId = phoneNumberId;
+    if (targetPhoneId === undefined) {
+      try {
+        const flowRow = db.prepare("SELECT phone_number_id FROM conversation_flows WHERE id = ?").get(flowId);
+        targetPhoneId = flowRow?.phone_number_id || null;
+      } catch (e) {
+        targetPhoneId = null;
+      }
+    }
+    targetPhoneId = (!targetPhoneId || targetPhoneId === "ALL" || targetPhoneId === "null") ? null : String(targetPhoneId).trim();
 
     // Remove existing triggers for this flow
     db.prepare(`
@@ -21,9 +32,9 @@ class WorkflowTriggerService {
 
     const insertStmt = db.prepare(`
       INSERT INTO workflow_triggers (
-        tenant_id, flow_id, trigger_key, trigger_type, match_config_json,
+        tenant_id, phone_number_id, flow_id, trigger_key, trigger_type, match_config_json,
         secret_token, priority, active_status, delete_status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW())
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 0, NOW(), NOW())
     `);
 
     for (const node of nodes) {
@@ -69,6 +80,7 @@ class WorkflowTriggerService {
 
         insertStmt.run(
           Number(tenantId) || 1,
+          targetPhoneId,
           String(flowId),
           triggerKey,
           triggerType,
@@ -92,6 +104,7 @@ class WorkflowTriggerService {
 
         insertStmt.run(
           Number(tenantId) || 1,
+          targetPhoneId,
           String(flowId),
           triggerKey,
           eventType,
@@ -117,9 +130,13 @@ class WorkflowTriggerService {
 
   /**
    * Matches inbound message text against registered active triggers.
+   * Prioritizes triggers specifically assigned to the receiving phone_number_id,
+   * falling back to global unassigned triggers (phone_number_id IS NULL).
    * Returns { flowId, nodeId, triggerKey, triggerType } or null.
    */
-  matchInboundTrigger(tenantId = 1, { text = "", phone = "", event = null, referral = null } = {}) {
+  matchInboundTrigger(tenantId = 1, { text = "", phone = "", phoneNumberId = null, event = null, referral = null } = {}) {
+    const targetPhoneId = (!phoneNumberId || phoneNumberId === "ALL" || phoneNumberId === "null") ? null : String(phoneNumberId).trim();
+
     const rawTriggers = db.prepare(`
       SELECT t.*, f.status as flow_status
       FROM workflow_triggers t
@@ -128,8 +145,15 @@ class WorkflowTriggerService {
         AND t.active_status = 1 
         AND t.delete_status = 0
         AND (f.status IS NULL OR f.status = 'PUBLISHED')
-      ORDER BY t.priority ASC, t.id ASC
-    `).all(Number(tenantId) || 1);
+        AND (? IS NULL OR t.phone_number_id = ? OR t.phone_number_id IS NULL)
+      ORDER BY 
+        CASE 
+          WHEN ? IS NOT NULL AND t.phone_number_id = ? THEN 0
+          WHEN t.phone_number_id IS NULL THEN 1
+          ELSE 2
+        END ASC,
+        t.priority ASC, t.id ASC
+    `).all(Number(tenantId) || 1, targetPhoneId, targetPhoneId, targetPhoneId, targetPhoneId);
 
     if (!rawTriggers || rawTriggers.length === 0) return null;
 

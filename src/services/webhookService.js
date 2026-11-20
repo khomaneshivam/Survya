@@ -1851,10 +1851,12 @@ class WebhookService {
           const workflowTriggerService = require("./workflow/workflowTriggerService");
           matchedTrigger = workflowTriggerService.matchInboundTrigger(1, {
             text: effectiveText,
-            phone: cleanPhone
+            phone: cleanPhone,
+            phoneNumberId: incomingPhoneId,
+            referral: rawMsg?.referral || null
           });
           if (matchedTrigger) {
-            console.log(`[Webhook Flow] Matched trigger '${matchedTrigger.triggerKey}' for flow ${matchedTrigger.flowId} (node: ${matchedTrigger.nodeId}).`);
+            console.log(`[Webhook Flow] Matched trigger '${matchedTrigger.triggerKey}' for flow ${matchedTrigger.flowId} (node: ${matchedTrigger.nodeId}, line: ${incomingPhoneId || 'GLOBAL'}).`);
           }
         } catch (trgErr) {
           console.warn("[Webhook Flow] Trigger matching warning:", trgErr.message);
@@ -1908,10 +1910,12 @@ class WebhookService {
             userPayload: rawMsg?.interactive?.button_reply || rawMsg?.interactive?.list_reply || (interactiveActionId ? { id: interactiveActionId, title: effectiveText } : null),
             startFlowId: matchedTrigger?.flowId || null,
             startNodeId: matchedTrigger?.nodeId || null,
+            phoneNumberId: incomingPhoneId,
             context: {
               tenantId: 1,
               propertyId: 1,
               channel: "WHATSAPP",
+              phoneNumberId: incomingPhoneId,
               isSimulation: isSimulation,
               triggerKey: matchedTrigger?.triggerKey || null
             }

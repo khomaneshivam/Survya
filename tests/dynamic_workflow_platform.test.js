@@ -223,7 +223,7 @@ describe("Dynamic Multi-Industry Workflow Platform Test Suite (Phases 2, 3 & 4)"
           id: "node_trg_wa",
           type: "TRIGGER_WHATSAPP",
           data: {
-            keywords: ["demo", "b2b", "trial"],
+            keywords: ["alpha_custom_trigger_xyz", "gamma_custom_kw"],
             matchType: "CONTAINS",
             triggerKey: "trg_test_demo"
           }
@@ -242,7 +242,7 @@ describe("Dynamic Multi-Industry Workflow Platform Test Suite (Phases 2, 3 & 4)"
       workflowTriggerService.syncFlowTriggers(1, "test_flow_99", sampleNodes);
 
       // Verify keyword match
-      const kwMatch = workflowTriggerService.matchInboundTrigger(1, { text: "I want a demo please" });
+      const kwMatch = workflowTriggerService.matchInboundTrigger(1, { text: "I want a alpha_custom_trigger_xyz please" });
       assert.ok(kwMatch);
       assert.equal(kwMatch.flowId, "test_flow_99");
       assert.equal(kwMatch.nodeId, "node_trg_wa");

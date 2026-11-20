@@ -55,6 +55,7 @@ import FlowSimulatorPanel from '../components/flow-studio/FlowSimulatorPanel';
 import MessageTemplatesStudio from '../components/flow-studio/MessageTemplatesStudio';
 import FlowAnalyticsPanel from '../components/flow-studio/FlowAnalyticsPanel';
 import FlowExecutionsModal from '../components/flow-studio/FlowExecutionsModal';
+import AiFlowGeneratorModal from '../components/flow-studio/AiFlowGeneratorModal';
 
 function TabSaveFooter({ hasUnsavedChanges, saving, onSave }) {
   return (
@@ -188,6 +189,10 @@ export default function AutoReplyBotPage({ onNavigate }) {
   const [validationReport, setValidationReport] = useState(null);
   const [validationModalOpen, setValidationModalOpen] = useState(false);
   const [builderDesignerView, setBuilderDesignerView] = useState('STEPS'); // 'STEPS' | 'CANVAS'
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiRefinePrompt, setAiRefinePrompt] = useState('');
+  const [refiningWithAi, setRefiningWithAi] = useState(false);
+  const [connectedLines, setConnectedLines] = useState([]);
 
   // Auth Headers helper
   const getAuthHeaders = useCallback(() => {
@@ -314,6 +319,12 @@ export default function AutoReplyBotPage({ onNavigate }) {
           setTemplatesList(tplsData.templates);
         }
       }
+
+      fetch('/api/flows/ai/capabilities', { headers }).then(r => r.json()).then(caps => {
+        if (caps.success && caps.capabilities?.connectedLines) {
+          setConnectedLines(caps.capabilities.connectedLines);
+        }
+      }).catch(() => {});
     } catch (err) {
       console.error('[AutoReplyBotPage] loadData error:', err);
       setErrorMsg(err.message || 'Failed to load bot settings.');
@@ -559,6 +570,59 @@ export default function AutoReplyBotPage({ onNavigate }) {
       }
     } catch (e) {
       alert(e.message);
+    }
+  };
+
+  const handleAssignLine = async (flowId, phoneNumberId) => {
+    if (!flowId) return;
+    try {
+      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      const res = await fetch(`/api/flows/conversation-flows/${flowId}/assign-line`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ phoneNumberId })
+      });
+      const data = await res.json();
+      if (data.success && data.flow) {
+        setActiveFlow(data.flow);
+        setFlowsList(prev => prev.map(f => f.id === flowId ? {
+          ...f,
+          phone_number_id: data.flow.phone_number_id,
+          assigned_phone_display_name: data.flow.assigned_phone_display_name
+        } : f));
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else {
+        alert(data.error || 'Failed to update phone line assignment');
+      }
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const handleRefineWithAi = async () => {
+    if (!activeFlowId || !aiRefinePrompt.trim()) return;
+    setRefiningWithAi(true);
+    try {
+      const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+      const res = await fetch(`/api/flows/conversation-flows/${activeFlowId}/refine`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ prompt: aiRefinePrompt.trim() })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAiRefinePrompt('');
+        loadFlowDetails(activeFlowId);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else {
+        alert(data.error || 'Failed to refine flow with AI');
+      }
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setRefiningWithAi(false);
     }
   };
 
@@ -1195,6 +1259,57 @@ export default function AutoReplyBotPage({ onNavigate }) {
                 </span>
               )}
 
+              {activeFlow && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Phone size={13} color="#2F5219" />
+                  <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#67676B' }}>WhatsApp Line:</span>
+                  <select
+                    value={activeFlow.phone_number_id || ''}
+                    onChange={e => handleAssignLine(activeFlow.id, e.target.value)}
+                    title="Bind flow to a specific WhatsApp Business phone number line"
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                      border: '1px solid #CBD5E1',
+                      background: activeFlow.phone_number_id ? '#F0FDF4' : '#FFFFFF',
+                      color: activeFlow.phone_number_id ? '#166534' : '#334155',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="">All Lines (Global)</option>
+                    {connectedLines.map(line => (
+                      <option key={line.phoneNumberId} value={line.phoneNumberId}>
+                        {line.displayName} ({line.phoneNumber})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setAiModalOpen(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 14px',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  borderRadius: '6px',
+                  border: '1px solid #86EFAC',
+                  background: 'linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)',
+                  color: '#166534',
+                  cursor: 'pointer',
+                  boxShadow: '0 1px 3px rgba(34, 197, 94, 0.2)'
+                }}
+              >
+                <Sparkles size={14} color="#15803D" />
+                <span>✨ Generate with AI</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setTemplatesModalOpen(true)}
@@ -1421,6 +1536,88 @@ export default function AutoReplyBotPage({ onNavigate }) {
               >
                 {publishing ? <RotateCcw size={14} className="spin" /> : <Play size={14} />}
                 <span>{publishing ? 'Publishing...' : 'Publish to Live'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Inline AI Flow Refinement Bar */}
+          <div style={{
+            background: '#F8FAFC',
+            border: '1px solid #E2E8F0',
+            borderRadius: '10px',
+            padding: '10px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            flexWrap: 'wrap'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '300px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#4F46E5', fontWeight: 700, fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                <Sparkles size={16} color="#6366F1" />
+                <span>Edit with AI:</span>
+              </div>
+              <input
+                type="text"
+                value={aiRefinePrompt}
+                onChange={e => setAiRefinePrompt(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleRefineWithAi(); }}
+                placeholder='e.g., "Add a 15-minute follow-up delay" or "Add a UPI payment step"'
+                style={{
+                  flex: 1,
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: '1px solid #CBD5E1',
+                  fontSize: '0.82rem',
+                  background: '#FFFFFF',
+                  color: '#0F172A'
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleRefineWithAi}
+                disabled={refiningWithAi || !aiRefinePrompt.trim()}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: refiningWithAi || !aiRefinePrompt.trim() ? '#94A3B8' : '#4F46E5',
+                  color: '#FFFFFF',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: refiningWithAi || !aiRefinePrompt.trim() ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {refiningWithAi ? <RotateCcw size={13} className="spin" /> : <Bot size={13} />}
+                <span>{refiningWithAi ? 'Refining...' : 'Refine'}</span>
+              </button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.74rem', color: '#64748B' }}>Quick:</span>
+              <button
+                type="button"
+                onClick={() => setAiRefinePrompt("Add a 15-minute follow-up delay before handoff")}
+                style={{ fontSize: '0.74rem', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '4px', padding: '3px 8px', cursor: 'pointer', color: '#475569' }}
+              >
+                + 15m Delay
+              </button>
+              <button
+                type="button"
+                onClick={() => setAiRefinePrompt("Add a CRM upsert step for high budget leads")}
+                style={{ fontSize: '0.74rem', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '4px', padding: '3px 8px', cursor: 'pointer', color: '#475569' }}
+              >
+                + CRM Deal
+              </button>
+              <button
+                type="button"
+                onClick={() => setAiRefinePrompt("Add a direct UPI payment link node")}
+                style={{ fontSize: '0.74rem', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '4px', padding: '3px 8px', cursor: 'pointer', color: '#475569' }}
+              >
+                + UPI Pay
               </button>
             </div>
           </div>
@@ -3616,6 +3813,21 @@ export default function AutoReplyBotPage({ onNavigate }) {
         onClose={() => setTemplatesModalOpen(false)}
         templates={templatesList}
         onCloneTemplate={handleCloneTemplate}
+      />
+
+      {/* AI Flow Architect Modal */}
+      <AiFlowGeneratorModal
+        isOpen={aiModalOpen}
+        onClose={() => setAiModalOpen(false)}
+        token={token}
+        onFlowGenerated={result => {
+          if (result.flow) {
+            setFlowsList(prev => [result.flow, ...prev]);
+            setActiveFlowId(result.flow.id);
+            loadFlowDetails(result.flow.id);
+            setStudioMode('BUILDER');
+          }
+        }}
       />
 
       {/* Version History & Rollback Modal */}
