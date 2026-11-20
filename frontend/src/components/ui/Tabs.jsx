@@ -45,7 +45,7 @@ export default function Tabs({ tabs, activeTab, onChange, ariaLabel = 'Section n
             onClick={() => onChange(tab.id)}
             onKeyDown={(e) => handleKeyDown(e, index)}
           >
-            {Icon && <Icon size={15} />}
+            {Icon && (React.isValidElement(Icon) ? Icon : (typeof Icon === 'function' || typeof Icon === 'object') && Icon ? <Icon size={15} /> : null)}
             <span>{tab.label}</span>
             {tab.count !== undefined && tab.count !== null && (
               <span className={selected ? 'sarvya-badge sarvya-badge-blue' : 'sarvya-badge sarvya-badge-neutral'}>

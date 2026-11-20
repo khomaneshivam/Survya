@@ -85,7 +85,7 @@ export default function Modal({
               justifyContent: 'center',
               flexShrink: 0
             }}>
-              <Icon size={17} />
+              {React.isValidElement(Icon) ? Icon : (typeof Icon === 'function' || typeof Icon === 'object') && Icon ? <Icon size={17} /> : null}
             </div>
           )}
           <div style={{ minWidth: 0 }}>

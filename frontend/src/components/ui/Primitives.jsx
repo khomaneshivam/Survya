@@ -71,7 +71,8 @@ export function Card({ children, className = '', style }) {
   );
 }
 
-export function CardHeader({ title, subtitle, actions }) {
+export function CardHeader({ title, subtitle, actions, action }) {
+  const headerActions = actions || action;
   return (
     <div className="sarvya-card-header">
       <div>
@@ -82,7 +83,7 @@ export function CardHeader({ title, subtitle, actions }) {
           </div>
         )}
       </div>
-      {actions && <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>{actions}</div>}
+      {headerActions && <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>{headerActions}</div>}
     </div>
   );
 }
@@ -191,7 +192,7 @@ export function EmptyState({ icon: Icon = Inbox, title, description, action }) {
   return (
     <div className="sarvya-empty-state">
       <div className="sarvya-empty-icon">
-        <Icon size={20} />
+        {React.isValidElement(Icon) ? Icon : (typeof Icon === 'function' || typeof Icon === 'object') && Icon ? <Icon size={20} /> : null}
       </div>
       <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{title}</div>
       {description && (

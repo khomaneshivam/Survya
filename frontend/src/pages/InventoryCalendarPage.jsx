@@ -1676,7 +1676,7 @@ export default function InventoryCalendarPage() {
 
                 {propertyGallery.filter(img => galleryCategoryFilter === 'ALL' || img.category === galleryCategoryFilter).length === 0 ? (
                   <EmptyState
-                    icon={<ImageIcon size={48} />}
+                    icon={ImageIcon}
                     title="No property photographs in this category"
                     description="Upload high-resolution property photos for your resort grounds, swimming pool, beachfront, and restaurant."
                     action={
@@ -1808,7 +1808,7 @@ export default function InventoryCalendarPage() {
               <div>
                 {roomImages.length === 0 ? (
                   <EmptyState
-                    icon={<ImageIcon size={48} />}
+                    icon={ImageIcon}
                     title="No photographs added for this room category"
                     description="Upload high-resolution room photos so guests on WhatsApp and web chat can preview them."
                     action={
@@ -2541,7 +2541,7 @@ export default function InventoryCalendarPage() {
             <Card>
               <CardBody>
                 <EmptyState
-                  icon={<Calculator size={48} />}
+                  icon={Calculator}
                   title="Run a Quote Calculation"
                   description="Select check-in dates, room category, and guest counts to preview the authoritative pricing engine's calculation."
                 />
