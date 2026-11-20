@@ -140,11 +140,12 @@ class WorkflowTriggerService {
     const rawTriggers = db.prepare(`
       SELECT t.*, f.status as flow_status
       FROM workflow_triggers t
-      LEFT JOIN conversation_flows f ON t.flow_id = f.id
+      JOIN conversation_flows f ON t.flow_id = f.id
+      JOIN conversation_flow_versions v ON v.id = f.published_version_id
       WHERE t.tenant_id = ? 
         AND t.active_status = 1 
         AND t.delete_status = 0
-        AND (f.status IS NULL OR f.status = 'PUBLISHED')
+        AND f.status = 'PUBLISHED'
         AND (? IS NULL OR t.phone_number_id = ? OR t.phone_number_id IS NULL)
       ORDER BY 
         CASE 

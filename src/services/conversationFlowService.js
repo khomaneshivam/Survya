@@ -723,6 +723,23 @@ function assignFlowToLine(flowId, phoneNumberId, user = { id: "admin", name: "Ad
 }
 
 /**
+ * Set a flow as the default active flow for inbound conversations
+ */
+function setDefaultFlow(flowId, user = { id: "admin", name: "Administrator" }, tenantId = 1) {
+  const flow = db.prepare("SELECT * FROM conversation_flows WHERE id = ? AND tenant_id = ?").get(flowId, tenantId);
+  if (!flow) throw new Error(`Conversation flow #${flowId} not found.`);
+
+  db.prepare("UPDATE conversation_flows SET is_default = 0 WHERE tenant_id = ?").run(tenantId);
+  db.prepare("UPDATE conversation_flows SET is_default = 1, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(
+    user.name || user.id || "admin",
+    flowId
+  );
+
+  logAudit(tenantId, user.id, "SET_DEFAULT_FLOW", flowId, { flowName: flow.name });
+  return getFlowById(flowId, tenantId);
+}
+
+/**
  * Pause an active flow
  */
 function pauseFlow(flowId, user = { id: "admin", name: "Administrator" }, tenantId = 1) {
@@ -1237,6 +1254,7 @@ module.exports = {
   validateFlow,
   publishFlow,
   assignFlowToLine,
+  setDefaultFlow,
   pauseFlow,
   archiveFlow,
   deleteFlow,

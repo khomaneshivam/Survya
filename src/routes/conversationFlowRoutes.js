@@ -26,6 +26,10 @@ router.post("/flows/conversation-flows/:id/refine", authenticateToken, flowContr
 router.patch("/flows/conversation-flows/:id/assign-line", authenticateToken, flowController.assignFlowToLine);
 router.post("/flows/conversation-flows/:id/assign-line", authenticateToken, flowController.assignFlowToLine);
 
+// Set Default Active Flow
+router.post("/flows/conversation-flows/:id/set-default", authenticateToken, flowController.setDefaultFlow);
+router.patch("/flows/conversation-flows/:id/set-default", authenticateToken, flowController.setDefaultFlow);
+
 // =========================================================================
 // CONVERSATION FLOWS (STUDIO BUILDER & LIFECYCLE)
 // =========================================================================

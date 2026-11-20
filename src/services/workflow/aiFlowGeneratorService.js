@@ -97,8 +97,17 @@ function synthesizeSmartLocalFlow(prompt = "", systemContext = {}) {
   const p = String(prompt || "").toLowerCase();
   const { roomTypes = [], businessEntities = [], crmPipelines = [], catalogItems = [] } = systemContext;
 
+  let configuredBusinessName = "Hotel Green Vally";
+  try {
+    const { getSetting } = require("../../config/database");
+    configuredBusinessName = getSetting("BOT_BUSINESS_NAME") || "Hotel Green Vally";
+  } catch (e) {}
+
   const defaultRoom = roomTypes[0] || { id: 1, name: "Deluxe Sea View Room", base_rate: 4500 };
-  const primaryEntity = businessEntities[0] || { name: "KonkanTrip Beach Resort & Spa", city: "Alibaug" };
+  const primaryEntity = businessEntities[0] || { name: configuredBusinessName, city: "Alibaug" };
+  if (!primaryEntity.name || primaryEntity.name === "KonkanTrip Beach Resort & Spa") {
+    primaryEntity.name = configuredBusinessName;
+  }
   const b2bPipeline = crmPipelines.find(pip => pip.slug === "b2b-sales-pipeline" || pip.industry_type === "B2B_SALES") || { slug: "b2b-sales-pipeline", id: 1 };
   const leadPipeline = crmPipelines.find(pip => pip.slug === "lead-generation-pipeline" || pip.industry_type === "LEAD_GEN") || { slug: "lead-generation-pipeline", id: 2 };
   const bookingPipeline = crmPipelines.find(pip => pip.slug === "universal-booking-pipeline" || pip.industry_type === "BOOKING") || { slug: "universal-booking-pipeline", id: 3 };

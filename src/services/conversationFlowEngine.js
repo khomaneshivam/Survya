@@ -11,6 +11,16 @@ const { getNodeExecutor } = require("./workflow/nodeExecutors");
 const { evaluateRules } = require("./workflow/expressionEvaluator");
 
 /**
+ * Helper: strip emojis and extra punctuation for clean comparisons
+ */
+const cleanEmoji = str => String(str || "")
+  .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F600}-\u{1F6FF}]/gu, "")
+  .replace(/[^\w\s]/gi, " ")
+  .replace(/\s+/g, " ")
+  .trim()
+  .toLowerCase();
+
+/**
  * Resolves the next node in the graph matching an output handle or fallback edge with handle aliasing.
  */
 function resolveNextTransition(currentNodeId, handle, transitions = [], nodeMap = new Map(), nodes = []) {
@@ -55,10 +65,14 @@ function resolveNextTransition(currentNodeId, handle, transitions = [], nodeMap 
 
   // 1. Direct handle match or alias match
   for (const h of handleAliases) {
+    const cleanH = cleanEmoji(h);
     const match = outbound.find(t =>
       t.sourceHandle === h ||
       String(t.optionId) === h ||
       String(t.condition) === h ||
+      (cleanH && cleanEmoji(t.sourceHandle) === cleanH) ||
+      (cleanH && cleanEmoji(t.optionId) === cleanH) ||
+      (cleanH && cleanEmoji(t.label) === cleanH) ||
       (h === "true" && t.condition === true) ||
       (h === "false" && t.condition === false)
     );
@@ -675,11 +689,20 @@ async function processTurn({
   const executionLogs = [];
 
   // Fetch property details for variable interpolation
+  let configuredBusinessName = "Hotel Green Vally";
+  try {
+    const { getSetting } = require("../config/database");
+    configuredBusinessName = getSetting("BOT_BUSINESS_NAME") || "Hotel Green Vally";
+  } catch (e) {}
+
   const prop = db.prepare("SELECT id, name, city, phone FROM properties WHERE id = ?").get(propertyId) || {
     id: 1,
-    name: "Konkan Trip Beach Resort",
+    name: configuredBusinessName,
     city: "Alibaug, Maharashtra"
   };
+  if (configuredBusinessName && configuredBusinessName !== "KonkanTrip Beach Resort & Spa") {
+    prop.name = configuredBusinessName;
+  }
 
   let session = null;
   let flow = null;
@@ -859,8 +882,9 @@ async function processTurn({
   const variableContext = {
     ...collectedData,
     sender_phone: normalizedPhone,
+    business_name: configuredBusinessName || prop.name,
     property: {
-      name: prop.name,
+      name: configuredBusinessName || prop.name,
       city: prop.city,
       phone: prop.phone
     }
@@ -1024,27 +1048,92 @@ async function processTurn({
     const matchedOpt = matchOption(rawOptions, choiceValue, userInput);
     const normInput = String(choiceValue || userInput).toLowerCase().trim();
 
-    const valToStore = matchedOpt ? matchedOpt.value : (normInput.includes("confirm") || normInput.includes("yes") || normInput.includes("pay") ? "CONFIRM" : normInput.includes("modify") || normInput.includes("change") ? "MODIFY" : normInput.includes("staff") || normInput.includes("human") || normInput.includes("agent") ? "STAFF" : userInput);
+    if (!matchedOpt) {
+      // Intent Shortcuts & Smart Navigation
+      const isDateIntent = choiceValue === "btn_check_avail" || choiceValue === "opt_check_dates" || /^(check\s*dates|check\s*avail|dates|rates|availability)/i.test(normInput);
+      const isStaffIntent = choiceValue === "btn_staff" || choiceValue === "opt_talk_agent" || choiceValue === "opt_staff" || /^(talk|staff|human|agent|host|help|call)/i.test(normInput);
 
-    const targetVar = currentNode.config?.variable || (currentNode.type === "CONFIRMATION" ? "confirmation_choice" : "menu_selection");
-    collectedData[targetVar] = valToStore;
-    variableContext[targetVar] = valToStore;
-    inputConsumed = true;
-
-    executionLogs.push(`User answered [${currentNode.type}] '${currentNode.id}': selected '${valToStore}' into '${targetVar}'`);
-
-    // Advance to next node: prioritize option targetNodeId, then explicit edge, then next sequential node
-    let nextNodeId = matchedOpt?.targetNodeId;
-    if (!nextNodeId || !nodeMap.has(nextNodeId)) {
-      const nextTargets = transitionsFrom.get(currentNode.id) || [];
-      nextNodeId = nextTargets.length > 0 ? nextTargets[0] : null;
+      if (isDateIntent) {
+        if (!collectedData.selected_room_name && !variableContext.selected_room_name) {
+          const defaultRoomName = "Deluxe Garden Villa";
+          collectedData.selected_room_name = defaultRoomName;
+          variableContext.selected_room_name = defaultRoomName;
+        }
+        collectedData.enquiry_type = "BOOKING";
+        variableContext.enquiry_type = "BOOKING";
+        inputConsumed = true;
+        const checkinNode = nodes.find(n => n.id === "node_ask_checkin" || n.id === "input_checkin" || (n.config?.variable === "check_in_date"));
+        if (checkinNode) {
+          currentNode = checkinNode;
+        }
+      } else if (isStaffIntent) {
+        collectedData.enquiry_type = "STAFF";
+        variableContext.enquiry_type = "STAFF";
+        inputConsumed = true;
+        const handoffNode = nodes.find(n => n.type === "HANDOFF" || n.type === "HUMAN_HANDOFF" || n.id === "node_concierge_handoff" || n.id === "handoff_agent");
+        if (handoffNode) {
+          currentNode = handoffNode;
+        }
+      } else {
+        // Natural date input check: If user typed a date while on a button menu (e.g. "tomorrow" or "2026-12-01")
+        const parsedDate = parseDateInput(userInput);
+        if (parsedDate) {
+          collectedData.check_in_date = parsedDate;
+          variableContext.check_in_date = parsedDate;
+          if (!collectedData.selected_room_name) {
+            collectedData.selected_room_name = "Deluxe Garden Villa";
+            variableContext.selected_room_name = "Deluxe Garden Villa";
+          }
+          collectedData.enquiry_type = "BOOKING";
+          variableContext.enquiry_type = "BOOKING";
+          inputConsumed = true;
+          const checkoutNode = nodes.find(n => n.id === "node_ask_checkout" || n.id === "input_checkout" || (n.config?.variable === "check_out_date"));
+          if (checkoutNode) {
+            currentNode = checkoutNode;
+          }
+        } else {
+          // Unrecognized input: DO NOT advance to arbitrary node! Re-prompt and stay on current node.
+          executionLogs.push(`Unrecognized option '${userInput}' on [${currentNode.type}] '${currentNode.id}'. Re-prompting options.`);
+          const promptText = (currentNode.config?.prompt || "Please choose one of the options below:") + "\n\n*(Please choose one of the options to proceed)*";
+          return {
+            handled: true,
+            sessionKey,
+            currentNodeId: currentNode.id,
+            sessionStatus: "ACTIVE",
+            replyText: promptText,
+            replyInteractive: {
+              type: "BUTTONS",
+              options: rawOptions
+            },
+            collectedData,
+            executionLogs
+          };
+        }
+      }
     }
 
-    if (nextNodeId && nodeMap.has(nextNodeId)) {
-      currentNode = nodeMap.get(nextNodeId);
-    } else {
-      const curIdx = nodes.findIndex(n => n.id === currentNode.id);
-      currentNode = curIdx >= 0 && curIdx < nodes.length - 1 ? nodes[curIdx + 1] : null;
+    if (matchedOpt) {
+      const valToStore = matchedOpt.value || matchedOpt.id || matchedOpt.title;
+      const targetVar = currentNode.config?.variable || (currentNode.type === "CONFIRMATION" ? "confirmation_choice" : "menu_selection");
+      collectedData[targetVar] = valToStore;
+      variableContext[targetVar] = valToStore;
+      inputConsumed = true;
+
+      executionLogs.push(`User answered [${currentNode.type}] '${currentNode.id}': selected '${valToStore}' into '${targetVar}'`);
+
+      // Advance to next node: prioritize option targetNodeId, then explicit edge, then next sequential node
+      let nextNodeId = matchedOpt?.targetNodeId;
+      if (!nextNodeId || !nodeMap.has(nextNodeId)) {
+        const nextTargets = transitionsFrom.get(currentNode.id) || [];
+        nextNodeId = nextTargets.length > 0 ? nextTargets[0] : null;
+      }
+
+      if (nextNodeId && nodeMap.has(nextNodeId)) {
+        currentNode = nodeMap.get(nextNodeId);
+      } else {
+        const curIdx = nodes.findIndex(n => n.id === currentNode.id);
+        currentNode = curIdx >= 0 && curIdx < nodes.length - 1 ? nodes[curIdx + 1] : null;
+      }
     }
   } else if (isInputField && userInput) {
     const valConfig = currentNode.config?.validation || {};

@@ -90,6 +90,8 @@ function shortenHeaderText(str, max = 60) {
 class WebhookService {
   constructor() {
     this.inFlightAutoReplies = new Set();
+    this.activeDispatchKeys = new Set();
+    this.answeredMessageKeys = new Map(); // dispatchKey -> timestamp (ms) to permanently dedupe retries
     this.botPausedUntil = new Map(); // cleanPhone -> expiryTimestamp (ms)
     this.phoneQueues = new Map(); // cleanPhone -> Promise chain for sequential processing
   }
@@ -553,13 +555,8 @@ class WebhookService {
                   console.error("[Webhook Flow] Error:", arErr.message);
                 });
               } else if (result && !result.saved && result.id) {
-                // If message already existed in DB but auto-reply hasn't fired yet or had network retry
-                try {
-                  const existingRec = db.prepare("SELECT * FROM customer_replies WHERE id = ?").get(result.id);
-                  if (existingRec && !existingRec.reply_status && existingRec.message_type !== "outbound") {
-                    this.triggerAutoReply(existingRec, msg, val).catch(() => {});
-                  }
-                } catch (e) {}
+                // Duplicate webhook delivery from Meta - ignore to prevent duplicate bot replies
+                console.log(`[Webhook] Duplicate delivery ignored for message #${result.id}`);
               }
             } catch (err) {
               console.error("[Webhook] Error saving customer reply:", err);
@@ -965,8 +962,8 @@ class WebhookService {
         wa_message_id, from_phone, customer_name, message_type,
         message_body, raw_payload, context_message_id, campaign_id,
         media_url, media_type, media_caption, flow_id, flow_response_id,
-        link_id, source, is_read, user_id, received_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+        link_id, source, is_read, user_id, received_at, reply_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'PENDING_REPLY')
     `);
 
     const runResult = insertStmt.run(
@@ -1683,9 +1680,28 @@ class WebhookService {
     const cleanPhone = rawPhone.replace(/\D/g, "");
     if (!cleanPhone || cleanPhone.length < 10) return null;
 
+    // Deduplication lock: prevent concurrent dispatch for the same message ID or phone turn
+    const dispatchKey = `${cleanPhone}:${replyRecord.id || replyRecord.wa_message_id || 'unknown'}`;
+    if (this.activeDispatchKeys.has(dispatchKey)) {
+      console.log(`[Webhook Flow] Deduplication: Dispatch key ${dispatchKey} is currently active. Skipping duplicate.`);
+      return null;
+    }
+    if (this.answeredMessageKeys && this.answeredMessageKeys.has(dispatchKey)) {
+      console.log(`[Webhook Flow] Deduplication: Message ${dispatchKey} was already answered. Suppressing duplicate execution.`);
+      return null;
+    }
+    this.activeDispatchKeys.add(dispatchKey);
     this.inFlightAutoReplies.add(cleanPhone);
 
     try {
+      // Re-verify from DB that this record hasn't already been replied to
+      if (replyRecord.id) {
+        const curRec = db.prepare("SELECT reply_status FROM customer_replies WHERE id = ?").get(replyRecord.id);
+        if (curRec && (curRec.reply_status === 'AUTO_REPLIED' || curRec.reply_status === 'SENT')) {
+          console.log(`[Webhook Flow] Reply record #${replyRecord.id} already answered with status ${curRec.reply_status}. Skipping.`);
+          return null;
+        }
+      }
       const rawText = String(replyRecord.message_body || "").trim();
       const upper = rawText.toUpperCase();
 
@@ -1803,7 +1819,7 @@ class WebhookService {
       // If client is configured in FLOW_STUDIO or CONVERSATION_FLOW mode, or an active studio session is open:
       const flowEngine = require("./conversationFlowEngine");
       let activeFlowSession = db.prepare(`
-        SELECT id, last_interaction_at, expires_at FROM conversation_flow_sessions
+        SELECT id, current_node_id, last_interaction_at, expires_at FROM conversation_flow_sessions
         WHERE sender_phone = ? AND session_status = 'ACTIVE'
         LIMIT 1
       `).get(cleanPhone);
@@ -1824,7 +1840,7 @@ class WebhookService {
       // Check for pending delay jobs that should cancel on customer reply
       try {
         const pendingJobs = db.prepare(`
-          SELECT j.*, s.current_flow_id, s.current_node_id
+          SELECT j.*, s.flow_id, s.current_node_id
           FROM workflow_scheduled_jobs j
           JOIN conversation_flow_sessions s ON j.session_id = s.id
           WHERE s.sender_phone = ? AND j.status = 'PENDING' AND j.cancel_on_reply = 1
@@ -1844,9 +1860,9 @@ class WebhookService {
         console.warn("[Webhook Flow] Cancel-on-reply check warning:", delayErr.message);
       }
 
-      // Match multi-channel triggers if no active session
+      // Match multi-channel triggers ONLY if no active session AND this is not an interactive button click
       let matchedTrigger = null;
-      if (!activeFlowSession) {
+      if (!activeFlowSession && !isInteractiveAction) {
         try {
           const workflowTriggerService = require("./workflow/workflowTriggerService");
           matchedTrigger = workflowTriggerService.matchInboundTrigger(1, {
@@ -1864,7 +1880,8 @@ class WebhookService {
       }
 
       const isStudioMode = autoReplySettings.engineMode === "FLOW_STUDIO" || 
-                           autoReplySettings.engineMode === "CONVERSATION_FLOW";
+                           autoReplySettings.engineMode === "CONVERSATION_FLOW" ||
+                           autoReplySettings.engineMode === "HOSPITALITY_FLOW";
 
       const hasPublishedFlows = db.prepare(`
         SELECT id FROM conversation_flows
@@ -1878,8 +1895,12 @@ class WebhookService {
       const shouldRunFlowEngine = activeFlowSession || matchedTrigger || (isStudioMode && hasPublishedFlows);
 
       if (shouldRunFlowEngine) {
-        // Universal Deduplication check for initial greeting
-        if (!activeFlowSession && !isInteractiveAction && !isResumeKeyword) {
+        // Universal Deduplication check for initial or repeated generic greeting:
+        // Applies if there's no active session, OR if the contact is at the start node/menu and sends another generic greeting
+        const isAtStartMenu = !activeFlowSession || activeFlowSession.current_node_id === "node_enquiry_type" || activeFlowSession.current_node_id === "node_start" || activeFlowSession.current_node_id === "msg_welcome";
+        const isGenericGreeting = /^(hi|hello|hey|greetings|namaste|hello again|hi again|resort)\b/i.test(effectiveText.trim());
+
+        if ((!activeFlowSession || (isAtStartMenu && isGenericGreeting)) && !isInteractiveAction && !isResumeKeyword) {
           if (autoReplySettings.mode === "ONCE_PER_CONTACT") {
             const prior = db.prepare(`
               SELECT id FROM customer_replies 
@@ -1936,7 +1957,7 @@ class WebhookService {
                     bodyText: flowResult.replyText,
                     buttons,
                     headerMediaUrl: flowResult.replyInteractive?.mediaUrl || "",
-                    footerText: autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa",
+                    footerText: autoReplySettings.businessName || "Hotel Green Vally",
                     customCredentials
                   });
                   sentMsgId = bRes?.messageId || null;
@@ -1954,7 +1975,7 @@ class WebhookService {
                       rows: listRows
                     }],
                     headerMediaUrl: flowResult.replyInteractive?.mediaUrl || "",
-                    footerText: autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa",
+                    footerText: autoReplySettings.businessName || "Hotel Green Vally",
                     customCredentials
                   });
                   sentMsgId = lRes?.messageId || null;
@@ -2032,6 +2053,9 @@ class WebhookService {
             };
 
             broadcastEngine.emit("webhook:reply_updated", updatedRecord);
+            if (this.answeredMessageKeys) {
+              this.answeredMessageKeys.set(dispatchKey, Date.now());
+            }
             return {
               success: true,
               flowEngine: true,
@@ -2039,6 +2063,15 @@ class WebhookService {
               replyText: flowResult.replyText,
               sessionKey: flowResult.sessionKey,
               currentNodeId: flowResult.currentNodeId
+            };
+          } else if (flowResult && flowResult.handled) {
+            if (this.answeredMessageKeys) {
+              this.answeredMessageKeys.set(dispatchKey, Date.now());
+            }
+            return {
+              success: true,
+              flowEngine: true,
+              handled: true
             };
           }
         } catch (engineErr) {
@@ -3148,6 +3181,7 @@ class WebhookService {
       console.error(`[Webhook Flow] ✗ Error processing flow for ${cleanPhone}:`, err.message);
       return { success: false, error: err.message };
     } finally {
+      this.activeDispatchKeys.delete(dispatchKey);
       this.inFlightAutoReplies.delete(cleanPhone);
     }
   }
@@ -3372,7 +3406,11 @@ class WebhookService {
     }
     const bName = payload.businessName || payload.business_name;
     if (bName !== undefined && String(bName).trim()) {
-      setSetting("BOT_BUSINESS_NAME", String(bName).trim().substring(0, 100));
+      const cleanBName = String(bName).trim().substring(0, 100);
+      setSetting("BOT_BUSINESS_NAME", cleanBName);
+      try {
+        db.prepare("UPDATE properties SET name = ? WHERE id = 1").run(cleanBName);
+      } catch (e) {}
     }
     const welcome = payload.welcomeMessage || payload.welcome_message;
     if (welcome !== undefined && String(welcome).trim()) {

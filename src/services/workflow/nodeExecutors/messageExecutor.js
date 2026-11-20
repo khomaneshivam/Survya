@@ -14,20 +14,51 @@ async function execute(node, context) {
     const payloadId = userPayload?.id || userPayload?.payload || '';
     const payloadTitle = (userPayload?.title || '').trim().toLowerCase();
 
+    // Helper: strip emojis & punctuation for fuzzy button title comparison
+    const cleanEmoji = str => String(str || '')
+      .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F600}-\u{1F6FF}]/gu, '')
+      .replace(/[^\w\s]/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+
+    const cleanInput = cleanEmoji(rawInput);
+    const cleanPayloadTitle = cleanEmoji(payloadTitle);
+    const cleanPayloadId = cleanEmoji(payloadId);
+
     // 1. Match by payload ID
-    let matched = options.find(opt => opt.id === payloadId || opt.value === payloadId);
+    let matched = options.find(opt => {
+      const oId = String(opt.id || '').toLowerCase();
+      const oVal = String(opt.value || '').toLowerCase();
+      return oId === payloadId.toLowerCase() || oVal === payloadId.toLowerCase() ||
+             (cleanPayloadId && (cleanEmoji(oId) === cleanPayloadId || cleanEmoji(oVal) === cleanPayloadId));
+    });
 
     // 2. Match by payload title
     if (!matched && payloadTitle) {
-      matched = options.find(opt => (opt.title || '').trim().toLowerCase() === payloadTitle);
+      matched = options.find(opt => {
+        const oTitle = (opt.title || '').trim().toLowerCase();
+        return oTitle === payloadTitle || (cleanPayloadTitle && cleanEmoji(oTitle) === cleanPayloadTitle);
+      });
     }
 
     // 3. Match by text content / title
     if (!matched && rawInput) {
-      matched = options.find(opt => (opt.title || '').trim().toLowerCase() === rawInput);
+      matched = options.find(opt => {
+        const oTitle = (opt.title || '').trim().toLowerCase();
+        return oTitle === rawInput || (cleanInput && cleanEmoji(oTitle) === cleanInput);
+      });
     }
 
-    // 4. Match by index (e.g. user typed "1", "2")
+    // 4. Substring / partial title match
+    if (!matched && cleanInput.length >= 3) {
+      matched = options.find(opt => {
+        const oClean = cleanEmoji(opt.title);
+        return oClean && (oClean.includes(cleanInput) || cleanInput.includes(oClean));
+      });
+    }
+
+    // 5. Match by index (e.g. user typed "1", "2")
     if (!matched && /^\d+$/.test(rawInput)) {
       const idx = parseInt(rawInput, 10) - 1;
       if (idx >= 0 && idx < options.length) {
@@ -35,9 +66,9 @@ async function execute(node, context) {
       }
     }
 
-    // 5. Match by option ID directly
+    // 6. Match by option ID directly
     if (!matched && rawInput) {
-      matched = options.find(opt => opt.id.toLowerCase() === rawInput);
+      matched = options.find(opt => opt.id.toLowerCase() === rawInput || cleanEmoji(opt.id) === cleanInput);
     }
 
     if (matched) {

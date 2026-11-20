@@ -73,6 +73,19 @@ async function assignFlowToLine(req, res) {
   }
 }
 
+async function setDefaultFlow(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const user = req.user || { id: "admin", name: "Administrator" };
+    const flowId = req.params.id;
+
+    const result = flowService.setDefaultFlow(flowId, user, tenantId);
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
 async function listFlows(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
@@ -413,5 +426,6 @@ module.exports = {
   getAiCapabilities,
   generateFlowWithAi,
   refineFlowWithAi,
-  assignFlowToLine
+  assignFlowToLine,
+  setDefaultFlow
 };
