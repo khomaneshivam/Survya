@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { 
   MessageSquare, 
@@ -517,6 +517,99 @@ export default function InboxPage({ onNavigate }) {
   // Real-time Bot Pause / Takeover status for active contact
   const [selectedBotStatus, setSelectedBotStatus] = useState({ isPaused: false, remainingMinutes: 0 });
   const [togglingBot, setTogglingBot] = useState(false);
+
+  // In-App Experience Rate Negotiation & Callback Action States
+  const [inappActiveNegotiation, setInappActiveNegotiation] = useState(null);
+  const [inappActiveCall, setInappActiveCall] = useState(null);
+  const [inappActionLoading, setInappActionLoading] = useState(false);
+  const [inappCounterFormOpen, setInappCounterFormOpen] = useState(false);
+  const [inappCounterPrice, setInappCounterPrice] = useState('');
+  const [inappCounterNote, setInappCounterNote] = useState('');
+
+  const fetchInappCommerceStatus = useCallback(async (phone) => {
+    if (!phone) {
+      setInappActiveNegotiation(null);
+      setInappActiveCall(null);
+      return;
+    }
+    try {
+      const cleanPhone = String(phone).replace(/\D/g, '');
+      const [negRes, callRes] = await Promise.all([
+        fetch(`/api/v1/inapp/negotiations?phone=${encodeURIComponent(cleanPhone)}&limit=5`, { credentials: 'include' }),
+        fetch(`/api/v1/inapp/calls?phone=${encodeURIComponent(cleanPhone)}&limit=5`, { credentials: 'include' })
+      ]);
+      const negData = await negRes.json();
+      const callData = await callRes.json();
+
+      if (negData.success && Array.isArray(negData.data)) {
+        const active = negData.data.find(n => n.status === 'PENDING_AGENT' || n.status === 'AGENT_COUNTERED') || null;
+        setInappActiveNegotiation(active);
+        if (active) {
+          setInappCounterPrice(String(active.agent_counter_price || active.customer_offer_price || ''));
+        }
+      } else {
+        setInappActiveNegotiation(null);
+      }
+
+      if (callData.success && Array.isArray(callData.data)) {
+        const activeCall = callData.data.find(c => c.status === 'QUEUED' || c.status === 'ASSIGNED') || null;
+        setInappActiveCall(activeCall);
+      } else {
+        setInappActiveCall(null);
+      }
+    } catch (_) {}
+  }, []);
+
+  const handleInappNegotiationAction = async (action, counterPrice, agentNote) => {
+    if (!inappActiveNegotiation) return;
+    try {
+      setInappActionLoading(true);
+      const res = await fetch(`/api/v1/inapp/negotiations/${inappActiveNegotiation.id}/agent-action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action, counterPrice, agentNote })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setInappCounterFormOpen(false);
+        if (selectedConvo?.phone) {
+          fetchInappCommerceStatus(selectedConvo.phone);
+        }
+      } else {
+        alert(data.message || 'Action failed');
+      }
+    } catch (e) {
+      alert(e.message || 'Action error');
+    } finally {
+      setInappActionLoading(false);
+    }
+  };
+
+  const handleInappCallStatus = async (status, callNotes) => {
+    if (!inappActiveCall) return;
+    try {
+      setInappActionLoading(true);
+      const res = await fetch(`/api/v1/inapp/calls/${inappActiveCall.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ status, callNotes })
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (selectedConvo?.phone) {
+          fetchInappCommerceStatus(selectedConvo.phone);
+        }
+      } else {
+        alert(data.message || 'Status update failed');
+      }
+    } catch (e) {
+      alert(e.message || 'Call status error');
+    } finally {
+      setInappActionLoading(false);
+    }
+  };
 
   async function handleOpenFlowModal() {
     try {
@@ -1222,6 +1315,7 @@ export default function InboxPage({ onNavigate }) {
             loadInbox(true, convoFilter);
             if (selectedConvo?.phone) {
               fetchBotStatus(selectedConvo.phone);
+              fetchInappCommerceStatus(selectedConvo.phone);
             }
           }
         } catch (e) {}
@@ -1277,8 +1371,9 @@ export default function InboxPage({ onNavigate }) {
   useEffect(() => {
     if (selectedConvo?.phone) {
       fetchBotStatus(selectedConvo.phone);
+      fetchInappCommerceStatus(selectedConvo.phone);
     }
-  }, [selectedConvo?.phone, token]);
+  }, [selectedConvo?.phone, token, fetchInappCommerceStatus]);
 
   async function loadAutoReplySettings() {
     try {
@@ -2567,6 +2662,247 @@ export default function InboxPage({ onNavigate }) {
                   </div>
                 );
               })()}
+
+              {/* In-App Experience Rate Negotiation Action Card */}
+              {inappActiveNegotiation && (
+                <div style={{
+                  background: '#FFFBEB',
+                  borderBottom: '1px solid #FDE68A',
+                  padding: '10px 18px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{
+                        background: '#FEF3C7',
+                        color: '#92400E',
+                        fontWeight: 800,
+                        fontSize: '0.72rem',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        <Sparkles size={12} /> Rate Offer Pending
+                      </span>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#171719' }}>
+                        Customer offered ₹{Number(inappActiveNegotiation.customer_offer_price).toLocaleString('en-IN')}
+                        <span style={{ fontWeight: 400, color: '#67676B' }}> for {inappActiveNegotiation.item_title} (Qty: {inappActiveNegotiation.quantity || 1})</span>
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: '#78716C', textDecoration: 'line-through' }}>
+                        Base: ₹{Number(inappActiveNegotiation.base_unit_price).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {inappActiveNegotiation.status === 'PENDING_AGENT' && (
+                        <>
+                          <button
+                            type="button"
+                            disabled={inappActionLoading}
+                            onClick={() => handleInappNegotiationAction('APPROVE')}
+                            style={{
+                              background: '#15803D',
+                              color: '#FFFFFF',
+                              border: 'none',
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              cursor: inappActionLoading ? 'not-allowed' : 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <Check size={12} /> Approve Offer
+                          </button>
+                          <button
+                            type="button"
+                            disabled={inappActionLoading}
+                            onClick={() => setInappCounterFormOpen(prev => !prev)}
+                            style={{
+                              background: '#2563EB',
+                              color: '#FFFFFF',
+                              border: 'none',
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              cursor: inappActionLoading ? 'not-allowed' : 'pointer'
+                            }}
+                          >
+                            {inappCounterFormOpen ? 'Cancel' : 'Counter Offer'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={inappActionLoading}
+                            onClick={() => handleInappNegotiationAction('REJECT')}
+                            style={{
+                              background: '#FEE2E2',
+                              color: '#DC2626',
+                              border: '1px solid #FCA5A5',
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              cursor: inappActionLoading ? 'not-allowed' : 'pointer'
+                            }}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                      {inappActiveNegotiation.status === 'AGENT_COUNTERED' && (
+                        <span style={{ fontSize: '0.75rem', color: '#2563EB', fontWeight: 600 }}>
+                          Countered at ₹{Number(inappActiveNegotiation.agent_counter_price).toLocaleString('en-IN')} (Awaiting customer response)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {inappActiveNegotiation.notes && (
+                    <div style={{ fontSize: '0.74rem', color: '#78716C', fontStyle: 'italic', paddingLeft: '4px' }}>
+                      "{inappActiveNegotiation.notes}"
+                    </div>
+                  )}
+
+                  {inappCounterFormOpen && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '4px', borderTop: '1px dashed #FDE68A' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#44403C' }}>Your Counter Price:</span>
+                      <input
+                        type="number"
+                        placeholder="e.g. 4200"
+                        value={inappCounterPrice}
+                        onChange={e => setInappCounterPrice(e.target.value)}
+                        style={{ width: '110px', padding: '4px 8px', borderRadius: '4px', border: '1px solid #D6D3D1', fontSize: '0.8rem' }}
+                      />
+                      <input
+                        type="text"
+                        placeholder="Optional note to customer"
+                        value={inappCounterNote}
+                        onChange={e => setInappCounterNote(e.target.value)}
+                        style={{ flex: 1, padding: '4px 8px', borderRadius: '4px', border: '1px solid #D6D3D1', fontSize: '0.8rem' }}
+                      />
+                      <button
+                        type="button"
+                        disabled={inappActionLoading || !inappCounterPrice}
+                        onClick={() => handleInappNegotiationAction('COUNTER', inappCounterPrice, inappCounterNote)}
+                        style={{
+                          background: '#1D4ED8',
+                          color: '#FFFFFF',
+                          border: 'none',
+                          padding: '4px 12px',
+                          borderRadius: '4px',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Send Counter
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* In-App Experience Callback SLA Action Card */}
+              {inappActiveCall && (
+                <div style={{
+                  background: '#EFF6FF',
+                  borderBottom: '1px solid #BFDBFE',
+                  padding: '10px 18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '8px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{
+                      background: '#DBEAFE',
+                      color: '#1D4ED8',
+                      fontWeight: 800,
+                      fontSize: '0.72rem',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      <Phone size={12} /> {inappActiveCall.call_type === 'INSTANT_CALLBACK' ? 'Instant Callback' : 'Scheduled Call'}
+                    </span>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#171719' }}>
+                      Topic: {inappActiveCall.topic || 'General Inquiry'}
+                    </span>
+                    {inappActiveCall.call_type === 'INSTANT_CALLBACK' && (
+                      <span style={{ fontSize: '0.72rem', background: '#DC2626', color: '#FFFFFF', padding: '1px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                        ⚡ 5-min SLA
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <a
+                      href={`tel:${inappActiveCall.visitor_phone}`}
+                      style={{
+                        background: '#2563EB',
+                        color: '#FFFFFF',
+                        padding: '4px 12px',
+                        borderRadius: '6px',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        textDecoration: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <Phone size={12} /> Call {inappActiveCall.visitor_phone}
+                    </a>
+                    <button
+                      type="button"
+                      disabled={inappActionLoading}
+                      onClick={() => handleInappCallStatus('CALLED')}
+                      style={{
+                        background: '#059669',
+                        color: '#FFFFFF',
+                        border: 'none',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        cursor: inappActionLoading ? 'not-allowed' : 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <Check size={12} /> Mark Called
+                    </button>
+                    <button
+                      type="button"
+                      disabled={inappActionLoading}
+                      onClick={() => handleInappCallStatus('CANCELLED')}
+                      style={{
+                        background: '#F1F5F9',
+                        color: '#64748B',
+                        border: '1px solid #CBD5E1',
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: inappActionLoading ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Chat Messages Canvas */}
               <div 

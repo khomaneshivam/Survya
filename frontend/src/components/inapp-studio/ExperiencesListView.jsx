@@ -12,7 +12,8 @@ import {
   Pause,
   Layers,
   Smartphone,
-  Check
+  Check,
+  MessageSquareDiff
 } from 'lucide-react';
 import LiveMobilePreviewModal from './LiveMobilePreviewModal';
 
@@ -29,6 +30,7 @@ export default function ExperiencesListView({
   loading,
   onSelectExperience,
   onOpenStarterModal,
+  onOpenNegotiationsModal,
   onOpenQr,
   onRefresh,
   toast
@@ -143,6 +145,10 @@ export default function ExperiencesListView({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <Button variant="secondary" onClick={onOpenNegotiationsModal} style={{ gap: '6px' }}>
+            <MessageSquareDiff size={16} /> Negotiations & Calls
+          </Button>
+
           <Button variant="secondary" onClick={onOpenStarterModal}>
             <Sparkles size={16} /> 1-Click Starter Packs
           </Button>

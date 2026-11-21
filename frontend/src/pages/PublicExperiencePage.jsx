@@ -5,6 +5,9 @@ import CatalogExplorerScreen from '../components/inapp-runtime/CatalogExplorerSc
 import ItemDetailScreen from '../components/inapp-runtime/ItemDetailScreen';
 import DynamicFormScreen from '../components/inapp-runtime/DynamicFormScreen';
 import ConfirmationScreen from '../components/inapp-runtime/ConfirmationScreen';
+import RateNegotiationScreen from '../components/inapp-runtime/RateNegotiationScreen';
+import CallConnectScreen from '../components/inapp-runtime/CallConnectScreen';
+import LiveChatScreen from '../components/inapp-runtime/LiveChatScreen';
 import { AlertCircle, Clock, RotateCcw } from 'lucide-react';
 
 export default function PublicExperiencePage({
@@ -410,6 +413,31 @@ export default function PublicExperiencePage({
           experience={experience}
           onReset={handleResetSession}
         />
+      ) : activeScreen.screenType === 'RATE_NEGOTIATION' ? (
+        <RateNegotiationScreen
+          screen={activeScreen}
+          experience={experience}
+          item={stateData.selectedItem || catalogItems[0] || {}}
+          sessionToken={sessionToken}
+          slug={slug}
+          onAction={handleAction}
+        />
+      ) : activeScreen.screenType === 'CALL_CONNECT' ? (
+        <CallConnectScreen
+          screen={activeScreen}
+          experience={experience}
+          sessionToken={sessionToken}
+          slug={slug}
+          onAction={handleAction}
+        />
+      ) : activeScreen.screenType === 'LIVE_CHAT' ? (
+        <LiveChatScreen
+          screen={activeScreen}
+          experience={experience}
+          sessionToken={sessionToken}
+          slug={slug}
+          onAction={handleAction}
+        />
       ) : (
         /* Fallback renderer for other screen types */
         <div style={{ padding: '24px 0', textAlign: 'center' }}>
@@ -436,3 +464,4 @@ export default function PublicExperiencePage({
     </ExperienceShell>
   );
 }
+

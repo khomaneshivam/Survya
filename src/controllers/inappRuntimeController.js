@@ -91,3 +91,4 @@ module.exports = {
   getCatalog,
   handleNavigate
 };
+

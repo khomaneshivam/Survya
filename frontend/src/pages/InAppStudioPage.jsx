@@ -4,6 +4,7 @@ import ExperiencesListView from '../components/inapp-studio/ExperiencesListView'
 import ExperienceDetailEditor from '../components/inapp-studio/ExperienceDetailEditor';
 import StarterPackModal from '../components/inapp-studio/StarterPackModal';
 import QrCodeModal from '../components/inapp-studio/QrCodeModal';
+import NegotiationsAndCallsModal from '../components/inapp-studio/NegotiationsAndCallsModal';
 
 export default function InAppStudioPage() {
   const [experiences, setExperiences] = useState([]);
@@ -16,6 +17,8 @@ export default function InAppStudioPage() {
 
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [qrData, setQrData] = useState(null);
+
+  const [negModalOpen, setNegModalOpen] = useState(false);
 
   // Studio Toast notification
   const [toastMsg, setToastMsg] = useState(null);
@@ -166,6 +169,7 @@ export default function InAppStudioPage() {
               loading={loading}
               onSelectExperience={handleSelectExperience}
               onOpenStarterModal={() => setStarterModalOpen(true)}
+              onOpenNegotiationsModal={() => setNegModalOpen(true)}
               onOpenQr={handleOpenQr}
               onRefresh={loadExperiences}
               toast={showToast}
@@ -173,6 +177,13 @@ export default function InAppStudioPage() {
           )}
         </>
       )}
+
+      {/* Negotiations & Calls Management Modal */}
+      <NegotiationsAndCallsModal
+        isOpen={negModalOpen}
+        onClose={() => setNegModalOpen(false)}
+        toast={showToast}
+      />
 
       {/* Starter Pack Modal */}
       <StarterPackModal

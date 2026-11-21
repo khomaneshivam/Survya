@@ -35,5 +35,53 @@ router.delete("/fields/:fieldId", inappController.deleteField);
 
 router.post("/screens/:screenId/validate", inappController.validateForm);
 
+// Agent Rate Negotiations Management
+const inappNegotiationService = require("../services/inapp/inappNegotiationService");
+router.get("/negotiations", (req, res) => {
+  try {
+    const list = inappNegotiationService.listNegotiations(req.tenantId || req.user?.tenant_id || 1, req.query);
+    return res.status(200).json({ success: true, data: list });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.post("/negotiations/:id/agent-action", (req, res) => {
+  try {
+    const result = inappNegotiationService.agentAction(
+      req.tenantId || req.user?.tenant_id || 1,
+      req.params.id,
+      { ...req.body, userId: req.user?.name || req.user?.id || "agent" }
+    );
+    return res.status(200).json(result);
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message });
+  }
+});
+
+// Agent Call Requests Management
+const inappCallService = require("../services/inapp/inappCallService");
+router.get("/calls", (req, res) => {
+  try {
+    const list = inappCallService.listCalls(req.tenantId || req.user?.tenant_id || 1, req.query);
+    return res.status(200).json({ success: true, data: list });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.patch("/calls/:id", (req, res) => {
+  try {
+    const result = inappCallService.updateCallStatus(
+      req.tenantId || req.user?.tenant_id || 1,
+      req.params.id,
+      { ...req.body, userId: req.user?.name || req.user?.id || "agent" }
+    );
+    return res.status(200).json(result);
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;
 
