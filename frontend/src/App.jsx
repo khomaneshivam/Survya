@@ -5,6 +5,7 @@ import Topbar from './components/Topbar';
 import ImpersonationBanner from './components/ImpersonationBanner';
 import PageSystem from './components/PageSystem';
 import PublicChatLandingPage from './pages/PublicChatLandingPage';
+import PublicExperiencePage from './pages/PublicExperiencePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import LandingPage from './pages/LandingPage';
@@ -170,6 +171,13 @@ function AppContent() {
   if (chatMatch) {
     const slug = chatMatch[1];
     return <PublicChatLandingPage slug={slug} />;
+  }
+
+  // Intercept public in-app multi-screen experiences (/x/:slug) without requiring login
+  const expMatch = currentPath.match(/^\/x\/([a-zA-Z0-9_-]+)/);
+  if (expMatch) {
+    const slug = expMatch[1];
+    return <PublicExperiencePage slug={slug} />;
   }
 
   if (loading) {

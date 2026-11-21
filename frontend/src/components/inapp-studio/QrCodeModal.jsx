@@ -97,3 +97,4 @@ export default function QrCodeModal({ isOpen, onClose, qrData }) {
     </Modal>
   );
 }
+

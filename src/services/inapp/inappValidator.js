@@ -18,29 +18,31 @@ function validateFormSubmission(fields = [], submittedValues = {}) {
   // Build field lookup for cross-field validations (e.g. date_after_field)
   const fieldMap = new Map();
   for (const f of fields) {
-    if (f && f.field_key) {
-      fieldMap.set(f.field_key, f);
+    const k = f?.field_key || f?.fieldKey;
+    if (k) {
+      fieldMap.set(k, f);
     }
   }
 
   for (const field of fields) {
-    if (!field || !field.field_key) continue;
+    const key = field?.field_key || field?.fieldKey;
+    if (!key) continue;
 
-    const key = field.field_key;
     const label = field.label || key;
-    const inputType = String(field.input_type || "TEXT").toUpperCase();
+    const inputType = String(field.input_type || field.inputType || "TEXT").toUpperCase();
     let rawVal = values[key];
 
     // Parse validation rules from JSON string or object
     let rules = {};
-    if (typeof field.validation_rules_json === "string") {
+    const rawRules = field.validation_rules_json !== undefined ? field.validation_rules_json : field.validationRules;
+    if (typeof rawRules === "string") {
       try {
-        rules = JSON.parse(field.validation_rules_json || "{}");
+        rules = JSON.parse(rawRules || "{}");
       } catch (e) {
         rules = {};
       }
-    } else if (field.validation_rules_json && typeof field.validation_rules_json === "object") {
-      rules = field.validation_rules_json;
+    } else if (rawRules && typeof rawRules === "object") {
+      rules = rawRules;
     }
 
     const customError = rules.errorMessage || rules.message || null;
@@ -224,9 +226,13 @@ function validateFormSubmission(fields = [], submittedValues = {}) {
     }
   }
 
+  const isValid = Object.keys(fieldErrors).length === 0;
+
   return {
-    isValid: Object.keys(fieldErrors).length === 0,
+    isValid,
+    valid: isValid,
     fieldErrors,
+    errors: fieldErrors,
     normalizedValues
   };
 }

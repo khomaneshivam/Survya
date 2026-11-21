@@ -2,7 +2,9 @@ const { test, describe, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { db } = require("../src/config/database");
 const inappService = require("../src/services/inapp/inappExperienceService");
+const inappRuntimeService = require("../src/services/inapp/inappRuntimeService");
 const { validateFormSubmission } = require("../src/services/inapp/inappValidator");
+const crmPipelineService = require("../src/services/crmPipelineService");
 
 describe("In-App Experience Studio Test Suite", () => {
   const tenantId = 1;
@@ -314,4 +316,299 @@ describe("In-App Experience Studio Test Suite", () => {
     assert.ok(qrResult.share_url.includes(`/x/${exp.slug}`), "Share URL must contain /x/:slug");
     assert.equal(qrResult.slug, exp.slug);
   });
+
+  test("7. Public Experience Runtime Discovery & Status Guards (404 & 410)", () => {
+    // A: Non-existent experience -> 404
+    assert.throws(
+      () => inappRuntimeService.getPublicExperience("non-existent-slug-404"),
+      (err) => err.statusCode === 404 && err.message.includes("not found")
+    );
+
+    // B: Draft/Paused experience -> 410
+    const draftExp = inappService.createExperience({
+      name: "Paused Draft Experience",
+      domain_type: "HOSPITALITY"
+    }, tenantId, createdBy);
+
+    assert.throws(
+      () => inappRuntimeService.getPublicExperience(draftExp.slug),
+      (err) => err.statusCode === 410 && err.message.includes("paused")
+    );
+
+    // C: Published experience -> 200 with metadata & screens
+    inappService.updateExperienceStatus(draftExp.id, "PUBLISHED", tenantId, createdBy);
+    const pubData = inappRuntimeService.getPublicExperience(draftExp.slug);
+
+    assert.ok(pubData.experience, "Experience object must be returned");
+    assert.equal(pubData.experience.slug, draftExp.slug);
+    assert.equal(pubData.experience.status, "PUBLISHED");
+    assert.ok(Array.isArray(pubData.screens), "Screens array must be returned");
+    assert.ok(pubData.catalogMeta, "Catalog metadata must be returned");
+    assert.ok(pubData.catalogMeta.minPrice !== undefined, "Min price must be computed");
+    assert.ok(pubData.catalogMeta.maxPrice !== undefined, "Max price must be computed");
+  });
+
+  test("8. Visitor Session Lifecycle, UTC Expiration & Resumption", () => {
+    const exp = inappService.createExperience({
+      name: "Session Lifecycle Test",
+      domain_type: "HOSPITALITY"
+    }, tenantId, createdBy);
+    inappService.updateExperienceStatus(exp.id, "PUBLISHED", tenantId, createdBy);
+
+    // 1. Start new session
+    const sess1 = inappRuntimeService.startOrResumeSession(exp.slug, {
+      contactName: "Sunil Sharma",
+      contactPhone: "919988776655"
+    });
+
+    assert.ok(sess1.sessionToken.startsWith("exp_"), "Session token must be generated");
+    assert.ok(sess1.currentScreenKey, "Current screen key must be set");
+    assert.ok(Array.isArray(sess1.navigationStack), "Navigation stack must be array");
+    assert.equal(sess1.navigationStack.length, 1);
+
+    // Verify session record in DB with UTC expiry
+    const dbSess = db.prepare("SELECT * FROM inapp_sessions WHERE session_token = ?").get(sess1.sessionToken);
+    assert.ok(dbSess, "Session record must exist in MySQL");
+    assert.equal(dbSess.visitor_name, "Sunil Sharma");
+    assert.equal(dbSess.visitor_phone, "919988776655");
+    assert.equal(dbSess.active_status, 1);
+    assert.equal(dbSess.delete_status, 0);
+
+    // 2. Resume same session with token
+    const sessResumed = inappRuntimeService.startOrResumeSession(exp.slug, {
+      sessionToken: sess1.sessionToken
+    });
+
+    assert.equal(sessResumed.sessionToken, sess1.sessionToken, "Resuming session must return same token");
+    assert.equal(sessResumed.currentScreenKey, sess1.currentScreenKey);
+  });
+
+  test("9. Live Dynamic Catalog Query & Dual-Thumb Price Range Filter (minPrice=5000&maxPrice=9000)", () => {
+    const exp = inappService.createExperience({
+      name: "Hospitality Pricing Test",
+      domain_type: "HOSPITALITY"
+    }, tenantId, createdBy);
+    inappService.updateExperienceStatus(exp.id, "PUBLISHED", tenantId, createdBy);
+
+    // Query with price filter: minPrice=5000 & maxPrice=9000
+    // Deluxe Sea View (4500) excluded. Coconut Cottage (6500) and Ocean Suite (8500) included.
+    const catalogRes = inappRuntimeService.getCatalogItems(exp.slug, {
+      minPrice: 5000,
+      maxPrice: 9000
+    });
+
+    assert.equal(catalogRes.success, true);
+    assert.ok(catalogRes.items.length >= 2, "Must return at least 2 matching rooms in 5000-9000 range");
+
+    for (const item of catalogRes.items) {
+      assert.ok(item.price >= 5000, `Item ${item.title} price ${item.price} must be >= 5000`);
+      assert.ok(item.price <= 9000, `Item ${item.title} price ${item.price} must be <= 9000`);
+      assert.ok(Array.isArray(item.images), "Item must have images array");
+      assert.equal(item.taxRate, 18, "Hospitality item must carry 18% GST");
+    }
+
+    // Verify Deluxe Room (4500) is strictly absent
+    const hasDeluxe = catalogRes.items.some(i => i.price < 5000);
+    assert.equal(hasDeluxe, false, "Items below 5000 must be filtered out");
+  });
+
+  test("10. Multi-Screen Navigation & Dynamic Form Validation Blocking (422)", () => {
+    const exp = inappService.createExperience({
+      name: "Form Validation Flow Test",
+      domain_type: "HOSPITALITY"
+    }, tenantId, createdBy);
+
+    // Add form screen
+    const formScreen = inappService.createScreen(exp.id, {
+      screen_key: "booking_form",
+      screen_type: "DYNAMIC_FORM",
+      title: "Guest Details",
+      sort_order: 1
+    }, tenantId, createdBy);
+
+    // Add required email & dates with custom error messages
+    inappService.createFormField(formScreen.id, {
+      field_key: "email",
+      label: "Work Email",
+      input_type: "EMAIL",
+      validation_rules_json: { required: true, email: true, errorMessage: "Valid business email required" },
+      sort_order: 1
+    }, tenantId, createdBy);
+
+    inappService.createFormField(formScreen.id, {
+      field_key: "checkin_date",
+      label: "Check-in Date",
+      input_type: "DATE",
+      validation_rules_json: { required: true, date_min_today: true },
+      sort_order: 2
+    }, tenantId, createdBy);
+
+    inappService.createFormField(formScreen.id, {
+      field_key: "checkout_date",
+      label: "Check-out Date",
+      input_type: "DATE",
+      validation_rules_json: { required: true, date_after_field: "checkin_date", errorMessage: "Checkout must be after checkin" },
+      sort_order: 3
+    }, tenantId, createdBy);
+
+    inappService.updateExperienceStatus(exp.id, "PUBLISHED", tenantId, createdBy);
+
+    // Start session
+    const session = inappRuntimeService.startOrResumeSession(exp.slug);
+
+    // Attempt invalid submission: invalid email and check_out before check_in
+    assert.throws(
+      () => inappRuntimeService.navigateSession(exp.slug, {
+        sessionToken: session.sessionToken,
+        fromScreenKey: "booking_form",
+        action: "NEXT",
+        formValues: {
+          email: "invalid-email-format",
+          checkin_date: "2026-12-10",
+          checkout_date: "2026-12-05" // checkout is BEFORE checkin!
+        }
+      }),
+      (err) => {
+        assert.equal(err.statusCode, 422, "Must throw 422 on form validation error");
+        assert.ok(err.fieldErrors, "Must attach fieldErrors object");
+        assert.equal(err.fieldErrors.email, "Valid business email required");
+        assert.equal(err.fieldErrors.checkout_date, "Checkout must be after checkin");
+        return true;
+      }
+    );
+
+    // Verify session remains on current screen and did not advance
+    const curSess = db.prepare("SELECT current_screen_key FROM inapp_sessions WHERE session_token = ?").get(session.sessionToken);
+    assert.equal(curSess.current_screen_key, "booking_form", "Session must stay on booking_form when 422 occurs");
+  });
+
+  test("11. Conditional Navigation Jump & BACK State Preservation", () => {
+    const exp = inappService.createExperience({
+      name: "Conditional Routing Test",
+      domain_type: "B2B_SALES"
+    }, tenantId, createdBy);
+
+    // Screen 1: Qualification Form
+    const s1 = inappService.createScreen(exp.id, {
+      screen_key: "qual_form",
+      screen_type: "DYNAMIC_FORM",
+      title: "Team Discovery",
+      navigation_rules_json: {
+        defaultNext: "standard_confirmation",
+        rules: [
+          {
+            conditionGroup: {
+              matchMode: "ALL",
+              rules: [
+                { variable: "budget", operator: ">=", value: 50000 }
+              ]
+            },
+            targetScreenKey: "vip_concierge"
+          }
+        ]
+      },
+      sort_order: 1
+    }, tenantId, createdBy);
+
+    // Screen 2: VIP Concierge
+    inappService.createScreen(exp.id, {
+      screen_key: "vip_concierge",
+      screen_type: "HERO_WELCOME",
+      title: "VIP Concierge Route",
+      sort_order: 2
+    }, tenantId, createdBy);
+
+    // Screen 3: Standard Confirmation
+    inappService.createScreen(exp.id, {
+      screen_key: "standard_confirmation",
+      screen_type: "CONFIRMATION",
+      title: "Standard Confirmation",
+      sort_order: 3
+    }, tenantId, createdBy);
+
+    inappService.updateExperienceStatus(exp.id, "PUBLISHED", tenantId, createdBy);
+
+    const session = inappRuntimeService.startOrResumeSession(exp.slug);
+
+    // Navigate with high budget (budget: 75000 >= 50000)
+    const navResult = inappRuntimeService.navigateSession(exp.slug, {
+      sessionToken: session.sessionToken,
+      fromScreenKey: "qual_form",
+      action: "NEXT",
+      formValues: {
+        budget: 75000,
+        company: "Acme Corp",
+        team_size: 40
+      }
+    });
+
+    assert.equal(navResult.success, true);
+    assert.equal(navResult.currentScreenKey, "vip_concierge", "Should jump conditionally to vip_concierge");
+    assert.equal(navResult.stateData.budget, 75000);
+    assert.equal(navResult.stateData.company, "Acme Corp");
+
+    // Test BACK action: pops navigation stack back to qual_form while PRESERVING stateData
+    const backResult = inappRuntimeService.navigateSession(exp.slug, {
+      sessionToken: session.sessionToken,
+      action: "BACK"
+    });
+
+    assert.equal(backResult.success, true);
+    assert.equal(backResult.currentScreenKey, "qual_form", "Should return back to qual_form");
+    assert.equal(backResult.stateData.budget, 75000, "budget must be preserved");
+    assert.equal(backResult.stateData.company, "Acme Corp", "company must be preserved");
+  });
+
+  test("12. Action Execution: CRM_UPSERT Creates Real CRM Pipeline Record", () => {
+    // Create experience linked to CRM pipeline 1
+    const exp = inappService.createExperience({
+      name: "CRM Upsert Pipeline Test",
+      domain_type: "B2B_SALES",
+      crm_pipeline_id: 1
+    }, tenantId, createdBy);
+
+    const s1 = inappService.createScreen(exp.id, {
+      screen_key: "lead_capture",
+      screen_type: "DYNAMIC_FORM",
+      title: "Lead Capture",
+      navigation_rules_json: { defaultNext: "confirmation" },
+      sort_order: 1
+    }, tenantId, createdBy);
+
+    inappService.createScreen(exp.id, {
+      screen_key: "confirmation",
+      screen_type: "CONFIRMATION",
+      title: "Thank You",
+      sort_order: 2
+    }, tenantId, createdBy);
+
+    inappService.updateExperienceStatus(exp.id, "PUBLISHED", tenantId, createdBy);
+
+    const session = inappRuntimeService.startOrResumeSession(exp.slug);
+
+    const navRes = inappRuntimeService.navigateSession(exp.slug, {
+      sessionToken: session.sessionToken,
+      fromScreenKey: "lead_capture",
+      action: "NEXT",
+      formValues: {
+        name: "Vikram Malhotra",
+        phone: "919123456789",
+        email: "vikram@sarvya.com",
+        budget: 65000
+      }
+    });
+
+    assert.equal(navRes.success, true);
+    assert.ok(navRes.stateData.crmRecordId, "CRM record ID must be created and attached");
+
+    // Verify record in crm_records table
+    const crmRecord = db.prepare("SELECT * FROM crm_records WHERE id = ?").get(navRes.stateData.crmRecordId);
+    assert.ok(crmRecord, "Record must exist in crm_records table");
+    assert.equal(crmRecord.contact_phone, "919123456789");
+    assert.equal(crmRecord.contact_name, "Vikram Malhotra");
+    assert.equal(crmRecord.contact_email, "vikram@sarvya.com");
+    assert.equal(crmRecord.pipeline_id, 1);
+    assert.equal(crmRecord.deal_value, 65000);
+  });
 });
+

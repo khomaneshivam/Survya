@@ -10,28 +10,30 @@ export function validateFormSubmission(fields = [], submittedValues = {}) {
 
   const fieldMap = new Map();
   for (const f of fields) {
-    if (f && f.field_key) {
-      fieldMap.set(f.field_key, f);
+    const k = f?.field_key || f?.fieldKey;
+    if (k) {
+      fieldMap.set(k, f);
     }
   }
 
   for (const field of fields) {
-    if (!field || !field.field_key) continue;
+    const key = field?.field_key || field?.fieldKey;
+    if (!key) continue;
 
-    const key = field.field_key;
     const label = field.label || key;
-    const inputType = String(field.input_type || "TEXT").toUpperCase();
+    const inputType = String(field.input_type || field.inputType || "TEXT").toUpperCase();
     let rawVal = values[key];
 
     let rules = {};
-    if (typeof field.validation_rules_json === "string") {
+    const rawRules = field.validation_rules_json !== undefined ? field.validation_rules_json : field.validationRules;
+    if (typeof rawRules === "string") {
       try {
-        rules = JSON.parse(field.validation_rules_json || "{}");
+        rules = JSON.parse(rawRules || "{}");
       } catch (_e) {
         rules = {};
       }
-    } else if (field.validation_rules_json && typeof field.validation_rules_json === "object") {
-      rules = field.validation_rules_json;
+    } else if (rawRules && typeof rawRules === "object") {
+      rules = rawRules;
     }
 
     const customError = rules.errorMessage || rules.message || null;
@@ -55,137 +57,113 @@ export function validateFormSubmission(fields = [], submittedValues = {}) {
     }
 
     if (isEmpty) {
-      normalizedValues[key] = null;
       continue;
     }
 
-    normalizedValues[key] = rawVal;
+    // 2. Length Validations
+    if (typeof rawVal === "string") {
+      if (rules.minLength !== undefined && rawVal.length < Number(rules.minLength)) {
+        fieldErrors[key] = customError || `${label} must be at least ${rules.minLength} characters`;
+        continue;
+      }
+      if (rules.maxLength !== undefined && rawVal.length > Number(rules.maxLength)) {
+        fieldErrors[key] = customError || `${label} cannot exceed ${rules.maxLength} characters`;
+        continue;
+      }
+    }
 
-    // 2. Email & Phone
-    if (inputType === "EMAIL" || rules.email) {
+    // 3. Numeric & Range Validations
+    if (inputType === "NUMBER" || typeof rawVal === "number" || (!isNaN(Number(rawVal)) && typeof rawVal === "string" && !isNaN(parseFloat(rawVal)))) {
+      const num = Number(rawVal);
+      if (!isNaN(num)) {
+        if (rules.min !== undefined && num < Number(rules.min)) {
+          fieldErrors[key] = customError || `${label} must be at least ${rules.min}`;
+          continue;
+        }
+        if (rules.max !== undefined && num > Number(rules.max)) {
+          fieldErrors[key] = customError || `${label} cannot exceed ${rules.max}`;
+          continue;
+        }
+        normalizedValues[key] = num;
+      }
+    } else {
+      normalizedValues[key] = rawVal;
+    }
+
+    // 4. Format & Regex Checks
+    if (rules.regex) {
+      try {
+        const re = new RegExp(rules.regex);
+        if (!re.test(String(rawVal))) {
+          fieldErrors[key] = customError || `${label} is invalid`;
+          continue;
+        }
+      } catch (_e) {}
+    }
+
+    // 5. Semantic Types
+    if (rules.email || inputType === "EMAIL") {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(String(rawVal))) {
-        fieldErrors[key] = customError || `${label} must be a valid email address`;
+        fieldErrors[key] = customError || `Enter a valid email address for ${label}`;
         continue;
       }
-      normalizedValues[key] = String(rawVal).toLowerCase();
     }
 
-    if (inputType === "PHONE" || rules.phone_e164) {
-      const cleanDigits = String(rawVal).replace(/[\s\-().]/g, "");
-      const phoneRegex = /^\+?[0-9]{10,15}$/;
-      if (!phoneRegex.test(cleanDigits)) {
-        fieldErrors[key] = customError || `${label} must be a valid 10-15 digit phone number`;
+    if (rules.phone_e164 || inputType === "TEL" || inputType === "PHONE") {
+      const digitsOnly = String(rawVal).replace(/[\s\-().]/g, "");
+      if (!/^\+?[0-9]{10,15}$/.test(digitsOnly)) {
+        fieldErrors[key] = customError || `Enter a valid 10-15 digit phone number for ${label}`;
         continue;
       }
-      normalizedValues[key] = cleanDigits;
+      normalizedValues[key] = digitsOnly;
     }
 
-    if (inputType === "NUMBER") {
-      const num = Number(rawVal);
-      if (isNaN(num)) {
-        fieldErrors[key] = customError || `${label} must be a valid number`;
+    // 6. Date Rules
+    if (inputType === "DATE" || rules.date_min_today || rules.date_after_field) {
+      const parsed = new Date(rawVal);
+      if (isNaN(parsed.getTime())) {
+        fieldErrors[key] = customError || `${label} must be a valid date`;
         continue;
       }
-      normalizedValues[key] = num;
-      rawVal = num;
-    }
-
-    // 3. String Length Rules
-    if (typeof rawVal === "string") {
-      if (rules.minLength !== undefined && rules.minLength !== null) {
-        const minLen = parseInt(rules.minLength, 10);
-        if (!isNaN(minLen) && rawVal.length < minLen) {
-          fieldErrors[key] = customError || `${label} must be at least ${minLen} characters`;
-          continue;
-        }
-      }
-
-      if (rules.maxLength !== undefined && rules.maxLength !== null) {
-        const maxLen = parseInt(rules.maxLength, 10);
-        if (!isNaN(maxLen) && rawVal.length > maxLen) {
-          fieldErrors[key] = customError || `${label} cannot exceed ${maxLen} characters`;
-          continue;
-        }
-      }
-
-      if (rules.regex) {
-        try {
-          const reg = new RegExp(rules.regex);
-          if (!reg.test(rawVal)) {
-            fieldErrors[key] = customError || `${label} format is invalid`;
-            continue;
-          }
-        } catch (_e) {
-          // ignore invalid pattern
-        }
-      }
-    }
-
-    // 4. Numeric Range Rules
-    if (typeof rawVal === "number" || (!isNaN(Number(rawVal)) && (rules.min !== undefined || rules.max !== undefined))) {
-      const numVal = Number(rawVal);
-      if (rules.min !== undefined && rules.min !== null) {
-        const minVal = Number(rules.min);
-        if (!isNaN(minVal) && numVal < minVal) {
-          fieldErrors[key] = customError || `${label} must be at least ${minVal}`;
-          continue;
-        }
-      }
-
-      if (rules.max !== undefined && rules.max !== null) {
-        const maxVal = Number(rules.max);
-        if (!isNaN(maxVal) && numVal > maxVal) {
-          fieldErrors[key] = customError || `${label} cannot exceed ${maxVal}`;
-          continue;
-        }
-      }
-    }
-
-    // 5. Date Rules
-    if (inputType === "DATE" || inputType === "DATE_RANGE") {
-      const dateStr = String(rawVal).split("T")[0];
 
       if (rules.date_min_today) {
-        const todayStr = new Date().toISOString().split("T")[0];
-        if (dateStr < todayStr) {
+        const todayUtc = new Date().toISOString().split("T")[0];
+        const valDateStr = typeof rawVal === "string" ? rawVal.split("T")[0] : parsed.toISOString().split("T")[0];
+        if (valDateStr < todayUtc) {
           fieldErrors[key] = customError || `${label} cannot be in the past`;
           continue;
         }
       }
 
       if (rules.date_after_field) {
-        const targetFieldKey = rules.date_after_field;
-        const targetRawVal = values[targetFieldKey];
-        if (targetRawVal) {
-          const targetDateStr = String(targetRawVal).split("T")[0];
-          if (dateStr <= targetDateStr) {
-            const targetField = fieldMap.get(targetFieldKey);
-            const targetLabel = targetField?.label || targetFieldKey;
-            fieldErrors[key] = customError || `${label} must be after ${targetLabel}`;
-            continue;
+        const priorFieldKey = rules.date_after_field;
+        const priorVal = values[priorFieldKey];
+        if (priorVal) {
+          const priorDate = new Date(priorVal);
+          if (!isNaN(priorDate.getTime())) {
+            const priorStr = typeof priorVal === "string" ? priorVal.split("T")[0] : priorDate.toISOString().split("T")[0];
+            const currentStr = typeof rawVal === "string" ? rawVal.split("T")[0] : parsed.toISOString().split("T")[0];
+            if (currentStr <= priorStr) {
+              const priorFieldObj = fieldMap.get(priorFieldKey);
+              const priorLabel = priorFieldObj?.label || priorFieldKey;
+              fieldErrors[key] = customError || `${label} must be after ${priorLabel}`;
+              continue;
+            }
           }
         }
       }
     }
 
-    // 6. Allowed Values
-    if (rules.allowed_values && Array.isArray(rules.allowed_values)) {
-      if (Array.isArray(rawVal)) {
-        const hasInvalid = rawVal.some(v => !rules.allowed_values.includes(v));
-        if (hasInvalid) {
-          fieldErrors[key] = customError || `${label} contains an invalid selection`;
-          continue;
-        }
-      } else {
-        if (!rules.allowed_values.includes(rawVal)) {
-          fieldErrors[key] = customError || `${label} contains an invalid selection`;
-          continue;
-        }
+    // 7. Allowed Values
+    if (Array.isArray(rules.allowed_values) && rules.allowed_values.length > 0) {
+      if (!rules.allowed_values.includes(rawVal)) {
+        fieldErrors[key] = customError || `${label} must be one of: ${rules.allowed_values.join(", ")}`;
+        continue;
       }
     }
 
-    // 7. Price Range validation
+    // 8. Price Range validation
     if (inputType === "PRICE_RANGE" || rules.price_range) {
       let minP = 0;
       let maxP = 0;
@@ -212,9 +190,22 @@ export function validateFormSubmission(fields = [], submittedValues = {}) {
     }
   }
 
+  const isValid = Object.keys(fieldErrors).length === 0;
+
   return {
-    isValid: Object.keys(fieldErrors).length === 0,
+    isValid,
+    valid: isValid,
     fieldErrors,
+    errors: fieldErrors,
     normalizedValues
   };
+}
+
+/**
+ * Validates a single field
+ */
+export function validateField(field, value, allValues = {}) {
+  const result = validateFormSubmission([field], { ...allValues, [field?.field_key || field?.fieldKey]: value });
+  const key = field?.field_key || field?.fieldKey;
+  return result.fieldErrors[key] || null;
 }

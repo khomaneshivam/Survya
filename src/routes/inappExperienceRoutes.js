@@ -36,3 +36,4 @@ router.delete("/fields/:fieldId", inappController.deleteField);
 router.post("/screens/:screenId/validate", inappController.validateForm);
 
 module.exports = router;
+

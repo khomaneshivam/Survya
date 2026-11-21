@@ -14,6 +14,7 @@ import {
   Smartphone,
   Check
 } from 'lucide-react';
+import LiveMobilePreviewModal from './LiveMobilePreviewModal';
 
 const DOMAIN_FILTERS = [
   { value: 'ALL', label: 'All Domains' },
@@ -38,6 +39,7 @@ export default function ExperiencesListView({
   const [newExpData, setNewExpData] = useState({ name: '', domain_type: 'CUSTOM', slug: '' });
   const [creating, setCreating] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
+  const [previewExp, setPreviewExp] = useState(null);
 
   // Filter experiences
   const filtered = experiences.filter(exp => {
@@ -224,6 +226,10 @@ export default function ExperiencesListView({
                   {/* Actions Bar */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '14px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Button variant="secondary" size="sm" onClick={() => setPreviewExp(exp)} title="Live Mobile Preview">
+                        <Smartphone size={14} />
+                      </Button>
+
                       <Button variant="secondary" size="sm" onClick={() => onOpenQr(exp)} title="View QR Code">
                         <QrCode size={14} />
                       </Button>
@@ -329,6 +335,14 @@ export default function ExperiencesListView({
           </div>
         </form>
       </Modal>
+
+      {/* Live Mobile Device Preview Modal */}
+      <LiveMobilePreviewModal
+        isOpen={Boolean(previewExp)}
+        onClose={() => setPreviewExp(null)}
+        experience={previewExp}
+      />
     </div>
   );
 }
+

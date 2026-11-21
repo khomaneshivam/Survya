@@ -10,11 +10,13 @@ import {
   Palette,
   Layers,
   FileSpreadsheet,
-  Check
+  Check,
+  Smartphone
 } from 'lucide-react';
 import BrandingConnectionsTab from './BrandingConnectionsTab';
 import MultiScreenFlowTab from './MultiScreenFlowTab';
 import FormValidationBuilderTab from './FormValidationBuilderTab';
+import LiveMobilePreviewModal from './LiveMobilePreviewModal';
 
 export default function ExperienceDetailEditor({
   experience,
@@ -27,6 +29,7 @@ export default function ExperienceDetailEditor({
   const [targetFormScreenId, setTargetFormScreenId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const publicUrl = `/x/${experience.slug}`;
 
@@ -118,7 +121,11 @@ export default function ExperienceDetailEditor({
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <Button variant="secondary" size="sm" onClick={() => setPreviewOpen(true)}>
+            <Smartphone size={15} /> Live Mobile Preview
+          </Button>
+
           <Button variant="secondary" size="sm" onClick={() => onOpenQr(experience)}>
             <QrCode size={15} /> QR Code
           </Button>
@@ -174,6 +181,14 @@ export default function ExperienceDetailEditor({
           saving={saving}
         />
       )}
+
+      {/* Live Mobile Device Preview Modal */}
+      <LiveMobilePreviewModal
+        isOpen={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        experience={experience}
+      />
     </div>
   );
 }
+

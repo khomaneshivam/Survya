@@ -858,4 +858,7 @@ router.use(require("./hospitalityRoutes"));
 // Dynamic In-App Experience Studio Module
 router.use("/v1/inapp", require("./inappExperienceRoutes"));
 
+// Public Dynamic In-App Experience Runtime
+router.use(["/v1/public/x", "/public/x"], require("./publicInappRoutes"));
+
 module.exports = router;

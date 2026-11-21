@@ -371,7 +371,7 @@ class InappExperienceService {
     }
 
     const maxOrder = db.prepare("SELECT MAX(display_order) as m FROM inapp_screens WHERE experience_id = ? AND delete_status = 0").get(experienceId)?.m || 0;
-    const displayOrder = data.display_order !== undefined ? data.display_order : maxOrder + 1;
+    const displayOrder = data.display_order !== undefined ? data.display_order : (data.sort_order !== undefined ? data.sort_order : maxOrder + 1);
 
     const screenType = String(data.screen_type || "HERO_WELCOME").toUpperCase();
     const configJson = typeof data.config_json === "object" ? JSON.stringify(data.config_json) : (data.config_json || "{}");
@@ -427,7 +427,7 @@ class InappExperienceService {
     const screenType = data.screen_type !== undefined ? String(data.screen_type).toUpperCase() : existing.screen_type;
     const configJson = data.config_json !== undefined ? (typeof data.config_json === "object" ? JSON.stringify(data.config_json) : data.config_json) : existing.config_json;
     const navRulesJson = data.navigation_rules_json !== undefined ? (typeof data.navigation_rules_json === "object" ? JSON.stringify(data.navigation_rules_json) : data.navigation_rules_json) : existing.navigation_rules_json;
-    const displayOrder = data.display_order !== undefined ? data.display_order : existing.display_order;
+    const displayOrder = data.display_order !== undefined ? data.display_order : (data.sort_order !== undefined ? data.sort_order : existing.display_order);
 
     db.prepare(`
       UPDATE inapp_screens
@@ -526,7 +526,7 @@ class InappExperienceService {
     }
 
     const maxOrder = db.prepare("SELECT MAX(display_order) as m FROM inapp_form_fields WHERE screen_id = ? AND delete_status = 0").get(screenId)?.m || 0;
-    const displayOrder = data.display_order !== undefined ? data.display_order : maxOrder + 1;
+    const displayOrder = data.display_order !== undefined ? data.display_order : (data.sort_order !== undefined ? data.sort_order : maxOrder + 1);
 
     const inputType = String(data.input_type || "TEXT").toUpperCase();
     const optionsJson = typeof data.options_json === "object" ? JSON.stringify(data.options_json) : (data.options_json || null);
@@ -584,7 +584,7 @@ class InappExperienceService {
     const optionsJson = data.options_json !== undefined ? (typeof data.options_json === "object" ? JSON.stringify(data.options_json) : data.options_json) : existing.options_json;
     const validationJson = data.validation_rules_json !== undefined ? (typeof data.validation_rules_json === "object" ? JSON.stringify(data.validation_rules_json) : data.validation_rules_json) : existing.validation_rules_json;
     const crmMapping = data.crm_field_mapping !== undefined ? (data.crm_field_mapping || null) : existing.crm_field_mapping;
-    const displayOrder = data.display_order !== undefined ? data.display_order : existing.display_order;
+    const displayOrder = data.display_order !== undefined ? data.display_order : (data.sort_order !== undefined ? data.sort_order : existing.display_order);
 
     db.prepare(`
       UPDATE inapp_form_fields
@@ -1328,3 +1328,4 @@ class InappExperienceService {
 }
 
 module.exports = new InappExperienceService();
+

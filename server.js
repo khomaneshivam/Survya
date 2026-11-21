@@ -253,6 +253,10 @@ app.get(["/api/health", "/health"], (req, res) => {
 const inappExperienceRoutes = require("./src/routes/inappExperienceRoutes");
 app.use("/api/v1/inapp", inappExperienceRoutes);
 
+// 4d. Public Dynamic In-App Experience Runtime (/api/v1/public/x/:slug)
+const publicInappRoutes = require("./src/routes/publicInappRoutes");
+app.use(["/api/v1/public/x", "/v1/public/x", "/public/x"], publicInappRoutes);
+
 // 5. API routes
 app.use("/api", apiRoutes);
 
