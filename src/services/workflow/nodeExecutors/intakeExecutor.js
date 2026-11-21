@@ -220,8 +220,16 @@ async function execute(node, context) {
     }
 
     // Still has retries left: prompt user to retry
-    const defaultRetryMsg = `⚠️ We couldn't validate your input for ${varName}. Please try again:`;
-    const retryMsg = interpolateTemplate(config.retryMessage || defaultRetryMsg, context.variableContext || session);
+    let defaultRetryMsg = `⚠️ We couldn't validate your input for ${varName}. Please enter a valid value.\n\n💡 _Tip: Reply *menu* at any time to return to the main menu._`;
+    if (inputType === 'DATE' || inputType === 'DATE_RANGE') {
+      defaultRetryMsg = `📅 Please enter a valid date (e.g. *tomorrow*, *20 Nov*, or *YYYY-MM-DD*).\n\n💡 _Tip: Reply *menu* at any time to return to the main menu._`;
+    }
+
+    const rawRetry = config.retryMessage || config.errorMessage || config.validation?.errorMessage || defaultRetryMsg;
+    let retryMsg = interpolateTemplate(rawRetry, context.variableContext || session);
+    if (!retryMsg.toLowerCase().includes('menu')) {
+      retryMsg += `\n\n💡 _Tip: Reply *menu* at any time to return to the main menu._`;
+    }
 
     return {
       action: 'WAIT_FOR_INPUT',

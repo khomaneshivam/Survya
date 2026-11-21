@@ -132,10 +132,10 @@ class SchedulerService {
     try {
       db.prepare(`
         UPDATE conversation_flow_sessions
-        SET session_status = 'EXPIRED', updated_at = CURRENT_TIMESTAMP
+        SET session_status = 'EXPIRED', updated_at = UTC_TIMESTAMP()
         WHERE session_status = 'ACTIVE'
           AND expires_at IS NOT NULL
-          AND expires_at <= NOW()
+          AND expires_at <= UTC_TIMESTAMP()
       `).run();
     } catch (e) {
       // Non-fatal silent sweep
@@ -265,7 +265,7 @@ class SchedulerService {
         SELECT j.*, s.sender_phone, s.tenant_id, s.property_id, s.session_status, s.last_interaction_at
         FROM workflow_scheduled_jobs j
         JOIN conversation_flow_sessions s ON j.session_id = s.id
-        WHERE j.status = 'PENDING' AND j.run_at <= NOW()
+        WHERE j.status = 'PENDING' AND j.run_at <= UTC_TIMESTAMP()
         ORDER BY j.run_at ASC
         LIMIT 20
       `).all();
@@ -276,7 +276,7 @@ class SchedulerService {
         // Atomic claim
         const claimRes = db.prepare(`
           UPDATE workflow_scheduled_jobs
-          SET status = 'PROCESSING', attempts = attempts + 1, updated_at = NOW()
+          SET status = 'PROCESSING', attempts = attempts + 1, updated_at = UTC_TIMESTAMP()
           WHERE id = ? AND status = 'PENDING'
         `).run(job.id);
 

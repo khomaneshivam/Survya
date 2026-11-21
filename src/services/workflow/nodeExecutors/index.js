@@ -22,6 +22,7 @@ const EXECUTORS = {
   SEND_MESSAGE: messageExecutor,
   MESSAGE: messageExecutor,
   BUTTON_MENU: messageExecutor,
+  SELECTION: messageExecutor,
   CONFIRMATION: messageExecutor,
   PAYMENT: messageExecutor,
   SEND_TEMPLATE: templateExecutor,

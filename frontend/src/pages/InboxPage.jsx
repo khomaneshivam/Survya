@@ -393,7 +393,9 @@ function formatInboxMessage(r, allRecords = []) {
   const isAutoOutbound = Boolean(
     r.user_id === 'bot' ||
     r.source === 'CONVERSATION_FLOW' ||
-    r.reply_status === 'AUTO_REPLIED'
+    r.source === 'WHATSAPP_FLOW' ||
+    r.reply_status === 'AUTO_REPLIED' ||
+    Boolean(r.reply_sent_at)
   );
 
   let resolvedMediaUrl = r.media_url || null;
@@ -450,10 +452,11 @@ function formatInboxMessage(r, allRecords = []) {
       const trimmedReply = r.reply_text.trim();
       const phoneDigits = String(r.from_phone || '').replace(/\D/g, '');
       const hasMatchingOutbound = (allRecords || []).some(other =>
-        String(other.from_phone || '').replace(/\D/g, '') === phoneDigits &&
+        String(other.from_phone || other.clean_phone || '').replace(/\D/g, '') === phoneDigits &&
         other.message_type === 'outbound' &&
         ((other.message_body && other.message_body.trim() === trimmedReply) ||
-         (other.reply_text && other.reply_text.trim() === trimmedReply))
+         (other.reply_text && other.reply_text.trim() === trimmedReply) ||
+         (Math.abs(new Date(other.received_at || other.time || 0).getTime() - new Date(r.reply_sent_at || r.received_at || 0).getTime()) < 15000))
       );
 
       if (!hasMatchingOutbound) {
@@ -612,9 +615,14 @@ export default function InboxPage({ onNavigate }) {
         const deduped = formattedMsgs.filter((m, idx, arr) => {
           if (idx === 0) return true;
           const prev = arr[idx - 1];
-          if (m.is_outbound && prev.is_outbound && m.text && prev.text && m.text.trim() === prev.text.trim()) {
-            const diffMs = Math.abs(new Date(m.time).getTime() - new Date(prev.time).getTime());
-            if (isNaN(diffMs) || diffMs < 10000) return false;
+          if (m.is_outbound && prev.is_outbound) {
+            const mText = (m.text || '').trim();
+            const prevText = (prev.text || '').trim();
+            const textMatches = mText === prevText || (mText.length > 5 && (mText.includes(prevText) || prevText.includes(mText)));
+            if (textMatches) {
+              const diffMs = Math.abs(new Date(m.time).getTime() - new Date(prev.time).getTime());
+              if (isNaN(diffMs) || diffMs < 30000) return false;
+            }
           }
           return true;
         });
@@ -686,9 +694,14 @@ export default function InboxPage({ onNavigate }) {
           const deduped = combined.filter((m, idx, arr) => {
             if (idx === 0) return true;
             const prev = arr[idx - 1];
-            if (m.is_outbound && prev.is_outbound && m.text && prev.text && m.text.trim() === prev.text.trim()) {
-              const diffMs = Math.abs(new Date(m.time).getTime() - new Date(prev.time).getTime());
-              if (isNaN(diffMs) || diffMs < 10000) return false;
+            if (m.is_outbound && prev.is_outbound) {
+              const mText = (m.text || '').trim();
+              const prevText = (prev.text || '').trim();
+              const textMatches = mText === prevText || (mText.length > 5 && (mText.includes(prevText) || prevText.includes(mText)));
+              if (textMatches) {
+                const diffMs = Math.abs(new Date(m.time).getTime() - new Date(prev.time).getTime());
+                if (isNaN(diffMs) || diffMs < 30000) return false;
+              }
             }
             return true;
           });
@@ -1418,10 +1431,15 @@ export default function InboxPage({ onNavigate }) {
           c.messages = c.messages.filter((m, idx, arr) => {
             if (idx === 0) return true;
             const prev = arr[idx - 1];
-            if (m.is_outbound && prev.is_outbound && m.text && prev.text && m.text.trim() === prev.text.trim()) {
-              const diffMs = Math.abs(new Date(m.time).getTime() - new Date(prev.time).getTime());
-              if (isNaN(diffMs) || diffMs < 10000) {
-                return false;
+            if (m.is_outbound && prev.is_outbound) {
+              const mText = (m.text || '').trim();
+              const prevText = (prev.text || '').trim();
+              const textMatches = mText === prevText || (mText.length > 5 && (mText.includes(prevText) || prevText.includes(mText)));
+              if (textMatches) {
+                const diffMs = Math.abs(new Date(m.time).getTime() - new Date(prev.time).getTime());
+                if (isNaN(diffMs) || diffMs < 30000) {
+                  return false;
+                }
               }
             }
             return true;

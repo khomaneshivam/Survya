@@ -11,6 +11,34 @@ const { getNodeExecutor } = require("./workflow/nodeExecutors");
 const { evaluateRules } = require("./workflow/expressionEvaluator");
 
 /**
+ * Canonical phone normalization: strip all non-digit characters.
+ */
+const normalizePhone = phone => String(phone || "").replace(/\D/g, "");
+
+/**
+ * Converts a JavaScript Date or timestamp string to MySQL UTC DATETIME format (YYYY-MM-DD HH:MM:SS).
+ */
+function toMysqlUtc(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  return d.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+/**
+ * Safely parses a MySQL UTC timestamp string into a JS timestamp (milliseconds).
+ * Treats unqualified strings ('YYYY-MM-DD HH:MM:SS') strictly as UTC to avoid local timezone skew.
+ */
+function parseUtcMs(val) {
+  if (!val) return 0;
+  if (val instanceof Date) return val.getTime();
+  const str = String(val).trim();
+  if (!str) return 0;
+  if (str.endsWith('Z') || str.includes('+')) {
+    return new Date(str).getTime();
+  }
+  return new Date(str.replace(' ', 'T') + 'Z').getTime();
+}
+
+/**
  * Helper: strip emojis and extra punctuation for clean comparisons
  */
 const cleanEmoji = str => String(str || "")
@@ -116,6 +144,122 @@ function resolveNextTransition(currentNodeId, handle, transitions = [], nodeMap 
 
 function findNextNode(currentNodeId, handle, transitions = [], nodeMap = new Map(), nodes = []) {
   return resolveNextTransition(currentNodeId, handle, transitions, nodeMap, nodes);
+}
+
+/**
+ * Resolves the next node ID in the graph matching an output handle or fallback edge.
+ */
+function resolveNextNodeId(node, handle = "default", transitions = [], collectedData = {}, nodeMap = new Map(), nodes = []) {
+  if (!node) return null;
+  const target = resolveNextTransition(node.id, handle, transitions, nodeMap, nodes);
+  return target?.id || target?.targetNodeId || target?.target || null;
+}
+
+/**
+ * Retrieves the currently active, unexpired session for a contact using UTC_TIMESTAMP().
+ */
+function getActiveSession(tenantId = 1, senderPhone) {
+  const normPhone = normalizePhone(senderPhone);
+  if (!normPhone) return null;
+  try {
+    const session = db.prepare(`
+      SELECT s.*, f.status as flow_status, f.name as flow_name
+      FROM conversation_flow_sessions s
+      JOIN conversation_flows f ON s.flow_id = f.id
+      WHERE (s.sender_phone = ? OR s.sender_phone = ? OR s.sender_phone = ?)
+        AND s.tenant_id = ?
+        AND s.session_status = 'ACTIVE'
+        AND (s.expires_at IS NULL OR s.expires_at > UTC_TIMESTAMP())
+      ORDER BY s.id DESC
+      LIMIT 1
+    `).get(normPhone, senderPhone, `+${normPhone}`, tenantId);
+
+    if (!session) return null;
+
+    let timeoutMinutes = 1440;
+    try {
+      const { getSetting } = require("../config/database");
+      timeoutMinutes = parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "1440", 10);
+      if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 1440;
+    } catch (e) {}
+
+    const lastMs = parseUtcMs(session.last_interaction_at || session.created_at);
+    if (Date.now() - lastMs > timeoutMinutes * 60 * 1000) {
+      db.prepare(`
+        UPDATE conversation_flow_sessions
+        SET session_status = 'EXPIRED', updated_at = UTC_TIMESTAMP()
+        WHERE id = ?
+      `).run(session.id);
+      return null;
+    }
+
+    return session;
+  } catch (e) {
+    console.warn("[ConversationFlowEngine] getActiveSession note:", e.message);
+    return null;
+  }
+}
+
+/**
+ * Upserts an active flow session with UTC timestamps and sliding window expiration.
+ */
+function upsertActiveSession({
+  sessionId = null,
+  sessionKey,
+  tenantId = 1,
+  propertyId = 1,
+  channel = "WHATSAPP",
+  senderPhone,
+  flowId,
+  versionId,
+  currentNodeId,
+  collectedData = {},
+  status = "ACTIVE",
+  extendMinutes = 60,
+  extendDays = null
+}) {
+  const normPhone = normalizePhone(senderPhone);
+  const dataJson = JSON.stringify(collectedData || {});
+  const intervalMinutes = extendDays ? (extendDays * 1440) : (extendMinutes || 60);
+
+  if (sessionId) {
+    db.prepare(`
+      UPDATE conversation_flow_sessions
+      SET current_node_id = ?,
+          collected_data_json = ?,
+          session_status = ?,
+          last_interaction_at = UTC_TIMESTAMP(),
+          expires_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE),
+          updated_at = UTC_TIMESTAMP()
+      WHERE id = ?
+    `).run(currentNodeId, dataJson, status, intervalMinutes, sessionId);
+
+    return db.prepare("SELECT * FROM conversation_flow_sessions WHERE id = ?").get(sessionId);
+  }
+
+  // Insert or duplicate key update
+  db.prepare(`
+    INSERT INTO conversation_flow_sessions (
+      session_key, tenant_id, property_id, channel, sender_phone,
+      flow_id, flow_version_id, current_node_id, collected_data_json,
+      session_status, last_interaction_at, expires_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE), UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    ON DUPLICATE KEY UPDATE
+      flow_id = VALUES(flow_id),
+      flow_version_id = VALUES(flow_version_id),
+      current_node_id = VALUES(current_node_id),
+      collected_data_json = VALUES(collected_data_json),
+      session_status = VALUES(session_status),
+      last_interaction_at = UTC_TIMESTAMP(),
+      expires_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE),
+      updated_at = UTC_TIMESTAMP()
+  `).run(
+    sessionKey, tenantId, propertyId, channel, normPhone,
+    flowId, versionId, currentNodeId, dataJson,
+    status, intervalMinutes, intervalMinutes
+  );
+
+  return db.prepare("SELECT * FROM conversation_flow_sessions WHERE session_key = ?").get(sessionKey);
 }
 
 /**
@@ -682,6 +826,9 @@ async function processTurn({
     flowOverride = null
   } = context;
 
+  // Distinguish pure in-memory simulator (canvas testing) from real/mock webhook flow execution
+  const isInMemorySimulation = Boolean(simulationState);
+
   const effectivePhoneNumberId = phoneNumberId || context.phoneNumberId || null;
 
   const normalizedPhone = String(senderPhone || "").replace(/\D/g, "");
@@ -724,71 +871,31 @@ async function processTurn({
       transitions = flowOverride.transitions || [];
     }
   } else {
-    // 1. Check for active session in DB with strict expiration check
-    session = db.prepare(`
-      SELECT * FROM conversation_flow_sessions
-      WHERE session_key = ? AND session_status = 'ACTIVE'
-      LIMIT 1
-    `).get(sessionKey);
+    // 1. Check for active session in DB with strict expiration check against UTC_TIMESTAMP()
+    session = getActiveSession(tenantId, normalizedPhone);
 
     if (session) {
-      let timeoutMinutes = 1440;
-      try {
-        const { getSetting } = require("../config/database");
-        timeoutMinutes = parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "1440", 10);
-        if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 1440;
-      } catch (e) {}
+      isResuming = true;
+      collectedData = session.collected_data_json ? JSON.parse(session.collected_data_json) : {};
 
-      // Check whether session expired in DB or exceeded inactivity window
-      const expCheck = db.prepare("SELECT (? IS NOT NULL AND ? <= NOW()) as is_expired").get(session.expires_at, session.expires_at);
-      const lastMs = session.last_interaction_at ? new Date(session.last_interaction_at).getTime() : new Date(session.created_at).getTime();
-      const isSessionTimedOut = Boolean(expCheck?.is_expired) || (Date.now() - lastMs > timeoutMinutes * 60 * 1000);
+      // Load flow & pinned version
+      flow = db.prepare("SELECT * FROM conversation_flows WHERE id = ?").get(session.flow_id);
+      flowVersion = db.prepare("SELECT * FROM conversation_flow_versions WHERE id = ?").get(session.flow_version_id);
 
-      if (isSessionTimedOut) {
-        // Silently mark old session as EXPIRED in DB (Strict mode: NO auto message sent)
-        db.prepare(`
-          UPDATE conversation_flow_sessions
-          SET session_status = 'EXPIRED', updated_at = NOW()
-          WHERE id = ?
-        `).run(session.id);
+      if (!flowVersion && flow) {
+        flowVersion = db.prepare("SELECT * FROM conversation_flow_versions WHERE flow_id = ? ORDER BY version_number DESC, id DESC LIMIT 1").get(flow.id);
+      }
 
-        try {
-          db.prepare(`
-            INSERT INTO conversation_flow_events (
-              session_id, flow_id, flow_version_id, node_id, node_type, event_type, payload_json, created_at
-            ) VALUES (?, ?, ?, ?, 'SESSION_TIMEOUT', 'EXPIRED', ?, NOW())
-          `).run(
-            session.id,
-            session.flow_id,
-            session.flow_version_id,
-            session.current_node_id || "unknown",
-            JSON.stringify({ reason: "INACTIVITY_TIMEOUT", timeoutMinutes, lastInteractionAt: session.last_interaction_at })
-          );
-        } catch (e) {}
-
-        session = null; // Session expired; fresh journey will start for this new incoming turn
-      } else {
-        collectedData = session.collected_data_json ? JSON.parse(session.collected_data_json) : {};
-
-        // Load flow & pinned version
-        flow = db.prepare("SELECT * FROM conversation_flows WHERE id = ?").get(session.flow_id);
-        flowVersion = db.prepare("SELECT * FROM conversation_flow_versions WHERE id = ?").get(session.flow_version_id);
-
-        if (!flowVersion && flow) {
-          flowVersion = db.prepare("SELECT * FROM conversation_flow_versions WHERE flow_id = ? ORDER BY version_number DESC, id DESC LIMIT 1").get(flow.id);
-        }
-
-        if (flowVersion) {
-          nodes = JSON.parse(flowVersion.nodes_json || "[]");
-          transitions = JSON.parse(flowVersion.transitions_json || "[]");
-        }
+      if (flowVersion) {
+        nodes = JSON.parse(flowVersion.nodes_json || "[]");
+        transitions = JSON.parse(flowVersion.transitions_json || "[]");
       }
     }
   }
 
   // 2. If no active session, find matching published flow
-  if (!session || (!isSimulation && !flowVersion)) {
-    if (isSimulation && flowOverride) {
+  if (!session || (!isInMemorySimulation && !flowVersion)) {
+    if (isInMemorySimulation && flowOverride) {
       nodes = flowOverride.nodes || [];
       transitions = flowOverride.transitions || [];
       session = {
@@ -837,9 +944,9 @@ async function processTurn({
       nodes = JSON.parse(matchedFlow.nodes_json || "[]");
       transitions = JSON.parse(matchedFlow.transitions_json || "[]");
 
-      const startNode = (startNodeId ? nodes.find(n => n.id === startNodeId) : null) || 
-                        nodes.find(n => n.type === "START" || n.type === "TRIGGER_WHATSAPP" || n.type === "TRIGGER_EVENT") || 
-                        nodes[0];
+      const defaultStartNode = (startNodeId ? nodes.find(n => n.id === startNodeId) : null) || 
+                               nodes.find(n => n.type === "START" || n.type === "TRIGGER_WHATSAPP" || n.type === "TRIGGER_EVENT") || 
+                               nodes[0];
 
       let timeoutMinutes = 1440;
       try {
@@ -848,37 +955,30 @@ async function processTurn({
         if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 1440;
       } catch (e) {}
 
-      // Create new session in DB with calculated expires_at (Strict Mode)
-      const res = db.prepare(`
-        INSERT INTO conversation_flow_sessions (
-          session_key, tenant_id, property_id, channel, sender_phone,
-          flow_id, flow_version_id, current_node_id, session_status,
-          collected_data_json, last_interaction_at, expires_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', '{}', NOW(), DATE_ADD(NOW(), INTERVAL ? MINUTE), NOW(), NOW())
-        ON DUPLICATE KEY UPDATE
-          flow_id = VALUES(flow_id),
-          flow_version_id = VALUES(flow_version_id),
-          current_node_id = VALUES(current_node_id),
-          session_status = 'ACTIVE',
-          collected_data_json = '{}',
-          last_interaction_at = NOW(),
-          expires_at = DATE_ADD(NOW(), INTERVAL ? MINUTE),
-          updated_at = NOW()
-      `).run(
-        sessionKey,
-        tenantId,
-        propertyId,
-        channel,
-        normalizedPhone,
-        flow.id,
-        flowVersion.id,
-        startNode.id,
-        timeoutMinutes,
-        timeoutMinutes
-      );
-
-      session = db.prepare("SELECT * FROM conversation_flow_sessions WHERE session_key = ?").get(sessionKey);
+      if (!isInMemorySimulation) {
+        session = upsertActiveSession({
+          sessionKey,
+          tenantId,
+          propertyId,
+          channel,
+          senderPhone: normalizedPhone,
+          flowId: flow.id,
+          versionId: flowVersion.id,
+          currentNodeId: defaultStartNode?.id || "node_start",
+          collectedData: {},
+          status: "ACTIVE",
+          extendMinutes: timeoutMinutes
+        });
+      } else {
+        session = {
+          session_key: sessionKey,
+          current_node_id: defaultStartNode?.id || "node_start",
+          session_status: "ACTIVE",
+          collected_data_json: "{}"
+        };
+      }
       collectedData = {};
+      isResuming = false;
     }
   }
 
@@ -903,27 +1003,27 @@ async function processTurn({
     transitionsFrom.get(t.source).push(t.target);
   });
 
-  let currentNode = nodeMap.get(session.current_node_id || session.currentNodeId);
-  if (!currentNode) {
-    currentNode = nodes.find(n => n.type === "START") || nodes[0];
-  }
+  const startNode = (startNodeId ? nodeMap.get(startNodeId) : null) || 
+                    nodes.find(n => n.type === "START" || n.type === "TRIGGER_WHATSAPP" || n.type === "TRIGGER_EVENT") || 
+                    nodes[0];
 
-  let accumulatedReplies = [];
-  let interactivePayload = null;
-  let pendingDelay = null;
-  let stepCount = 0;
-  const maxSteps = 25; // prevent infinite loops
-  let inputConsumed = false;
+  let currentNode = null;
+  if (isResuming && session?.current_node_id && nodeMap.has(session.current_node_id)) {
+    currentNode = nodeMap.get(session.current_node_id);
+  } else {
+    currentNode = startNode;
+    isResuming = false;
+  }
 
   // 3. Global Escape Keywords Handling (cancel, restart, reset, menu)
   const normInput = String(userInput || "").trim().toLowerCase();
   const isGlobalCancel = ["cancel", "stop", "exit"].includes(normInput);
-  const isGlobalRestart = ["restart", "reset", "menu", "/start", "/menu"].includes(normInput);
+  const isGlobalRestart = ["restart", "reset", "menu", "/start", "/menu", "main menu"].includes(normInput);
 
   if (isGlobalCancel) {
-    if (!isSimulation && session?.id) {
+    if (!isInMemorySimulation && session?.id) {
       try {
-        db.prepare("UPDATE conversation_flow_sessions SET session_status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(session.id);
+        db.prepare("UPDATE conversation_flow_sessions SET session_status = 'CANCELLED', updated_at = UTC_TIMESTAMP() WHERE id = ?").run(session.id);
       } catch (e) {}
     }
     return {
@@ -938,712 +1038,201 @@ async function processTurn({
   }
 
   if (isGlobalRestart) {
-    const startNode = nodes.find(n => n.type === "TRIGGER_WHATSAPP" || n.type === "START") || nodes[0];
     currentNode = startNode;
     collectedData = {};
     Object.keys(variableContext).forEach(k => {
-      if (!['sender_phone', 'property'].includes(k)) delete variableContext[k];
+      if (!['sender_phone', 'property', 'business_name'].includes(k)) delete variableContext[k];
     });
-    if (!isSimulation && session?.id) {
+    if (!isInMemorySimulation && session?.id) {
       try {
-        db.prepare("UPDATE conversation_flow_sessions SET current_node_id = ?, collected_data_json = '{}', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(startNode.id, session.id);
+        db.prepare("UPDATE conversation_flow_sessions SET current_node_id = ?, collected_data_json = '{}', session_status = 'ACTIVE', updated_at = UTC_TIMESTAMP() WHERE id = ?").run(startNode.id, session.id);
       } catch (e) {}
     }
     executionLogs.push(`Customer requested restart ('${normInput}'). Reset state and restarted from ${startNode.id}.`);
-    inputConsumed = true;
+    isResuming = false;
+    userInput = "";
+    userPayload = null;
   }
 
-  // 4. Process Input on Waiting Node
-  if (!inputConsumed && (userInput || userPayload)) {
-    // 3a. Modern COLLECT_INPUT
-    if (currentNode.type === "COLLECT_INPUT") {
-      const intakeExec = getNodeExecutor("COLLECT_INPUT");
-      const execRes = await intakeExec.execute(currentNode, {
-        session: collectedData,
-        userInput,
-        userPayload,
-        variableContext,
-        isWaitingForThisNode: true
-      });
+  // 4. Strict Start-to-End State Machine Execution Loop
+  let isWaitingForThisNode = isResuming;
+  let hops = 0;
+  const maxHops = 25;
+  let accumulatedReplies = [];
+  let interactivePayload = null;
+  let pendingDelay = null;
+  let finalStatus = "ACTIVE";
+  let finalNodeId = currentNode?.id || null;
 
-      if (execRes.updatedData) {
-        for (const [k, v] of Object.entries(execRes.updatedData)) {
-          collectedData[k] = v;
-          variableContext[k] = v;
-        }
+  while (currentNode && hops < maxHops) {
+    hops++;
+    const node = currentNode;
+    finalNodeId = node.id;
+    executionLogs.push(`[Hop ${hops}] Executing [${node.type}] '${node.id}' (waiting=${isWaitingForThisNode})`);
+
+    const executor = getNodeExecutor(node.type);
+    const execRes = await executor.execute(node, {
+      session: collectedData,
+      userInput: isWaitingForThisNode ? userInput : "",
+      userPayload: isWaitingForThisNode ? userPayload : null,
+      variableContext,
+      dryRun: Boolean(isSimulation),
+      fastForward: Boolean(context.fastForward),
+      tenantId,
+      propertyId,
+      phoneNumberId: effectivePhoneNumberId || flow?.phone_number_id || null,
+      senderPhone: normalizedPhone,
+      flowId: session?.flow_id || flow?.id || 1,
+      isWaitingForThisNode
+    });
+
+    // Key invariant: isWaitingForThisNode is only true for the initial resumed node in Turn 2+
+    isWaitingForThisNode = false;
+
+    if (execRes.replyMessages && execRes.replyMessages.length > 0) {
+      accumulatedReplies.push(...execRes.replyMessages);
+    }
+    if (execRes.replyInteractive) {
+      interactivePayload = execRes.replyInteractive;
+    }
+    if (execRes.updatedData) {
+      for (const [k, v] of Object.entries(execRes.updatedData)) {
+        collectedData[k] = v;
+        variableContext[k] = v;
       }
-      if (execRes.traceNote) executionLogs.push(execRes.traceNote);
+    }
+    if (execRes.traceNote) {
+      executionLogs.push(execRes.traceNote);
+    }
+    if (execRes.pendingDelay) {
+      pendingDelay = execRes.pendingDelay;
+    }
 
-      if (execRes.action === "WAIT_FOR_INPUT") {
-        return {
-          handled: true,
+    if (execRes.action === "WAIT_FOR_INPUT") {
+      finalStatus = "ACTIVE";
+      if (!isInMemorySimulation && (flow || session)) {
+        session = upsertActiveSession({
+          sessionId: session?.id,
           sessionKey,
-          currentNodeId: currentNode.id,
-          sessionStatus: "ACTIVE",
-          replyText: execRes.replyMessages ? execRes.replyMessages.join("\n\n") : "Please try again.",
-          replyInteractive: null,
+          tenantId,
+          propertyId,
+          channel,
+          senderPhone: normalizedPhone,
+          flowId: session?.flow_id || flow?.id || 1,
+          versionId: session?.flow_version_id || flowVersion?.id || 1,
+          currentNodeId: node.id,
           collectedData,
-          executionLogs
-        };
+          status: "ACTIVE"
+        });
       }
-
-      inputConsumed = true;
-      currentNode = findNextNode(currentNode.id, execRes.nextHandle || "valid", transitions, nodeMap, nodes);
-    }
-    // 3b. Modern SEND_MESSAGE with options
-    else if (currentNode.type === "SEND_MESSAGE" && (currentNode.config?.options || []).length > 0) {
-      const msgExec = getNodeExecutor("SEND_MESSAGE");
-      const execRes = await msgExec.execute(currentNode, {
-        session: collectedData,
-        userInput,
-        userPayload,
-        variableContext,
-        isWaitingForThisNode: true
-      });
-
-      if (execRes.updatedData) {
-        for (const [k, v] of Object.entries(execRes.updatedData)) {
-          collectedData[k] = v;
-          variableContext[k] = v;
-        }
-      }
-      if (execRes.traceNote) executionLogs.push(execRes.traceNote);
-
-      inputConsumed = true;
-      currentNode = findNextNode(currentNode.id, execRes.nextHandle || "default", transitions, nodeMap, nodes);
-    }
-    // 3c. Modern SEND_WHATSAPP_FLOW
-    else if (currentNode.type === "SEND_WHATSAPP_FLOW") {
-      const flowExec = getNodeExecutor("SEND_WHATSAPP_FLOW");
-      const execRes = await flowExec.execute(currentNode, {
-        session: collectedData,
-        userInput,
-        userPayload,
-        variableContext,
-        isWaitingForThisNode: true
-      });
-
-      if (execRes.updatedData) {
-        for (const [k, v] of Object.entries(execRes.updatedData)) {
-          collectedData[k] = v;
-          variableContext[k] = v;
-        }
-      }
-      if (execRes.traceNote) executionLogs.push(execRes.traceNote);
-
-      inputConsumed = true;
-      currentNode = findNextNode(currentNode.id, execRes.nextHandle || "submitted", transitions, nodeMap, nodes);
-    }
-  }
-
-  const isMenuOrConfirmation = currentNode.type === "BUTTON_MENU" || currentNode.type === "SELECTION" || currentNode.type === "CONFIRMATION";
-  const isInputField = currentNode.type === "INPUT_COLLECTION" || currentNode.type === "QUESTION";
-
-  if (isMenuOrConfirmation && (userInput || userPayload)) {
-    const rawOptions = currentNode.config?.options && currentNode.config.options.length > 0
-      ? currentNode.config.options
-      : [
-          { id: "opt_confirm", title: "Confirm & Proceed ✅", value: "CONFIRM" },
-          { id: "opt_modify", title: "Modify Details ✏️", value: "MODIFY" },
-          { id: "opt_staff", title: "Talk to Staff 💬", value: "STAFF" }
-        ];
-
-    const choiceValue = userPayload?.id || userPayload?.value || userInput;
-    const matchedOpt = matchOption(rawOptions, choiceValue, userInput);
-    const normInput = String(choiceValue || userInput).toLowerCase().trim();
-
-    if (!matchedOpt) {
-      // Intent Shortcuts & Smart Navigation
-      const isDateIntent = choiceValue === "btn_check_avail" || choiceValue === "opt_check_dates" || /^(check\s*dates|check\s*avail|dates|rates|availability)/i.test(normInput);
-      const isStaffIntent = choiceValue === "btn_staff" || choiceValue === "opt_talk_agent" || choiceValue === "opt_staff" || /^(talk|staff|human|agent|host|help|call)/i.test(normInput);
-
-      if (isDateIntent) {
-        if (!collectedData.selected_room_name && !variableContext.selected_room_name) {
-          const defaultRoomName = "Deluxe Garden Villa";
-          collectedData.selected_room_name = defaultRoomName;
-          variableContext.selected_room_name = defaultRoomName;
-        }
-        collectedData.enquiry_type = "BOOKING";
-        variableContext.enquiry_type = "BOOKING";
-        inputConsumed = true;
-        const checkinNode = nodes.find(n => n.id === "node_ask_checkin" || n.id === "input_checkin" || (n.config?.variable === "check_in_date"));
-        if (checkinNode) {
-          currentNode = checkinNode;
-        }
-      } else if (isStaffIntent) {
-        collectedData.enquiry_type = "STAFF";
-        variableContext.enquiry_type = "STAFF";
-        inputConsumed = true;
-        const handoffNode = nodes.find(n => n.type === "HANDOFF" || n.type === "HUMAN_HANDOFF" || n.id === "node_concierge_handoff" || n.id === "handoff_agent");
-        if (handoffNode) {
-          currentNode = handoffNode;
-        }
-      } else {
-        // Natural date input check: If user typed a date while on a button menu (e.g. "tomorrow" or "2026-12-01")
-        const parsedDate = parseDateInput(userInput);
-        if (parsedDate) {
-          collectedData.check_in_date = parsedDate;
-          variableContext.check_in_date = parsedDate;
-          if (!collectedData.selected_room_name) {
-            collectedData.selected_room_name = "Deluxe Garden Villa";
-            variableContext.selected_room_name = "Deluxe Garden Villa";
-          }
-          collectedData.enquiry_type = "BOOKING";
-          variableContext.enquiry_type = "BOOKING";
-          inputConsumed = true;
-          const checkoutNode = nodes.find(n => n.id === "node_ask_checkout" || n.id === "input_checkout" || (n.config?.variable === "check_out_date"));
-          if (checkoutNode) {
-            currentNode = checkoutNode;
-          }
-        } else {
-          // Unrecognized input: DO NOT advance to arbitrary node! Re-prompt and stay on current node.
-          executionLogs.push(`Unrecognized option '${userInput}' on [${currentNode.type}] '${currentNode.id}'. Re-prompting options.`);
-          const promptText = (currentNode.config?.prompt || "Please choose one of the options below:") + "\n\n*(Please choose one of the options to proceed)*";
-          return {
-            handled: true,
-            sessionKey,
-            currentNodeId: currentNode.id,
-            sessionStatus: "ACTIVE",
-            replyText: promptText,
-            replyInteractive: {
-              type: "BUTTONS",
-              options: rawOptions
-            },
-            collectedData,
-            executionLogs
-          };
-        }
-      }
+      break;
     }
 
-    if (matchedOpt) {
-      const valToStore = matchedOpt.value || matchedOpt.id || matchedOpt.title;
-      const targetVar = currentNode.config?.variable || (currentNode.type === "CONFIRMATION" ? "confirmation_choice" : "menu_selection");
-      collectedData[targetVar] = valToStore;
-      variableContext[targetVar] = valToStore;
-      inputConsumed = true;
-
-      executionLogs.push(`User answered [${currentNode.type}] '${currentNode.id}': selected '${valToStore}' into '${targetVar}'`);
-
-      // Advance to next node: prioritize option targetNodeId, then explicit edge, then next sequential node
-      let nextNodeId = matchedOpt?.targetNodeId;
-      if (!nextNodeId || !nodeMap.has(nextNodeId)) {
-        const nextTargets = transitionsFrom.get(currentNode.id) || [];
-        nextNodeId = nextTargets.length > 0 ? nextTargets[0] : null;
+    if (execRes.action === "WAIT_UNTIL") {
+      finalStatus = "ACTIVE";
+      if (!isInMemorySimulation && (flow || session)) {
+        session = upsertActiveSession({
+          sessionId: session?.id,
+          sessionKey,
+          tenantId,
+          propertyId,
+          channel,
+          senderPhone: normalizedPhone,
+          flowId: session?.flow_id || flow?.id || 1,
+          versionId: session?.flow_version_id || flowVersion?.id || 1,
+          currentNodeId: node.id,
+          collectedData,
+          status: "ACTIVE",
+          extendDays: 7
+        });
       }
-
-      if (nextNodeId && nodeMap.has(nextNodeId)) {
-        currentNode = nodeMap.get(nextNodeId);
-      } else {
-        const curIdx = nodes.findIndex(n => n.id === currentNode.id);
-        currentNode = curIdx >= 0 && curIdx < nodes.length - 1 ? nodes[curIdx + 1] : null;
-      }
-    }
-  } else if (isInputField && userInput) {
-    const valConfig = currentNode.config?.validation || {};
-    let parsedVal = userInput;
-    let isValid = true;
-    let validationErrorMsg = valConfig.errorMessage || "Please enter a valid response.";
-
-    if (valConfig.type === "DATE") {
-      const dateStr = parseDateInput(userInput);
-      if (!dateStr) {
-        isValid = false;
-        validationErrorMsg = valConfig.errorMessage || "⚠️ Please enter a valid date in YYYY-MM-DD format (or say *tomorrow*), or reply 'menu' to return to the main menu.";
-        if (!validationErrorMsg.toLowerCase().includes("menu")) {
-          validationErrorMsg += " (or reply 'menu' to return to the main menu)";
-        }
-      } else {
-        parsedVal = dateStr;
-      }
-    } else if (valConfig.type === "GUEST_PARSER") {
-      const counts = parseGuestCounts(userInput, valConfig.defaultAdults, valConfig.defaultChildren);
-      parsedVal = `${counts.adults} Adults, ${counts.children} Children`;
-      if (valConfig.assignAdultsVariable) {
-        collectedData[valConfig.assignAdultsVariable] = counts.adults;
-        variableContext[valConfig.assignAdultsVariable] = counts.adults;
-      }
-      if (valConfig.assignChildrenVariable) {
-        collectedData[valConfig.assignChildrenVariable] = counts.children;
-        variableContext[valConfig.assignChildrenVariable] = counts.children;
-      }
-    } else if (valConfig.type === "NUMBER") {
-      const num = Number(String(userInput).replace(/[^0-9.]/g, ""));
-      if (isNaN(num)) {
-        isValid = false;
-      } else {
-        if (valConfig.min !== undefined && num < Number(valConfig.min)) isValid = false;
-        if (valConfig.max !== undefined && num > Number(valConfig.max)) isValid = false;
-        parsedVal = num;
-      }
-    } else if (valConfig.type === "EMAIL") {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(String(userInput).trim())) {
-        isValid = false;
-      } else {
-        parsedVal = String(userInput).trim().toLowerCase();
-      }
-    } else if (valConfig.type === "PHONE") {
-      const digits = String(userInput).replace(/\D/g, "");
-      if (digits.length < (valConfig.minDigits || 10) || digits.length > (valConfig.maxDigits || 15)) {
-        isValid = false;
-      } else {
-        parsedVal = digits;
-      }
-    } else if (valConfig.type === "REGEX" && valConfig.regex) {
-      try {
-        const re = new RegExp(valConfig.regex);
-        if (!re.test(String(userInput).trim())) isValid = false;
-      } catch (e) {}
-    } else if (valConfig.type === "TEXT" && valConfig.minLength) {
-      if (String(userInput).trim().length < valConfig.minLength) {
-        isValid = false;
-      }
+      break;
     }
 
-    if (!isValid) {
-      executionLogs.push(`Validation failed on [${currentNode.type}] '${currentNode.id}': '${userInput}'`);
-      return {
-        handled: true,
-        sessionKey,
-        currentNodeId: currentNode.id,
-        sessionStatus: "ACTIVE",
-        replyText: validationErrorMsg,
-        replyInteractive: null,
-        collectedData,
-        executionLogs
-      };
+    if (execRes.action === "HANDOFF") {
+      finalStatus = "PAUSED_AGENT_HANDOFF";
+      if (!isInMemorySimulation && (flow || session)) {
+        session = upsertActiveSession({
+          sessionId: session?.id,
+          sessionKey,
+          tenantId,
+          propertyId,
+          channel,
+          senderPhone: normalizedPhone,
+          flowId: session?.flow_id || flow?.id || 1,
+          versionId: session?.flow_version_id || flowVersion?.id || 1,
+          currentNodeId: node.id,
+          collectedData,
+          status: "PAUSED_AGENT_HANDOFF"
+        });
+      }
+      break;
     }
 
-    if (currentNode.config?.variable) {
-      collectedData[currentNode.config.variable] = parsedVal;
-      variableContext[currentNode.config.variable] = parsedVal;
+    if (execRes.action === "COMPLETE") {
+      finalStatus = "COMPLETED";
+      if (!isInMemorySimulation && (flow || session)) {
+        session = upsertActiveSession({
+          sessionId: session?.id,
+          sessionKey,
+          tenantId,
+          propertyId,
+          channel,
+          senderPhone: normalizedPhone,
+          flowId: session?.flow_id || flow?.id || 1,
+          versionId: session?.flow_version_id || flowVersion?.id || 1,
+          currentNodeId: node.id,
+          collectedData,
+          status: "COMPLETED"
+        });
+      }
+      break;
     }
-    inputConsumed = true;
 
-    executionLogs.push(`User input saved on [${currentNode.type}] '${currentNode.id}': ${JSON.stringify(parsedVal)}`);
-
-    // Advance to next node: explicit edge, then next sequential node
-    const nextTargets = transitionsFrom.get(currentNode.id) || [];
-    let nextNodeId = nextTargets.length > 0 ? nextTargets[0] : null;
-
-    if (nextNodeId && nodeMap.has(nextNodeId)) {
-      currentNode = nodeMap.get(nextNodeId);
+    // Default action: CONTINUE -> Resolve next node transition
+    let nextNode = null;
+    if (execRes.targetNodeId && nodeMap.has(execRes.targetNodeId)) {
+      nextNode = nodeMap.get(execRes.targetNodeId);
     } else {
-      const curIdx = nodes.findIndex(n => n.id === currentNode.id);
-      currentNode = curIdx >= 0 && curIdx < nodes.length - 1 ? nodes[curIdx + 1] : null;
+      nextNode = findNextNode(node.id, execRes.nextHandle || "default", transitions, nodeMap, nodes);
     }
+    if (!nextNode) {
+      finalStatus = "COMPLETED";
+      if (!isInMemorySimulation && (flow || session)) {
+        session = upsertActiveSession({
+          sessionId: session?.id,
+          sessionKey,
+          tenantId,
+          propertyId,
+          channel,
+          senderPhone: normalizedPhone,
+          flowId: session?.flow_id || flow?.id || 1,
+          versionId: session?.flow_version_id || flowVersion?.id || 1,
+          currentNodeId: node.id,
+          collectedData,
+          status: "COMPLETED"
+        });
+      }
+      break;
+    }
+
+    currentNode = nextNode;
   }
 
-  // 4. Execution Step Loop
-  let status = "ACTIVE";
-  while (currentNode && stepCount < maxSteps) {
-    stepCount++;
-    executionLogs.push(`Executing node [${currentNode.type}] '${currentNode.id}': ${currentNode.title || ""}`);
-
-    // Modern Composable Node Executors Check
-    const modernTypes = new Set([
-      "TRIGGER_WHATSAPP", "TRIGGER_EVENT", "SEND_MESSAGE", "SEND_TEMPLATE",
-      "SEND_WHATSAPP_FLOW", "COLLECT_INPUT", "SET_VARIABLE", "WAIT_DELAY",
-      "CRM_UPSERT", "CATALOG_BOOKING", "HTTP_WEBHOOK", "HUMAN_HANDOFF"
-    ]);
-
-    if (modernTypes.has(currentNode.type)) {
-      const executor = getNodeExecutor(currentNode.type);
-      const execRes = await executor.execute(currentNode, {
-        session: collectedData,
-        userInput: inputConsumed ? "" : userInput,
-        userPayload: inputConsumed ? null : userPayload,
-        variableContext,
-        dryRun: Boolean(isSimulation),
-        fastForward: Boolean(context.fastForward),
-        tenantId,
-        propertyId,
-        phoneNumberId: effectivePhoneNumberId || flow?.phone_number_id || null,
-        senderPhone: normalizedPhone,
-        flowId: session?.flow_id || flow?.id || 1,
-        isWaitingForThisNode: false
-      });
-
-      if (execRes.replyMessages && execRes.replyMessages.length > 0) {
-        accumulatedReplies.push(...execRes.replyMessages);
-      }
-      if (execRes.replyInteractive) {
-        interactivePayload = execRes.replyInteractive;
-      }
-      if (execRes.updatedData) {
-        for (const [k, v] of Object.entries(execRes.updatedData)) {
-          collectedData[k] = v;
-          variableContext[k] = v;
-        }
-      }
-      if (execRes.traceNote) {
-        executionLogs.push(execRes.traceNote);
-      }
-      if (execRes.pendingDelay) {
-        pendingDelay = execRes.pendingDelay;
-      }
-
-      if (execRes.action === "WAIT_FOR_INPUT" || execRes.action === "WAIT_UNTIL") {
-        break;
-      }
-      if (execRes.action === "HANDOFF") {
-        status = "PAUSED_AGENT_HANDOFF";
-        break;
-      }
-      if (execRes.action === "COMPLETE") {
-        status = "COMPLETED";
-        break;
-      }
-
-      // Default: CONTINUE
-      currentNode = findNextNode(currentNode.id, execRes.nextHandle || "default", transitions, nodeMap, nodes);
-      continue;
-    }
-
-    if (currentNode.type === "START") {
-      const nextTargets = transitionsFrom.get(currentNode.id) || [];
-      currentNode = nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null;
-      continue;
-    }
-
-    if (currentNode.type === "MESSAGE") {
-      const text = interpolateVariables(currentNode.config?.text || "", variableContext);
-      if (text) accumulatedReplies.push(text);
-
-      const nextTargets = transitionsFrom.get(currentNode.id) || [];
-      currentNode = nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null;
-      continue;
-    }
-
-    if (currentNode.type === "CONDITION") {
-      const varName = currentNode.config?.variable;
-      const varValue = variableContext[varName];
-      const rules = currentNode.config?.rules || [];
-      let targetNodeId = null;
-
-      let matchedRule = false;
-      for (const rule of rules) {
-        if (rule.targetNodeId && evaluateConditionRule(varValue, rule.operator, rule.value)) {
-          targetNodeId = rule.targetNodeId;
-          matchedRule = true;
-          executionLogs.push(`Condition matched rule: ${varName} ${rule.operator} ${rule.value} -> ${targetNodeId}`);
-          break;
-        }
-      }
-
-      if (!matchedRule && currentNode.config?.defaultTargetNodeId) {
-        targetNodeId = currentNode.config.defaultTargetNodeId;
-        executionLogs.push(`Condition using default target -> ${targetNodeId}`);
-      }
-
-      if (targetNodeId && nodeMap.has(targetNodeId)) {
-        currentNode = nodeMap.get(targetNodeId);
-        continue;
-      }
-
-      // Modern rule evaluation against handle transitions
-      const passes = evaluateRules(
-        rules.length > 0 ? rules : [{ variable: varName, operator: currentNode.config?.operator || "eq", value: currentNode.config?.value }],
-        currentNode.config?.matchMode || "ALL",
-        variableContext
-      );
-      const handle = passes ? "true" : "false";
-      const nextFromHandle = findNextNode(currentNode.id, handle, transitions, nodeMap, nodes);
-      if (nextFromHandle) {
-        executionLogs.push(`Condition evaluated to ${passes ? "TRUE" : "FALSE"} -> ${nextFromHandle.id} [Handle: ${handle}]`);
-        currentNode = nextFromHandle;
-        continue;
-      }
-
-      currentNode = null;
-      continue;
-    }
-
-    if (currentNode.type === "BUSINESS_ACTION" || currentNode.type === "TRANSACTION" || currentNode.type === "BOOKING") {
-      const actionName = currentNode.config?.action;
-      const rawInputs = currentNode.config?.inputs || {};
-      const resolvedInputs = {};
-
-      for (const [k, v] of Object.entries(rawInputs)) {
-        resolvedInputs[k] = typeof v === "string" ? interpolateVariables(v, variableContext) : v;
-      }
-
-      executionLogs.push(`Running action '${actionName}' with inputs: ${JSON.stringify(resolvedInputs)}`);
-
-      const outputs = executeBusinessAction(actionName, resolvedInputs, { propertyId, tenantId });
-      executionLogs.push(`Action '${actionName}' outputs: ${JSON.stringify(outputs)}`);
-
-      const outputMappings = currentNode.config?.outputs || {};
-      for (const [outKey, varTarget] of Object.entries(outputMappings)) {
-        if (outputs[outKey] !== undefined) {
-          collectedData[varTarget] = outputs[outKey];
-          variableContext[varTarget] = outputs[outKey];
-        }
-      }
-
-      const nextTargets = transitionsFrom.get(currentNode.id) || [];
-      currentNode = nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null;
-      continue;
-    }
-
-    if (currentNode.type === "API_INTEGRATION") {
-      const { method = "GET", url = "", headers = {}, body = {}, outputMappings = {}, mockResponse = null, successTargetNodeId = null } = currentNode.config || {};
-      executionLogs.push(`API_INTEGRATION [${method}] '${url}'`);
-
-      // Safe mock or sandbox response mapping
-      const resolvedResponse = mockResponse || {
-        status: "SUCCESS",
-        timestamp: new Date().toISOString(),
-        data: { id: "ext_" + Math.random().toString(36).substring(2, 8) }
-      };
-
-      for (const [resKey, varTarget] of Object.entries(outputMappings)) {
-        if (resolvedResponse[resKey] !== undefined) {
-          collectedData[varTarget] = resolvedResponse[resKey];
-          variableContext[varTarget] = resolvedResponse[resKey];
-        } else if (resolvedResponse.data && resolvedResponse.data[resKey] !== undefined) {
-          collectedData[varTarget] = resolvedResponse.data[resKey];
-          variableContext[varTarget] = resolvedResponse.data[resKey];
-        }
-      }
-
-      const nextTargets = transitionsFrom.get(currentNode.id) || [];
-      currentNode = successTargetNodeId ? nodeMap.get(successTargetNodeId) : (nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null);
-      continue;
-    }
-
-    if (currentNode.type === "PAYMENT") {
-      const amountVar = currentNode.config?.amountVariable;
-      const rawAmount = amountVar ? variableContext[amountVar] : currentNode.config?.amount;
-      const amount = Number(rawAmount) || 5000;
-      const currency = currentNode.config?.currency || "INR";
-      const desc = interpolateVariables(currentNode.config?.description || "Payment Deposit", variableContext);
-
-      const payRes = executeBusinessAction("GENERATE_PAYMENT_LINK", { amount, currency, description: desc }, { propertyId, tenantId });
-      collectedData.payment_link = payRes.payment_link;
-      collectedData.payment_id = payRes.payment_id;
-      collectedData.payment_status = payRes.payment_status;
-      variableContext.payment_link = payRes.payment_link;
-      variableContext.payment_id = payRes.payment_id;
-      variableContext.payment_status = payRes.payment_status;
-
-      const outputMappings = currentNode.config?.outputs || {};
-      for (const [outKey, varTarget] of Object.entries(outputMappings)) {
-        if (payRes[outKey] !== undefined) {
-          collectedData[varTarget] = payRes[outKey];
-          variableContext[varTarget] = payRes[outKey];
-        }
-      }
-
-      if (currentNode.config?.prompt) {
-        const prompt = interpolateVariables(currentNode.config.prompt, variableContext);
-        accumulatedReplies.push(prompt);
-      }
-
-      const nextTargets = transitionsFrom.get(currentNode.id) || [];
-      currentNode = nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null;
-      continue;
-    }
-
-    if (currentNode.type === "QUOTATION") {
-      if (currentNode.config?.action) {
-        const rawInputs = currentNode.config?.inputs || {};
-        const resolvedInputs = {};
-        for (const [k, v] of Object.entries(rawInputs)) {
-          resolvedInputs[k] = typeof v === "string" ? interpolateVariables(v, variableContext) : v;
-        }
-        const outputs = executeBusinessAction(currentNode.config.action, resolvedInputs, { propertyId, tenantId });
-        const outputMappings = currentNode.config?.outputs || {};
-        for (const [outKey, varTarget] of Object.entries(outputMappings)) {
-          if (outputs[outKey] !== undefined) {
-            collectedData[varTarget] = outputs[outKey];
-            variableContext[varTarget] = outputs[outKey];
-          }
-        }
-      }
-
-      if (currentNode.config?.text) {
-        const text = interpolateVariables(currentNode.config.text, variableContext);
-        if (text) accumulatedReplies.push(text);
-      }
-
-      const nextTargets = transitionsFrom.get(currentNode.id) || [];
-      currentNode = nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null;
-      continue;
-    }
-
-    if (currentNode.type === "CONFIRMATION") {
-      const rawOptions = currentNode.config?.options && currentNode.config.options.length > 0
-        ? currentNode.config.options
-        : [
-            { id: "opt_confirm", title: "Confirm & Proceed ✅", value: "CONFIRM" },
-            { id: "opt_modify", title: "Modify Details ✏️", value: "MODIFY" },
-            { id: "opt_staff", title: "Talk to Staff 💬", value: "STAFF" }
-          ];
-
-      const choiceValue = userPayload?.id || userPayload?.value || userInput;
-      if (!inputConsumed && (userInput || userPayload)) {
-        const matchedOpt = matchOption(rawOptions, choiceValue, userInput, true);
-        if (matchedOpt) {
-          const targetVar = currentNode.config?.variable || "confirmation_choice";
-          collectedData[targetVar] = matchedOpt.value;
-          variableContext[targetVar] = matchedOpt.value;
-          inputConsumed = true;
-          executionLogs.push(`User input pre-answered [${currentNode.type}] '${currentNode.id}': selected '${matchedOpt.value}' into '${targetVar}'`);
-          let nextNodeId = matchedOpt?.targetNodeId;
-          if (!nextNodeId || !nodeMap.has(nextNodeId)) {
-            const nextTargets = transitionsFrom.get(currentNode.id) || [];
-            nextNodeId = nextTargets.length > 0 ? nextTargets[0] : null;
-          }
-          if (nextNodeId && nodeMap.has(nextNodeId)) {
-            currentNode = nodeMap.get(nextNodeId);
-          } else {
-            const curIdx = nodes.findIndex(n => n.id === currentNode.id);
-            currentNode = curIdx >= 0 && curIdx < nodes.length - 1 ? nodes[curIdx + 1] : null;
-          }
-          continue;
-        }
-      }
-
-      const prompt = interpolateVariables(currentNode.config?.prompt || "Please confirm your selection:", variableContext);
-      accumulatedReplies.push(prompt);
-
-      const formattedOptions = rawOptions.map(o => ({
-        id: o.id,
-        title: interpolateVariables(o.title || o.id, variableContext).slice(0, 20),
-        value: o.value || o.id
-      }));
-
-      interactivePayload = {
-        type: formattedOptions.length <= 3 ? "button" : "list",
-        prompt,
-        options: formattedOptions
-      };
-
-      // Halt loop and wait for user response on this confirmation node
-      break;
-    }
-
-    if (currentNode.type === "BUTTON_MENU" || currentNode.type === "SELECTION") {
-      const rawOptions = currentNode.config?.options || [];
-      const choiceValue = userPayload?.id || userPayload?.value || userInput;
-
-      if (!inputConsumed && (userInput || userPayload)) {
-        const matchedOpt = matchOption(rawOptions, choiceValue, userInput, true);
-        if (matchedOpt) {
-          const targetVar = currentNode.config?.variable || "menu_selection";
-          collectedData[targetVar] = matchedOpt.value;
-          variableContext[targetVar] = matchedOpt.value;
-          inputConsumed = true;
-          executionLogs.push(`User intent pre-selected [${currentNode.type}] '${currentNode.id}': '${matchedOpt.value}' into '${targetVar}'`);
-          let nextNodeId = matchedOpt?.targetNodeId;
-          if (!nextNodeId || !nodeMap.has(nextNodeId)) {
-            const nextTargets = transitionsFrom.get(currentNode.id) || [];
-            nextNodeId = nextTargets.length > 0 ? nextTargets[0] : null;
-          }
-          if (nextNodeId && nodeMap.has(nextNodeId)) {
-            currentNode = nodeMap.get(nextNodeId);
-          } else {
-            const curIdx = nodes.findIndex(n => n.id === currentNode.id);
-            currentNode = curIdx >= 0 && curIdx < nodes.length - 1 ? nodes[curIdx + 1] : null;
-          }
-          continue;
-        }
-      }
-
-      const prompt = interpolateVariables(currentNode.config?.prompt || "Please choose:", variableContext);
-      accumulatedReplies.push(prompt);
-
-      const formattedOptions = rawOptions.map(o => ({
-        id: o.id,
-        title: interpolateVariables(o.title || o.id, variableContext).slice(0, 20), // 20 chars limit
-        value: o.value || o.id
-      }));
-
-      interactivePayload = {
-        type: formattedOptions.length <= 3 ? "button" : "list",
-        prompt,
-        options: formattedOptions
-      };
-
-      // Halt loop and wait for user response on this node
-      break;
-    }
-
-    if (currentNode.type === "INPUT_COLLECTION" || currentNode.type === "QUESTION") {
-      const prompt = interpolateVariables(currentNode.config?.prompt || "Please enter information:", variableContext);
-      accumulatedReplies.push(prompt);
-
-      // Halt loop and wait for user response on this node
-      break;
-    }
-
-    if (currentNode.type === "HANDOFF" || currentNode.type === "HANDOVER") {
-      const msg = interpolateVariables(
-        currentNode.config?.handoffMessage || "🔔 Transferring you to a live team member...",
-        variableContext
-      );
-      if (msg) accumulatedReplies.push(msg);
-
-      status = "PAUSED_AGENT_HANDOFF";
-      executionLogs.push(`Handoff reached: paused automation`);
-      break;
-    }
-
-    if (currentNode.type === "END") {
-      const msg = interpolateVariables(currentNode.config?.farewellMessage || "", variableContext);
-      if (msg) accumulatedReplies.push(msg);
-
-      status = "COMPLETED";
-      executionLogs.push(`End reached: session completed`);
-      break;
-    }
-
-    // Default step advance
-    const nextTargets = transitionsFrom.get(currentNode.id) || [];
-    currentNode = nextTargets.length > 0 ? nodeMap.get(nextTargets[0]) : null;
-  }
-
-  const finalNodeId = currentNode ? currentNode.id : "node_end";
-
-  // Update DB session if not in pure in-memory simulation mode
-  if (session && session.id && !simulationState) {
-    let timeoutMinutes = 1440;
-    try {
-      const { getSetting } = require("../config/database");
-      timeoutMinutes = parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "1440", 10);
-      if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 1440;
-    } catch (e) {}
-
-    db.prepare(`
-      UPDATE conversation_flow_sessions
-      SET current_node_id = ?, session_status = ?, collected_data_json = ?,
-          last_interaction_at = NOW(),
-          expires_at = DATE_ADD(NOW(), INTERVAL ? MINUTE),
-          updated_at = NOW()
-      WHERE id = ?
-    `).run(
-      finalNodeId,
-      status,
-      JSON.stringify(collectedData),
-      timeoutMinutes,
-      session.id
-    );
-
-    // Record flow event
+  // Record flow event in DB
+  if (!isInMemorySimulation && session?.id) {
     try {
       db.prepare(`
         INSERT INTO conversation_flow_events (
           session_id, flow_id, flow_version_id, node_id, node_type, event_type, payload_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP())
       `).run(
         session.id,
         session.flow_id,
         session.flow_version_id,
         finalNodeId,
         currentNode?.type || "UNKNOWN",
-        status === "COMPLETED" ? "COMPLETE" : status === "PAUSED_AGENT_HANDOFF" ? "HANDOFF" : "TRANSITION",
+        finalStatus === "COMPLETED" ? "COMPLETE" : finalStatus === "PAUSED_AGENT_HANDOFF" ? "HANDOFF" : "TRANSITION",
         JSON.stringify({ accumulatedReplies, collectedData })
       );
     } catch (e) {}
@@ -1655,10 +1244,10 @@ async function processTurn({
     handled: true,
     sessionKey,
     sessionId: session?.id || 1,
-    flowId: session?.flow_id || 1,
-    flowVersionId: session?.flow_version_id || 1,
+    flowId: session?.flow_id || flow?.id || 1,
+    flowVersionId: session?.flow_version_id || flowVersion?.id || 1,
     currentNodeId: finalNodeId,
-    sessionStatus: status,
+    sessionStatus: finalStatus,
     replyText: combinedReplyText,
     replyInteractive: interactivePayload,
     pendingDelay,
@@ -1697,7 +1286,7 @@ async function resumeScheduledNode({
   }
 
   // Update session current_node_id to target node before processing turn
-  db.prepare("UPDATE conversation_flow_sessions SET current_node_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(nextNode.id, session.id);
+  db.prepare("UPDATE conversation_flow_sessions SET current_node_id = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?").run(nextNode.id, session.id);
 
   // Execute turn starting from target node
   return processTurn({
@@ -1714,6 +1303,12 @@ async function resumeScheduledNode({
 }
 
 module.exports = {
+  normalizePhone,
+  toMysqlUtc,
+  parseUtcMs,
+  getActiveSession,
+  upsertActiveSession,
+  resolveNextNodeId,
   interpolateVariables,
   parseDateInput,
   parseGuestCounts,

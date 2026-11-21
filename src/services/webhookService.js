@@ -11,6 +11,17 @@ const isSandboxOrTestPhone = (phone) => {
   return p === "919876543210" || p.startsWith("9190000") || p.startsWith("9112345") || p.startsWith("0000");
 };
 
+const parseUtcMs = (val) => {
+  if (!val) return 0;
+  if (val instanceof Date) return val.getTime();
+  const str = String(val).trim();
+  if (!str) return 0;
+  if (str.endsWith('Z') || str.includes('+')) {
+    return new Date(str).getTime();
+  }
+  return new Date(str.replace(' ', 'T') + 'Z').getTime();
+};
+
 const sendTextMessage = async (params) => {
   if (params?.customCredentials?.isSimulation || isSandboxOrTestPhone(params?.to)) {
     return { success: true, messageId: `mock_txt_${Date.now()}` };
@@ -1952,7 +1963,7 @@ class WebhookService {
         }
       }
 
-      const receivedAtMs = replyRecord.received_at ? new Date(replyRecord.received_at).getTime() : Date.now();
+      const receivedAtMs = replyRecord.received_at ? parseUtcMs(replyRecord.received_at) : Date.now();
       const isWithinMeta24hWindow = (Date.now() - receivedAtMs) <= 24 * 60 * 60 * 1000;
       if (!isWithinMeta24hWindow && !isSimulation) {
         console.log(`[Webhook Flow] Inbound message from ${cleanPhone} received outside Meta 24-hour customer window (${replyRecord.received_at}). Suppressing freeform reply.`);
@@ -1965,19 +1976,25 @@ class WebhookService {
       // STRICT WATERFALL: Active Session First -> Trigger Matching -> Default Published Flow -> Legacy Fallback
       const flowEngine = require("./conversationFlowEngine");
 
-      // 1. ACTIVE SESSION FIRST: Lookup using strict expiration check against NOW()
+      // 1. ACTIVE SESSION FIRST: Lookup using strict expiration check against UTC_TIMESTAMP()
       let activeFlowSession = null;
+      const normPhoneDigits = String(cleanPhone || "").replace(/\D/g, "");
       try {
-        activeFlowSession = db.prepare(`
-          SELECT s.*, f.status as flow_status, f.name as flow_name
-          FROM conversation_flow_sessions s
-          JOIN conversation_flows f ON s.flow_id = f.id
-          WHERE s.sender_phone = ? 
-            AND s.session_status = 'ACTIVE' 
-            AND (s.expires_at IS NULL OR s.expires_at > NOW())
-          ORDER BY s.id DESC
-          LIMIT 1
-        `).get(cleanPhone);
+        if (typeof flowEngine.getActiveSession === 'function') {
+          activeFlowSession = flowEngine.getActiveSession(1, normPhoneDigits);
+        }
+        if (!activeFlowSession) {
+          activeFlowSession = db.prepare(`
+            SELECT s.*, f.status as flow_status, f.name as flow_name
+            FROM conversation_flow_sessions s
+            JOIN conversation_flows f ON s.flow_id = f.id
+            WHERE (s.sender_phone = ? OR s.sender_phone = ? OR s.sender_phone = ?) 
+              AND s.session_status = 'ACTIVE' 
+              AND (s.expires_at IS NULL OR s.expires_at > UTC_TIMESTAMP())
+            ORDER BY s.id DESC
+            LIMIT 1
+          `).get(normPhoneDigits, cleanPhone, `+${normPhoneDigits}`);
+        }
       } catch (sessErr) {
         console.warn("[Webhook Flow] Active session lookup note:", sessErr.message);
       }
@@ -1990,7 +2007,7 @@ class WebhookService {
       if (activeFlowSession && isResetKeyword) {
         console.log(`[Webhook Flow] Customer ${cleanPhone} requested reset ('${normInputLower}'). Expiring session #${activeFlowSession.id} for fresh start.`);
         try {
-          db.prepare("UPDATE conversation_flow_sessions SET session_status = 'EXPIRED', updated_at = NOW() WHERE id = ?").run(activeFlowSession.id);
+          db.prepare("UPDATE conversation_flow_sessions SET session_status = 'EXPIRED', updated_at = UTC_TIMESTAMP() WHERE id = ?").run(activeFlowSession.id);
         } catch (e) {}
         activeFlowSession = null;
       }
@@ -1998,7 +2015,7 @@ class WebhookService {
       if (activeFlowSession && isCancelKeyword) {
         console.log(`[Webhook Flow] Customer ${cleanPhone} requested cancellation ('${normInputLower}'). Terminating session #${activeFlowSession.id}.`);
         try {
-          db.prepare("UPDATE conversation_flow_sessions SET session_status = 'CANCELLED', updated_at = NOW() WHERE id = ?").run(activeFlowSession.id);
+          db.prepare("UPDATE conversation_flow_sessions SET session_status = 'CANCELLED', updated_at = UTC_TIMESTAMP() WHERE id = ?").run(activeFlowSession.id);
         } catch (e) {}
         try {
           await sendTextMessage({
@@ -2020,15 +2037,15 @@ class WebhookService {
           SELECT j.*, s.flow_id, s.current_node_id
           FROM workflow_scheduled_jobs j
           JOIN conversation_flow_sessions s ON (j.session_id = s.id OR j.session_id = s.session_key)
-          WHERE s.sender_phone = ? AND j.status = 'PENDING' AND j.cancel_on_reply = 1
-        `).all(cleanPhone);
+          WHERE (s.sender_phone = ? OR s.sender_phone = ?) AND j.status = 'PENDING' AND j.cancel_on_reply = 1
+        `).all(normPhoneDigits, cleanPhone);
 
         if (pendingJobs && pendingJobs.length > 0) {
           for (const job of pendingJobs) {
             console.log(`[Webhook Flow] Customer ${cleanPhone} replied early. Cancelling pending delay job #${job.id}.`);
             db.prepare(`
               UPDATE workflow_scheduled_jobs
-              SET status = 'CANCELLED', last_error = 'Customer replied before delay elapsed (cancel_on_reply)', updated_at = NOW()
+              SET status = 'CANCELLED', last_error = 'Customer replied before delay elapsed (cancel_on_reply)', updated_at = UTC_TIMESTAMP()
               WHERE id = ?
             `).run(job.id);
           }
