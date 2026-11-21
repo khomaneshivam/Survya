@@ -343,6 +343,35 @@ function markAllAsRead(req, res) {
 }
 
 /**
+ * Marks all messages in a specific conversation as read by phone number
+ */
+function markConversationAsRead(req, res) {
+  try {
+    const { phone } = req.params;
+    const result = webhookService.markConversationAsRead(phone);
+    return res.status(200).json({ success: true, message: "Conversation marked as read.", updated: result.updated });
+  } catch (error) {
+    console.error("[WebhookController] markConversationAsRead error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * Retrieves full conversation messages for a specific phone number with pagination
+ */
+function getConversationMessages(req, res) {
+  try {
+    const { phone } = req.params;
+    const { limit, before, offset } = req.query;
+    const result = webhookService.getConversationMessages({ phone, limit, before, offset });
+    return res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    console.error("[WebhookController] getConversationMessages error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
  * Deletes a specific customer reply
  */
 function deleteReply(req, res) {
@@ -539,6 +568,8 @@ module.exports = {
   listReplies,
   markAsRead,
   markAllAsRead,
+  markConversationAsRead,
+  getConversationMessages,
   deleteReply,
   deleteConversation,
   simulateTestReply,

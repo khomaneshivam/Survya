@@ -37,7 +37,8 @@ import {
   Edit3,
   Lock,
   Code,
-  SlidersHorizontal
+  SlidersHorizontal,
+  History
 } from 'lucide-react';
 import { formatIndianTime } from '../utils/indianTime';
 
@@ -383,6 +384,98 @@ function getChannelMeta(channelType, convo) {
   }
 }
 
+/**
+ * Formats a raw database message row from customer_replies or campaign_recipients into chat bubble objects
+ */
+function formatInboxMessage(r, allRecords = []) {
+  const isOutbound = r.message_type === 'outbound';
+  const incomingText = r.message_body || r.message_text || '';
+  const isAutoOutbound = Boolean(
+    r.user_id === 'bot' ||
+    r.source === 'CONVERSATION_FLOW' ||
+    r.reply_status === 'AUTO_REPLIED'
+  );
+
+  let resolvedMediaUrl = r.media_url || null;
+  let resolvedMediaType = r.media_type || null;
+  let resolvedCaption = r.media_caption || null;
+  let rawMediaId = null;
+
+  if (!resolvedMediaUrl && r.raw_payload) {
+    try {
+      const raw = typeof r.raw_payload === 'string' ? JSON.parse(r.raw_payload) : r.raw_payload;
+      const mediaObj = raw.image || raw.video || raw.document || raw.audio || raw.sticker;
+      if (mediaObj?.id) {
+        rawMediaId = mediaObj.id;
+        resolvedMediaUrl = `/api/media/inbound/${mediaObj.id}`;
+        resolvedMediaType = r.message_type || (raw.image ? 'image' : (raw.video ? 'video' : 'image'));
+        resolvedCaption = resolvedCaption || mediaObj.caption || mediaObj.filename || null;
+      }
+    } catch (e) {}
+  }
+
+  const msgs = [];
+  if (isOutbound) {
+    msgs.push({
+      id: r.id || `out_${Math.random()}`,
+      from_phone: isAutoOutbound ? 'Auto-Reply Bot' : 'Agent',
+      text: incomingText || r.reply_text || '',
+      media_url: resolvedMediaUrl,
+      media_type: resolvedMediaType,
+      media_caption: resolvedCaption,
+      time: r.received_at,
+      is_outbound: true,
+      status: r.reply_status || 'SENT',
+      is_auto: isAutoOutbound,
+      campaign_name: r.campaign_name || null
+    });
+  } else {
+    const isMediaMsg = Boolean(resolvedMediaUrl || rawMediaId || r.message_type === 'image' || r.message_type === 'video');
+    if (incomingText || isMediaMsg) {
+      msgs.push({
+        id: r.id,
+        from_phone: r.from_phone,
+        text: incomingText,
+        media_url: resolvedMediaUrl,
+        media_type: resolvedMediaType || (r.message_type === 'image' ? 'image' : null),
+        media_caption: resolvedCaption,
+        media_id: rawMediaId,
+        time: r.received_at,
+        is_outbound: false,
+        is_read: r.is_read
+      });
+    }
+
+    if (r.reply_text && r.reply_text.trim()) {
+      const trimmedReply = r.reply_text.trim();
+      const phoneDigits = String(r.from_phone || '').replace(/\D/g, '');
+      const hasMatchingOutbound = (allRecords || []).some(other =>
+        String(other.from_phone || '').replace(/\D/g, '') === phoneDigits &&
+        other.message_type === 'outbound' &&
+        ((other.message_body && other.message_body.trim() === trimmedReply) ||
+         (other.reply_text && other.reply_text.trim() === trimmedReply))
+      );
+
+      if (!hasMatchingOutbound) {
+        msgs.push({
+          id: `${r.id}_reply`,
+          from_phone: 'Auto-Reply Bot',
+          text: r.reply_text,
+          media_url: null,
+          media_type: null,
+          media_caption: null,
+          time: r.reply_sent_at || r.received_at,
+          is_outbound: true,
+          status: r.reply_status || 'SENT',
+          is_auto: true
+        });
+      }
+    }
+  }
+
+  return msgs;
+}
+
 export default function InboxPage({ onNavigate }) {
   const { token } = useAuth();
   const [conversations, setConversations] = useState([]);
@@ -411,6 +504,12 @@ export default function InboxPage({ onNavigate }) {
   const [flowBodyText, setFlowBodyText] = useState('');
   const [flowCtaText, setFlowCtaText] = useState('Open Form');
   const [sendingFlow, setSendingFlow] = useState(false);
+
+  // Conversation pagination & history loading state
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loadingPrevious, setLoadingPrevious] = useState(false);
+  const [hasMorePrevious, setHasMorePrevious] = useState(false);
+  const [totalConversationMessages, setTotalConversationMessages] = useState(0);
 
   // Real-time Bot Pause / Takeover status for active contact
   const [selectedBotStatus, setSelectedBotStatus] = useState({ isPaused: false, remainingMinutes: 0 });
@@ -487,6 +586,135 @@ export default function InboxPage({ onNavigate }) {
   const fileInputRef = useRef(null);
   const initialSelectionDone = useRef(false);
   const previousPhoneRef = useRef(null);
+
+  /**
+   * Fetches the complete message history for the selected conversation from the server
+   */
+  async function fetchFullConversation(phone, silent = false) {
+    if (!phone) return;
+    if (!silent) setLoadingHistory(true);
+    try {
+      const cleanPhone = String(phone).replace(/\D/g, '');
+      const res = await fetch(`/api/inbox/conversation/${encodeURIComponent(cleanPhone || phone)}?limit=100`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.messages)) {
+        const rawRows = data.messages;
+        const formattedMsgs = [];
+        rawRows.forEach(row => {
+          const formatted = formatInboxMessage(row, rawRows);
+          formattedMsgs.push(...formatted);
+        });
+
+        // Chronological sort & deduplicate consecutive identical outbound
+        formattedMsgs.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+        const deduped = formattedMsgs.filter((m, idx, arr) => {
+          if (idx === 0) return true;
+          const prev = arr[idx - 1];
+          if (m.is_outbound && prev.is_outbound && m.text && prev.text && m.text.trim() === prev.text.trim()) {
+            const diffMs = Math.abs(new Date(m.time).getTime() - new Date(prev.time).getTime());
+            if (isNaN(diffMs) || diffMs < 10000) return false;
+          }
+          return true;
+        });
+
+        setHasMorePrevious(Boolean(data.hasMore));
+        setTotalConversationMessages(data.total || deduped.length);
+
+        setSelectedConvo(prev => {
+          if (!prev) return prev;
+          const prevDigits = String(prev.phone || '').replace(/\D/g, '');
+          const targetDigits = String(phone || '').replace(/\D/g, '');
+          if (prevDigits !== targetDigits && prev.phone !== phone) return prev;
+          return {
+            ...prev,
+            messages: deduped
+          };
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to fetch full conversation history:', e);
+    } finally {
+      if (!silent) setLoadingHistory(false);
+    }
+  }
+
+  /**
+   * Loads older message history (prepending before the oldest visible message)
+   */
+  async function handleLoadPreviousMessages() {
+    if (!selectedConvo?.phone || loadingPrevious || !hasMorePrevious) return;
+    const canvas = chatCanvasRef.current;
+    const prevScrollHeight = canvas ? canvas.scrollHeight : 0;
+    const prevScrollTop = canvas ? canvas.scrollTop : 0;
+
+    const currentMsgs = selectedConvo.messages || [];
+    const oldestMsg = currentMsgs.length > 0 ? currentMsgs[0] : null;
+    const beforeTime = oldestMsg?.time;
+
+    setLoadingPrevious(true);
+    try {
+      const cleanPhone = String(selectedConvo.phone).replace(/\D/g, '');
+      let url = `/api/inbox/conversation/${encodeURIComponent(cleanPhone || selectedConvo.phone)}?limit=100`;
+      if (beforeTime) {
+        url += `&before=${encodeURIComponent(beforeTime)}`;
+      }
+
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.messages) && data.messages.length > 0) {
+        const rawRows = data.messages;
+        const formattedOlder = [];
+        rawRows.forEach(row => {
+          const formatted = formatInboxMessage(row, rawRows);
+          formattedOlder.push(...formatted);
+        });
+
+        formattedOlder.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+
+        // Deduplicate against already loaded messages
+        const existingIds = new Set(currentMsgs.map(m => String(m.id)));
+        const newUniqueOlder = formattedOlder.filter(m => !existingIds.has(String(m.id)));
+
+        if (newUniqueOlder.length > 0) {
+          const combined = [...newUniqueOlder, ...currentMsgs];
+          combined.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+
+          const deduped = combined.filter((m, idx, arr) => {
+            if (idx === 0) return true;
+            const prev = arr[idx - 1];
+            if (m.is_outbound && prev.is_outbound && m.text && prev.text && m.text.trim() === prev.text.trim()) {
+              const diffMs = Math.abs(new Date(m.time).getTime() - new Date(prev.time).getTime());
+              if (isNaN(diffMs) || diffMs < 10000) return false;
+            }
+            return true;
+          });
+
+          setSelectedConvo(prev => prev ? { ...prev, messages: deduped } : prev);
+        }
+
+        setHasMorePrevious(Boolean(data.hasMore));
+        if (data.total) setTotalConversationMessages(data.total);
+
+        // Preserve scroll position so view doesn't jump
+        requestAnimationFrame(() => {
+          if (canvas) {
+            const newScrollHeight = canvas.scrollHeight;
+            canvas.scrollTop = (newScrollHeight - prevScrollHeight) + prevScrollTop;
+          }
+        });
+      } else {
+        setHasMorePrevious(false);
+      }
+    } catch (err) {
+      console.error('Failed to load previous messages:', err);
+    } finally {
+      setLoadingPrevious(false);
+    }
+  }
 
   // Close lightbox on Escape key
   useEffect(() => {
@@ -1165,95 +1393,23 @@ export default function InboxPage({ onNavigate }) {
             }
           }
 
-          if (r.is_read === 0) {
-            convos[phoneKey].unreadCount += 1;
-          }
-
-          const isOutbound = r.message_type === 'outbound';
-          const incomingText = r.message_body || r.message_text || '';
-          const isAutoOutbound = Boolean(
-            r.user_id === 'bot' ||
-            r.source === 'CONVERSATION_FLOW' ||
-            r.reply_status === 'AUTO_REPLIED'
+          const isCurrentlyActive = Boolean(
+            selectedConvo?.phone &&
+            (selectedConvo.phone === phoneKey || String(selectedConvo.phone).replace(/\D/g, '') === String(phoneKey).replace(/\D/g, ''))
           );
 
-          // Determine if media exists or can be extracted from raw_payload or media_url
-          let resolvedMediaUrl = r.media_url || null;
-          let resolvedMediaType = r.media_type || null;
-          let resolvedCaption = r.media_caption || null;
-          let rawMediaId = null;
-
-          if (!resolvedMediaUrl && r.raw_payload) {
-            try {
-              const raw = typeof r.raw_payload === 'string' ? JSON.parse(r.raw_payload) : r.raw_payload;
-              const mediaObj = raw.image || raw.video || raw.document || raw.audio || raw.sticker;
-              if (mediaObj?.id) {
-                rawMediaId = mediaObj.id;
-                resolvedMediaUrl = `/api/media/inbound/${mediaObj.id}`;
-                resolvedMediaType = r.message_type || (raw.image ? 'image' : (raw.video ? 'video' : 'image'));
-                resolvedCaption = resolvedCaption || mediaObj.caption || mediaObj.filename || null;
-              }
-            } catch (e) {}
+          if (r.is_read === 0 && !isCurrentlyActive) {
+            convos[phoneKey].unreadCount += 1;
+          } else if (r.is_read === 0 && isCurrentlyActive) {
+            // Auto mark-as-read since active conversation is open
+            fetch(`/api/inbox/conversation/${encodeURIComponent(phoneKey)}/mark-read`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}` }
+            }).catch(() => {});
           }
 
-          if (isOutbound) {
-            convos[phoneKey].messages.push({
-              id: r.id || `out_${Math.random()}`,
-              from_phone: isAutoOutbound ? 'Auto-Reply Bot' : 'Agent',
-              text: incomingText || r.reply_text || '',
-              media_url: resolvedMediaUrl,
-              media_type: resolvedMediaType,
-              media_caption: resolvedCaption,
-              time: r.received_at,
-              is_outbound: true,
-              status: r.reply_status || 'SENT',
-              is_auto: isAutoOutbound,
-              campaign_name: r.campaign_name || null
-            });
-          } else {
-            const isMediaMsg = Boolean(resolvedMediaUrl || rawMediaId || r.message_type === 'image' || r.message_type === 'video');
-            if (incomingText || isMediaMsg) {
-              convos[phoneKey].messages.push({
-                id: r.id,
-                from_phone: r.from_phone,
-                text: incomingText,
-                media_url: resolvedMediaUrl,
-                media_type: resolvedMediaType || (r.message_type === 'image' ? 'image' : null),
-                media_caption: resolvedCaption,
-                media_id: rawMediaId,
-                time: r.received_at,
-                is_outbound: false,
-                is_read: r.is_read
-              });
-            }
-
-            // If an auto-reply was recorded on this inbound row, only synthesize a message bubble
-            // if NO outbound record already exists in the conversation timeline with this text
-            if (r.reply_text && r.reply_text.trim()) {
-              const trimmedReply = r.reply_text.trim();
-              const hasMatchingOutbound = customerReplies.some(other =>
-                String(other.from_phone).replace(/\D/g, '') === phoneKey &&
-                other.message_type === 'outbound' &&
-                ((other.message_body && other.message_body.trim() === trimmedReply) ||
-                 (other.reply_text && other.reply_text.trim() === trimmedReply))
-              );
-
-              if (!hasMatchingOutbound) {
-                convos[phoneKey].messages.push({
-                  id: `${r.id}_reply`,
-                  from_phone: 'Auto-Reply Bot',
-                  text: r.reply_text,
-                  media_url: null, // Critical: do NOT duplicate customer's incoming media onto agent text auto-reply
-                  media_type: null,
-                  media_caption: null,
-                  time: r.reply_sent_at || r.received_at,
-                  is_outbound: true,
-                  status: r.reply_status || 'SENT',
-                  is_auto: true
-                });
-              }
-            }
-          }
+          const formatted = formatInboxMessage(r, rawList);
+          formatted.forEach(m => convos[phoneKey].messages.push(m));
         });
 
         // Sort messages chronologically (oldest at top, newest at bottom) and deduplicate consecutive identical outbound replies
@@ -1307,19 +1463,45 @@ export default function InboxPage({ onNavigate }) {
           }
 
           if (targetPhone) {
-            const updated = sortedConvos.find(c => c.phone === targetPhone);
+            const targetDigits = String(targetPhone).replace(/\D/g, '');
+            const updated = sortedConvos.find(c => c.phone === targetPhone || String(c.phone).replace(/\D/g, '') === targetDigits);
             if (updated) {
-              return updated;
+              if (prev && (prev.phone === targetPhone || String(prev.phone).replace(/\D/g, '') === targetDigits) && prev.messages && prev.messages.length > 0) {
+                const existingIds = new Set(prev.messages.map(m => String(m.id)));
+                const incomingNew = updated.messages.filter(m => !existingIds.has(String(m.id)));
+                if (incomingNew.length > 0) {
+                  const merged = [...prev.messages, ...incomingNew];
+                  merged.sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime());
+                  return {
+                    ...updated,
+                    messages: merged,
+                    unreadCount: 0
+                  };
+                }
+                return {
+                  ...updated,
+                  messages: prev.messages,
+                  unreadCount: 0
+                };
+              }
+              return { ...updated, unreadCount: 0 };
             }
           }
 
           // Initial load auto-select ONLY on wider desktop screens (window width >= 1024px)
           if (!initialSelectionDone.current && typeof window !== 'undefined' && window.innerWidth >= 1024 && sortedConvos.length > 0) {
             initialSelectionDone.current = true;
+            const topConvo = sortedConvos[0];
             try {
-              sessionStorage.setItem('inbox_selected_phone', sortedConvos[0].phone);
+              sessionStorage.setItem('inbox_selected_phone', topConvo.phone);
             } catch (e) {}
-            return sortedConvos[0];
+            // Mark as read and fetch full history for initial selection
+            fetch(`/api/inbox/conversation/${encodeURIComponent(topConvo.phone)}/mark-read`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}` }
+            }).catch(() => {});
+            fetchFullConversation(topConvo.phone, true);
+            return { ...topConvo, unreadCount: 0 };
           }
 
           return prev || null;
@@ -1333,29 +1515,38 @@ export default function InboxPage({ onNavigate }) {
   }
 
   function handleSelectConversation(convo) {
-    setSelectedConvo(convo);
+    if (!convo) return;
+    const cleanPhone = String(convo.phone).replace(/\D/g, '');
+    setSelectedConvo({ ...convo, unreadCount: 0 });
     initialSelectionDone.current = true;
     try {
       sessionStorage.setItem('inbox_selected_phone', convo.phone);
     } catch (e) {}
 
     // Clear unread badge locally
-    if (convo.unreadCount > 0) {
-      setConversations(prev => 
-        prev.map(c => c.phone === convo.phone ? { ...c, unreadCount: 0 } : c)
-      );
-      // Mark as read in backend
-      const unreadIds = convo.messages
-        .filter(m => !m.is_outbound && m.is_read === 0 && m.id && typeof m.id === 'number')
-        .map(m => m.id);
-      
-      unreadIds.forEach(id => {
-        fetch(`/api/replies/${id}/mark-read`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` }
-        }).catch(() => {});
-      });
-    }
+    setConversations(prev => 
+      prev.map(c => (c.phone === convo.phone || (cleanPhone && String(c.phone).replace(/\D/g, '') === cleanPhone)) ? { ...c, unreadCount: 0 } : c)
+    );
+
+    // Mark as read in backend atomically for this phone
+    fetch(`/api/inbox/conversation/${encodeURIComponent(cleanPhone || convo.phone)}/mark-read`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    }).catch(() => {});
+
+    // Also mark individual unread message IDs as secondary fallback
+    const unreadIds = (convo.messages || [])
+      .filter(m => !m.is_outbound && m.is_read === 0 && m.id && typeof m.id === 'number')
+      .map(m => m.id);
+    unreadIds.forEach(id => {
+      fetch(`/api/replies/${id}/mark-read`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      }).catch(() => {});
+    });
+
+    // Fetch full conversation history from server
+    fetchFullConversation(convo.phone);
   }
 
   function handleBackToList() {
@@ -2353,7 +2544,7 @@ export default function InboxPage({ onNavigate }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.74rem', color: '#67676B', flexShrink: 0 }}>
                       <span>Source: <strong style={{ color: '#171719' }}>{activeMeta.origin}</strong></span>
                       <span style={{ color: '#D4D4D9' }}>|</span>
-                      <span>Total: <strong style={{ color: '#171719' }}>{selectedConvo.messages.length} msgs</strong></span>
+                      <span>Total: <strong style={{ color: '#171719' }}>{totalConversationMessages > selectedConvo.messages.length ? `${selectedConvo.messages.length} of ${totalConversationMessages} msgs` : `${selectedConvo.messages.length} msgs`}</strong></span>
                     </div>
                   </div>
                 );
@@ -2375,6 +2566,52 @@ export default function InboxPage({ onNavigate }) {
                   background: '#F5F5F6'
                 }}
               >
+                {/* Load Previous Messages Button */}
+                {hasMorePrevious && (
+                  <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 10px 0' }}>
+                    <button
+                      type="button"
+                      onClick={handleLoadPreviousMessages}
+                      disabled={loadingPrevious}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '6px 14px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        color: '#2F5219',
+                        background: '#EDF4E6',
+                        border: '1px solid #C3D1AC',
+                        borderRadius: '20px',
+                        cursor: loadingPrevious ? 'not-allowed' : 'pointer',
+                        boxShadow: 'var(--shadow-xs)',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {loadingPrevious ? (
+                        <>
+                          <RefreshCw size={13} className="spin-animation" />
+                          <span>Loading earlier messages...</span>
+                        </>
+                      ) : (
+                        <>
+                          <History size={13} />
+                          <span>Load earlier messages</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {loadingHistory && (
+                  <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 8px 0' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#67676B', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <RefreshCw size={11} className="spin-animation" /> Loading chat history...
+                    </span>
+                  </div>
+                )}
+
                 {selectedConvo.messages.map((m, idx) => {
                   const isOutbound = m.is_outbound;
                   const displayTime = m.time ? formatIndianTime(m.time) : '';
@@ -2731,29 +2968,6 @@ export default function InboxPage({ onNavigate }) {
                   title="Attach Image or Video (JPG, PNG, MP4, 3GP, MOV)"
                 >
                   <Paperclip size={18} />
-                </button>
-
-                {/* Send WhatsApp Flow Button */}
-                <button
-                  type="button"
-                  onClick={handleOpenFlowModal}
-                  style={{
-                    background: '#F3F6EE',
-                    border: '1px solid #C3D1AC',
-                    color: '#2F5219',
-                    borderRadius: '8px',
-                    width: '42px',
-                    height: '42px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                    transition: 'all 0.15s ease'
-                  }}
-                  title="Send Interactive WhatsApp Flow Form"
-                >
-                  <Layers size={18} />
                 </button>
 
                 {/* Multi-line Auto-Expanding Textarea with Shift+Enter Support */}

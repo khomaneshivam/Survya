@@ -230,7 +230,7 @@ function seedDefaults(db, config) {
       ["PRE_CHECKIN_OFFSET_DAYS", "1"],
       ["PRE_CHECKIN_TEMPLATE", "kt_best_route_to_property"],
       ["CHECKOUT_TEMPLATE", "kt_checkout_belongings_reminder"],
-      ["WHATSAPP_FLOWS_ENABLED", config.WHATSAPP_FLOWS_ENABLED ? "true" : "false"]
+      ["WHATSAPP_FLOWS_ENABLED", "false"]
     ];
 
     for (const [k, v] of defaults) {

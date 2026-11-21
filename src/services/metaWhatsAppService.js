@@ -1174,6 +1174,10 @@ async function sendFlowMessage({
   screenData = {},
   customCredentials = null
 }) {
+  if (getSetting("WHATSAPP_FLOWS_ENABLED") !== "true") {
+    return { success: false, error: "WhatsApp Flows are currently disabled. Use standard WhatsApp messaging." };
+  }
+
   const creds = resolveCredentials(customCredentials);
   const defaultCountry = getSetting("DEFAULT_COUNTRY_CODE") || "91";
   const effectiveFlowId = flowId || metaFlowId;

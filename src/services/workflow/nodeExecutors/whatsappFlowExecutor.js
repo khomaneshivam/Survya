@@ -40,9 +40,21 @@ async function execute(node, context) {
     };
   }
 
-  // Entering node: prepare interactive Flow CTA
+  // Entering node: prepare interactive Flow CTA or conversational fallback
   const flowCta = config.flowCta || 'Open Form';
   const flowTitle = config.flowTitle || 'Please fill in details';
+
+  const { getSetting } = require('../../../config/database');
+  const flowsEnabled = getSetting('WHATSAPP_FLOWS_ENABLED') === 'true';
+
+  if (!flowsEnabled) {
+    return {
+      action: 'WAIT_FOR_INPUT',
+      replyMessages: [`📋 *${flowTitle}*\n\nPlease reply with your details directly in this chat:`],
+      traceNote: `WhatsApp Flows disabled. Prompted customer with standard in-chat conversational input for "${flowTitle}".`
+    };
+  }
+
   const promptText = `📋 *${flowTitle}*\n\nPlease tap the button below to complete the secure in-chat form.`;
 
   return {

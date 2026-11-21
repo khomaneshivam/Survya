@@ -1535,6 +1535,152 @@ class WebhookService {
   }
 
   /**
+   * Marks all unread messages for a specific customer phone number as read
+   */
+  markConversationAsRead(phone) {
+    if (!phone) return { updated: 0 };
+    const rawPhone = String(phone).trim();
+    const cleanDigits = rawPhone.replace(/\D/g, "");
+    const withPlus = cleanDigits ? `+${cleanDigits}` : "";
+
+    const result = db.prepare(`
+      UPDATE customer_replies 
+      SET is_read = 1 
+      WHERE (from_phone = ? OR from_phone = ? OR from_phone = ?)
+        AND is_read = 0
+    `).run(rawPhone, cleanDigits, withPlus);
+
+    return { updated: result.changes };
+  }
+
+  /**
+   * Retrieves conversation message history for a specific phone number with pagination (load previous chat)
+   */
+  getConversationMessages({ phone, limit = 100, before = null, offset = 0 }) {
+    if (!phone) return { phone: "", messages: [], total: 0, hasMore: false };
+    const rawPhone = String(phone).trim();
+    const cleanDigits = rawPhone.replace(/\D/g, "");
+    const withPlus = cleanDigits ? `+${cleanDigits}` : "";
+
+    const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
+    const parsedOffset = Math.max(parseInt(offset, 10) || 0, 0);
+
+    const conditions = ["(m.from_phone = ? OR m.from_phone = ? OR m.from_phone = ?)"];
+    const params = [rawPhone, cleanDigits, withPlus];
+
+    if (before && String(before).trim()) {
+      conditions.push("m.received_at < ?");
+      params.push(String(before).trim());
+    }
+
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+    const cteSql = `
+      WITH combined_messages AS (
+        SELECT 
+          r.id as id,
+          r.wa_message_id as wa_message_id,
+          r.from_phone as from_phone,
+          r.customer_name as customer_name,
+          r.message_type as message_type,
+          r.message_body as message_body,
+          r.raw_payload as raw_payload,
+          r.context_message_id as context_message_id,
+          r.campaign_id as campaign_id,
+          r.is_read as is_read,
+          r.received_at as received_at,
+          r.reply_text as reply_text,
+          r.reply_sent_at as reply_sent_at,
+          r.reply_status as reply_status,
+          r.media_url as media_url,
+          r.media_type as media_type,
+          r.media_caption as media_caption,
+          r.user_id as user_id,
+          r.link_id as link_id,
+          r.source as source,
+          l.title as link_title,
+          l.slug as link_slug,
+          c.name as campaign_name,
+          c.user_id as campaign_user_id
+        FROM customer_replies r
+        LEFT JOIN campaigns c ON r.campaign_id = c.id
+        LEFT JOIN chat_links l ON r.link_id = l.id
+        WHERE r.from_phone = ? OR r.from_phone = ? OR r.from_phone = ?
+
+        UNION ALL
+
+        SELECT 
+          CONCAT('cr_', cr.id) as id,
+          cr.meta_message_id as wa_message_id,
+          cr.clean_phone as from_phone,
+          cr.contact_name as customer_name,
+          'outbound' as message_type,
+          cr.rendered_message as message_body,
+          cr.raw_data as raw_payload,
+          NULL as context_message_id,
+          cr.campaign_id as campaign_id,
+          1 as is_read,
+          cr.sent_at as received_at,
+          NULL as reply_text,
+          NULL as reply_sent_at,
+          cr.status as reply_status,
+          NULL as media_url,
+          NULL as media_type,
+          NULL as media_caption,
+          c.user_id as user_id,
+          NULL as link_id,
+          'CAMPAIGN' as source,
+          NULL as link_title,
+          NULL as link_slug,
+          c.name as campaign_name,
+          c.user_id as campaign_user_id
+        FROM campaign_recipients cr
+        LEFT JOIN campaigns c ON cr.campaign_id = c.id
+        WHERE (cr.clean_phone = ? OR cr.clean_phone = ?) AND cr.status IN ('SENT', 'DELIVERED', 'READ') AND cr.sent_at IS NOT NULL
+      )
+    `;
+
+    const cteParams = [rawPhone, cleanDigits, withPlus, cleanDigits, rawPhone];
+
+    // Count total messages for this contact
+    let totalCount = 0;
+    try {
+      const countSql = `${cteSql} SELECT COUNT(*) as total FROM combined_messages m`;
+      totalCount = db.prepare(countSql).get(...cteParams)?.total || 0;
+    } catch (e) {
+      console.warn("[WebhookService] getConversationMessages count error:", e.message);
+    }
+
+    // Fetch messages (fetch parsedLimit + 1 to know if hasMore)
+    const dataSql = `
+      ${cteSql}
+      SELECT * FROM combined_messages m
+      ${whereClause}
+      ORDER BY m.received_at DESC, m.id DESC
+      LIMIT ? OFFSET ?
+    `;
+
+    const dataParams = [...cteParams, ...params, parsedLimit + 1, parsedOffset];
+    const rawRows = db.prepare(dataSql).all(...dataParams);
+
+    const hasMore = rawRows.length > parsedLimit;
+    const rows = hasMore ? rawRows.slice(0, parsedLimit) : rawRows;
+
+    // Reverse to chronological order (oldest first)
+    rows.reverse();
+
+    const oldestTime = rows.length > 0 ? rows[0].received_at : null;
+
+    return {
+      phone: cleanDigits || rawPhone,
+      messages: rows,
+      total: totalCount,
+      hasMore,
+      oldestTime
+    };
+  }
+
+  /**
    * Deletes a specific reply
    */
   deleteReply(id) {
@@ -2439,7 +2585,7 @@ class WebhookService {
           return { success: true, handledBy: "DYNAMIC_OPTION_STAFF", replyText: customStaffMsg, messageId: sentMsgId, handoff: true };
         }
 
-        if (dynAction === "DISPATCH_FLOW") {
+        if (dynAction === "DISPATCH_FLOW" && getSetting("WHATSAPP_FLOWS_ENABLED") === "true") {
           const targetFlowId = matchedDyn.flowId || matchedDyn.selectedFlowId || autoReplySettings.selectedFlowId;
           const flow = targetFlowId ? db.prepare("SELECT * FROM whatsapp_flows WHERE (id = ? OR meta_flow_id = ?)").get(targetFlowId, targetFlowId) : null;
           if (flow) {
@@ -2985,7 +3131,7 @@ class WebhookService {
         // 5. In-Chat Flow / General Welcome / Dates & Values Intake
         else if (rawPayload && (rawPayload.interactive_type === "in_chat_flow" || (rawPayload.interactive_type === "flow_step" && rawPayload.step === "DATE_SELECTION"))) {
           let flowDispatched = false;
-          const flowsEnabled = getSetting("WHATSAPP_FLOWS_ENABLED") !== "false";
+          const flowsEnabled = getSetting("WHATSAPP_FLOWS_ENABLED") === "true";
 
           if (flowsEnabled) {
             let effectiveFlow = null;

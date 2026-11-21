@@ -431,6 +431,9 @@ router.post("/replies/dynamic-options", authenticateToken, webhookController.sav
 router.post("/replies/:id/reply", authenticateToken, webhookController.sendManualReply);
 router.post("/replies/:id/mark-read", authenticateToken, webhookController.markAsRead);
 router.post("/replies/mark-all-read", authenticateToken, webhookController.markAllAsRead);
+router.get("/inbox/conversation/:phone", authenticateToken, webhookController.getConversationMessages);
+router.post("/inbox/conversation/:phone/mark-read", authenticateToken, webhookController.markConversationAsRead);
+router.post("/replies/conversation/:phone/mark-read", authenticateToken, webhookController.markConversationAsRead);
 router.delete("/replies/:id", authenticateToken, webhookController.deleteReply);
 router.delete("/inbox/conversation/:phone", authenticateToken, webhookController.deleteConversation);
 router.delete("/inbox/conversation", authenticateToken, webhookController.deleteConversation);
