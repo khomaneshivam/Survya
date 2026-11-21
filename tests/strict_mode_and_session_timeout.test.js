@@ -51,12 +51,12 @@ describe("SARVYA Strict Inbound-Only Mode & Connection Open Timeout Test Suite",
         session_key, tenant_id, property_id, channel, sender_phone,
         flow_id, flow_version_id, current_node_id, session_status,
         collected_data_json, last_interaction_at, expires_at, created_at, updated_at
-      ) VALUES (?, 1, 1, 'WHATSAPP', ?, 1, 1, 'node_select_room', 'ACTIVE', '{"enquiry_type":"STAY"}', DATE_SUB(NOW(), INTERVAL 45 MINUTE), DATE_SUB(NOW(), INTERVAL 15 MINUTE), DATE_SUB(NOW(), INTERVAL 45 MINUTE), DATE_SUB(NOW(), INTERVAL 45 MINUTE))
+      ) VALUES (?, 1, 1, 'WHATSAPP', ?, 1, 1, 'node_select_room', 'ACTIVE', '{"enquiry_type":"STAY"}', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 MINUTE), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 MINUTE), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 MINUTE))
       ON DUPLICATE KEY UPDATE
         session_status = 'ACTIVE',
         current_node_id = 'node_select_room',
-        last_interaction_at = DATE_SUB(NOW(), INTERVAL 45 MINUTE),
-        expires_at = DATE_SUB(NOW(), INTERVAL 15 MINUTE)
+        last_interaction_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 45 MINUTE),
+        expires_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 15 MINUTE)
     `).run(sessionKey, testPhone);
 
     const oldSession = db.prepare("SELECT * FROM conversation_flow_sessions WHERE session_key = ?").get(sessionKey);
@@ -103,10 +103,10 @@ describe("SARVYA Strict Inbound-Only Mode & Connection Open Timeout Test Suite",
         session_key, tenant_id, property_id, channel, sender_phone,
         flow_id, flow_version_id, current_node_id, session_status,
         collected_data_json, last_interaction_at, expires_at, created_at, updated_at
-      ) VALUES (?, 1, 1, 'WHATSAPP', ?, 1, 1, 'node_welcome', 'ACTIVE', '{}', DATE_SUB(NOW(), INTERVAL 60 MINUTE), DATE_SUB(NOW(), INTERVAL 30 MINUTE), DATE_SUB(NOW(), INTERVAL 60 MINUTE), DATE_SUB(NOW(), INTERVAL 60 MINUTE))
+      ) VALUES (?, 1, 1, 'WHATSAPP', ?, 1, 1, 'node_welcome', 'ACTIVE', '{}', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 MINUTE), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 MINUTE), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 MINUTE), DATE_SUB(UTC_TIMESTAMP(), INTERVAL 60 MINUTE))
       ON DUPLICATE KEY UPDATE
         session_status = 'ACTIVE',
-        expires_at = DATE_SUB(NOW(), INTERVAL 30 MINUTE)
+        expires_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 MINUTE)
     `).run(sweepKey, sweepPhone);
 
     // Call silent sweep

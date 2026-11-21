@@ -9,6 +9,7 @@ const pricingService = require("./hospitalityPricingService");
 const enquiryService = require("./enquiryService");
 const { getNodeExecutor } = require("./workflow/nodeExecutors");
 const { evaluateRules } = require("./workflow/expressionEvaluator");
+const { parseMysqlUtcTimestamp } = require("../utils/timeUtil");
 
 /**
  * Canonical phone normalization: strip all non-digit characters.
@@ -28,14 +29,8 @@ function toMysqlUtc(date = new Date()) {
  * Treats unqualified strings ('YYYY-MM-DD HH:MM:SS') strictly as UTC to avoid local timezone skew.
  */
 function parseUtcMs(val) {
-  if (!val) return 0;
-  if (val instanceof Date) return val.getTime();
-  const str = String(val).trim();
-  if (!str) return 0;
-  if (str.endsWith('Z') || str.includes('+')) {
-    return new Date(str).getTime();
-  }
-  return new Date(str.replace(' ', 'T') + 'Z').getTime();
+  const d = parseMysqlUtcTimestamp(val);
+  return d ? d.getTime() : 0;
 }
 
 /**
@@ -105,15 +100,23 @@ function resolveNextTransition(currentNodeId, handle, transitions = [], nodeMap 
       (h === "false" && t.condition === false)
     );
     if (match) {
-      if (nodeMap && typeof nodeMap.has === "function" && nodeMap.has(match.target)) {
-        return nodeMap.get(match.target);
+      let targetId = match.target;
+      // Prevent self-loop on max_retries or error handles (e.g. input_checkin -> input_checkin)
+      if (targetId === currentNodeId && (handle === 'max_retries' || handle === 'error' || handle === 'failure')) {
+        const fallbackTarget = nodes.find(n => n.type === 'HANDOFF' || n.type === 'HUMAN_HANDOFF' || n.type === 'END');
+        if (fallbackTarget) {
+          targetId = fallbackTarget.id;
+        }
       }
-      return { id: match.target, targetNodeId: match.target };
+      if (nodeMap && typeof nodeMap.has === "function" && nodeMap.has(targetId)) {
+        return nodeMap.get(targetId);
+      }
+      return { id: targetId, targetNodeId: targetId };
     }
   }
 
   // 2. Default handle match
-  const defaultMatch = outbound.find(t => t.sourceHandle === "default" || !t.sourceHandle);
+  const defaultMatch = outbound.find(t => (t.sourceHandle === "default" || !t.sourceHandle) && t.target !== currentNodeId);
   if (defaultMatch) {
     if (nodeMap && typeof nodeMap.has === "function" && nodeMap.has(defaultMatch.target)) {
       return nodeMap.get(defaultMatch.target);
@@ -121,8 +124,8 @@ function resolveNextTransition(currentNodeId, handle, transitions = [], nodeMap 
     return { id: defaultMatch.target, targetNodeId: defaultMatch.target };
   }
 
-  // 3. If there is only one outbound edge, route along it as universal fallback
-  if (outbound.length === 1) {
+  // 3. If there is only one outbound edge, route along it as universal fallback (unless self-loop)
+  if (outbound.length === 1 && outbound[0].target !== currentNodeId) {
     if (nodeMap && typeof nodeMap.has === "function" && nodeMap.has(outbound[0].target)) {
       return nodeMap.get(outbound[0].target);
     }
@@ -157,6 +160,8 @@ function resolveNextNodeId(node, handle = "default", transitions = [], collected
 
 /**
  * Retrieves the currently active, unexpired session for a contact using UTC_TIMESTAMP().
+ * If the session has exceeded the inactivity timeout window, it is silently marked EXPIRED
+ * and an analytics event is recorded, returning null so a fresh journey begins.
  */
 function getActiveSession(tenantId = 1, senderPhone) {
   const normPhone = normalizePhone(senderPhone);
@@ -169,27 +174,48 @@ function getActiveSession(tenantId = 1, senderPhone) {
       WHERE (s.sender_phone = ? OR s.sender_phone = ? OR s.sender_phone = ?)
         AND s.tenant_id = ?
         AND s.session_status = 'ACTIVE'
-        AND (s.expires_at IS NULL OR s.expires_at > UTC_TIMESTAMP())
       ORDER BY s.id DESC
       LIMIT 1
     `).get(normPhone, senderPhone, `+${normPhone}`, tenantId);
 
     if (!session) return null;
 
-    let timeoutMinutes = 1440;
+    let timeoutMinutes = 30;
     try {
       const { getSetting } = require("../config/database");
-      timeoutMinutes = parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "1440", 10);
-      if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 1440;
+      timeoutMinutes = parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "30", 10);
+      if (isNaN(timeoutMinutes) || timeoutMinutes < 1) timeoutMinutes = 30;
     } catch (e) {}
 
-    const lastMs = parseUtcMs(session.last_interaction_at || session.created_at);
-    if (Date.now() - lastMs > timeoutMinutes * 60 * 1000) {
+    const lastDate = parseMysqlUtcTimestamp(session.last_interaction_at || session.created_at);
+    const expiresDate = parseMysqlUtcTimestamp(session.expires_at);
+    const nowMs = Date.now();
+    const lastMs = lastDate ? lastDate.getTime() : 0;
+    const expiresMs = expiresDate ? expiresDate.getTime() : 0;
+
+    const isExpired = (expiresMs > 0 && nowMs > expiresMs) || (lastMs > 0 && (nowMs - lastMs > timeoutMinutes * 60 * 1000));
+
+    if (isExpired) {
       db.prepare(`
         UPDATE conversation_flow_sessions
         SET session_status = 'EXPIRED', updated_at = UTC_TIMESTAMP()
         WHERE id = ?
       `).run(session.id);
+
+      try {
+        db.prepare(`
+          INSERT INTO conversation_flow_events (
+            session_id, flow_id, flow_version_id, node_id, node_type, event_type, payload_json, created_at
+          ) VALUES (?, ?, ?, ?, 'SESSION_TIMEOUT', 'EXPIRED', ?, UTC_TIMESTAMP())
+        `).run(
+          session.id,
+          session.flow_id,
+          session.flow_version_id,
+          session.current_node_id || "unknown",
+          JSON.stringify({ reason: "INACTIVITY_TIMEOUT", timeoutMinutes, lastInteractionAt: session.last_interaction_at })
+        );
+      } catch (e) {}
+
       return null;
     }
 

@@ -308,7 +308,34 @@ class TimeUtil {
     }
     return "+05:30";
   }
+
+  /**
+   * Universal MySQL UTC DATETIME parser.
+   * Guarantees that unqualified UTC DATETIME strings from MySQL ('YYYY-MM-DD HH:mm:ss')
+   * are parsed strictly as UTC ('...Z') rather than being shifted into host local time (e.g. Asia/Kolkata +05:30).
+   */
+  parseMysqlUtcTimestamp(val) {
+    return parseMysqlUtcTimestamp(val);
+  }
+}
+
+/**
+ * Universal standalone helper for MySQL UTC timestamp parsing.
+ */
+function parseMysqlUtcTimestamp(val) {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  const str = String(val).trim();
+  if (!str) return null;
+  // MySQL DATETIME 'YYYY-MM-DD HH:mm:ss' (stored in UTC) -> MUST append 'Z' so Node TZ=Asia/Kolkata never shifts it by -5h30m!
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(str)) {
+    return new Date(str.replace(' ', 'T') + 'Z');
+  }
+  const d = new Date(str);
+  return isNaN(d.getTime()) ? null : d;
 }
 
 const timeUtil = new TimeUtil();
+timeUtil.parseMysqlUtcTimestamp = parseMysqlUtcTimestamp;
 module.exports = timeUtil;
+module.exports.parseMysqlUtcTimestamp = parseMysqlUtcTimestamp;

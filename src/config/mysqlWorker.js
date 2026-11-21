@@ -39,7 +39,7 @@ async function init() {
     waitForConnections: true,
     connectionLimit: 15,
     multipleStatements: true,
-    timezone: '+05:30',
+    timezone: '+00:00',
     dateStrings: true
   });
   parentPort.postMessage({ type: 'ready' });

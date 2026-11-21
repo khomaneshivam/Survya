@@ -3,6 +3,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { db, getSetting, setSetting } = require("../config/database");
 const config = require("../config/env");
+const { parseMysqlUtcTimestamp } = require("../utils/timeUtil");
 const broadcastEngine = require("./broadcastEngine");
 const metaWhatsAppService = require("./metaWhatsAppService");
 const isSandboxOrTestPhone = (phone) => {
@@ -12,14 +13,8 @@ const isSandboxOrTestPhone = (phone) => {
 };
 
 const parseUtcMs = (val) => {
-  if (!val) return 0;
-  if (val instanceof Date) return val.getTime();
-  const str = String(val).trim();
-  if (!str) return 0;
-  if (str.endsWith('Z') || str.includes('+')) {
-    return new Date(str).getTime();
-  }
-  return new Date(str.replace(' ', 'T') + 'Z').getTime();
+  const d = parseMysqlUtcTimestamp(val);
+  return d ? d.getTime() : 0;
 };
 
 const sendTextMessage = async (params) => {

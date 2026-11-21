@@ -330,7 +330,8 @@ class SchedulerService {
           }
         } catch (e) {}
 
-        const lastInteractionMs = job.last_interaction_at ? new Date(job.last_interaction_at).getTime() : 0;
+        const lastDate = timeUtil.parseMysqlUtcTimestamp(job.last_interaction_at);
+        const lastInteractionMs = lastDate ? lastDate.getTime() : 0;
         const isWithin24h = (Date.now() - lastInteractionMs) <= 24 * 60 * 60 * 1000;
 
         // If target node is a free-form message and 24h window has passed, block free-form send
@@ -339,7 +340,7 @@ class SchedulerService {
           console.log(`[Scheduler] Delay Job #${job.id}: 24-hour Meta messaging window closed for ${cleanPhone}. Free-form message blocked.`);
           db.prepare(`
             UPDATE workflow_scheduled_jobs
-            SET status = 'FAILED', last_error = 'WINDOW_CLOSED_24H: Meta 24-hour customer service window expired. Freeform message blocked.', updated_at = NOW()
+            SET status = 'FAILED', last_error = 'WINDOW_CLOSED_24H: Meta 24-hour customer service window expired. Freeform message blocked.', updated_at = UTC_TIMESTAMP()
             WHERE id = ?
           `).run(job.id);
           continue;

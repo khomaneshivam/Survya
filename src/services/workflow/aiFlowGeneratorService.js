@@ -272,9 +272,9 @@ function synthesizeSmartLocalFlow(prompt = "", systemContext = {}) {
       { id: "t4", source: "msg_welcome", target: "handoff_agent", sourceHandle: "opt_talk_agent" },
       { id: "t5", source: "msg_welcome", target: "input_checkin", sourceHandle: "default" },
       { id: "t6", source: "input_checkin", target: "input_checkout", sourceHandle: "valid" },
-      { id: "t7", source: "input_checkin", target: "input_checkin", sourceHandle: "max_retries" },
+      { id: "t7", source: "input_checkin", target: "handoff_agent", sourceHandle: "max_retries" },
       { id: "t8", source: "input_checkout", target: "input_guests", sourceHandle: "valid" },
-      { id: "t9", source: "input_checkout", target: "input_checkout", sourceHandle: "max_retries" },
+      { id: "t9", source: "input_checkout", target: "handoff_agent", sourceHandle: "max_retries" },
       { id: "t10", source: "input_guests", target: "action_check_avail", sourceHandle: "valid" },
       { id: "t11", source: "input_guests", target: "action_check_avail", sourceHandle: "max_retries" },
       { id: "t12", source: "action_check_avail", target: "msg_quote_available", sourceHandle: "available" },
@@ -468,9 +468,9 @@ function synthesizeSmartLocalFlow(prompt = "", systemContext = {}) {
       { id: "tb3", source: "msg_b2b_welcome", target: "handoff_sales_team", sourceHandle: "opt_talk_sales" },
       { id: "tb4", source: "msg_b2b_welcome", target: "input_company", sourceHandle: "default" },
       { id: "tb5", source: "input_company", target: "input_team_size", sourceHandle: "valid" },
-      { id: "tb6", source: "input_company", target: "input_company", sourceHandle: "max_retries" },
+      { id: "tb6", source: "input_company", target: "handoff_sales_team", sourceHandle: "max_retries" },
       { id: "tb7", source: "input_team_size", target: "input_budget", sourceHandle: "valid" },
-      { id: "tb8", source: "input_team_size", target: "input_team_size", sourceHandle: "max_retries" },
+      { id: "tb8", source: "input_team_size", target: "handoff_sales_team", sourceHandle: "max_retries" },
       { id: "tb9", source: "input_budget", target: "cond_high_value", sourceHandle: "valid" },
       { id: "tb10", source: "input_budget", target: "cond_high_value", sourceHandle: "max_retries" },
       { id: "tb11", source: "cond_high_value", target: "crm_upsert_sql", sourceHandle: "true" },
@@ -633,7 +633,7 @@ function synthesizeSmartLocalFlow(prompt = "", systemContext = {}) {
       { id: "tl3", source: "msg_lead_greet", target: "input_lead_city", sourceHandle: "opt_view_catalog" },
       { id: "tl4", source: "msg_lead_greet", target: "input_lead_city", sourceHandle: "default" },
       { id: "tl5", source: "input_lead_city", target: "input_lead_service", sourceHandle: "valid" },
-      { id: "tl6", source: "input_lead_city", target: "input_lead_city", sourceHandle: "max_retries" },
+      { id: "tl6", source: "input_lead_city", target: "handoff_lead", sourceHandle: "max_retries" },
       { id: "tl7", source: "input_lead_service", target: "crm_log_lead", sourceHandle: "valid" },
       { id: "tl8", source: "input_lead_service", target: "crm_log_lead", sourceHandle: "max_retries" },
       { id: "tl9", source: "crm_log_lead", target: "msg_send_brochure", sourceHandle: "success" },
@@ -761,7 +761,7 @@ function synthesizeSmartLocalFlow(prompt = "", systemContext = {}) {
       { id: "td3", source: "msg_dining_welcome", target: "input_table_no", sourceHandle: "opt_table_order" },
       { id: "td4", source: "msg_dining_welcome", target: "input_table_no", sourceHandle: "default" },
       { id: "td5", source: "input_table_no", target: "input_item_choice", sourceHandle: "valid" },
-      { id: "td6", source: "input_table_no", target: "input_table_no", sourceHandle: "max_retries" },
+      { id: "td6", source: "input_table_no", target: "msg_order_quote", sourceHandle: "max_retries" },
       { id: "td7", source: "input_item_choice", target: "msg_order_quote", sourceHandle: "valid" },
       { id: "td8", source: "input_item_choice", target: "msg_order_quote", sourceHandle: "max_retries" },
       { id: "td9", source: "msg_order_quote", target: "crm_log_dining_order", sourceHandle: "opt_pay_upi" },
@@ -905,7 +905,7 @@ RULES & CONSTRAINTS:
 5. Handles:
    - TRIGGER_WHATSAPP: 'default'
    - SEND_MESSAGE: option IDs or 'default'
-   - COLLECT_INPUT: 'valid', 'max_retries'
+   - COLLECT_INPUT: 'valid', 'max_retries' (route 'max_retries' to HUMAN_HANDOFF or next fallback node; NEVER self-loop to same node)
    - CONDITION: 'true', 'false'
    - WAIT_DELAY: 'after_delay', 'early_reply'
    - CRM_UPSERT: 'success', 'failure'
