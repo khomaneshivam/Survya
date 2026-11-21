@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import AddPhoneNumberModal from '../components/AddPhoneNumberModal';
+import JobQueueMonitor from '../components/admin/JobQueueMonitor';
 import {
   PageHeader,
   Tabs,
@@ -607,6 +608,7 @@ export default function SystemAdminPanel({ onNavigate }) {
     { id: 'users', label: 'Users & Roles', icon: Users, badge: users.length },
     { id: 'whatsapp', label: 'WhatsApp & WABA Manager', icon: Smartphone, badge: phoneNumbers.length },
     { id: 'webhooks', label: 'Meta Webhooks & Security', icon: Webhook },
+    { id: 'queue', label: 'Job Queue & Workers', icon: Server },
     { id: 'payouts', label: 'Payouts & Settlement Rules', icon: Landmark },
     { id: 'audit', label: 'Security Audit Logs', icon: ShieldCheck, badge: auditTotal }
   ];
@@ -1628,6 +1630,13 @@ export default function SystemAdminPanel({ onNavigate }) {
             </CardBody>
           </Card>
         </div>
+      )}
+
+      {/* =========================================================================
+          TAB 5: TRANSACTIONAL JOB QUEUE & WORKERS
+          ========================================================================= */}
+      {activeTab === 'queue' && (
+        <JobQueueMonitor toast={(msg) => setSuccessMsg(msg)} />
       )}
 
       {/* =========================================================================

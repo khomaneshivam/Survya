@@ -257,6 +257,10 @@ app.use("/api/v1/inapp", inappExperienceRoutes);
 const publicInappRoutes = require("./src/routes/publicInappRoutes");
 app.use(["/api/v1/public/x", "/v1/public/x", "/public/x"], publicInappRoutes);
 
+// 4e. Admin Transactional Job Queue API (/api/v1/admin/queue)
+const jobQueueRoutes = require("./src/routes/jobQueueRoutes");
+app.use(["/api/v1/admin/queue", "/api/admin/queue", "/api/queue"], jobQueueRoutes);
+
 // 5. API routes
 app.use("/api", apiRoutes);
 
@@ -367,6 +371,11 @@ if (require.main === module) {
         } catch (dbErr) {
           console.warn("[Server] Error closing database:", dbErr.message);
         }
+
+        try {
+          const { closeAsyncPool } = require("./src/config/asyncDb");
+          closeAsyncPool();
+        } catch (_) {}
 
         clearTimeout(forceExitTimer);
         console.log("[Server] Graceful shutdown completed cleanly.");
