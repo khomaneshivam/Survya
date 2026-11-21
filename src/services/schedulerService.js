@@ -231,9 +231,13 @@ class SchedulerService {
   }
 
   /**
-   * Stop background scheduler
+   * Stop background schedulers cleanly
    */
   stopScheduler() {
+    this.stopSchedulers();
+  }
+
+  stopSchedulers() {
     if (this.intervalTimer) {
       clearInterval(this.intervalTimer);
       this.intervalTimer = null;
@@ -246,6 +250,7 @@ class SchedulerService {
       clearInterval(this.workflowJobsTimer);
       this.workflowJobsTimer = null;
     }
+    console.log("[Scheduler] Background campaign and workflow timers stopped.");
   }
 
   /**
@@ -374,4 +379,9 @@ class SchedulerService {
 }
 
 const schedulerService = new SchedulerService();
+schedulerService.stopSchedulers = schedulerService.stopSchedulers.bind(schedulerService);
+schedulerService.stopScheduler = schedulerService.stopScheduler.bind(schedulerService);
+
 module.exports = schedulerService;
+module.exports.stopSchedulers = schedulerService.stopSchedulers;
+module.exports.stopScheduler = schedulerService.stopScheduler;

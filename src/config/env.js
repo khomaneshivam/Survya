@@ -60,7 +60,7 @@ const config = {
   APP_TIMEZONE: process.env.APP_TIMEZONE || "Asia/Kolkata",
   JWT_SECRET: jwtSecret,
   PUBLIC_APP_URL: process.env.PUBLIC_APP_URL || "",
-  CORS_ORIGIN: process.env.CORS_ORIGIN || "",
+  CORS_ORIGIN: process.env.CORS_ORIGIN || process.env.CORS_ORIGINS || "",
   WHATSAPP_BUSINESS_ACCOUNT_ID: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
   WHATSAPP_FLOWS_ENABLED: process.env.WHATSAPP_FLOWS_ENABLED === "true",
   FLOWS_PRIVATE_KEY: process.env.FLOWS_PRIVATE_KEY || "",

@@ -21,25 +21,95 @@ app.disable("x-powered-by");
 app.use(securityHeaders);
 
 // 1. CORS Configuration: In production, enforce trusted origin policy
+function normalizeOrigin(originStr) {
+  if (!originStr || typeof originStr !== "string") return "";
+  const clean = originStr.trim().replace(/\/+$/, "");
+  if (!clean) return "";
+  try {
+    const urlStr = clean.startsWith("http://") || clean.startsWith("https://") ? clean : `https://${clean}`;
+    const parsed = new URL(urlStr);
+    const port = parsed.port ? `:${parsed.port}` : "";
+    return `${parsed.protocol}//${parsed.hostname}${port}`.toLowerCase();
+  } catch (e) {
+    return clean.toLowerCase();
+  }
+}
+
+function buildAllowedOrigins() {
+  const allowed = new Set();
+  const rawSources = [
+    config.CORS_ORIGIN,
+    process.env.CORS_ORIGINS,
+    process.env.CORS_ORIGIN,
+    config.PUBLIC_APP_URL,
+    process.env.PUBLIC_APP_URL
+  ];
+
+  for (const source of rawSources) {
+    if (!source) continue;
+    const parts = String(source).split(",");
+    for (const part of parts) {
+      const norm = normalizeOrigin(part);
+      if (!norm) continue;
+      allowed.add(norm);
+
+      try {
+        const parsed = new URL(norm);
+        const host = parsed.hostname;
+        const port = parsed.port ? `:${parsed.port}` : "";
+        if (host.startsWith("www.")) {
+          // Add apex domain: e.g. https://www.example.com -> https://example.com
+          allowed.add(`${parsed.protocol}//${host.substring(4)}${port}`.toLowerCase());
+        } else if (!host.startsWith("localhost") && !/^\d+\.\d+\.\d+\.\d+$/.test(host) && host.includes(".")) {
+          // Add www subdomain: e.g. https://example.com -> https://www.example.com
+          allowed.add(`${parsed.protocol}//www.${host}${port}`.toLowerCase());
+        }
+      } catch (e) {}
+    }
+  }
+
+  return allowed;
+}
+
 const corsOptions = {
   origin: (origin, callback) => {
-    // Non-browser or server-to-server requests
+    // Non-browser or server-to-server requests (like Meta webhooks, cron, curl) have no Origin header
     if (!origin) return callback(null, true);
+
     if (config.NODE_ENV !== "production") {
       return callback(null, true);
     }
-    const allowed = (config.CORS_ORIGIN || "")
-      .split(",")
-      .map(s => s.trim())
-      .filter(Boolean);
-    if (allowed.length === 0 || allowed.includes(origin)) {
+
+    const allowed = buildAllowedOrigins();
+    if (allowed.size === 0) {
       return callback(null, true);
     }
-    return callback(new Error("CORS policy violation: origin not allowed"));
+
+    const normOrigin = normalizeOrigin(origin);
+    const rawNormalized = origin.trim().replace(/\/+$/, "").toLowerCase();
+    if (allowed.has(normOrigin) || allowed.has(rawNormalized)) {
+      return callback(null, true);
+    }
+
+    // Origin not allowed: create a structured 403 error caught cleanly without unhandled server logging
+    const corsError = new Error("Origin not allowed");
+    corsError.statusCode = 403;
+    corsError.status = 403;
+    corsError.isCors = true;
+    return callback(corsError);
   },
   credentials: true
 };
+
 app.use(cors(corsOptions));
+
+// Clean 403 handler for CORS policy rejections
+app.use((err, req, res, next) => {
+  if (err && (err.isCors || err.status === 403 || err.statusCode === 403 || err.message === "Origin not allowed")) {
+    return res.status(403).json({ success: false, message: "Origin not allowed" });
+  }
+  next(err);
+});
 
 // 2. Request Parsers with Raw Body Preservation for Meta Webhook HMAC Verification
 app.use(
@@ -197,6 +267,9 @@ app.get("*", (req, res) => {
 
 // 7. Sanitized Error Handling (No stack traces in production)
 app.use((err, req, res, next) => {
+  if (err && (err.isCors || err.status === 403 || err.statusCode === 403 || err.message === "Origin not allowed")) {
+    return res.status(403).json({ success: false, message: "Origin not allowed" });
+  }
   console.error("Unhandled Server Error:", err.message);
   const isProd = config.NODE_ENV === "production";
   return res.status(err.statusCode || 500).json({
@@ -235,19 +308,74 @@ if (require.main === module) {
     `);
   });
 
-  // Graceful shutdown
-  process.on("SIGINT", () => {
-    console.log("\nShutting down WhatsApp Bulk Messenger gracefully...");
-    schedulerService.stopScheduler();
+  // PM2 & OS Process Lifecycle: Graceful Shutdown (SIGINT & SIGTERM)
+  let isShuttingDown = false;
+
+  const gracefulShutdown = (signal) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`\n[Server] Received ${signal}. Initiating graceful shutdown...`);
+
+    // Safety timeout: exit cleanly within 4 seconds so PM2 does not issue SIGKILL
+    const forceExitTimer = setTimeout(() => {
+      console.warn("[Server] Graceful shutdown timeout (4s) reached. Forcing clean exit.");
+      try {
+        const { db } = require("./src/config/database");
+        if (db && typeof db.close === "function") db.close();
+      } catch (e) {}
+      process.exit(0);
+    }, 4000);
+    if (forceExitTimer.unref) forceExitTimer.unref();
+
+    // 1. Clear all background scheduler timers
+    try {
+      schedulerService.stopSchedulers();
+    } catch (schedErr) {
+      console.warn("[Server] Error stopping schedulers:", schedErr.message);
+    }
+
+    // 2. Stop accepting new HTTP connections and close idle connections
     if (server) {
-      server.close(() => {
-        console.log("Server stopped.");
+      try {
+        if (typeof server.closeIdleConnections === "function") {
+          server.closeIdleConnections();
+        }
+      } catch (e) {}
+
+      server.close((err) => {
+        if (err) {
+          console.warn("[Server] Error closing HTTP server:", err.message);
+        } else {
+          console.log("[Server] HTTP server closed.");
+        }
+
+        // 3. Close database worker cleanly
+        try {
+          const { db } = require("./src/config/database");
+          if (db && typeof db.close === "function") {
+            db.close();
+            console.log("[Server] Database connection worker closed.");
+          }
+        } catch (dbErr) {
+          console.warn("[Server] Error closing database:", dbErr.message);
+        }
+
+        clearTimeout(forceExitTimer);
+        console.log("[Server] Graceful shutdown completed cleanly.");
         process.exit(0);
       });
     } else {
+      try {
+        const { db } = require("./src/config/database");
+        if (db && typeof db.close === "function") db.close();
+      } catch (e) {}
+      clearTimeout(forceExitTimer);
       process.exit(0);
     }
-  });
+  };
+
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 }
 
 module.exports = { app };

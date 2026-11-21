@@ -1873,7 +1873,7 @@ class WebhookService {
         const pendingJobs = db.prepare(`
           SELECT j.*, s.flow_id, s.current_node_id
           FROM workflow_scheduled_jobs j
-          JOIN conversation_flow_sessions s ON j.session_id = s.id
+          JOIN conversation_flow_sessions s ON (j.session_id = s.id OR j.session_id = s.session_key)
           WHERE s.sender_phone = ? AND j.status = 'PENDING' AND j.cancel_on_reply = 1
         `).all(cleanPhone);
 
