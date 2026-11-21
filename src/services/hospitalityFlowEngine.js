@@ -444,7 +444,7 @@ function handleCustomerInquiry({
   // Load published property and rooms
   const property = configService.getPublishedProperty(tenantId, propertyId);
   const configuredName = getSetting ? getSetting("BOT_BUSINESS_NAME") : null;
-  const propName = configuredName || property?.name || link?.welcome_title || link?.title || "KonkanTrip Beach Resort & Spa";
+  const propName = configuredName || property?.name || link?.welcome_title || link?.title || "Hotel Green Vally";
   const roomTypes = (configService.listRoomCategories ? configService.listRoomCategories(propertyId, tenantId) : []).filter(r => r.status === "ACTIVE" || r.active === 1);
 
   let session = getSession(sessionKey);

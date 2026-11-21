@@ -82,7 +82,7 @@ function shortenButtonTitle(str) {
  * Ensures header text fits within Meta Cloud API's 60-character maximum
  */
 function shortenHeaderText(str, max = 60) {
-  if (!str) return "KonkanTrip Concierge";
+  if (!str) return "Hotel Green Vally";
   const s = String(str).trim();
   return s.length <= max ? s : s.substring(0, max).trim();
 }
@@ -2149,11 +2149,11 @@ class WebhookService {
           }
         }
         const templateMsg = autoReplySettings.fallbackMessage || autoReplySettings.message ||
-          "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message. Our team will get back to you shortly.";
+          "Hi {{name}}, thank you for reaching out! We have received your message. Our team will get back to you shortly.";
         const customerName = replyRecord.customer_name ? replyRecord.customer_name.trim() : "there";
         const finalMsg = templateMsg
           .replace(/\{\{name\}\}/gi, customerName)
-          .replace(/\{\{business_name\}\}/gi, autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa");
+          .replace(/\{\{business_name\}\}/gi, autoReplySettings.businessName || "Hotel Green Vally");
 
         let sentRes = null;
         try {
@@ -2215,7 +2215,7 @@ class WebhookService {
           if (flowValidation.isFeedback) {
             const rating = flowSubmissionData.overall_rating || flowSubmissionData.rating || "5";
             const ratingStars = "★".repeat(Math.min(5, Math.max(1, parseInt(rating, 10)))) + "☆".repeat(Math.max(0, 5 - parseInt(rating, 10)));
-            const bName = autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa";
+            const bName = autoReplySettings.businessName || "Hotel Green Vally";
             let feedbackText = `🙏 *Thank You For Your Feedback, ${flowIntakeData.guest_name || "Valued Guest"}!*\n\n`;
             feedbackText += `We have recorded your rating of *${ratingStars} (${rating}/5)*.\n`;
             if (flowSubmissionData.favorite_aspect) {
@@ -2274,7 +2274,7 @@ class WebhookService {
           // Case B: Support / Concierge Ticket Flow
           if (flowValidation.isSupport) {
             const ticketId = `TKT-${Date.now().toString().slice(-5)}`;
-            const bName = autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa";
+            const bName = autoReplySettings.businessName || "Hotel Green Vally";
             const cat = (flowSubmissionData.issue_category || "General Inquiry").replace(/_/g, " ").toUpperCase();
             let ticketText = `🎫 *Concierge Ticket Created (#${ticketId})*\n\n`;
             ticketText += `Thank you, *${flowIntakeData.guest_name || "Guest"}*. Your request regarding *${cat}* has been submitted to our front desk team.\n\n`;
@@ -2387,7 +2387,7 @@ class WebhookService {
       if (matchedDyn) {
         const dynAction = (matchedDyn.actionType || matchedDyn.action || "REPLY_TEXT").toUpperCase();
         console.log(`[Webhook Flow] Executing Dynamic Bot Option: '${matchedDyn.title}' (${dynAction}) for ${cleanPhone}`);
-        const bName = autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa";
+        const bName = autoReplySettings.businessName || "Hotel Green Vally";
         const cName = replyRecord.customer_name || "Guest";
         const hPhone = autoReplySettings.handoffPhone || "+91 87665 90634";
         const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
@@ -2626,7 +2626,7 @@ class WebhookService {
         this.pauseBotForPhone(cleanPhone, pauseMins * 60 * 1000);
 
         const handoffPhone = autoReplySettings.handoffPhone || "+91 87665 90634";
-        const bName = autoReplySettings.businessName || "KonkanTrip Beach Resort & Spa";
+        const bName = autoReplySettings.businessName || "Hotel Green Vally";
         let handoffText = (autoReplySettings.handoffMessage ||
           "🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at {{phone}}.")
           .replace(/\{\{phone\}\}/gi, handoffPhone)
@@ -2825,22 +2825,10 @@ class WebhookService {
         } catch (e) {}
       }
 
-      if (hospitalityFlowEngine && !isStudioMode) {
-        try {
-          flowRes = hospitalityFlowEngine.handleCustomerInquiry({
-            channel: "WHATSAPP",
-            phone: cleanPhone,
-            guestName: flowIntakeData?.guest_name || replyRecord.customer_name || "Guest",
-            text: effectiveText,
-            link: matchedLink,
-            intakeData: flowIntakeData,
-            flowSubmission: flowIntakeData ? { intake_data: flowIntakeData } : null,
-            tenantId: 1
-          });
-        } catch (flowErr) {
-          console.warn("[Webhook Flow] Engine execution warning:", flowErr.message);
-        }
-      }
+      // Legacy hospitalityFlowEngine is permanently disabled.
+      // All inbound messages are routed through the visual Conversation Flow Engine (Flow 1).
+      // The legacy engine was producing "KonkanTrip Beach Resort & Spa" messages conflicting
+      // with the configured "Hotel Green Vally" branding and duplicating the modern flow engine's replies.
 
       if (flowRes && flowRes.text) {
         let sentMessageId = null;
@@ -2865,7 +2853,7 @@ class WebhookService {
                 bodyText: btnBody,
                 buttons,
                 headerText: "Availability & Rates",
-                footerText: "KonkanTrip Concierge",
+                footerText: "Hotel Green Vally",
                 customCredentials
               });
               sentMessageId = btnRes.messageId;
@@ -2887,7 +2875,7 @@ class WebhookService {
                   bodyText: btnBody,
                   buttons,
                   headerText: "Choose a Room",
-                  footerText: "KonkanTrip Concierge",
+                  footerText: "Hotel Green Vally",
                   customCredentials
                 });
                 sentMessageId = btnRes.messageId;
@@ -2914,7 +2902,7 @@ class WebhookService {
                   buttonText: "Choose Room",
                   sections: [{ title: "Available Rooms", rows }],
                   headerText: "Available Categories",
-                  footerText: "KonkanTrip Concierge",
+                  footerText: "Hotel Green Vally",
                   customCredentials
                 });
                 sentMessageId = listRes.messageId;
@@ -2939,7 +2927,7 @@ class WebhookService {
               bodyText: btnBody,
               buttons,
               headerText: "Estimated Price Quote",
-              footerText: "KonkanTrip Concierge",
+              footerText: "Hotel Green Vally",
               customCredentials
             });
             sentMessageId = btnRes.messageId;
@@ -2962,7 +2950,7 @@ class WebhookService {
               bodyText: btnBody,
               buttons,
               headerText: "Inquiry Submitted",
-              footerText: "KonkanTrip Front Desk",
+              footerText: "Hotel Green Vally",
               customCredentials
             });
             sentMessageId = btnRes.messageId;
@@ -2985,7 +2973,7 @@ class WebhookService {
               bodyText: btnBody,
               buttons,
               headerText: "Room Sold Out",
-              footerText: "KonkanTrip Concierge",
+              footerText: "Hotel Green Vally",
               customCredentials
             });
             sentMessageId = btnRes.messageId;
@@ -3034,7 +3022,7 @@ class WebhookService {
                 } catch (e) {}
 
                 const flowCta = shortenButtonTitle("Select Dates & Guests");
-                const flowHeader = shortenHeaderText(autoReplySettings.businessName || "KonkanTrip Concierge");
+                const flowHeader = shortenHeaderText(autoReplySettings.businessName || "Hotel Green Vally");
                 const flowBody = flowRes.text || "Please select your stay dates and guest details using the form below to check live availability:";
                 const flowFooter = "Instant Live Availability & Rates";
 
@@ -3085,7 +3073,7 @@ class WebhookService {
                 buttons,
                 headerText: "Plan Your Stay",
                 headerMediaUrl: autoReplySettings.welcomeMediaUrl || "",
-                footerText: "KonkanTrip Concierge",
+                footerText: "Hotel Green Vally",
                 customCredentials
               });
               sentMessageId = btnRes.messageId;
@@ -3111,8 +3099,8 @@ class WebhookService {
               to: cleanPhone,
               bodyText: btnBody,
               buttons,
-              headerText: "KonkanTrip Concierge",
-              footerText: "KonkanTrip Concierge",
+              headerText: "Hotel Green Vally",
+              footerText: "Hotel Green Vally",
               customCredentials
             });
             sentMessageId = btnRes.messageId;
@@ -3180,7 +3168,7 @@ class WebhookService {
       const autoReplyEnabled = getSetting("AUTO_REPLY_ENABLED");
       if (autoReplyEnabled === "true" || autoReplyEnabled === true) {
         const templateMsg = getSetting("AUTO_REPLY_MESSAGE") ||
-          "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message. Our team will get back to you shortly.";
+          "Hi {{name}}, thank you for reaching out! We have received your message. Our team will get back to you shortly.";
         const customerName = replyRecord.customer_name ? replyRecord.customer_name.trim() : "there";
         const finalMsg = templateMsg.replace(/\{\{name\}\}/gi, customerName);
 
@@ -3324,7 +3312,7 @@ class WebhookService {
       showInGreeting: Boolean(opt.showInGreeting)
     }));
 
-    const fallbackMsg = getSetting("AUTO_REPLY_MESSAGE") || "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message and our team will get back to you shortly.";
+    const fallbackMsg = getSetting("AUTO_REPLY_MESSAGE") || "Hi {{name}}, thank you for reaching out! We have received your message and our team will get back to you shortly.";
 
     return {
       enabled: getSetting("AUTO_REPLY_ENABLED") !== "false",
@@ -3332,7 +3320,7 @@ class WebhookService {
       engineMode: getSetting("AUTO_REPLY_ENGINE_MODE") || "HOSPITALITY_FLOW",
       message: fallbackMsg,
       fallbackMessage: fallbackMsg,
-      businessName: getSetting("BOT_BUSINESS_NAME") || "KonkanTrip Beach Resort & Spa",
+      businessName: getSetting("BOT_BUSINESS_NAME") || "Hotel Green Vally",
       welcomeMessage: getSetting("BOT_WELCOME_MESSAGE") || "👋 Hello {{name}}! Welcome to *{{business_name}}*.\n\nHow can we help you today? Select an option below or reply with your travel dates to check real-time availability and live rates! 👇",
       welcomeMediaUrl: getSetting("BOT_WELCOME_MEDIA_URL") || "",
       button1: getSetting("BOT_WELCOME_BUTTON_1_LABEL") || "This Weekend",
@@ -3380,7 +3368,7 @@ class WebhookService {
         matchType: "CONTAINS",
         stage: "ANY",
         actionType: "REPLY_TEXT",
-        responseText: "⛵ *Must-Visit Attractions Around KonkanTrip*\n\n1. *Sindhudurg Sea Fort* - 15 mins by ferry (Historical 17th Century Fort)\n2. *Tsunami Island Watersports* - Jet skiing, Parasailing & Banana Rides\n3. *Scuba Diving at Tarkali* - Clear coral reef diving with certified PADI divers\n4. *Devbagh Sangam Beach* - Pristine estuary where the Karli river meets the sea\n\nOur travel desk can arrange private cabs and boat tickets!",
+        responseText: "⛵ *Must-Visit Attractions Nearby*\n\n1. *Sindhudurg Sea Fort* - 15 mins by ferry (Historical 17th Century Fort)\n2. *Tsunami Island Watersports* - Jet skiing, Parasailing & Banana Rides\n3. *Scuba Diving at Tarkali* - Clear coral reef diving with certified PADI divers\n4. *Devbagh Sangam Beach* - Pristine estuary where the Karli river meets the sea\n\nOur travel desk can arrange private cabs and boat tickets!",
         followUpButtons: [
           { id: "btn_check_avail", title: "Plan Stay" },
           { id: "btn_staff", title: "Book Cab / Tour" }
@@ -3396,7 +3384,7 @@ class WebhookService {
         matchType: "CONTAINS",
         stage: "ANY",
         actionType: "REPLY_TEXT",
-        responseText: "🚗 *How to Reach Us & Ferry Schedules*\n\n• *From Mumbai / Pune*: Take NH 66 or M2M Ferries Ro-Pax from Bhaucha Dhakka to Mandwa.\n• *Ferry Schedule*: Runs every hour from 06:30 AM to 07:30 PM daily.\n• *Nearest Airport*: Chipi Airport (Sindhudurg - 35 mins) or Mopa Airport (Goa - 90 mins).\n\n📍 Google Maps: https://maps.google.com/?q=KonkanTrip+Beach+Resort",
+        responseText: "🚗 *How to Reach Us & Ferry Schedules*\n\n• *From Mumbai / Pune*: Take NH 66 or M2M Ferries Ro-Pax from Bhaucha Dhakka to Mandwa.\n• *Ferry Schedule*: Runs every hour from 06:30 AM to 07:30 PM daily.\n• *Nearest Airport*: Chipi Airport (Sindhudurg - 35 mins) or Mopa Airport (Goa - 90 mins).\n\n📍 Google Maps: https://maps.google.com/?q=Hotel+Green+Vally",
         followUpButtons: [
           { id: "btn_check_avail", title: "Check Rates" },
           { id: "btn_staff", title: "Need Pickup" }
@@ -3412,7 +3400,7 @@ class WebhookService {
         matchType: "CONTAINS",
         stage: "ANY",
         actionType: "REPLY_TEXT",
-        responseText: "📶 *Resort Guest Essentials*\n\n• *Wi-Fi Network*: `KonkanTrip_Guest` (Password: `BeachVibes2026`)\n• *Infinity Pool*: 07:00 AM – 08:00 PM (Costume mandatory)\n• *Breakfast Buffet*: 07:30 AM – 10:30 AM\n• *Dinner Buffet*: 07:30 PM – 10:30 PM\n• *Room Service*: Dial `9` from your room phone anytime!",
+        responseText: "📶 *Resort Guest Essentials*\n\n• *Wi-Fi Network*: `GreenVally_Guest` (Password: `BeachVibes2026`)\n• *Infinity Pool*: 07:00 AM – 08:00 PM (Costume mandatory)\n• *Breakfast Buffet*: 07:30 AM – 10:30 AM\n• *Dinner Buffet*: 07:30 PM – 10:30 PM\n• *Room Service*: Dial `9` from your room phone anytime!",
         followUpButtons: [
           { id: "btn_menu", title: "Dining Menu" },
           { id: "btn_staff", title: "Call Front Desk" }
