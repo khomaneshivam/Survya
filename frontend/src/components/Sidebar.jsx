@@ -22,7 +22,8 @@ import {
   Landmark,
   UserCheck,
   Settings,
-  Plug
+  Plug,
+  Smartphone
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -48,6 +49,7 @@ export default function Sidebar({
         { id: 'autoreply', label: 'Auto-Reply Bot', icon: BotMessageSquare },
         { id: 'broadcast', label: 'Campaigns', icon: Send },
         { id: 'links', label: 'Chat Links', icon: Link2 },
+        { id: 'inapp_studio', label: 'In-App Studio', icon: Smartphone, badge: 'Dynamic' },
         { id: 'ai', label: 'SARVYA AI', icon: Bot },
         { id: 'reports', label: 'Insights', icon: BarChart3 }
       ]
@@ -239,7 +241,7 @@ export default function Sidebar({
                         fontWeight: 600
                       } : undefined}
                     >
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
                         <Icon size={17} strokeWidth={isActive ? 2.1 : 1.75} style={{ flexShrink: 0 }} />
                         {!collapsed && (
                           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -247,6 +249,19 @@ export default function Sidebar({
                           </span>
                         )}
                       </span>
+                      {!collapsed && item.badge && (
+                        <span style={{
+                          fontSize: '9px',
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          background: 'rgba(139, 92, 246, 0.15)',
+                          color: '#8b5cf6',
+                          fontWeight: 700,
+                          marginLeft: 'auto'
+                        }}>
+                          {item.badge}
+                        </span>
+                      )}
                     </button>
                   );
                 })}

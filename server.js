@@ -249,6 +249,10 @@ app.get(["/api/health", "/health"], (req, res) => {
   res.status(200).json({ status: "healthy", timestamp: new Date().toISOString() });
 });
 
+// 4c. In-App Experience Studio API
+const inappExperienceRoutes = require("./src/routes/inappExperienceRoutes");
+app.use("/api/v1/inapp", inappExperienceRoutes);
+
 // 5. API routes
 app.use("/api", apiRoutes);
 

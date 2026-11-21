@@ -64,6 +64,7 @@ export default function NodeInspectorDrawer({
   const [variablePickerField, setVariablePickerField] = useState(null); // field key targeted for variable insertion
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedSecret, setCopiedSecret] = useState(false);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
 
   // Collect available variables from system and upstream graph nodes
   const availableVariables = useMemo(() => {
@@ -148,7 +149,6 @@ export default function NodeInspectorDrawer({
     setVariablePickerField(null);
   };
 
-  const [uploadingMedia, setUploadingMedia] = useState(false);
   const handleUploadMedia = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;

@@ -855,4 +855,7 @@ router.use(require("./payoutRoutes"));
 // Hospitality Inventory, Room & Rate Configuration Module
 router.use(require("./hospitalityRoutes"));
 
+// Dynamic In-App Experience Studio Module
+router.use("/v1/inapp", require("./inappExperienceRoutes"));
+
 module.exports = router;

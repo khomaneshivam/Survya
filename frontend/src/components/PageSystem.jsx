@@ -22,7 +22,8 @@ import {
   ArrowLeft,
   Sparkles,
   ExternalLink,
-  RotateCcw
+  RotateCcw,
+  Smartphone
 } from 'lucide-react';
 
 // Lazy or direct import of all pages
@@ -34,6 +35,7 @@ import InboxPage from '../pages/InboxPage';
 import AutoReplyBotPage from '../pages/AutoReplyBotPage';
 import BroadcastPage from '../pages/BroadcastPage';
 import ChatLinksPage from '../pages/ChatLinksPage';
+import InAppStudioPage from '../pages/InAppStudioPage';
 import AiAssistantPage from '../pages/AiAssistantPage';
 import ReportsPage from '../pages/ReportsPage';
 import CatalogInventoryPage from '../pages/CatalogInventoryPage';
@@ -144,6 +146,18 @@ export const PAGE_REGISTRY = {
     description: 'Generate sharable customer chat links, QR codes, and zero-fee web conversational landing pages.',
     adminOnly: false,
     component: ChatLinksPage
+  },
+  inapp_studio: {
+    id: 'inapp_studio',
+    title: 'In-App Experience Studio',
+    module: 'In-App',
+    group: 'Operations & Messaging',
+    badge: 'Dynamic',
+    badgeTone: 'purple',
+    icon: Smartphone,
+    description: 'WhatsApp-Flows-style multi-screen web experiences with validated forms, catalog browsing, image galleries, price-range filters, rate discussions, and calls.',
+    adminOnly: false,
+    component: InAppStudioPage
   },
   ai: {
     id: 'ai',
