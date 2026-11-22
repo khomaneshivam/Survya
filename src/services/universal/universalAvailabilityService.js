@@ -271,12 +271,13 @@ function createInventoryHold(tenantId = 1, options = {}) {
 /**
  * Confirms hold upon payment or booking completion
  */
-function confirmHold(tenantId = 1, holdToken) {
+function confirmHold(tenantId = 1, holdIdentifier) {
   const numericTenantId = Number(tenantId) || 1;
+  const isNumeric = typeof holdIdentifier === 'number' || /^\d+$/.test(String(holdIdentifier));
   const hold = db.prepare(`
     SELECT * FROM catalog_inventory_holds
-    WHERE tenant_id = ? AND hold_token = ? AND status = 'HELD'
-  `).get(numericTenantId, holdToken);
+    WHERE tenant_id = ? AND (hold_token = ? OR id = ?) AND status = 'HELD'
+  `).get(numericTenantId, String(holdIdentifier), isNumeric ? Number(holdIdentifier) : 0);
 
   if (!hold) {
     return { success: false, reason: "Hold not found or already processed" };
@@ -308,18 +309,19 @@ function confirmHold(tenantId = 1, holdToken) {
     `).run(hold.quantity, hold.quantity, numericTenantId, hold.slot_id);
   }
 
-  return { success: true, holdToken, status: "CONFIRMED" };
+  return { success: true, holdToken: hold.hold_token, status: "CONFIRMED" };
 }
 
 /**
  * Explicitly releases a hold before expiry
  */
-function releaseHold(tenantId = 1, holdToken) {
+function releaseHold(tenantId = 1, holdIdentifier) {
   const numericTenantId = Number(tenantId) || 1;
+  const isNumeric = typeof holdIdentifier === 'number' || /^\d+$/.test(String(holdIdentifier));
   const hold = db.prepare(`
     SELECT * FROM catalog_inventory_holds
-    WHERE tenant_id = ? AND hold_token = ? AND status = 'HELD'
-  `).get(numericTenantId, holdToken);
+    WHERE tenant_id = ? AND (hold_token = ? OR id = ?) AND status = 'HELD'
+  `).get(numericTenantId, String(holdIdentifier), isNumeric ? Number(holdIdentifier) : 0);
 
   if (!hold) {
     return { success: false, reason: "Hold not active" };
@@ -347,7 +349,7 @@ function releaseHold(tenantId = 1, holdToken) {
     `).run(hold.quantity, numericTenantId, hold.slot_id);
   }
 
-  return { success: true, holdToken, status: "RELEASED" };
+  return { success: true, holdToken: hold.hold_token, status: "RELEASED" };
 }
 
 /**

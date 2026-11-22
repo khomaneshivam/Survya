@@ -25,7 +25,8 @@ import {
   ExternalLink,
   Database,
   RotateCcw,
-  Smartphone
+  Smartphone,
+  Receipt
 } from 'lucide-react';
 
 // Code-split dynamic page imports (lazy loaded chunks)
@@ -42,6 +43,7 @@ const InAppStudioPage = lazy(() => import('../pages/InAppStudioPage'));
 const AiAssistantPage = lazy(() => import('../pages/AiAssistantPage'));
 const ReportsPage = lazy(() => import('../pages/ReportsPage'));
 const CatalogInventoryPage = lazy(() => import('../pages/CatalogInventoryPage'));
+const BookingsOrdersPage = lazy(() => import('../pages/BookingsOrdersPage'));
 const MastersHubPage = lazy(() => import('../pages/MastersHubPage'));
 const InventoryCalendarPage = lazy(() => import('../pages/InventoryCalendarPage'));
 const SystemAdminPanel = lazy(() => import('../pages/SystemAdminPanel'));
@@ -233,6 +235,18 @@ export const PAGE_REGISTRY = {
     description: 'Manage dining dishes, beverages, room add-ons, pricing, photos, and instant 86-stock status toggles.',
     adminOnly: false,
     component: CatalogInventoryPage
+  },
+  transactions: {
+    id: 'transactions',
+    title: 'Orders, Bookings & Transactions',
+    module: 'Industry',
+    group: 'Industry Solutions',
+    badge: 'Universal',
+    badgeTone: 'sage',
+    icon: Receipt,
+    description: 'Track orders, bookings, appointments, quotations, payment reconciliation, and GST tax invoices.',
+    adminOnly: false,
+    component: BookingsOrdersPage
   },
   masters: {
     id: 'masters',

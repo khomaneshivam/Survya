@@ -330,6 +330,101 @@ class JobWorkerEngine extends EventEmitter {
       const result = universalAvailabilityService.releaseExpiredHolds(tenantId);
       return result;
     });
+
+    // 11. Payment Link Nudge Handler (+15m gentle reminder)
+    this.registerHandler("PAYMENT_LINK_NUDGE", async (payload, job) => {
+      const tenantId = payload?.tenantId || 1;
+      const refCode = payload?.referenceCode;
+      if (!refCode) return { skipped: true, reason: "No reference code" };
+
+      const txn = db.prepare(`
+        SELECT * FROM universal_transactions
+        WHERE tenant_id = ? AND reference_code = ? AND delete_status = 0
+      `).get(tenantId, refCode);
+
+      if (!txn || txn.payment_status === "PAID" || txn.fulfillment_status === "CANCELLED") {
+        return { skipped: true, reason: "Transaction already paid or cancelled" };
+      }
+
+      console.log(`[Worker] 🔔 Dispatched PAYMENT_LINK_NUDGE for ${refCode} to ${txn.customer_phone} (Mock/Simulated safe)`);
+      return { success: true, referenceCode: refCode, status: "NUDGE_SENT" };
+    });
+
+    // 12. Payment Hold Expire Handler (+30m unpaid hold release)
+    this.registerHandler("PAYMENT_HOLD_EXPIRE", async (payload, job) => {
+      const universalAvailabilityService = require("../universal/universalAvailabilityService");
+      const tenantId = payload?.tenantId || 1;
+      const refCode = payload?.referenceCode;
+      if (!refCode) return { skipped: true, reason: "No reference code" };
+
+      const txn = db.prepare(`
+        SELECT * FROM universal_transactions
+        WHERE tenant_id = ? AND reference_code = ? AND delete_status = 0
+      `).get(tenantId, refCode);
+
+      if (!txn || txn.payment_status === "PAID" || txn.fulfillment_status === "CANCELLED") {
+        return { skipped: true, reason: "Transaction already paid or already cancelled" };
+      }
+
+      if (txn.payment_status === "UNPAID" || txn.payment_status === "LINK_SENT") {
+        if (txn.hold_id) {
+          universalAvailabilityService.releaseHold(tenantId, txn.hold_id);
+        }
+        db.prepare(`
+          UPDATE universal_transactions
+          SET fulfillment_status = 'CANCELLED',
+              payment_status = 'CANCELLED',
+              notes = CONCAT(COALESCE(notes, ''), ' [Payment expired after 30m - inventory released]'),
+              updated_at = UTC_TIMESTAMP()
+          WHERE id = ?
+        `).run(txn.id);
+
+        console.log(`[Worker] ⏳ PAYMENT_HOLD_EXPIRE: released hold ${txn.hold_id} for ${refCode}`);
+        return { success: true, referenceCode: refCode, status: "HOLD_EXPIRED" };
+      }
+
+      return { skipped: true, status: txn.payment_status };
+    });
+
+    // 13. Upcoming Booking / Appointment Reminder Handler
+    this.registerHandler("UPCOMING_BOOKING_REMINDER", async (payload, job) => {
+      const tenantId = payload?.tenantId || 1;
+      const refCode = payload?.referenceCode;
+      if (!refCode) return { skipped: true, reason: "No reference code" };
+
+      const txn = db.prepare(`
+        SELECT * FROM universal_transactions
+        WHERE tenant_id = ? AND reference_code = ? AND delete_status = 0
+      `).get(tenantId, refCode);
+
+      if (!txn || txn.fulfillment_status === "CANCELLED") {
+        return { skipped: true, reason: "Transaction cancelled or not found" };
+      }
+
+      console.log(`[Worker] 📅 Dispatched UPCOMING_BOOKING_REMINDER for ${refCode} (Simulated safe)`);
+      return { success: true, referenceCode: refCode, status: "REMINDER_SENT" };
+    });
+
+    // 14. Post-Fulfillment CSAT / Google Review Feedback Handler
+    this.registerHandler("POST_FULFILLMENT_FEEDBACK", async (payload, job) => {
+      const tenantId = payload?.tenantId || 1;
+      const refCode = payload?.referenceCode;
+      if (!refCode) return { skipped: true, reason: "No reference code" };
+
+      const txn = db.prepare(`
+        SELECT t.*, ml.name as loc_name
+        FROM universal_transactions t
+        LEFT JOIN master_locations ml ON ml.id = t.master_location_id AND ml.delete_status = 0
+        WHERE t.tenant_id = ? AND t.reference_code = ? AND t.delete_status = 0
+      `).get(tenantId, refCode);
+
+      if (!txn || txn.fulfillment_status !== "COMPLETED") {
+        return { skipped: true, reason: "Transaction not completed" };
+      }
+
+      console.log(`[Worker] ⭐ Dispatched POST_FULFILLMENT_FEEDBACK for ${refCode} to ${txn.customer_phone} (Simulated safe)`);
+      return { success: true, referenceCode: refCode, status: "FEEDBACK_SENT" };
+    });
   }
 
   /**

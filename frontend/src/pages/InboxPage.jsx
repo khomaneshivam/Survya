@@ -43,9 +43,11 @@ import {
   Languages,
   Wand2,
   Bell,
-  BellRing
+  BellRing,
+  Receipt
 } from 'lucide-react';
 import { formatIndianTime } from '../utils/indianTime';
+import InboxCommerceDrawer from '../components/inbox/InboxCommerceDrawer';
 
 /**
  * Parses key-value responses from WhatsApp Flows or Booking Enquiries into structured fields
@@ -490,6 +492,7 @@ export default function InboxPage({ onNavigate }) {
   const { token } = useAuth();
   const [conversations, setConversations] = useState([]);
   const [selectedConvo, setSelectedConvo] = useState(null);
+  const [isCommerceDrawerOpen, setIsCommerceDrawerOpen] = useState(false);
   const [replyText, setReplyText] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
   const [search, setSearch] = useState('');
@@ -2725,6 +2728,28 @@ export default function InboxPage({ onNavigate }) {
                       <span style={{ fontSize: '0.68rem', color: '#15803D', textDecoration: 'underline' }}>Take Over</span>
                     </button>
                   )}
+                  {/* Commerce & Payment Drawer Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setIsCommerceDrawerOpen(prev => !prev)}
+                    className="btn btn-secondary"
+                    style={{
+                      padding: '5px 10px',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      background: isCommerceDrawerOpen ? '#EDF4E6' : '#FFFFFF',
+                      color: isCommerceDrawerOpen ? '#2F5219' : '#3A3A3E',
+                      border: `1px solid ${isCommerceDrawerOpen ? '#C3D1AC' : '#D4D4D9'}`
+                    }}
+                    title="Toggle Commerce & Payment Drawer"
+                  >
+                    <Receipt size={13} />
+                    <span>Commerce</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => handleDeleteConversation(selectedConvo)}
@@ -3855,6 +3880,17 @@ export default function InboxPage({ onNavigate }) {
             </div>
           )}
         </div>
+
+        {/* Commerce Side-Drawer */}
+        <InboxCommerceDrawer
+          customerPhone={selectedConvo?.phone}
+          customerName={selectedConvo?.name}
+          isOpen={isCommerceDrawerOpen && !!selectedConvo}
+          onClose={() => setIsCommerceDrawerOpen(false)}
+          onInsertMessage={(msg) => setReplyText(prev => prev ? `${prev}\n\n${msg}` : msg)}
+          onOpenFlowModal={handleOpenFlowModal}
+          token={token}
+        />
       </div>
 
       {/* Full-Screen Image Lightbox Modal */}

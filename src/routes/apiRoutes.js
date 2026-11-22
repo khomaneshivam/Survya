@@ -877,4 +877,8 @@ router.use(["/v1/billing", "/billing"], require("./billingRoutes"));
 // Agency White-Label & Multi-Workspace Switcher
 router.use(["/v1/agency", "/agency"], require("./agencyRoutes"));
 
+// Universal Fulfillment, Transactions, Invoices & Payment Reconciliation
+router.use(["/v1/transactions", "/transactions"], require("./universalFulfillmentRoutes"));
+router.use(["/v1/public", "/public"], require("./publicUniversalFulfillmentRoutes"));
+
 module.exports = router;

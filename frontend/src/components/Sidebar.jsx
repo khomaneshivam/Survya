@@ -24,7 +24,8 @@ import {
   Settings,
   Plug,
   Database,
-  Smartphone
+  Smartphone,
+  Receipt
 } from 'lucide-react';
 
 export default function Sidebar({
@@ -60,6 +61,7 @@ export default function Sidebar({
       items: [
         { id: 'masters', label: 'Masters Hub', icon: Database, badge: 'ERP' },
         { id: 'catalog', label: 'Catalog & Menu', icon: Layers },
+        { id: 'transactions', label: 'Orders & Bookings', icon: Receipt, badge: 'Live' },
         { id: 'inventory', label: 'Hospitality', icon: BedDouble }
       ]
     },

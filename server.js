@@ -331,6 +331,12 @@ app.use(["/api/v1/universal-catalog", "/api/universal-catalog"], universalCatalo
 const conversationFlowRoutes = require("./src/routes/conversationFlowRoutes");
 app.use(["/api/v1/flows", "/v1/flows"], conversationFlowRoutes);
 
+// 4j. Universal Fulfillment & Transactions API (/api/v1/transactions)
+const universalFulfillmentRoutes = require("./src/routes/universalFulfillmentRoutes");
+const publicUniversalFulfillmentRoutes = require("./src/routes/publicUniversalFulfillmentRoutes");
+app.use(["/api/v1/transactions", "/api/transactions"], universalFulfillmentRoutes);
+app.use(["/api/v1/public", "/api/public", "/public"], publicUniversalFulfillmentRoutes);
+
 // 5. API routes
 app.use("/api", apiRoutes);
 

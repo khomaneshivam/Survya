@@ -73,15 +73,47 @@ module.exports = {
 
         const holdToken = acquireAtomicHold();
 
+        let txnRes = null;
+        try {
+          const universalFulfillmentService = require("../../universal/universalFulfillmentService");
+          txnRes = await universalFulfillmentService.createTransactionFromQuote({
+            tenantId,
+            sourceChannel: "WHATSAPP_FLOW",
+            customer: {
+              phone: context.recipientPhone || session.sender_phone || session.customerPhone || "919999999999",
+              name: session.guest_name || session.customerName || "Valued Customer"
+            },
+            cartItems: selectedItemId ? [{ itemId: selectedItemId, quantity: session.quantity || 1 }] : [],
+            addOns: (session.selectedAddonIds || []).map(id => ({ addonId: id, quantity: 1 })),
+            promoCode: session.promoCode || null,
+            holdId: holdToken || session.holdToken || null,
+            serviceDate: session.check_in || session.checkIn || null,
+            serviceEndDate: session.check_out || session.checkOut || null,
+            serviceSlotTime: session.slot_time || session.slotTime || null,
+            flowSessionId: session.id || null
+          });
+        } catch (txnErr) {
+          console.warn("[ADDON_UPSELL_AND_QUOTE] Transaction creation warning:", txnErr.message);
+        }
+
+        const refText = txnRes?.referenceCode ? ` (Ref: *${txnRes.referenceCode}*)` : "";
+        const paymentMsg = txnRes?.isPayLater
+          ? "\n\n💵 *Payment Mode: Pay on Arrival / Cash on Delivery*\nYour order & reservation is confirmed!"
+          : (txnRes?.paymentLinkUrl
+            ? `\n\n💳 *Payment Link:* ${txnRes.paymentLinkUrl}\n_Please complete payment within 30 minutes to lock your inventory._`
+            : "\n\n💳 Please proceed with payment or our team will connect with you.");
+
         return {
           action: "CONTINUE",
           nextHandle: "confirmed",
           replyMessages: [
-            "✅ *Order & Booking Confirmed!*\n\n" + quote.receiptText + "\n\n💳 Please proceed with payment or our team will connect with you."
+            `✅ *Order & Booking Confirmed!*${refText}\n\n` + quote.receiptText + paymentMsg
           ],
           updatedData: {
             confirmed: true,
             quote,
+            referenceCode: txnRes?.referenceCode || null,
+            paymentLinkUrl: txnRes?.paymentLinkUrl || null,
             holdToken: holdToken || session.holdToken,
             cart: [{
               itemId: selectedItemId,
@@ -93,7 +125,7 @@ module.exports = {
               checkOut: session.check_out || session.checkOut || null
             }]
           },
-          traceNote: `Customer confirmed quote with grand total: ₹${quote.grandTotal}`
+          traceNote: `Customer confirmed quote with grand total: ₹${quote.grandTotal} (Ref: ${txnRes?.referenceCode || "N/A"})`
         };
       }
 
