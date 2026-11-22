@@ -6,6 +6,7 @@
 const crypto = require("crypto");
 const { db } = require("../config/database");
 const { invalidateFlow, invalidateTriggers } = require("./workflow/runtimeCache");
+const { getNodeExecutor } = require("./workflow/nodeExecutors");
 
 /**
  * Audit log helper
@@ -147,6 +148,8 @@ function validateFlowGraph(nodes, transitions, variables = {}) {
 
   nodes.forEach(n => {
     const cfg = n.config || n.data || {};
+    try { getNodeExecutor(n.type); }
+    catch (_) { errors.push(`Node '${n.id || 'unknown'}' has unsupported type '${n.type || ''}'.`); }
 
     if (n.type === "BUTTON_MENU" || n.type === "SELECTION" || n.type === "CONFIRMATION") {
       const opts = cfg.options || [];
@@ -695,7 +698,7 @@ function assignFlowToLine(flowId, phoneNumberId, user = { id: "admin", name: "Ad
 
   let assignedPhone = null;
   if (targetPhoneId) {
-    assignedPhone = db.prepare("SELECT * FROM waba_phone_numbers WHERE phone_number_id = ?").get(targetPhoneId);
+    assignedPhone = db.prepare("SELECT * FROM waba_phone_numbers WHERE phone_number_id = ? AND tenant_id = ?").get(targetPhoneId, tenantId);
     if (!assignedPhone) {
       throw new Error(`WhatsApp Business Phone ID '${targetPhoneId}' was not found in registered lines.`);
     }

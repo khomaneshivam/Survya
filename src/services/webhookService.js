@@ -1881,17 +1881,18 @@ class WebhookService {
       this.phoneQueues = new Map();
     }
 
-    const currentTask = this.phoneQueues.get(cleanPhone) || Promise.resolve();
+    const queueKey = `${rawValue?.metadata?.phone_number_id || "simulation"}:${cleanPhone}`;
+    const currentTask = this.phoneQueues.get(queueKey) || Promise.resolve();
     const nextTask = currentTask
       .catch(() => {}) // Don't let a prior failure block subsequent messages
       .then(() => this._executeConversationalFlow(replyRecord, rawMsg, rawValue))
       .finally(() => {
-        if (this.phoneQueues.get(cleanPhone) === nextTask) {
-          this.phoneQueues.delete(cleanPhone);
+        if (this.phoneQueues.get(queueKey) === nextTask) {
+          this.phoneQueues.delete(queueKey);
         }
       });
 
-    this.phoneQueues.set(cleanPhone, nextTask);
+    this.phoneQueues.set(queueKey, nextTask);
     return nextTask;
   }
 
@@ -1905,8 +1906,18 @@ class WebhookService {
     const cleanPhone = rawPhone.replace(/\D/g, "");
     if (!cleanPhone || cleanPhone.length < 10) return null;
 
+    const { resolveWhatsAppContext } = require("./workflow/conversationContextResolver");
+    const incomingPhoneId = rawValue?.metadata?.phone_number_id || null;
+    const isSimulation = Boolean(rawValue?.is_simulation || rawMsg?.is_simulation || isSandboxOrTestPhone(cleanPhone));
+    const tenantContext = resolveWhatsAppContext(incomingPhoneId, { simulation: isSimulation });
+    if (!tenantContext) {
+      console.warn("[Webhook Flow] Unrecognized or ambiguous receiving account; suppressing automation.");
+      return null;
+    }
+    const { tenantId, propertyId } = tenantContext;
+
     // Deduplication lock: prevent concurrent dispatch for the same message ID or phone turn
-    const dispatchKey = `${cleanPhone}:${replyRecord.id || replyRecord.wa_message_id || 'unknown'}`;
+    const dispatchKey = `${incomingPhoneId || "simulation"}:${cleanPhone}:${replyRecord.id || replyRecord.wa_message_id || "unknown"}`;
     if (this.activeDispatchKeys.has(dispatchKey)) {
       console.log(`[Webhook Flow] Deduplication: Dispatch key ${dispatchKey} is currently active. Skipping duplicate.`);
       return null;
@@ -2041,14 +2052,12 @@ class WebhookService {
 
       // 5. Check Auto-Reply Master Settings
       const autoReplySettings = this.getAutoReplySettings();
-      if (!autoReplySettings.enabled) {
+      if (tenantId === 1 && !autoReplySettings.enabled) {
         console.log(`[Webhook Flow] Auto-Reply Bot is disabled in settings. Skipping automated response.`);
         return null;
       }
 
       // Resolve multi-line sender phone ID and simulation sandbox
-      const incomingPhoneId = rawValue?.metadata?.phone_number_id || null;
-      const isSimulation = Boolean(rawValue?.is_simulation || rawMsg?.is_simulation || isSandboxOrTestPhone(cleanPhone));
       const customCredentials = {
         ...(incomingPhoneId ? { phoneNumberId: incomingPhoneId } : {}),
         ...(isSimulation ? { isSimulation: true } : {})
@@ -2081,19 +2090,20 @@ class WebhookService {
       const normPhoneDigits = String(cleanPhone || "").replace(/\D/g, "");
       try {
         if (typeof flowEngine.getActiveSession === 'function') {
-          activeFlowSession = flowEngine.getActiveSession(1, normPhoneDigits);
+          activeFlowSession = flowEngine.getActiveSession(tenantId, normPhoneDigits, incomingPhoneId);
         }
         if (!activeFlowSession) {
           activeFlowSession = db.prepare(`
             SELECT s.*, f.status as flow_status, f.name as flow_name
             FROM conversation_flow_sessions s
             JOIN conversation_flows f ON s.flow_id = f.id
-            WHERE (s.sender_phone = ? OR s.sender_phone = ? OR s.sender_phone = ?) 
+            WHERE (s.sender_phone = ? OR s.sender_phone = ? OR s.sender_phone = ?)
+              AND s.tenant_id = ? AND s.session_key = ?
               AND s.session_status = 'ACTIVE' 
               AND (s.expires_at IS NULL OR s.expires_at > UTC_TIMESTAMP())
             ORDER BY s.id DESC
             LIMIT 1
-          `).get(normPhoneDigits, cleanPhone, `+${normPhoneDigits}`);
+          `).get(normPhoneDigits, cleanPhone, `+${normPhoneDigits}`, tenantId, `WHATSAPP:${normPhoneDigits}:${tenantId}${incomingPhoneId ? `:${incomingPhoneId}` : ""}`);
         }
       } catch (sessErr) {
         console.warn("[Webhook Flow] Active session lookup note:", sessErr.message);
@@ -2159,7 +2169,7 @@ class WebhookService {
       if (!activeFlowSession && !isInteractiveAction) {
         try {
           const workflowTriggerService = require("./workflow/workflowTriggerService");
-          matchedTrigger = workflowTriggerService.matchInboundTrigger(1, {
+          matchedTrigger = workflowTriggerService.matchInboundTrigger(tenantId, {
             text: effectiveText,
             phone: cleanPhone,
             phoneNumberId: incomingPhoneId,
@@ -2180,11 +2190,13 @@ class WebhookService {
       let defaultPublishedFlow = null;
       try {
         defaultPublishedFlow = db.prepare(`
-          SELECT id FROM conversation_flows
-          WHERE tenant_id = 1 AND status = 'PUBLISHED'
-          ORDER BY is_default DESC, priority DESC, id ASC
+          SELECT id, property_id FROM conversation_flows
+          WHERE tenant_id = ? AND status = 'PUBLISHED'
+            AND (phone_number_id IS NULL OR phone_number_id = ?)
+          ORDER BY CASE WHEN phone_number_id = ? THEN 0 ELSE 1 END ASC,
+                   is_default DESC, priority DESC, id ASC
           LIMIT 1
-        `).get();
+        `).get(tenantId, incomingPhoneId, incomingPhoneId);
       } catch (fErr) {}
 
       // STRICT ROUTING PRIORITY:
@@ -2235,8 +2247,8 @@ class WebhookService {
             startNodeId: targetNodeId,
             phoneNumberId: incomingPhoneId,
             context: {
-              tenantId: 1,
-              propertyId: 1,
+              tenantId,
+              propertyId: activeFlowSession?.property_id || defaultPublishedFlow?.property_id || propertyId,
               channel: "WHATSAPP",
               phoneNumberId: incomingPhoneId,
               isSimulation: isSimulation,
@@ -2384,6 +2396,9 @@ class WebhookService {
           };
         }
       }
+
+      // Legacy fallback depends on global hospitality settings; it is not multi-tenant safe.
+      if (tenantId !== 1) return null;
 
       // 7. Simple Greeting Engine Mode (if business client configured simple greeting instead of interactive flow)
       if (autoReplySettings.engineMode === "SIMPLE_GREETING") {
@@ -3430,11 +3445,11 @@ class WebhookService {
       // 9b. Task-Scoped Grounded AI Knowledge Agent (Meta Policy Grounded RAG)
       try {
         const taskScopedAiAgentService = require("./ai/taskScopedAiAgentService");
-        const agentCfg = taskScopedAiAgentService.getAgentConfig(1);
+        const agentCfg = taskScopedAiAgentService.getAgentConfig(tenantId);
         if (agentCfg && agentCfg.enabled) {
           console.log(`[Webhook Flow] Task-Scoped Knowledge AI Agent evaluating query for ${cleanPhone}: "${effectiveText}"`);
           const aiResult = await taskScopedAiAgentService.generateReply({
-            tenantId: 1,
+            tenantId,
             senderPhone: cleanPhone,
             userInput: effectiveText,
             inputType: replyRecord.message_type === "audio" ? "VOICE_NOTE" : "TEXT",
