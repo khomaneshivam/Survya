@@ -12,3 +12,4 @@ router.post("/switch-workspace", agencyController.switchWorkspace);
 router.put("/branding", agencyController.updateBranding);
 
 module.exports = router;
+

@@ -144,3 +144,4 @@ router.get("/invoices/:id/html", (req, res) => {
 });
 
 module.exports = router;
+
