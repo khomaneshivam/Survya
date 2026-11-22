@@ -349,12 +349,6 @@ class PageErrorBoundary extends Component {
     console.error(`[PageSystem Error caught in tab "${this.props.tabId}"]:`, error, errorInfo);
   }
 
-  componentDidUpdate(prevProps) {
-    if (prevProps.tabId !== this.props.tabId && this.state.hasError) {
-      this.setState({ hasError: false, error: null });
-    }
-  }
-
   render() {
     if (this.state.hasError) {
       return (
@@ -418,11 +412,7 @@ class PageErrorBoundary extends Component {
  * Standardized Page System Container Component
  * Wraps every sidebar tab view with unified layout, breadcrumb bar, navigation injection, and deep-linking.
  */
-export default function PageSystem({
-  activeTab,
-  setActiveTab,
-  mobileOpen
-}) {
+export default function PageSystem({ activeTab, setActiveTab }) {
   const { user, isAdmin } = useAuth();
 
   // Resolve active page configuration from registry with safe fallback to dashboard
@@ -566,7 +556,7 @@ export default function PageSystem({
 
       {/* Main Viewport Wrapped in Per-Page Error Boundary */}
       <div style={{ flex: 1, position: 'relative' }}>
-        <PageErrorBoundary tabId={activePage.id} pageTitle={activePage.title} onNavigate={handleNavigate}>
+        <PageErrorBoundary key={activePage.id} tabId={activePage.id} pageTitle={activePage.title} onNavigate={handleNavigate}>
           <Suspense fallback={<PageSkeleton title={activePage.title} />}>
             <ActiveComponent
               onNavigate={handleNavigate}
