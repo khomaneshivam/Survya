@@ -101,3 +101,12 @@ test('frontend uses schema-driven inspector and validates on the client too', ()
   assert.match(validator, /type === 'SCHEMA_INPUT'/);
   assert.match(validator, /Choose a safe variable name/);
 });
+
+test('node descriptor source parses as JavaScript after removing the import/export syntax', () => {
+  const source = moduleSource('frontend/src/components/flow-studio/nodeDefinitions.js');
+  const importMarker = "from 'lucide-react';";
+  const endOfImport = source.indexOf(importMarker) + importMarker.length;
+  assert.ok(endOfImport >= importMarker.length);
+  const parserInput = source.slice(endOfImport).replaceAll('export ', '');
+  assert.doesNotThrow(() => new Function(parserInput));
+});
