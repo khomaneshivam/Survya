@@ -2,6 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import AddPhoneNumberModal from '../components/AddPhoneNumberModal';
 import JobQueueMonitor from '../components/admin/JobQueueMonitor';
+import AdminOverviewTab from '../components/admin/AdminOverviewTab';
+import AdminUsersCrudTab from '../components/admin/AdminUsersCrudTab';
+import AdminRecycleBinTab from '../components/admin/AdminRecycleBinTab';
+import AdminComplianceTab from '../components/admin/AdminComplianceTab';
 import {
   PageHeader,
   Tabs,
@@ -126,23 +130,6 @@ export default function SystemAdminPanel({ onNavigate }) {
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [phoneModalData, setPhoneModalData] = useState(null);
   const [testingPhoneId, setTestingPhoneId] = useState(null);
-  const [resetPasswordModal, setResetPasswordModal] = useState({
-    open: false,
-    user: null,
-    newPassword: '',
-    loading: false,
-    error: null
-  });
-  const [createUserModal, setCreateUserModal] = useState({
-    open: false,
-    name: '',
-    email: '',
-    phone: '',
-    password: '',
-    role: 'USER',
-    loading: false,
-    error: null
-  });
 
   function flashSuccess(msg) {
     setSuccessMsg(msg);
@@ -353,55 +340,6 @@ export default function SystemAdminPanel({ onNavigate }) {
     }
   }
 
-  // Handle Create User
-  async function handleCreateUser(e) {
-    e.preventDefault();
-    const { name, email, phone, password, role } = createUserModal;
-    if (!name || !email || !password) {
-      setCreateUserModal((prev) => ({ ...prev, error: 'Name, email, and password are required.' }));
-      return;
-    }
-    setCreateUserModal((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name, email, phone, password, role })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || 'Failed to create user');
-      flashSuccess(`User ${name} created successfully.`);
-      setCreateUserModal({ open: false, name: '', email: '', phone: '', password: '', role: 'USER', loading: false, error: null });
-      loadAdminData();
-    } catch (err) {
-      setCreateUserModal((prev) => ({ ...prev, error: err.message, loading: false }));
-    }
-  }
-
-  // Handle Admin Reset Password
-  async function handleAdminResetPassword(e) {
-    e.preventDefault();
-    const { user, newPassword } = resetPasswordModal;
-    if (!newPassword || newPassword.length < 8) {
-      setResetPasswordModal((prev) => ({ ...prev, error: 'Password must be at least 8 characters.' }));
-      return;
-    }
-    setResetPasswordModal((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      const res = await fetch(`/api/admin/users/${user.id}/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ newPassword })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.message || 'Reset failed.');
-      flashSuccess(data.message);
-      setResetPasswordModal({ open: false, user: null, newPassword: '', loading: false, error: null });
-    } catch (err) {
-      setResetPasswordModal((prev) => ({ ...prev, error: err.message, loading: false }));
-    }
-  }
-
   // Handle Set Default Phone
   async function handleSetDefaultPhone(id) {
     try {
@@ -606,6 +544,8 @@ export default function SystemAdminPanel({ onNavigate }) {
   const tabs = [
     { id: 'overview', label: 'System Overview', icon: Activity },
     { id: 'users', label: 'Users & Roles', icon: Users, badge: users.length },
+    { id: 'recycle', label: 'Recycle Bin', icon: Trash2 },
+    { id: 'compliance', label: 'DPDP Privacy Desk', icon: ShieldCheck },
     { id: 'whatsapp', label: 'WhatsApp & WABA Manager', icon: Smartphone, badge: phoneNumbers.length },
     { id: 'webhooks', label: 'Meta Webhooks & Security', icon: Webhook },
     { id: 'queue', label: 'Job Queue & Workers', icon: Server },
@@ -673,235 +613,53 @@ export default function SystemAdminPanel({ onNavigate }) {
           TAB 1: SYSTEM OVERVIEW & TELEMETRY
           ========================================================================= */}
       {activeTab === 'overview' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-            gap: '16px'
-          }}>
-            <KpiCard
-              title="Active Users"
-              value={users.filter((u) => u.status === 'ACTIVE').length}
-              subtext={`Total accounts: ${users.length}`}
-              icon={Users}
-              color="#0284c7"
-            />
-            <KpiCard
-              title="Registered WABA Lines"
-              value={phoneNumbers.length}
-              subtext={`${phoneNumbers.filter((p) => p.quality_rating === 'GREEN').length} lines healthy`}
-              icon={Smartphone}
-              color="#10b981"
-            />
-            <KpiCard
-              title="Broadcast Campaigns"
-              value={overview?.totalCampaigns ?? 0}
-              subtext="Historical dispatches"
-              icon={Activity}
-              color="#8b5cf6"
-            />
-            <KpiCard
-              title="Database Engine"
-              value="MySQL 8.0"
-              subtext="whatsapp_bulk_db : 3306"
-              icon={Database}
-              color="#f59e0b"
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>
-            <Card>
-              <CardHeader title="System Telemetry & Architecture" icon={Server} />
-              <CardBody>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Server Runtime</span>
-                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Node.js v22.16.0 (Windows x64)</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Environment</span>
-                    <Badge variant="success">PRODUCTION GRADE</Badge>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Database Host</span>
-                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>localhost:3306 (Connection Pool Active)</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Platform Timezone</span>
-                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{metaSettings.APP_TIMEZONE} (IST)</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Meta Cloud API Version</span>
-                    <Badge variant="info">{metaSettings.META_GRAPH_VERSION}</Badge>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Active Tenant Scope</span>
-                    <span style={{ fontWeight: 600, color: 'var(--sarvya-blue)' }}>Master Enterprise Tenant #1</span>
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
-
-            <Card>
-              <CardHeader title="WhatsApp Cloud API Health Quick Check" icon={Activity} />
-              <CardBody>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                    Test your configured WhatsApp Cloud API credentials directly against Meta's Graph API to verify token validity, phone line status, and verified business identity.
-                  </p>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <Button
-                      variant="primary"
-                      onClick={handleTestMetaConnection}
-                      disabled={testingConnection}
-                    >
-                      <RefreshCw size={14} className={testingConnection ? 'spin-slow' : ''} />
-                      {testingConnection ? 'Verifying with Meta...' : 'Test Meta Connection'}
-                    </Button>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                      Target: Phone ID {metaSettings.WHATSAPP_PHONE_NUMBER_ID || '1292128907326342'}
-                    </span>
-                  </div>
-
-                  {metaConnectionResult && (
-                    <div style={{
-                      marginTop: '8px',
-                      padding: '12px',
-                      borderRadius: '8px',
-                      background: metaConnectionResult.success ? 'var(--color-success-subtle, #ecfdf5)' : 'var(--color-danger-subtle, #fef2f2)',
-                      border: `1px solid ${metaConnectionResult.success ? 'var(--color-success-border, #a7f3d0)' : 'var(--color-danger-border, #fecaca)'}`,
-                      fontSize: '12.5px'
-                    }}>
-                      <div style={{ fontWeight: 700, color: metaConnectionResult.success ? 'var(--color-success, #059669)' : 'var(--color-danger, #dc2626)' }}>
-                        {metaConnectionResult.success ? '✓ WhatsApp Cloud API Live & Connected' : '✗ Meta Connection Verification Failed'}
-                      </div>
-                      {metaConnectionResult.data && (
-                        <div style={{ marginTop: '6px', color: 'var(--text-secondary)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                          <div><strong>Verified Name:</strong> {metaConnectionResult.data.verifiedName}</div>
-                          <div><strong>Phone:</strong> {metaConnectionResult.data.displayPhoneNumber}</div>
-                          <div><strong>Status:</strong> {metaConnectionResult.data.status}</div>
-                          <div><strong>Quality:</strong> {metaConnectionResult.data.qualityRating}</div>
-                        </div>
-                      )}
-                      {metaConnectionResult.hint && (
-                        <div style={{ marginTop: '6px', fontStyle: 'italic', color: 'var(--text-secondary)' }}>
-                          Hint: {metaConnectionResult.hint}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </CardBody>
-            </Card>
-          </div>
-        </div>
+        <AdminOverviewTab
+          overview={overview}
+          users={users}
+          phoneNumbers={phoneNumbers}
+          metaSettings={metaSettings}
+          token={token}
+          onRefresh={loadAdminData}
+          flashSuccess={flashSuccess}
+          flashError={flashError}
+        />
       )}
 
       {/* =========================================================================
           TAB 2: USERS & ROLE MANAGEMENT
           ========================================================================= */}
       {activeTab === 'users' && (
-        <Card>
-          <CardHeader
-            title="User & Access Governance"
-            icon={Users}
-            action={
-              <Button variant="primary" onClick={() => setCreateUserModal({ open: true, name: '', email: '', phone: '', password: '', role: 'USER', loading: false, error: null })}>
-                <Plus size={14} /> Create User Account
-              </Button>
-            }
-          />
-          <CardBody>
-            <div style={{ overflowX: 'auto' }}>
-              <table className="sarvya-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                    <th style={{ padding: '10px 14px' }}>User Details</th>
-                    <th style={{ padding: '10px 14px' }}>Role</th>
-                    <th style={{ padding: '10px 14px' }}>Status</th>
-                    <th style={{ padding: '10px 14px' }}>Assigned WABA Sender Line</th>
-                    <th style={{ padding: '10px 14px' }}>Registered At</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((u) => {
-                    const isSelf = u.id === currentUser?.id;
-                    return (
-                      <tr key={u.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '12px 14px' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{u.name} {isSelf && <span style={{ color: 'var(--sarvya-blue)', fontSize: '11px' }}>(You)</span>}</div>
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{u.email} • {u.phone || 'No Phone'}</div>
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <Badge variant={u.role === 'ADMIN' ? 'primary' : 'secondary'}>
-                            {u.role === 'ADMIN' ? 'MASTER ADMIN' : 'STAFF USER'}
-                          </Badge>
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <Badge variant={u.status === 'ACTIVE' ? 'success' : 'danger'}>
-                            {u.status}
-                          </Badge>
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <select
-                            className="sarvya-input"
-                            style={{ padding: '4px 8px', fontSize: '12px', minWidth: '180px' }}
-                            value={u.assigned_phone_id || ''}
-                            onChange={(e) => handleAssignPhone(u.id, e.target.value)}
-                          >
-                            <option value="">Default Workspace Line</option>
-                            {phoneNumbers.map((p) => (
-                              <option key={p.id} value={p.phone_number_id}>
-                                {p.display_name} ({p.phone_number})
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td style={{ padding: '12px 14px', color: 'var(--text-muted)', fontSize: '12px' }}>
-                          {formatIndianDate(u.created_at)}
-                        </td>
-                        <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', gap: '6px' }}>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              title="Reset Password"
-                              onClick={() => setResetPasswordModal({ open: true, user: u, newPassword: '', loading: false, error: null })}
-                            >
-                              <Key size={13} /> Password
-                            </Button>
+        <AdminUsersCrudTab
+          users={users}
+          phoneNumbers={phoneNumbers}
+          currentUser={currentUser}
+          token={token}
+          onRefresh={loadAdminData}
+          flashSuccess={flashSuccess}
+          flashError={flashError}
+        />
+      )}
 
-                            {!isSelf && (
-                              <>
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  title="Change Role"
-                                  onClick={() => handleToggleRole(u.id, u.role)}
-                                >
-                                  {u.role === 'ADMIN' ? 'Demote to User' : 'Make Admin'}
-                                </Button>
-                                <Button
-                                  variant={u.status === 'ACTIVE' ? 'danger' : 'secondary'}
-                                  size="sm"
-                                  onClick={() => handleToggleUserStatus(u.id, u.status)}
-                                >
-                                  {u.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
-                                </Button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </CardBody>
-        </Card>
+      {/* =========================================================================
+          TAB 2b: RECYCLE BIN & UNIVERSAL RESTORE
+          ========================================================================= */}
+      {activeTab === 'recycle' && (
+        <AdminRecycleBinTab
+          token={token}
+          flashSuccess={flashSuccess}
+          flashError={flashError}
+        />
+      )}
+
+      {/* =========================================================================
+          TAB 2c: DPDP ACT 2023 PRIVACY & COMPLIANCE DESK
+          ========================================================================= */}
+      {activeTab === 'compliance' && (
+        <AdminComplianceTab
+          token={token}
+          flashSuccess={flashSuccess}
+          flashError={flashError}
+        />
       )}
 
       {/* =========================================================================
@@ -1841,128 +1599,6 @@ export default function SystemAdminPanel({ onNavigate }) {
         }}
         initialData={phoneModalData}
       />
-
-      {/* Create User Modal */}
-      <Modal
-        isOpen={createUserModal.open}
-        onClose={() => setCreateUserModal((prev) => ({ ...prev, open: false }))}
-        title="Provision New Platform User"
-      >
-        <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {createUserModal.error && (
-            <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--color-danger-subtle, #fef2f2)', color: 'var(--color-danger, #dc2626)', fontSize: '13px' }}>
-              {createUserModal.error}
-            </div>
-          )}
-          <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Full Name *</label>
-            <input
-              type="text"
-              className="sarvya-input"
-              style={{ width: '100%' }}
-              required
-              value={createUserModal.name}
-              onChange={(e) => setCreateUserModal({ ...createUserModal, name: e.target.value })}
-              placeholder="e.g. Rahul Sharma"
-            />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Email Address *</label>
-            <input
-              type="email"
-              className="sarvya-input"
-              style={{ width: '100%' }}
-              required
-              value={createUserModal.email}
-              onChange={(e) => setCreateUserModal({ ...createUserModal, email: e.target.value })}
-              placeholder="rahul@example.com"
-            />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Phone Number</label>
-            <input
-              type="tel"
-              className="sarvya-input"
-              style={{ width: '100%' }}
-              value={createUserModal.phone}
-              onChange={(e) => setCreateUserModal({ ...createUserModal, phone: e.target.value })}
-              placeholder="919876543210"
-            />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Role *</label>
-            <select
-              className="sarvya-input"
-              style={{ width: '100%' }}
-              value={createUserModal.role}
-              onChange={(e) => setCreateUserModal({ ...createUserModal, role: e.target.value })}
-            >
-              <option value="USER">Operational Staff User</option>
-              <option value="ADMIN">Master Administrator</option>
-            </select>
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Initial Password *</label>
-            <input
-              type="password"
-              className="sarvya-input"
-              style={{ width: '100%' }}
-              required
-              minLength={8}
-              value={createUserModal.password}
-              onChange={(e) => setCreateUserModal({ ...createUserModal, password: e.target.value })}
-              placeholder="Minimum 8 characters"
-            />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
-            <Button type="button" variant="secondary" onClick={() => setCreateUserModal((prev) => ({ ...prev, open: false }))}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={createUserModal.loading}>
-              {createUserModal.loading ? 'Creating...' : 'Create Account'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Admin Reset Password Modal */}
-      <Modal
-        isOpen={resetPasswordModal.open}
-        onClose={() => setResetPasswordModal((prev) => ({ ...prev, open: false }))}
-        title={`Reset Password for ${resetPasswordModal.user?.name || 'User'}`}
-      >
-        <form onSubmit={handleAdminResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {resetPasswordModal.error && (
-            <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--color-danger-subtle, #fef2f2)', color: 'var(--color-danger, #dc2626)', fontSize: '13px' }}>
-              {resetPasswordModal.error}
-            </div>
-          )}
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
-            Enter a new password for <strong>{resetPasswordModal.user?.email}</strong>. The user can use this password to sign in immediately.
-          </p>
-          <div>
-            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>New Password</label>
-            <input
-              type="password"
-              className="sarvya-input"
-              style={{ width: '100%' }}
-              required
-              minLength={8}
-              value={resetPasswordModal.newPassword}
-              onChange={(e) => setResetPasswordModal({ ...resetPasswordModal, newPassword: e.target.value })}
-              placeholder="Minimum 8 characters"
-            />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '10px' }}>
-            <Button type="button" variant="secondary" onClick={() => setResetPasswordModal((prev) => ({ ...prev, open: false }))}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={resetPasswordModal.loading}>
-              {resetPasswordModal.loading ? 'Resetting...' : 'Reset Password'}
-            </Button>
-          </div>
-        </form>
-      </Modal>
 
       {/* Webhook Verify Token Rotation Modal (Admin Only) */}
       <Modal

@@ -25,6 +25,8 @@ export default function PayoutsPage() {
   const [summary, setSummary] = useState(null);
   const [ledger, setLedger] = useState([]);
   const [beneficiaries, setBeneficiaries] = useState([]);
+  const [paymentConfig, setPaymentConfig] = useState(null);
+  const [savingPaymentMode, setSavingPaymentMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [notification, setNotification] = useState(null);
@@ -69,7 +71,7 @@ export default function PayoutsPage() {
     if (!entityId) return;
     setLoading(true);
     try {
-      const [summaryRes, ledgerRes, benRes] = await Promise.all([
+      const [summaryRes, ledgerRes, benRes, configRes] = await Promise.all([
         fetch(`/api/v1/entities/${entityId}/payouts/summary`, {
           headers: { Authorization: `Bearer ${token}` }
         }),
@@ -78,16 +80,21 @@ export default function PayoutsPage() {
         }),
         fetch(`/api/v1/entities/${entityId}/payouts/beneficiaries`, {
           headers: { Authorization: `Bearer ${token}` }
-        })
+        }),
+        fetch(`/api/v1/entities/${entityId}/payment-config`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(() => null)
       ]);
 
       const summaryData = await summaryRes.json();
       const ledgerData = await ledgerRes.json();
       const benData = await benRes.json();
+      const configData = configRes && configRes.ok ? await configRes.json() : null;
 
       if (summaryData.success) setSummary(summaryData.summary);
       if (ledgerData.success) setLedger(ledgerData.ledger);
       if (benData.success) setBeneficiaries(benData.beneficiaries);
+      if (configData?.success) setPaymentConfig(configData.config);
     } catch (err) {
       showToast('Error loading payout information', 'error');
     } finally {
@@ -127,6 +134,35 @@ export default function PayoutsPage() {
       showToast('Error verifying bank account', 'error');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // 3b. Update Payment Gateway Mode (RBI PA/PG Master Directions)
+  const handlePaymentModeChange = async (newMode) => {
+    setSavingPaymentMode(true);
+    try {
+      const res = await fetch(`/api/v1/entities/${selectedEntityId}/payment-config`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...(paymentConfig || {}),
+          payment_mode: newMode
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPaymentConfig(data.config);
+        showToast(`Payment settlement mode updated to ${newMode === 'MERCHANT_DIRECT_GATEWAY' ? 'Direct Merchant Gateway' : 'Licensed Split Partner'}.`);
+      } else {
+        showToast(data.message || 'Failed to update payment mode', 'error');
+      }
+    } catch (err) {
+      showToast('Error updating payment mode', 'error');
+    } finally {
+      setSavingPaymentMode(false);
     }
   };
 
@@ -306,6 +342,70 @@ export default function PayoutsPage() {
             <ArrowUpRight size={16} />
             <span>Request Instant Payout</span>
           </button>
+        </div>
+      </div>
+
+      {/* RBI Master Directions Compliance & Settlement Mode Strip */}
+      <div className="sarvya-card" style={{
+        padding: '16px 20px',
+        marginBottom: '20px',
+        background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.04) 0%, rgba(16, 185, 129, 0.04) 100%)',
+        border: '1px solid rgba(2, 132, 199, 0.2)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '12px', maxWidth: '720px' }}>
+            <div style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '8px',
+              background: '#0284c7',
+              color: '#FFFFFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}>
+              <ShieldCheck size={20} />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  RBI Master Directions Compliance (PA/PG Guidelines 2020)
+                </span>
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  background: '#ECFDF5',
+                  color: '#059669',
+                  border: '1px solid #A7F3D0',
+                  padding: '2px 8px',
+                  borderRadius: '12px'
+                }}>
+                  Zero-Escrow TSP Mode
+                </span>
+              </div>
+              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0 0', lineHeight: 1.5 }}>
+                Under RBI circular <strong>RBI/DPSS/2019-20/174</strong>, SARVYA operates strictly as a Technology Service Provider (TSP). 
+                Customer payments from WhatsApp Flows, UPI QR, and payment links disburse directly to your merchant account without intermediary pooling or holding.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>SETTLEMENT GATEWAY MODE</div>
+              <select
+                className="sarvya-select"
+                disabled={savingPaymentMode}
+                value={paymentConfig?.payment_mode || 'MERCHANT_DIRECT_GATEWAY'}
+                onChange={(e) => handlePaymentModeChange(e.target.value)}
+                style={{ fontSize: '12.5px', fontWeight: 700, minWidth: '240px', marginTop: '2px' }}
+              >
+                <option value="MERCHANT_DIRECT_GATEWAY">Merchant Direct Gateway (Default, 0% Escrow)</option>
+                <option value="LICENSED_SPLIT_PARTNER">Licensed Split Partner (RBI Authorized PA)</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 

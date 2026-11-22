@@ -1,10 +1,23 @@
 const crypto = require("crypto");
 const { db } = require("../config/database");
 const { generateQrSvg } = require("../utils/qrCodeUtil");
+const cryptoUtil = require("../utils/cryptoUtil");
 
 const PLATFORM_FEE_RATE = 0.02; // 2% platform fee
 const GST_ON_FEE_RATE = 0.18;   // 18% GST on platform fee
 const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+
+function maskAccountNumber(accountNumber) {
+  if (!accountNumber) return null;
+  try {
+    const raw = cryptoUtil.decrypt(accountNumber);
+    if (raw.length <= 4) return "****";
+    if (raw.length <= 8) return "****" + raw.slice(-4);
+    return raw.slice(0, 4) + "****" + raw.slice(-4);
+  } catch (e) {
+    return "****" + String(accountNumber).slice(-4);
+  }
+}
 
 /**
  * MERCHANT PAYMENT CONFIG
@@ -20,16 +33,22 @@ function getPaymentConfig(entityId) {
       upi_payee_name: entity?.name || "Merchant Business",
       gateway_provider: "RAZORPAY",
       api_key: "rzp_test_mock_sarvya_key",
+      payment_mode: "MERCHANT_DIRECT_GATEWAY",
       is_live_mode: 0,
       accept_cod: 1,
       auto_capture: 1
     };
   }
-  return config;
+  return {
+    ...config,
+    payment_mode: config.payment_mode || "MERCHANT_DIRECT_GATEWAY"
+  };
 }
 
 function savePaymentConfig(entityId, data, tenantId = 1) {
   const existing = db.prepare("SELECT id FROM merchant_payment_configs WHERE entity_id = ?").get(entityId);
+  const paymentMode = data.payment_mode || "MERCHANT_DIRECT_GATEWAY";
+
   if (existing) {
     db.prepare(`
       UPDATE merchant_payment_configs
@@ -40,6 +59,7 @@ function savePaymentConfig(entityId, data, tenantId = 1) {
           api_secret_encrypted = COALESCE(?, api_secret_encrypted),
           merchant_id = COALESCE(?, merchant_id),
           webhook_secret = COALESCE(?, webhook_secret),
+          payment_mode = COALESCE(?, payment_mode),
           is_live_mode = COALESCE(?, is_live_mode),
           accept_cod = COALESCE(?, accept_cod),
           auto_capture = COALESCE(?, auto_capture),
@@ -50,9 +70,10 @@ function savePaymentConfig(entityId, data, tenantId = 1) {
       data.upi_payee_name || null,
       data.gateway_provider || null,
       data.api_key || null,
-      data.api_secret || null,
+      data.api_secret ? cryptoUtil.encrypt(data.api_secret) : null,
       data.merchant_id || null,
       data.webhook_secret || null,
+      paymentMode,
       data.is_live_mode !== undefined ? (data.is_live_mode ? 1 : 0) : null,
       data.accept_cod !== undefined ? (data.accept_cod ? 1 : 0) : null,
       data.auto_capture !== undefined ? (data.auto_capture ? 1 : 0) : null,
@@ -63,8 +84,8 @@ function savePaymentConfig(entityId, data, tenantId = 1) {
       INSERT INTO merchant_payment_configs (
         tenant_id, entity_id, upi_vpa, upi_payee_name, gateway_provider,
         api_key, api_secret_encrypted, merchant_id, webhook_secret,
-        is_live_mode, accept_cod, auto_capture
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        payment_mode, is_live_mode, accept_cod, auto_capture
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       tenantId,
       entityId,
@@ -72,9 +93,10 @@ function savePaymentConfig(entityId, data, tenantId = 1) {
       data.upi_payee_name || 'Merchant Business',
       data.gateway_provider || 'RAZORPAY',
       data.api_key || 'rzp_test_mock_sarvya_key',
-      data.api_secret || null,
+      data.api_secret ? cryptoUtil.encrypt(data.api_secret) : null,
       data.merchant_id || null,
       data.webhook_secret || null,
+      paymentMode,
       data.is_live_mode ? 1 : 0,
       data.accept_cod !== undefined ? (data.accept_cod ? 1 : 0) : 1,
       data.auto_capture !== undefined ? (data.auto_capture ? 1 : 0) : 1
@@ -221,7 +243,16 @@ function captureOrderPayment({ orderNumber, paymentMethod = "UPI_INTENT", paymen
  * MERCHANT PAY-OUT SETTLEMENT ENGINE
  */
 function getBeneficiaries(entityId) {
-  return db.prepare("SELECT * FROM merchant_payout_beneficiaries WHERE entity_id = ? ORDER BY is_primary DESC, id ASC").all(entityId);
+  const rows = db.prepare("SELECT * FROM merchant_payout_beneficiaries WHERE entity_id = ? ORDER BY is_primary DESC, id ASC").all(entityId);
+  return rows.map(b => {
+    const masked = maskAccountNumber(b.account_number);
+    return {
+      ...b,
+      account_number_masked: masked,
+      accountNumberMasked: masked,
+      account_number: masked
+    };
+  });
 }
 
 function addBeneficiary(entityId, data, tenantId = 1) {
@@ -245,6 +276,8 @@ function addBeneficiary(entityId, data, tenantId = 1) {
     db.prepare("UPDATE merchant_payout_beneficiaries SET is_primary = 0 WHERE entity_id = ?").run(entityId);
   }
 
+  const encryptedAccount = cryptoUtil.encrypt(cleanAccount);
+
   const stmt = db.prepare(`
     INSERT INTO merchant_payout_beneficiaries (
       tenant_id, entity_id, account_holder_name, bank_name, account_number,
@@ -257,7 +290,7 @@ function addBeneficiary(entityId, data, tenantId = 1) {
     entityId,
     data.account_holder_name.trim(),
     data.bank_name.trim(),
-    cleanAccount,
+    encryptedAccount,
     cleanIfsc,
     data.account_type || 'CURRENT',
     data.upi_vpa || null,
@@ -265,7 +298,12 @@ function addBeneficiary(entityId, data, tenantId = 1) {
     data.payout_schedule || 'DAILY'
   );
 
-  return db.prepare("SELECT * FROM merchant_payout_beneficiaries WHERE id = ?").get(info.lastInsertRowid);
+  const created = db.prepare("SELECT * FROM merchant_payout_beneficiaries WHERE id = ?").get(info.lastInsertRowid);
+  return {
+    ...created,
+    account_number_masked: maskAccountNumber(created.account_number),
+    account_number: maskAccountNumber(created.account_number)
+  };
 }
 
 function verifyPennyDrop(beneficiaryId) {
@@ -353,7 +391,7 @@ function getPayoutSummary(entityId) {
       id: primaryBeneficiary.id,
       bankName: primaryBeneficiary.bank_name,
       accountHolder: primaryBeneficiary.account_holder_name,
-      accountNumberMasked: primaryBeneficiary.account_number.slice(0, 4) + '****' + primaryBeneficiary.account_number.slice(-4),
+      accountNumberMasked: maskAccountNumber(primaryBeneficiary.account_number),
       ifscCode: primaryBeneficiary.ifsc_code,
       accountType: primaryBeneficiary.account_type,
       verificationStatus: primaryBeneficiary.verification_status,
@@ -446,7 +484,8 @@ function getPayoutLedger(entityId, options = {}) {
 
   return rows.map(r => ({
     ...r,
-    account_number_masked: r.account_number ? (r.account_number.slice(0, 4) + '****' + r.account_number.slice(-4)) : null
+    account_number_masked: maskAccountNumber(r.account_number),
+    account_number: maskAccountNumber(r.account_number)
   }));
 }
 

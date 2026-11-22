@@ -198,6 +198,18 @@ class JobWorkerEngine extends EventEmitter {
 
       return { launchedCampaigns: launched };
     });
+
+    // 7. DPDP Right to Erasure Execution Handler
+    this.registerHandler("DPDP_ERASURE_EXECUTE", async (payload, job) => {
+      const complianceService = require("../complianceService");
+      if (payload?.phoneE164) {
+        return complianceService.executeErasureOrAnonymization(payload.phoneE164, payload.tenantId || 1, {
+          schedule48hNotice: false,
+          resolvedBy: "system_worker"
+        });
+      }
+      return { skipped: true, reason: "Missing phoneE164 in payload" };
+    });
   }
 
   /**

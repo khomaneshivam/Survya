@@ -20,6 +20,9 @@ const TABLE_SCHEMAS = {
   "contact_suppressions": "CREATE TABLE IF NOT EXISTS `contact_suppressions` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `clean_phone` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `reason` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'USER_OPT_OUT',\n  `user_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "contacts": "CREATE TABLE IF NOT EXISTS `contacts` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `phone_e164` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `name` longtext COLLATE utf8mb4_unicode_ci,\n  `email` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `source` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'WHATSAPP',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "customer_replies": "CREATE TABLE IF NOT EXISTS `customer_replies` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `wa_message_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `from_phone` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `customer_name` longtext COLLATE utf8mb4_unicode_ci,\n  `message_type` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'text',\n  `message_body` longtext COLLATE utf8mb4_unicode_ci,\n  `raw_payload` longtext COLLATE utf8mb4_unicode_ci,\n  `context_message_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `campaign_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `is_read` bigint DEFAULT '0',\n  `received_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `reply_text` longtext COLLATE utf8mb4_unicode_ci,\n  `reply_sent_at` datetime DEFAULT NULL,\n  `reply_status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `user_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `media_url` longtext COLLATE utf8mb4_unicode_ci,\n  `media_type` longtext COLLATE utf8mb4_unicode_ci,\n  `media_caption` longtext COLLATE utf8mb4_unicode_ci,\n  `flow_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `flow_response_id` bigint DEFAULT NULL,\n  `link_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `source` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'WHATSAPP',\n  PRIMARY KEY (`id`),\n  KEY `idx_customer_replies_user` (`user_id`),\n  KEY `idx_customer_replies_flow` (`flow_id`),\n  KEY `idx_customer_replies_link` (`link_id`),\n  KEY `idx_replies_context_msg` (`context_message_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "dpdp_consent_ledger": "CREATE TABLE IF NOT EXISTS `dpdp_consent_ledger` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `phone_e164` varchar(32) NOT NULL,\n  `wa_bsuid` varchar(128) DEFAULT NULL,\n  `purpose` varchar(32) NOT NULL DEFAULT 'MARKETING',\n  `status` varchar(24) NOT NULL DEFAULT 'GRANTED',\n  `source` varchar(64) NOT NULL DEFAULT 'WHATSAPP_CHAT',\n  `notice_version` varchar(32) NOT NULL DEFAULT 'v1.0',\n  `ip_address` varchar(64) DEFAULT NULL,\n  `granted_at` datetime DEFAULT NULL,\n  `withdrawn_at` datetime DEFAULT NULL,\n  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "dpdp_data_requests": "CREATE TABLE IF NOT EXISTS `dpdp_data_requests` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `phone_e164` varchar(32) NOT NULL,\n  `request_type` varchar(32) NOT NULL,\n  `status` varchar(32) NOT NULL DEFAULT 'OPEN',\n  `details` json DEFAULT NULL,\n  `erasure_scheduled_at` datetime DEFAULT NULL,\n  `resolved_by` varchar(64) DEFAULT NULL,\n  `resolved_at` datetime DEFAULT NULL,\n  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "enquiries": "CREATE TABLE IF NOT EXISTS `enquiries` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `contact_id` bigint DEFAULT NULL,\n  `phone_e164` varchar(32) NOT NULL,\n  `guest_name` varchar(255) DEFAULT NULL,\n  `message` text DEFAULT NULL,\n  `status` varchar(32) NOT NULL DEFAULT 'NEW',\n  `active_status` tinyint(1) NOT NULL DEFAULT '1',\n  `delete_status` tinyint(1) NOT NULL DEFAULT '0',\n  `deleted_at` datetime DEFAULT NULL,\n  `deleted_by` varchar(64) DEFAULT NULL,\n  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "daily_inventory_matrix": "CREATE TABLE IF NOT EXISTS `daily_inventory_matrix` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `entity_id` bigint NOT NULL,\n  `item_id` bigint NOT NULL,\n  `inventory_date` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `available_qty` bigint NOT NULL DEFAULT '1',\n  `booked_qty` bigint DEFAULT '0',\n  `rate_override` double DEFAULT NULL,\n  `min_stay_nights` bigint DEFAULT '1',\n  `is_closed` bigint DEFAULT '0',\n  `notes` longtext COLLATE utf8mb4_unicode_ci,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "flow_responses": "CREATE TABLE IF NOT EXISTS `flow_responses` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `flow_id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `flow_token` longtext COLLATE utf8mb4_unicode_ci,\n  `wa_message_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `from_phone` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `clean_phone` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `customer_name` longtext COLLATE utf8mb4_unicode_ci,\n  `response_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `parsed_data` longtext COLLATE utf8mb4_unicode_ci,\n  `user_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `campaign_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `sender_phone` longtext COLLATE utf8mb4_unicode_ci,\n  `response_data` longtext COLLATE utf8mb4_unicode_ci,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "flow_tokens": "CREATE TABLE IF NOT EXISTS `flow_tokens` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `token` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `flow_id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `meta_flow_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `recipient_phone` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `clean_phone` longtext COLLATE utf8mb4_unicode_ci,\n  `meta_message_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `context_message_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `campaign_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `user_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'system',\n  `status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'ACTIVE',\n  `expires_at` datetime DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
@@ -150,7 +153,11 @@ const INDEXES = [
   "CREATE INDEX idx_inapp_session_exp ON inapp_sessions (tenant_id, experience_id, status)",
   "CREATE INDEX idx_inapp_neg_exp ON inapp_rate_negotiations (tenant_id, experience_id, status)",
   "CREATE INDEX idx_inapp_call_exp ON inapp_call_requests (tenant_id, experience_id, status)",
-  "CREATE INDEX idx_cooldown_tenant_phone ON contact_marketing_cooldowns (tenant_id, phone_e164)"
+  "CREATE INDEX idx_cooldown_tenant_phone ON contact_marketing_cooldowns (tenant_id, phone_e164)",
+  "CREATE INDEX idx_dpdp_consent_phone ON dpdp_consent_ledger (phone_e164)",
+  "CREATE INDEX idx_dpdp_consent_tenant ON dpdp_consent_ledger (tenant_id, phone_e164)",
+  "CREATE INDEX idx_dpdp_req_phone ON dpdp_data_requests (phone_e164)",
+  "CREATE INDEX idx_dpdp_req_status ON dpdp_data_requests (status)"
 ];
 
 function runColumnMigrations(db) {
@@ -221,6 +228,59 @@ function runColumnMigrations(db) {
     if (!wtCols.includes("phone_number_id")) {
       db.exec("ALTER TABLE workflow_triggers ADD COLUMN phone_number_id VARCHAR(64) NULL AFTER tenant_id");
     }
+  } catch (e) {}
+
+  // Universal Soft Delete Columns Migration across 15 operational tables
+  const softDeleteTables = [
+    'users', 'waba_phone_numbers', 'conversation_flows', 'campaigns',
+    'templates', 'contacts', 'enquiries', 'booking_enquiries', 'crm_pipelines',
+    'crm_records', 'business_entities', 'catalog_items', 'room_types',
+    'chat_links', 'inapp_experiences'
+  ];
+
+  for (const tbl of softDeleteTables) {
+    try {
+      const cols = db.prepare(`DESCRIBE ${tbl}`).all().map(c => c.Field);
+      if (!cols.includes("active_status")) {
+        db.exec(`ALTER TABLE ${tbl} ADD COLUMN active_status TINYINT(1) NOT NULL DEFAULT 1`);
+      }
+      if (!cols.includes("delete_status")) {
+        db.exec(`ALTER TABLE ${tbl} ADD COLUMN delete_status TINYINT(1) NOT NULL DEFAULT 0`);
+      }
+      if (!cols.includes("deleted_at")) {
+        db.exec(`ALTER TABLE ${tbl} ADD COLUMN deleted_at DATETIME NULL`);
+      }
+      if (!cols.includes("deleted_by")) {
+        db.exec(`ALTER TABLE ${tbl} ADD COLUMN deleted_by VARCHAR(64) NULL`);
+      }
+    } catch (e) {}
+  }
+
+  // DPDP Act 2023 Meta BSUID & Username columns
+  const bsuidTables = ['contacts', 'customer_replies', 'conversation_flow_sessions'];
+  for (const tbl of bsuidTables) {
+    try {
+      const cols = db.prepare(`DESCRIBE ${tbl}`).all().map(c => c.Field);
+      if (!cols.includes("wa_bsuid")) {
+        db.exec(`ALTER TABLE ${tbl} ADD COLUMN wa_bsuid VARCHAR(128) NULL`);
+      }
+      if (!cols.includes("wa_username")) {
+        db.exec(`ALTER TABLE ${tbl} ADD COLUMN wa_username VARCHAR(128) NULL`);
+      }
+    } catch (e) {}
+  }
+
+  // RBI-Safe Payment Gateway Mode in merchant_payment_configs
+  try {
+    const pcCols = db.prepare("DESCRIBE merchant_payment_configs").all().map(c => c.Field);
+    if (!pcCols.includes("payment_mode")) {
+      db.exec("ALTER TABLE merchant_payment_configs ADD COLUMN payment_mode VARCHAR(48) NOT NULL DEFAULT 'MERCHANT_DIRECT_GATEWAY'");
+    }
+  } catch (e) {}
+
+  // Ensure merchant_payout_beneficiaries account_number can store encrypted ciphertext
+  try {
+    db.exec("ALTER TABLE merchant_payout_beneficiaries MODIFY COLUMN account_number TEXT NOT NULL");
   } catch (e) {}
 }
 

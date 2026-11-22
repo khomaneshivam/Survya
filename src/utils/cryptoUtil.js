@@ -75,8 +75,20 @@ function decrypt(cipherString) {
   }
 }
 
+/**
+ * Hashes a phone number using HMAC-SHA-256 with DPDP_SALT or fallback secret.
+ * Used for DPDP Act 2023 perpetual marketing opt-out suppression without storing PII.
+ */
+function hashPhone(phone) {
+  if (!phone) return "";
+  const salt = process.env.DPDP_SALT || process.env.JWT_SECRET || "sarvya_dpdp_act_salt_2023";
+  const clean = String(phone).replace(/\D/g, "");
+  return crypto.createHmac("sha256", salt).update(clean).digest("hex");
+}
+
 module.exports = {
   encrypt,
   decrypt,
-  isEncrypted
+  isEncrypted,
+  hashPhone
 };

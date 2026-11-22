@@ -334,10 +334,11 @@ router.post("/meta/register-phone", optionalAuth, settingsController.registerMet
 router.post("/meta/phone-registration", optionalAuth, settingsController.registerMetaPhone);
 router.post("/meta/deregister-phone", optionalAuth, settingsController.deregisterMetaPhone);
 
-// System Time & Timezone (Deployments + Local)
+// System Time & Timezone & Health Telemetry (Deployments + Local)
 const systemController = require("../controllers/systemController");
 router.get("/system/time", systemController.getSystemTime);
 router.post("/system/time", authenticateToken, requireAdmin, systemController.updateTimezone);
+router.get("/system/health", systemController.getSystemHealth);
 
 // =========================================================================
 // 6. SYSTEM TEMPLATES MANAGEMENT (Protected)

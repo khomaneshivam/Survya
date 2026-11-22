@@ -5,7 +5,10 @@ const { authenticateToken, requireAdmin } = require("../middleware/authMiddlewar
 
 // User Management (Admin Only)
 router.get("/users", authenticateToken, requireAdmin, adminController.listUsers);
+router.post("/users", authenticateToken, requireAdmin, adminController.createUser);
 router.get("/users/:userId", authenticateToken, requireAdmin, adminController.getUserDetails);
+router.put("/users/:userId", authenticateToken, requireAdmin, adminController.updateUser);
+router.delete("/users/:userId", authenticateToken, requireAdmin, adminController.deleteUser);
 router.post("/users/:userId/status", authenticateToken, requireAdmin, adminController.updateUserStatus);
 router.post("/users/:userId/role", authenticateToken, requireAdmin, adminController.updateUserRole);
 router.post("/users/:userId/reset-password", authenticateToken, requireAdmin, adminController.resetUserPassword);
@@ -14,6 +17,20 @@ router.post("/users/:userId/claim-history", authenticateToken, requireAdmin, adm
 router.get("/unassigned-summary", authenticateToken, requireAdmin, adminController.getUnassignedSummary);
 router.post("/impersonate/:userId", authenticateToken, requireAdmin, adminController.impersonateUser);
 router.get("/overview", authenticateToken, requireAdmin, adminController.getSystemOverview);
+
+// Recycle Bin (Universal Soft/Hard Delete Recovery)
+router.get("/recycle-bin", authenticateToken, requireAdmin, adminController.listRecycleBin);
+router.post("/recycle-bin/:entityType/:id/restore", authenticateToken, requireAdmin, adminController.restoreRecycleBinItem);
+router.delete("/recycle-bin/:entityType/:id/hard-delete", authenticateToken, requireAdmin, adminController.hardDeleteRecycleBinItem);
+
+// DPDP Act 2023 Compliance & Privacy Desk
+router.post("/compliance/consent", authenticateToken, requireAdmin, adminController.recordComplianceConsent);
+router.get("/compliance/export/:phone", authenticateToken, requireAdmin, adminController.exportCompliancePii);
+router.post("/compliance/erasure/:phone", authenticateToken, requireAdmin, adminController.executeComplianceErasure);
+router.get("/compliance/requests", authenticateToken, requireAdmin, adminController.listComplianceRequests);
+router.post("/compliance/requests", authenticateToken, requireAdmin, adminController.createComplianceRequest);
+router.patch("/compliance/requests/:id", authenticateToken, requireAdmin, adminController.updateComplianceRequest);
+router.get("/compliance/consent-ledger", authenticateToken, requireAdmin, adminController.listConsentLedger);
 
 // WhatsApp Phone Number Registry (Protected & Admin Only for mutations)
 router.get("/phone-numbers", authenticateToken, adminController.listPhoneNumbers);

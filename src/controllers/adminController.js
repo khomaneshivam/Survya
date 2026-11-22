@@ -4,6 +4,8 @@ const jwt = require("jsonwebtoken");
 const config = require("../config/env");
 const { db, getSetting, setSetting } = require("../config/database");
 const webhookService = require("../services/webhookService");
+const recycleBinService = require("../services/recycleBinService");
+const complianceService = require("../services/complianceService");
 
 /**
  * List all registered users with summary statistics (Admin Only)
@@ -21,6 +23,7 @@ async function listUsers(req, res) {
         (SELECT COUNT(*) FROM automated_booking_dispatches b WHERE b.user_id = u.id) as automation_dispatches_count
       FROM users u
       LEFT JOIN waba_phone_numbers p ON u.assigned_phone_id = p.id
+      WHERE COALESCE(u.delete_status, 0) = 0
       ORDER BY 
         CASE WHEN u.role = 'ADMIN' THEN 1 ELSE 2 END,
         u.created_at DESC
@@ -1076,8 +1079,338 @@ async function updateWebhookUrlOverride(req, res) {
   }
 }
 
+/**
+ * =========================================================================
+ * USER CRUD EXTENSIONS (ADMIN ONLY)
+ * =========================================================================
+ */
+
+async function createUser(req, res) {
+  try {
+    const { name, email, phone, role = "USER", password, assigned_phone_id } = req.body || {};
+    if (!name || !email || !password) {
+      return res.status(400).json({ success: false, message: "Name, email, and password are required." });
+    }
+    const cleanEmail = String(email).trim().toLowerCase();
+    const existing = db.prepare("SELECT id, delete_status FROM users WHERE LOWER(email) = LOWER(?)").get(cleanEmail);
+    if (existing) {
+      if (existing.delete_status === 1) {
+        return res.status(400).json({ success: false, message: "A user with this email exists in the Recycle Bin. Restore them from the Recycle Bin." });
+      }
+      return res.status(400).json({ success: false, message: "Email is already registered." });
+    }
+    const newId = crypto.randomUUID();
+    const passwordHash = await bcrypt.hash(password, 10);
+    db.prepare(`
+      INSERT INTO users (id, name, email, phone, role, status, password_hash, assigned_phone_id, active_status, delete_status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?, 1, 0, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    `).run(newId, String(name).trim(), cleanEmail, phone ? String(phone).trim() : null, role === "ADMIN" ? "ADMIN" : "USER", passwordHash, assigned_phone_id || null);
+
+    try {
+      db.prepare(`
+        INSERT INTO audit_logs (user_id, action, target_id, details, ip_address, created_at)
+        VALUES (?, 'ADMIN_CREATE_USER', ?, ?, ?, UTC_TIMESTAMP())
+      `).run(req.user?.id || null, newId, `Admin created user ${cleanEmail} (${role})`, req.ip || null);
+    } catch (e) {}
+
+    const created = db.prepare("SELECT id, name, email, phone, role, status, assigned_phone_id, created_at FROM users WHERE id = ?").get(newId);
+    return res.status(201).json({ success: true, message: `User ${name} created successfully.`, data: created });
+  } catch (error) {
+    console.error("Admin createUser error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+async function updateUser(req, res) {
+  try {
+    const { userId } = req.params;
+    const { name, email, phone, role, status, assigned_phone_id } = req.body || {};
+    const user = db.prepare("SELECT * FROM users WHERE id = ? AND COALESCE(delete_status, 0) = 0").get(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found." });
+    }
+
+    if (role && !["ADMIN", "USER"].includes(role)) {
+      return res.status(400).json({ success: false, message: "Role must be 'ADMIN' or 'USER'." });
+    }
+    if (status && !["ACTIVE", "SUSPENDED"].includes(status)) {
+      return res.status(400).json({ success: false, message: "Status must be 'ACTIVE' or 'SUSPENDED'." });
+    }
+
+    if (req.user?.id === userId) {
+      if (status === "SUSPENDED") {
+        return res.status(400).json({ success: false, message: "You cannot suspend your own account." });
+      }
+      if (role === "USER") {
+        const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'ADMIN' AND COALESCE(delete_status, 0) = 0").get().count;
+        if (adminCount <= 1) {
+          return res.status(400).json({ success: false, message: "Cannot demote the only remaining Master Admin." });
+        }
+      }
+    }
+
+    const cleanEmail = email ? String(email).trim().toLowerCase() : user.email;
+    if (cleanEmail !== user.email) {
+      const emailConflict = db.prepare("SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?").get(cleanEmail, userId);
+      if (emailConflict) {
+        return res.status(400).json({ success: false, message: "Email is already taken by another account." });
+      }
+    }
+
+    db.prepare(`
+      UPDATE users
+      SET name = COALESCE(?, name),
+          email = COALESCE(?, email),
+          phone = COALESCE(?, phone),
+          role = COALESCE(?, role),
+          status = COALESCE(?, status),
+          assigned_phone_id = ?,
+          updated_at = UTC_TIMESTAMP()
+      WHERE id = ?
+    `).run(
+      name ? String(name).trim() : null,
+      cleanEmail,
+      phone !== undefined ? (phone ? String(phone).trim() : null) : user.phone,
+      role || null,
+      status || null,
+      assigned_phone_id !== undefined ? (assigned_phone_id || null) : user.assigned_phone_id,
+      userId
+    );
+
+    const updated = db.prepare("SELECT id, name, email, phone, role, status, assigned_phone_id, updated_at FROM users WHERE id = ?").get(userId);
+    return res.status(200).json({ success: true, message: "User updated successfully.", data: updated });
+  } catch (error) {
+    console.error("Admin updateUser error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+async function deleteUser(req, res) {
+  try {
+    const { userId } = req.params;
+    const user = db.prepare("SELECT * FROM users WHERE id = ? AND COALESCE(delete_status, 0) = 0").get(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found." });
+    }
+    if (req.user?.id === userId) {
+      return res.status(400).json({ success: false, message: "You cannot delete your own account." });
+    }
+    if (user.role === "ADMIN") {
+      const adminCount = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'ADMIN' AND COALESCE(delete_status, 0) = 0").get().count;
+      if (adminCount <= 1) {
+        return res.status(400).json({ success: false, message: "Cannot delete the only remaining Master Admin." });
+      }
+    }
+
+    db.prepare(`
+      UPDATE users 
+      SET active_status = 0,
+          delete_status = 1,
+          deleted_at = UTC_TIMESTAMP(),
+          deleted_by = ?,
+          updated_at = UTC_TIMESTAMP()
+      WHERE id = ?
+    `).run(req.user?.id || "admin", userId);
+
+    try {
+      db.prepare(`
+        INSERT INTO audit_logs (user_id, action, target_id, details, ip_address, created_at)
+        VALUES (?, 'ADMIN_SOFT_DELETE_USER', ?, ?, ?, UTC_TIMESTAMP())
+      `).run(req.user?.id || null, userId, `Soft-deleted user ${user.email} into Recycle Bin`, req.ip || null);
+    } catch (e) {}
+
+    return res.status(200).json({ success: true, message: `User '${user.name}' moved to Recycle Bin.` });
+  } catch (error) {
+    console.error("Admin deleteUser error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * =========================================================================
+ * RECYCLE BIN (UNIVERSAL SOFT/HARD DELETE RECOVERY)
+ * =========================================================================
+ */
+
+async function listRecycleBin(req, res) {
+  try {
+    const { entityType = "ALL", limit = 100, offset = 0 } = req.query;
+    const items = await recycleBinService.listDeletedItems({
+      entityType,
+      tenantId: req.user?.tenant_id || 1,
+      limit: parseInt(limit, 10) || 100,
+      offset: parseInt(offset, 10) || 0
+    });
+    return res.status(200).json({ success: true, data: items });
+  } catch (error) {
+    console.error("Admin listRecycleBin error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+async function restoreRecycleBinItem(req, res) {
+  try {
+    const { entityType, id } = req.params;
+    const result = await recycleBinService.restoreItem({
+      entityType,
+      id,
+      tenantId: req.user?.tenant_id || 1,
+      restoredBy: req.user?.id || "admin"
+    });
+    return res.status(200).json({ success: true, message: result.message, data: result });
+  } catch (error) {
+    console.error("Admin restoreRecycleBinItem error:", error);
+    return res.status(error.message && error.message.includes("not found") ? 404 : 400).json({ success: false, message: error.message });
+  }
+}
+
+async function hardDeleteRecycleBinItem(req, res) {
+  try {
+    const { entityType, id } = req.params;
+    const { confirmHardDelete } = req.body || {};
+    const result = await recycleBinService.hardDeleteItem({
+      entityType,
+      id,
+      tenantId: req.user?.tenant_id || 1,
+      hardDeletedBy: req.user?.id || "admin",
+      confirmHardDelete: Boolean(confirmHardDelete)
+    });
+    return res.status(200).json({ success: true, message: result.message, data: result });
+  } catch (error) {
+    console.error("Admin hardDeleteRecycleBinItem error:", error);
+    return res.status(error.message && error.message.includes("not found") ? 404 : 400).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * =========================================================================
+ * DPDP ACT 2023 COMPLIANCE & PRIVACY DESK
+ * =========================================================================
+ */
+
+async function recordComplianceConsent(req, res) {
+  try {
+    const { phoneE164, waBsuid, purpose, status, source, noticeVersion } = req.body || {};
+    const result = await complianceService.recordConsent({
+      tenantId: req.user?.tenant_id || 1,
+      phoneE164,
+      waBsuid,
+      purpose,
+      status,
+      source,
+      noticeVersion,
+      ipAddress: req.ip || null
+    });
+    return res.status(201).json({ success: true, message: `DPDP Consent recorded (${status}).`, data: result });
+  } catch (error) {
+    console.error("Admin recordComplianceConsent error:", error);
+    return res.status(400).json({ success: false, message: error.message });
+  }
+}
+
+async function exportCompliancePii(req, res) {
+  try {
+    const { phone } = req.params;
+    const exportData = await complianceService.exportDataSubjectPii(phone, req.user?.tenant_id || 1);
+    return res.status(200).json({ success: true, data: exportData });
+  } catch (error) {
+    console.error("Admin exportCompliancePii error:", error);
+    return res.status(400).json({ success: false, message: error.message });
+  }
+}
+
+async function executeComplianceErasure(req, res) {
+  try {
+    const { phone } = req.params;
+    const { scheduleNoticeHours, immediate, reason } = req.body || {};
+    const result = await complianceService.executeErasureOrAnonymization({
+      phoneE164: phone,
+      tenantId: req.user?.tenant_id || 1,
+      requestedBy: req.user?.id || "admin",
+      scheduleNoticeHours,
+      immediate,
+      reason
+    });
+    return res.status(200).json({ success: true, message: result.message || "Erasure processed.", data: result });
+  } catch (error) {
+    console.error("Admin executeComplianceErasure error:", error);
+    return res.status(400).json({ success: false, message: error.message });
+  }
+}
+
+async function listComplianceRequests(req, res) {
+  try {
+    const { status, requestType, limit, offset } = req.query;
+    const requests = await complianceService.listComplianceRequests({
+      tenantId: req.user?.tenant_id || 1,
+      status,
+      requestType,
+      limit: parseInt(limit, 10) || 50,
+      offset: parseInt(offset, 10) || 0
+    });
+    return res.status(200).json({ success: true, data: requests });
+  } catch (error) {
+    console.error("Admin listComplianceRequests error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+async function createComplianceRequest(req, res) {
+  try {
+    const { phoneE164, requestType, details } = req.body || {};
+    const result = await complianceService.createComplianceRequest({
+      tenantId: req.user?.tenant_id || 1,
+      phoneE164,
+      requestType,
+      details,
+      createdBy: req.user?.id || "admin"
+    });
+    return res.status(201).json({ success: true, message: "Compliance request registered.", data: result });
+  } catch (error) {
+    console.error("Admin createComplianceRequest error:", error);
+    return res.status(400).json({ success: false, message: error.message });
+  }
+}
+
+async function updateComplianceRequest(req, res) {
+  try {
+    const { id } = req.params;
+    const { status, details } = req.body || {};
+    const result = await complianceService.updateComplianceRequest({
+      requestId: id,
+      tenantId: req.user?.tenant_id || 1,
+      status,
+      details,
+      resolvedBy: req.user?.id || "admin"
+    });
+    return res.status(200).json({ success: true, message: "Compliance request updated.", data: result });
+  } catch (error) {
+    console.error("Admin updateComplianceRequest error:", error);
+    return res.status(400).json({ success: false, message: error.message });
+  }
+}
+
+async function listConsentLedger(req, res) {
+  try {
+    const { phone, limit, offset } = req.query;
+    const entries = await complianceService.listConsentLedger({
+      tenantId: req.user?.tenant_id || 1,
+      phoneE164: phone,
+      limit: parseInt(limit, 10) || 100,
+      offset: parseInt(offset, 10) || 0
+    });
+    return res.status(200).json({ success: true, data: entries });
+  } catch (error) {
+    console.error("Admin listConsentLedger error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
 module.exports = {
   listUsers,
+  createUser,
+  updateUser,
+  deleteUser,
   getUserDetails,
   updateUserStatus,
   updateUserRole,
@@ -1101,5 +1434,15 @@ module.exports = {
   generateNewVerifyToken,
   saveWebhookToken,
   testWebhookHandshake,
-  updateWebhookUrlOverride
+  updateWebhookUrlOverride,
+  listRecycleBin,
+  restoreRecycleBinItem,
+  hardDeleteRecycleBinItem,
+  recordComplianceConsent,
+  exportCompliancePii,
+  executeComplianceErasure,
+  listComplianceRequests,
+  createComplianceRequest,
+  updateComplianceRequest,
+  listConsentLedger
 };

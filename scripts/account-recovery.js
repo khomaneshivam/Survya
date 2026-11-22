@@ -92,7 +92,7 @@ async function run() {
           process.exit(1);
         }
 
-        const user = db.prepare("SELECT id, name, email FROM users WHERE email = ? COLLATE NOCASE").get(cleanEmail);
+        const user = db.prepare("SELECT id, name, email FROM users WHERE LOWER(email) = LOWER(?)").get(cleanEmail);
         if (!user) {
           console.error(`Error: User with email '${cleanEmail}' not found.`);
           process.exit(1);
@@ -101,7 +101,7 @@ async function run() {
         console.log(`Hashing password for ${user.name} (${user.email})...`);
         const newHash = await bcrypt.hash(newPassword, 10);
 
-        db.exec("BEGIN IMMEDIATE TRANSACTION;");
+        db.exec("START TRANSACTION;");
         try {
           db.prepare("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(newHash, user.id);
           try {
@@ -125,7 +125,7 @@ async function run() {
         }
 
         const cleanEmail = arg1.trim().toLowerCase();
-        const user = db.prepare("SELECT id, name, email, role FROM users WHERE email = ? COLLATE NOCASE").get(cleanEmail);
+        const user = db.prepare("SELECT id, name, email, role FROM users WHERE LOWER(email) = LOWER(?)").get(cleanEmail);
         if (!user) {
           console.error(`Error: User with email '${cleanEmail}' not found.`);
           process.exit(1);
@@ -143,13 +143,13 @@ async function run() {
         }
 
         const cleanEmail = arg1.trim().toLowerCase();
-        const user = db.prepare("SELECT id, name, email FROM users WHERE email = ? COLLATE NOCASE").get(cleanEmail);
+        const user = db.prepare("SELECT id, name, email FROM users WHERE LOWER(email) = LOWER(?)").get(cleanEmail);
         if (!user) {
           console.error(`Error: User with email '${cleanEmail}' not found.`);
           process.exit(1);
         }
 
-        db.exec("BEGIN IMMEDIATE TRANSACTION;");
+        db.exec("START TRANSACTION;");
         try {
           const campRes = db.prepare("UPDATE campaigns SET user_id = ? WHERE user_id IS NULL").run(user.id);
           const replyRes = db.prepare("UPDATE customer_replies SET user_id = ? WHERE user_id IS NULL").run(user.id);
