@@ -101,6 +101,32 @@ async function runMasterTest() {
   assert(foodQuote.promoDiscount === 100 || foodQuote.promoDiscount === 0);
   console.log(`✓ Journey 4 (Restaurant Food): 2x ${pizza.title} -> Grand Total: ₹${foodQuote.grandTotal} with Promo Check`);
 
+  // Journey 5: B2B Wholesale (1,000 Cartons + 8% MOQ Bulk Discount + Custom Logo Printing Add-On)
+  const b2bBlueprint = universalCatalogService.seedIndustryBlueprint(tenantId, "B2B_WHOLESALE", "test_runner");
+  const b2bItems = universalCatalogService.listItems(tenantId, { categoryName: "Corrugated Boxes" });
+  assert(b2bItems.length > 0, "B2B Corrugated Boxes item must exist");
+  const cartons = b2bItems[0];
+  const b2bAddonGroups = universalCatalogService.listAddonGroups(tenantId, { itemId: cartons.id });
+  const printAddon = b2bAddonGroups.flatMap(g => g.addons).find(a => a.name.includes("Flexo") || a.name.includes("Printing"));
+
+  const b2bQuote = universalPricingService.calculateCartQuote(tenantId, {
+    items: [{ itemId: cartons.id, quantity: 1000 }],
+    addOns: printAddon ? [{ addonId: printAddon.id, quantity: 1 }] : []
+  });
+  assert.strictEqual(b2bQuote.items[0].quantity, 1000);
+  assert(b2bQuote.items[0].ruleApplied, "MOQ 1000+ units bulk tier rule should be applied");
+  assert(b2bQuote.items[0].ruleDiscountAmount > 0, "Bulk discount amount must be > 0");
+  assert(b2bQuote.grandTotal > 0, "B2B grand total must be positive");
+  console.log(`✓ Journey 5 (B2B Wholesale): 1000x ${cartons.title} [8% MOQ Tier] + Custom Print Add-On -> Grand Total: ₹${b2bQuote.grandTotal}`);
+
+  // Base64 DB bloat rejection verification
+  assert.throws(() => {
+    universalCatalogService.addMedia(tenantId, cartons.id, {
+      media_url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    });
+  }, /Base64 image blobs are not permitted in database/);
+  console.log(`✓ Space Optimization: Successfully rejected raw Base64 data URI in media gallery`);
+
   // ---------------------------------------------------------------------------
   // TEST 3: 4-Mode Availability & Atomic Inventory Holds
   // ---------------------------------------------------------------------------
@@ -115,7 +141,41 @@ async function runMasterTest() {
   assert.strictEqual(availStock.inStock, true);
   console.log(`✓ UNIT_STOCK Check: ${availStock.reason} (Available: ${availStock.availableQty})`);
 
-  // Mode 2: TIME_SLOT
+  // Mode 2: TIME_SLOT & Concurrent Race Condition Prevention
+  const singleSeatSlot = universalAvailabilityService.createAvailabilitySlot(tenantId, {
+    slot_date: "2026-12-16",
+    start_time: "10:00:00",
+    end_time: "11:00:00",
+    total_capacity: 1 // Single seat available
+  });
+  // Customer 1 places hold
+  const cust1Hold = universalAvailabilityService.createInventoryHold(tenantId, {
+    itemId: consult.id,
+    slotId: singleSeatSlot.id,
+    quantity: 1,
+    holdMinutes: 15,
+    customerPhone: "+919811002233"
+  });
+  assert.strictEqual(cust1Hold.success, true);
+  // Customer 2 checks availability for the same slot -> must see it FULL
+  const cust2Avail = universalAvailabilityService.checkAvailability(tenantId, {
+    itemId: consult.id,
+    slotId: singleSeatSlot.id,
+    quantity: 1
+  });
+  assert.strictEqual(cust2Avail.available, false, "Second customer must see slot as unavailable due to active hold");
+  assert.strictEqual(cust2Avail.remainingCapacity, 0);
+  console.log(`✓ Concurrent TIME_SLOT Protection: Customer 1 holds seat; Customer 2 correctly blocked (${cust2Avail.reason})`);
+
+  // Customer 1 confirms hold -> booked capacity increases to 1
+  const cust1Confirm = universalAvailabilityService.confirmHold(tenantId, cust1Hold.holdToken);
+  assert.strictEqual(cust1Confirm.success, true);
+  assert.strictEqual(cust1Confirm.status, "CONFIRMED");
+  const confirmedSlotRow = db.prepare("SELECT * FROM catalog_availability_slots WHERE id = ?").get(singleSeatSlot.id);
+  assert.strictEqual(confirmedSlotRow.booked_capacity, 1);
+  assert.strictEqual(confirmedSlotRow.held_capacity, 0);
+  console.log(`✓ TIME_SLOT Confirmation: Slot #${singleSeatSlot.id} booked capacity transition verified (booked: 1, held: 0)`);
+
   const newSlot = universalAvailabilityService.createAvailabilitySlot(tenantId, {
     slot_date: "2026-12-15",
     start_time: "14:00:00",
@@ -131,7 +191,11 @@ async function runMasterTest() {
   assert.strictEqual(availSlot.remainingCapacity, 5);
   console.log(`✓ TIME_SLOT Check: Slot #${newSlot.id} has ${availSlot.remainingCapacity} remaining capacity`);
 
-  // Mode 3: Atomic Hold creation & release
+  // Mode 3: Atomic Hold creation, release & inventory decrement verification
+  const preHoldItem = db.prepare("SELECT * FROM catalog_items WHERE id = ?").get(hoodie.id);
+  const initialStock = preHoldItem.stock_qty;
+  const initialReserved = preHoldItem.reserved_qty;
+
   const hold = universalAvailabilityService.createInventoryHold(tenantId, {
     itemId: hoodie.id,
     quantity: 3,
@@ -140,12 +204,30 @@ async function runMasterTest() {
   });
   assert.strictEqual(hold.success, true);
   assert(hold.holdToken.startsWith("hld_"));
-  console.log(`✓ Created 15-minute Atomic Stock Hold: ${hold.holdToken}`);
 
-  const releaseRes = universalAvailabilityService.releaseHold(tenantId, hold.holdToken);
+  // Check reserved_qty incremented
+  const postHoldItem = db.prepare("SELECT * FROM catalog_items WHERE id = ?").get(hoodie.id);
+  assert.strictEqual(postHoldItem.reserved_qty, initialReserved + 3);
+  console.log(`✓ Created 15-minute Atomic Stock Hold: ${hold.holdToken} (Reserved qty: ${postHoldItem.reserved_qty})`);
+
+  // Confirm hold -> decrements stock_qty and clears reserved_qty
+  const confirmStockRes = universalAvailabilityService.confirmHold(tenantId, hold.holdToken);
+  assert.strictEqual(confirmStockRes.success, true);
+  const postConfirmItem = db.prepare("SELECT * FROM catalog_items WHERE id = ?").get(hoodie.id);
+  assert.strictEqual(postConfirmItem.stock_qty, initialStock - 3, "Stock quantity must be decremented by 3");
+  assert.strictEqual(postConfirmItem.reserved_qty, initialReserved, "Reserved quantity must be restored to baseline");
+  console.log(`✓ Confirmed Stock Hold: ${hold.holdToken} -> Stock decremented from ${initialStock} to ${postConfirmItem.stock_qty}`);
+
+  // Test hold release
+  const holdForRelease = universalAvailabilityService.createInventoryHold(tenantId, {
+    itemId: hoodie.id,
+    quantity: 2,
+    holdMinutes: 15
+  });
+  const releaseRes = universalAvailabilityService.releaseHold(tenantId, holdForRelease.holdToken);
   assert.strictEqual(releaseRes.success, true);
   assert.strictEqual(releaseRes.status, "RELEASED");
-  console.log(`✓ Released Atomic Hold: ${hold.holdToken}`);
+  console.log(`✓ Released Atomic Hold: ${holdForRelease.holdToken}`);
 
   // Test Auto-release of Expired Holds
   const expiredHold = universalAvailabilityService.createInventoryHold(tenantId, {

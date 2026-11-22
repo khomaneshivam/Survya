@@ -1,6 +1,14 @@
 const crypto = require("crypto");
-const { db } = require("../../config/database");
+const database = require("../../config/database");
 const { invalidateTriggers } = require("./runtimeCache");
+
+const db = new Proxy({}, {
+  get(target, prop) {
+    const liveDb = database.db || require("../../config/database").db;
+    const val = liveDb[prop];
+    return typeof val === "function" ? val.bind(liveDb) : val;
+  }
+});
 
 /**
  * Workflow Trigger Service
@@ -139,12 +147,12 @@ class WorkflowTriggerService {
     const numericTenantId = Number(tenantId) || 1;
     const triggers = db.prepare(`
       SELECT t.id, t.flow_id, t.phone_number_id, t.trigger_key, t.trigger_type,
-             t.match_config_json, t.priority, f.name as flow_name, f.status as flow_status
+             t.match_config_json, t.priority, f.name as flow_name, f.status as flow_status, f.is_default
       FROM workflow_triggers t
       JOIN conversation_flows f ON f.id = t.flow_id
       WHERE t.tenant_id = ? AND t.active_status = 1 AND t.delete_status = 0
         AND f.status = 'PUBLISHED'
-      ORDER BY t.priority ASC, t.id ASC
+      ORDER BY f.is_default DESC, t.priority DESC, t.id ASC
     `).all(numericTenantId);
 
     const keywordIndex = new Map();
@@ -236,7 +244,8 @@ class WorkflowTriggerService {
           WHEN t.phone_number_id IS NULL THEN 1
           ELSE 2
         END ASC,
-        t.priority ASC, t.id ASC
+        f.is_default DESC,
+        t.priority DESC, t.id ASC
     `).all(Number(tenantId) || 1, targetPhoneId, targetPhoneId, targetPhoneId, targetPhoneId);
 
     if (!rawTriggers || rawTriggers.length === 0) return null;
@@ -273,11 +282,14 @@ class WorkflowTriggerService {
             triggerType: trg.trigger_type
           };
         }
-        continue;
+        // If it also defines keywords, let it check keywords below for direct match
+        if (!config.keywords || config.keywords.length === 0) {
+          continue;
+        }
       }
 
       // 3. Keyword Match
-      if (trg.trigger_type === "KEYWORD" || trg.trigger_type === "INBOUND_MESSAGE") {
+      if (trg.trigger_type === "KEYWORD" || trg.trigger_type === "INBOUND_MESSAGE" || (config.keywords && config.keywords.length > 0)) {
         const keywords = config.keywords || [];
         if (!keywords || keywords.length === 0) {
           // A keyword trigger with no keywords defined does not match any inbound message

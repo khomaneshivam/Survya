@@ -132,6 +132,7 @@ function calculateCartQuote(tenantId = 1, options = {}) {
       gstPercent,
       gstAmount: lineGst,
       ruleApplied: ruleAppliedTitle,
+      ruleDiscountAmount: itemDiscountAmount,
       lineSubtotal: lineFinalSubtotal
     });
   }

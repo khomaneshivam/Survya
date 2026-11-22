@@ -295,8 +295,9 @@ function searchCatalog(tenantId = 1, params = {}) {
   `;
   const sqlParams = [numericTenantId];
 
-  if (params.query && String(params.query).trim()) {
-    const q = `%${String(params.query).trim()}%`;
+  const searchQuery = params.search || params.query;
+  if (searchQuery && String(searchQuery).trim()) {
+    const q = `%${String(searchQuery).trim()}%`;
     sql += " AND (i.title LIKE ? OR i.category_name LIKE ? OR i.description LIKE ?)";
     sqlParams.push(q, q, q);
   }
@@ -315,14 +316,19 @@ function searchCatalog(tenantId = 1, params = {}) {
     sql += " AND (i.track_inventory = 0 OR (i.stock_qty - i.reserved_qty) > 0) AND i.is_sold_out = 0";
   }
 
-  if (params.maxPrice && Number(params.maxPrice) > 0) {
+  if (params.minPrice !== undefined && params.minPrice !== null && Number(params.minPrice) >= 0) {
+    sql += " AND i.base_price >= ?";
+    sqlParams.push(Number(params.minPrice));
+  }
+
+  if (params.maxPrice !== undefined && params.maxPrice !== null && Number(params.maxPrice) > 0) {
     sql += " AND i.base_price <= ?";
     sqlParams.push(Number(params.maxPrice));
   }
 
   sql += " ORDER BY i.sort_order ASC, i.id ASC";
 
-  const limit = Math.max(1, Math.min(50, Number(params.limit) || 10));
+  const limit = Math.max(1, Math.min(20, Number(params.limit) || 10));
   const offset = Math.max(0, Number(params.offset) || 0);
   sql += " LIMIT ? OFFSET ?";
   sqlParams.push(limit, offset);
@@ -350,6 +356,16 @@ function addMedia(tenantId = 1, itemId, mediaData = {}) {
     throw new Error("media_url is required.");
   }
 
+  // Reject raw base64 data blobs to prevent DB bloat
+  if (mediaUrl.startsWith("data:") || mediaUrl.includes(";base64,")) {
+    throw new Error("Base64 image blobs are not permitted in database. Please upload media to storage and supply a URL.");
+  }
+
+  // Validate upload size <= 2MB (2048 KB)
+  if (mediaData.file_size_kb && Number(mediaData.file_size_kb) > 2048) {
+    throw new Error("Media file size exceeds maximum permitted limit of 2MB (2048 KB).");
+  }
+
   const isPrimary = mediaData.is_primary ? 1 : 0;
   if (isPrimary) {
     // unset other primaries
@@ -359,14 +375,17 @@ function addMedia(tenantId = 1, itemId, mediaData = {}) {
   }
 
   const sortOrder = Number(mediaData.sort_order ?? mediaData.display_order ?? 0) || 0;
+  const fileSizeKb = mediaData.file_size_kb ? Number(mediaData.file_size_kb) : null;
 
   const stmt = db.prepare(`
     INSERT INTO catalog_item_media (
       tenant_id, catalog_item_id, media_type, media_url, image_url, thumbnail_url,
-      caption, is_primary, sort_order, display_order, meta_media_id, meta_media_expires_at, created_at, updated_at
+      caption, is_primary, sort_order, display_order, meta_media_id, meta_media_expires_at,
+      file_size_kb, created_at, updated_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP()
+      ?, ?, ?, ?, ?, ?,
+      ?, UTC_TIMESTAMP(), UTC_TIMESTAMP()
     )
   `);
 
@@ -382,7 +401,8 @@ function addMedia(tenantId = 1, itemId, mediaData = {}) {
     sortOrder,
     sortOrder,
     mediaData.meta_media_id || null,
-    mediaData.meta_media_expires_at || null
+    mediaData.meta_media_expires_at || null,
+    fileSizeKb
   );
 
   return db.prepare("SELECT * FROM catalog_item_media WHERE id = ?").get(info.lastInsertRowid);

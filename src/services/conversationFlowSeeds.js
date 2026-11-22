@@ -2169,6 +2169,40 @@ function seedFlowsAndTemplates(db) {
         }
       }
     }
+
+    // Ensure flow 1 triggers are cleanly indexed in workflow_triggers using pure SQL
+    try {
+      const flow1 = db.prepare("SELECT * FROM conversation_flows WHERE id = 1 AND tenant_id = 1").get();
+      if (flow1 && flow1.published_version_id) {
+        const v1 = db.prepare("SELECT nodes_json FROM conversation_flow_versions WHERE id = ?").get(flow1.published_version_id);
+        if (v1) {
+          const configJson = JSON.stringify({
+            nodeId: "node_start",
+            nodeType: "START",
+            keywords: ["hi", "hello", "hey", "resort", "book", "room", "enquiry", "rates", "namaste", "villa", "cottage"],
+            matchType: "CONTAINS",
+            ignoreCase: true,
+            isCatchAll: false,
+            isCtwa: false,
+            priority: 100
+          });
+
+          db.prepare(`
+            INSERT INTO workflow_triggers (
+              tenant_id, phone_number_id, flow_id, trigger_key, trigger_type, match_config_json,
+              secret_token, priority, active_status, delete_status, created_at, updated_at
+            ) VALUES (1, NULL, '1', 'trg_1_node_start', 'KEYWORD', ?, NULL, 100, 1, 0, NOW(), NOW())
+            ON DUPLICATE KEY UPDATE
+              trigger_type = 'KEYWORD',
+              match_config_json = VALUES(match_config_json),
+              priority = 100,
+              active_status = 1,
+              delete_status = 0,
+              updated_at = NOW()
+          `).run(configJson);
+        }
+      }
+    } catch (_) {}
   } catch (err) {
     console.warn("[ConversationFlowSeeds] Seed notice:", err.message);
   }

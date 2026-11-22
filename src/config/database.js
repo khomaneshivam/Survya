@@ -22,9 +22,6 @@ function initializeDatabase() {
   initSchema(db, config);
 }
 
-// Auto-run schema initialization on startup
-initializeDatabase();
-
 module.exports = {
   db,
   getDb: () => db,
@@ -54,3 +51,6 @@ module.exports = {
     return result;
   }
 };
+
+// Auto-run schema initialization on startup
+initializeDatabase();

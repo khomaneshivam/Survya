@@ -1,5 +1,6 @@
 const universalCatalogService = require("../../universal/universalCatalogService");
 const universalPricingService = require("../../universal/universalPricingService");
+const universalAvailabilityService = require("../../universal/universalAvailabilityService");
 
 /**
  * Universal Add-On Upsell & Quotation Node Executor (ADDON_UPSELL_AND_QUOTE)
@@ -16,6 +17,22 @@ module.exports = {
     const selectedItemId = session.selectedItemId || cfg.defaultItemId || null;
     const entityId = cfg.entityId || null;
     const allowPromoCode = cfg.allowPromoCode !== false;
+
+    // Helper to acquire a 15-minute atomic inventory hold
+    const acquireAtomicHold = () => {
+      if (!selectedItemId) return null;
+      try {
+        const holdRes = universalAvailabilityService.createInventoryHold(tenantId, {
+          itemId: selectedItemId,
+          quantity: session.quantity || 1,
+          holdMinutes: 15,
+          customerPhone: context.recipientPhone || session.sender_phone
+        });
+        return holdRes.success ? holdRes.holdToken : null;
+      } catch (_) {
+        return null;
+      }
+    };
 
     // Available add-on groups for this item/entity
     const addonGroups = universalCatalogService.listAddonGroups(tenantId, {
@@ -48,6 +65,8 @@ module.exports = {
           checkOut: session.check_out || session.checkOut
         });
 
+        const holdToken = acquireAtomicHold();
+
         return {
           action: "CONTINUE",
           nextHandle: "confirmed",
@@ -56,6 +75,7 @@ module.exports = {
           ],
           updatedData: {
             selectedAddonIds: currentAddonIds,
+            holdToken: holdToken || session.holdToken,
             quote
           },
           traceNote: `Customer selected add-on #${addonId}. Revised grand total: ₹${quote.grandTotal}`
@@ -72,13 +92,18 @@ module.exports = {
           checkOut: session.check_out || session.checkOut
         });
 
+        const holdToken = acquireAtomicHold();
+
         return {
           action: "CONTINUE",
           nextHandle: "confirmed",
           replyMessages: [
             quote.receiptText
           ],
-          updatedData: { quote },
+          updatedData: {
+            quote,
+            holdToken: holdToken || session.holdToken
+          },
           traceNote: `Customer confirmed quote with grand total: ₹${quote.grandTotal}`
         };
       }
@@ -96,13 +121,18 @@ module.exports = {
 
         if (quote.promoDiscount > 0) {
           session.promoCode = promo;
+          const holdToken = acquireAtomicHold();
           return {
             action: "CONTINUE",
             nextHandle: "confirmed",
             replyMessages: [
               `🎉 Promo code *${promo}* applied successfully!\n\n` + quote.receiptText
             ],
-            updatedData: { promoCode: promo, quote },
+            updatedData: {
+              promoCode: promo,
+              quote,
+              holdToken: holdToken || session.holdToken
+            },
             traceNote: `Promo code ${promo} applied. Discount: ₹${quote.promoDiscount}`
           };
         }
@@ -118,6 +148,8 @@ module.exports = {
       checkOut: session.check_out || session.checkOut
     });
 
+    const holdToken = acquireAtomicHold();
+
     // If there are no add-ons configured, advance immediately
     if (allAddons.length === 0) {
       return {
@@ -126,7 +158,10 @@ module.exports = {
         replyMessages: [
           initialQuote.receiptText
         ],
-        updatedData: { quote: initialQuote },
+        updatedData: {
+          quote: initialQuote,
+          holdToken: holdToken || session.holdToken
+        },
         traceNote: "No add-on groups configured. Directly presented quote receipt."
       };
     }
@@ -153,7 +188,10 @@ module.exports = {
         type: "BUTTONS",
         options: buttons
       },
-      updatedData: { quote: initialQuote },
+      updatedData: {
+        quote: initialQuote,
+        holdToken: holdToken || session.holdToken
+      },
       traceNote: `Presented quote (₹${initialQuote.grandTotal}) and ${allAddons.length} add-on options.`
     };
   }
