@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Trash2,
   RefreshCw,
@@ -17,7 +17,8 @@ import {
   CardHeader,
   CardBody,
   Button,
-  Badge
+  Badge,
+  DataTable
 } from '../ui';
 import { formatIndianDate } from '../../utils/indianTime';
 
@@ -146,6 +147,90 @@ export default function AdminRecycleBinTab({
     );
   });
 
+  const recycleColumns = useMemo(() => [
+    {
+      header: 'Entity Type',
+      accessor: 'entityType',
+      render: (entityType, item) => (
+        <Badge variant="secondary">
+          {item.displayName || entityType}
+        </Badge>
+      )
+    },
+    {
+      header: 'Item Title / Identifier',
+      accessor: 'label',
+      render: (label, item) => (
+        <div>
+          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+            {label}
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+            ID: {String(item.id).substring(0, 18)}
+          </div>
+        </div>
+      )
+    },
+    {
+      header: 'Secondary Reference',
+      accessor: 'secondary',
+      render: (secondary) => (
+        <span style={{ color: 'var(--text-secondary)' }}>
+          {secondary || '—'}
+        </span>
+      )
+    },
+    {
+      header: 'Deleted At',
+      accessor: 'deleted_at',
+      render: (deletedAt, item) => (
+        <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+          {formatIndianDate(deletedAt || item.updated_at)}
+        </span>
+      )
+    },
+    {
+      header: 'Deleted By',
+      accessor: 'deleted_by',
+      render: (deletedBy) => (
+        <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+          {deletedBy || 'Admin'}
+        </span>
+      )
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      render: (_, item) => (
+        <div style={{ display: 'inline-flex', gap: '6px' }}>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={restoringId === item.id}
+            onClick={() => handleRestore(item)}
+            title="Restore item to active status"
+          >
+            <RotateCcw size={13} className={restoringId === item.id ? 'spin-slow' : ''} />
+            <span>Restore</span>
+          </Button>
+
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => {
+              setHardDeleteTarget(item);
+              setConfirmCheckbox(false);
+            }}
+            title="Permanently hard-delete"
+          >
+            <Trash2 size={13} />
+            <span>Purge</span>
+          </Button>
+        </div>
+      )
+    }
+  ], [restoringId]);
+
   return (
     <Card>
       <CardHeader
@@ -210,96 +295,14 @@ export default function AdminRecycleBinTab({
         </div>
 
         {/* Deleted Records Table */}
-        <div style={{ overflowX: 'auto' }}>
-          <table className="sarvya-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                <th style={{ padding: '10px 14px' }}>Entity Type</th>
-                <th style={{ padding: '10px 14px' }}>Item Title / Identifier</th>
-                <th style={{ padding: '10px 14px' }}>Secondary Reference</th>
-                <th style={{ padding: '10px 14px' }}>Deleted At</th>
-                <th style={{ padding: '10px 14px' }}>Deleted By</th>
-                <th style={{ padding: '10px 14px', textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={6} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    Loading deleted records...
-                  </td>
-                </tr>
-              ) : filteredItems.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ padding: '48px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    <CheckCircle2 size={32} color="#16A34A" style={{ margin: '0 auto 8px' }} />
-                    <div style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>Recycle Bin is Empty</div>
-                    <div style={{ fontSize: '12px' }}>No deleted items found for selected filter.</div>
-                  </td>
-                </tr>
-              ) : (
-                filteredItems.map((item) => (
-                  <tr key={`${item.entityType}-${item.id}`} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '12px 14px' }}>
-                      <Badge variant="secondary">
-                        {item.displayName || item.entityType}
-                      </Badge>
-                    </td>
-
-                    <td style={{ padding: '12px 14px' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {item.label}
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                        ID: {String(item.id).substring(0, 18)}
-                      </div>
-                    </td>
-
-                    <td style={{ padding: '12px 14px', color: 'var(--text-secondary)' }}>
-                      {item.secondary || '—'}
-                    </td>
-
-                    <td style={{ padding: '12px 14px', color: 'var(--text-muted)', fontSize: '12px' }}>
-                      {formatIndianDate(item.deleted_at || item.updated_at)}
-                    </td>
-
-                    <td style={{ padding: '12px 14px', color: 'var(--text-secondary)', fontSize: '12px' }}>
-                      {item.deleted_by || 'Admin'}
-                    </td>
-
-                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: '6px' }}>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          disabled={restoringId === item.id}
-                          onClick={() => handleRestore(item)}
-                          title="Restore item to active status"
-                        >
-                          <RotateCcw size={13} className={restoringId === item.id ? 'spin-slow' : ''} />
-                          <span>Restore</span>
-                        </Button>
-
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => {
-                            setHardDeleteTarget(item);
-                            setConfirmCheckbox(false);
-                          }}
-                          title="Permanently hard-delete"
-                        >
-                          <Trash2 size={13} />
-                          <span>Purge</span>
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={recycleColumns}
+          data={filteredItems}
+          density="compact"
+          pageSize={10}
+          loading={loading}
+          emptyMessage="Recycle Bin is Empty. No deleted items found for selected filter."
+        />
       </CardBody>
 
       {/* GUARDED HARD DELETE CONFIRMATION MODAL */}

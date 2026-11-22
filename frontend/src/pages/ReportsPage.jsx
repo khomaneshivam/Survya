@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { DataTable, HelpTip } from '../components/ui';
 import { 
   Download, 
   FileSpreadsheet, 
@@ -416,6 +417,483 @@ export default function ReportsPage() {
   const countDispatched = campaignReports.filter(r => (r.status || '').toUpperCase() === 'SENT').length;
   const countFailed = campaignReports.filter(r => (r.status || '').toUpperCase() === 'FAILED').length;
 
+  const campaignColumns = useMemo(() => [
+    {
+      key: 'name',
+      header: 'Campaign Name',
+      sortable: true,
+      render: (v, camp) => (
+        <div>
+          <div style={{ fontWeight: 700, color: '#171719' }}>{camp.name}</div>
+          <div style={{ fontSize: '0.7rem', color: '#96969C', fontFamily: 'var(--font-mono)' }}>
+            ID: #{camp.id}
+          </div>
+        </div>
+      )
+    },
+    {
+      key: 'file_name',
+      header: 'Source File',
+      sortable: true,
+      render: (v) => <span style={{ fontSize: '0.78rem', color: '#67676B' }}>{v || 'contacts.xlsx'}</span>
+    },
+    {
+      key: 'template_name',
+      header: 'Template Name',
+      sortable: true,
+      render: (v) => (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', background: '#EEEEF0', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
+          {v || 'Template'}
+        </span>
+      )
+    },
+    {
+      key: 'total_contacts',
+      header: 'Total Targets',
+      align: 'right',
+      sortable: true,
+      accessor: (camp) => camp.valid_contacts || camp.total_contacts || 0,
+      render: (v) => <span className="tabular-nums" style={{ fontWeight: 700 }}>{v.toLocaleString()}</span>
+    },
+    {
+      key: 'delivery_progress',
+      header: 'Delivery Progress',
+      align: 'right',
+      render: (_, camp) => {
+        const targets = camp.valid_contacts || camp.total_contacts || 0;
+        const sent = camp.sent_count || 0;
+        const progressPct = targets > 0 ? Math.min(100, Math.round((sent / targets) * 100)) : 0;
+        return (
+          <div style={{ minWidth: '100px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: 600, color: '#2F5219', marginBottom: '3px' }}>
+              <span className="tabular-nums">{sent} sent</span>
+              <span className="tabular-nums">{progressPct}%</span>
+            </div>
+            <div style={{ width: '100%', height: '6px', borderRadius: '999px', background: '#E5E5E8', overflow: 'hidden' }}>
+              <div style={{ width: `${progressPct}%`, height: '100%', background: '#2876B8', borderRadius: '999px' }} />
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      key: 'failed_count',
+      header: 'Failed',
+      align: 'right',
+      sortable: true,
+      render: (v) => <span className="tabular-nums" style={{ fontWeight: 700, color: v > 0 ? '#9B2C2C' : '#96969C' }}>{v || 0}</span>
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      align: 'center',
+      sortable: true,
+      render: (v, camp) => {
+        if (v === 'SCHEDULED') {
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+              <span className="badge" style={{ background: '#EDE9FE', color: '#7A2E83', border: '1px solid #EFB0F6', fontWeight: 800, fontSize: '0.72rem' }}>
+                ⏰ SCHEDULED
+              </span>
+              {camp.scheduled_at && (
+                <span style={{ fontSize: '0.68rem', color: '#7A2E83', fontWeight: 600 }}>
+                  {formatIndianDateTime(camp.scheduled_at)}
+                </span>
+              )}
+            </div>
+          );
+        }
+        if (v === 'RUNNING') {
+          return (
+            <span className="badge badge-info" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <span className="pulse-glow" style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#2563EB' }} />
+              RUNNING
+            </span>
+          );
+        }
+        if (v === 'PAUSED') {
+          return (
+            <span className="badge" style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A', fontWeight: 700 }}>
+              ⏸ PAUSED
+            </span>
+          );
+        }
+        if (v === 'CANCELLED') {
+          return (
+            <span className="badge" style={{ background: '#EEEEF0', color: '#67676B', border: '1px solid #D4D4D9', fontWeight: 700 }}>
+              🛑 CANCELLED
+            </span>
+          );
+        }
+        if (v === 'FAILED') {
+          return <span className="badge badge-danger">✕ FAILED</span>;
+        }
+        return <span className="badge badge-success">✓ {v || 'COMPLETED'}</span>;
+      }
+    },
+    {
+      key: 'created_at',
+      header: 'Schedule / Date',
+      sortable: true,
+      render: (_, camp) => (
+        <span style={{ fontSize: '0.75rem', color: '#67676B' }}>
+          {camp.scheduled_at ? (
+            <div>
+              <div style={{ fontWeight: 600, color: '#171719' }}>{formatIndianDateTime(camp.scheduled_at)}</div>
+              <div style={{ fontSize: '0.68rem', color: '#96969C' }}>Created: {formatIndianDate(camp.created_at)}</div>
+            </div>
+          ) : (
+            camp.created_at ? formatIndianDateTime(camp.created_at) : 'N/A'
+          )}
+        </span>
+      )
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      render: (_, camp) => (
+        <div style={{ display: 'flex', gap: '5px', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+          {camp.status === 'SCHEDULED' && (
+            <>
+              <button
+                onClick={() => handleRunNow(camp.id, camp.name)}
+                className="btn"
+                style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px', background: '#EDF4E6', color: '#2F5219', border: '1px solid #C3D1AC', fontWeight: 700 }}
+                title="Run this scheduled campaign immediately"
+              >
+                <Play size={12} />
+                <span>Run Now</span>
+              </button>
+              <button
+                onClick={() => handleCancelCampaign(camp.id, camp.name)}
+                className="btn"
+                style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px', background: '#FDF0F0', color: '#9B2C2C', border: '1px solid #FCA5A5', fontWeight: 700 }}
+                title="Cancel this scheduled broadcast"
+              >
+                <StopCircle size={12} />
+                <span>Cancel</span>
+              </button>
+            </>
+          )}
+          {camp.status === 'RUNNING' && (
+            <>
+              <button
+                onClick={() => handlePauseCampaign(camp.id, camp.name)}
+                className="btn btn-secondary"
+                style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
+                title="Pause broadcast"
+              >
+                <Pause size={12} color="#D97706" />
+                <span>Pause</span>
+              </button>
+              <button
+                onClick={() => handleCancelCampaign(camp.id, camp.name)}
+                className="btn btn-danger"
+                style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
+                title="Stop and cancel ongoing broadcast"
+              >
+                <StopCircle size={12} />
+                <span>Stop</span>
+              </button>
+            </>
+          )}
+          {camp.status === 'PAUSED' && (
+            <>
+              <button
+                onClick={() => handleResumeCampaign(camp.id, camp.name)}
+                className="btn btn-secondary"
+                style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
+                title="Resume broadcast"
+              >
+                <Play size={12} color="#2876B8" />
+                <span>Resume</span>
+              </button>
+              <button
+                onClick={() => handleCancelCampaign(camp.id, camp.name)}
+                className="btn btn-danger"
+                style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
+                title="Cancel paused broadcast"
+              >
+                <StopCircle size={12} />
+                <span>Cancel</span>
+              </button>
+            </>
+          )}
+
+          {/* RECIPIENTS AUDIT */}
+          <button
+            onClick={() => handleViewCampaignRecipients(camp.id)}
+            className="btn btn-secondary"
+            style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
+            title="View individual recipient logs"
+          >
+            <Users size={12} />
+            <span>Recipients</span>
+          </button>
+
+          {/* EXPORT DATA */}
+          <button
+            onClick={() => handleExport('xlsx', camp.id)}
+            className="btn btn-secondary"
+            style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
+            title="Export campaign to Excel"
+          >
+            <Download size={12} />
+            <span>Export</span>
+          </button>
+
+          {/* DELETE CAMPAIGN */}
+          {camp.id !== 'campaign_booking_lifecycle' && (
+            <button
+              onClick={() => handleDeleteCampaign(camp.id, camp.name)}
+              className="btn btn-secondary"
+              style={{ padding: '4px 6px', fontSize: '0.72rem', color: '#96969C' }}
+              title="Delete campaign record"
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
+        </div>
+      )
+    }
+  ], [handleRunNow, handleCancelCampaign, handlePauseCampaign, handleResumeCampaign, handleViewCampaignRecipients, handleExport, handleDeleteCampaign]);
+
+  const recipientColumns = useMemo(() => [
+    {
+      key: 'contact_name',
+      header: 'Recipient Contact',
+      sortable: true,
+      render: (v, item) => (
+        <span style={{ fontWeight: 700, color: '#171719' }}>
+          {item.contact_name || item.recipient_name || 'Guest'}
+        </span>
+      )
+    },
+    {
+      key: 'phone',
+      header: 'Phone Number',
+      sortable: true,
+      render: (_, item) => (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.825rem' }}>
+          +{item.clean_phone || item.phone_number}
+        </span>
+      )
+    },
+    {
+      key: 'campaign_name',
+      header: 'Campaign & Template',
+      sortable: true,
+      render: (v, item) => (
+        <div>
+          <div style={{ color: '#171719', fontWeight: 600, fontSize: '0.825rem' }}>
+            {v || 'Campaign'}
+          </div>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', background: '#EEEEF0', padding: '1px 6px', borderRadius: '4px', color: '#67676B' }}>
+            {item.template_name || 'Template'}
+          </span>
+        </div>
+      )
+    },
+    {
+      key: 'status',
+      header: 'Delivery Status',
+      sortable: true,
+      align: 'center',
+      render: (_, item) => {
+        const rawStatus = (item.status || item.delivery_status || 'SENT').toUpperCase();
+        if (rawStatus === 'READ') {
+          return (
+            <span className="badge" style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
+              <CheckCheck size={13} color="#2563EB" /> READ
+            </span>
+          );
+        }
+        if (rawStatus === 'DELIVERED') {
+          return (
+            <span className="badge" style={{ background: '#F3F6EE', color: '#2F5219', border: '1px solid #C3D1AC', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
+              <CheckCheck size={13} color="#2F5219" /> DELIVERED
+            </span>
+          );
+        }
+        if (rawStatus === 'SENT') {
+          return <span className="badge badge-warning" style={{ fontWeight: 700 }}>DISPATCHED</span>;
+        }
+        if (rawStatus === 'PENDING') {
+          return <span className="badge" style={{ background: '#EEEEF0', color: '#67676B', border: '1px solid #E5E5E8', fontWeight: 700 }}>PENDING</span>;
+        }
+        return <span className="badge badge-danger" style={{ fontWeight: 700 }}>✕ FAILED</span>;
+      }
+    },
+    {
+      key: 'delivered_at',
+      header: 'Delivered At',
+      sortable: true,
+      render: (v) => (
+        <span style={{ fontSize: '0.75rem', color: v ? '#2F5219' : '#96969C', fontWeight: v ? 600 : 400 }}>
+          {v ? formatIndianTime(v, true) : '—'}
+        </span>
+      )
+    },
+    {
+      key: 'read_at',
+      header: 'Read At',
+      sortable: true,
+      render: (v) => (
+        <span style={{ fontSize: '0.75rem', color: v ? '#2563EB' : '#96969C', fontWeight: v ? 700 : 400 }}>
+          {v ? formatIndianTime(v, true) : '—'}
+        </span>
+      )
+    },
+    {
+      key: 'sent_at',
+      header: 'Dispatched At',
+      sortable: true,
+      render: (v, item) => {
+        const sentTime = v || item.dispatched_at;
+        return <span style={{ fontSize: '0.75rem', color: '#67676B' }}>{sentTime ? formatIndianDateTime(sentTime) : 'N/A'}</span>;
+      }
+    },
+    {
+      key: 'meta_message_id',
+      header: 'Meta Message ID',
+      render: (v) => (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: '#67676B', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }} title={v || ''}>
+          {v || '—'}
+        </span>
+      )
+    },
+    {
+      key: 'error_message',
+      header: 'Error Diagnostic',
+      render: (_, item) => {
+        if (!item.error_message && !item.error_code) return <span style={{ color: '#96969C', fontSize: '0.75rem' }}>—</span>;
+        return (
+          <div style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {(String(item.error_code) === '131049' || String(item.error_code) === '131049_COOLDOWN') ? (
+              <span className="badge" style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FCD34D', fontSize: '0.68rem', padding: '2px 6px', fontWeight: 700 }}>
+                Meta Marketing Cap (Not Charged — Retry in 24h)
+              </span>
+            ) : (
+              <>
+                {item.error_code && (
+                  <span className="badge" style={{ background: '#FDF0F0', color: '#9B2C2C', fontSize: '0.65rem', padding: '1px 5px', marginRight: '4px' }}>
+                    #{item.error_code}
+                  </span>
+                )}
+                <span style={{ color: '#9B2C2C', fontSize: '0.75rem' }}>
+                  {item.error_message || item.error_reason}
+                </span>
+              </>
+            )}
+          </div>
+        );
+      }
+    },
+    {
+      key: 'inspect',
+      header: 'Inspect',
+      align: 'right',
+      render: (_, item) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSelectedRecipient(item);
+          }}
+          className="btn btn-secondary"
+          style={{ padding: '3px 8px', fontSize: '0.72rem', gap: '4px' }}
+          title="Inspect complete delivery timeline and Meta telemetry"
+        >
+          <Info size={12} />
+          <span>Inspect</span>
+        </button>
+      )
+    }
+  ], []);
+
+  const automationColumns = useMemo(() => [
+    {
+      key: 'guest_name',
+      header: 'Guest / Booking',
+      sortable: true,
+      render: (v, item) => (
+        <div>
+          <div style={{ fontWeight: 700, color: '#171719' }}>{v || item.customer_name || 'Guest'}</div>
+          <div style={{ fontSize: '0.7rem', color: '#96969C', fontFamily: 'var(--font-mono)' }}>
+            {item.booking_id || `KT-AUTO`}
+          </div>
+        </div>
+      )
+    },
+    {
+      key: 'clean_phone',
+      header: 'Customer Contact',
+      sortable: true,
+      render: (v, item) => (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.825rem' }}>
+          {v || item.phone_number}
+        </span>
+      )
+    },
+    {
+      key: 'property_name',
+      header: 'Property Name',
+      sortable: true,
+      render: (v) => <span style={{ fontWeight: 600, color: '#3A3A3E' }}>{v || 'Default Branch'}</span>
+    },
+    {
+      key: 'dates',
+      header: 'Check-in / Check-out',
+      render: (_, item) => (
+        <span style={{ fontSize: '0.75rem', color: '#67676B' }}>
+          {item.checkin_date || '—'} → {item.checkout_date || '—'}
+        </span>
+      )
+    },
+    {
+      key: 'stage',
+      header: 'Lifecycle Stage',
+      render: (_, item) => (
+        <span className="badge badge-success" style={{ fontSize: '0.72rem' }}>
+          {item.stage_key || item.stage || 'Check-in Lifecycle'}
+        </span>
+      )
+    },
+    {
+      key: 'template_name',
+      header: 'Template Dispatched',
+      render: (v) => (
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>
+          {v || 'booking_notice'}
+        </span>
+      )
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      align: 'center',
+      render: (v) => (
+        <span className={`badge ${
+          v === 'READ' ? 'badge-info' :
+          v === 'DELIVERED' || v === 'SENT' ? 'badge-success' : 'badge-danger'
+        }`}>
+          {v || 'SENT'}
+        </span>
+      )
+    },
+    {
+      key: 'created_at',
+      header: 'Execution Timestamp',
+      sortable: true,
+      render: (v, item) => (
+        <span style={{ fontSize: '0.75rem', color: '#67676B' }}>
+          {item.dispatched_at || v ? formatIndianDateTime(item.dispatched_at || v) : 'Just now'}
+        </span>
+      )
+    }
+  ], []);
+
   return (
     <div style={{ maxWidth: '1440px', margin: '0 auto', padding: 'clamp(16px, 3vw, 28px) clamp(14px, 3vw, 24px)' }}>
       {/* Page Header */}
@@ -428,10 +906,8 @@ export default function ReportsPage() {
             <span className="badge" style={{ background: '#EDF4E6', color: '#2F5219', border: '1px solid #C3D1AC', fontSize: '0.72rem', fontWeight: 700 }}>
               Meta Cloud Telemetry
             </span>
+            <HelpTip text="Complete message audit trail, real-time handset delivery acknowledgements, blue read receipts, and 1-click exports." />
           </div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
-            Complete message audit trail, real-time handset delivery acknowledgements, blue read receipts, and 1-click exports.
-          </p>
         </div>
 
         {/* Global Export Options */}
@@ -914,251 +1390,14 @@ export default function ReportsPage() {
           )}
 
           <div className="saas-card" style={{ overflow: 'hidden' }}>
-            <div className="table-wrapper" tabIndex={0} role="region" aria-label="Past broadcast campaigns audit table">
-              <table className="responsive-table data-table">
-                <thead>
-                  <tr>
-                    <th>Campaign Name</th>
-                    <th>Source File</th>
-                    <th>Template Name</th>
-                    <th>Total Targets</th>
-                    <th>Delivery Progress</th>
-                    <th>Failed</th>
-                    <th>Status</th>
-                    <th>Schedule / Date</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading && pastCampaigns.length === 0 ? (
-                    <tr>
-                      <td colSpan="9" style={{ textAlign: 'center', padding: '36px', color: '#67676B' }}>
-                        <RefreshCw size={20} className="pulse-glow" style={{ margin: '0 auto 8px auto' }} />
-                        <div>Loading campaign audit logs...</div>
-                      </td>
-                    </tr>
-                  ) : filteredPastCampaigns.length === 0 ? (
-                    <tr>
-                      <td colSpan="9" style={{ textAlign: 'center', padding: '40px', color: '#96969C' }}>
-                        No broadcast campaigns found matching the current period or search filter.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredPastCampaigns.map(camp => {
-                      const targets = camp.valid_contacts || camp.total_contacts || 0;
-                      const sent = camp.sent_count || 0;
-                      const progressPct = targets > 0 ? Math.min(100, Math.round((sent / targets) * 100)) : 0;
-
-                      return (
-                        <tr key={camp.id}>
-                          <td>
-                            <div style={{ fontWeight: 700, color: '#171719' }}>{camp.name}</div>
-                            <div style={{ fontSize: '0.7rem', color: '#96969C', fontFamily: 'var(--font-mono)' }}>
-                              ID: #{camp.id}
-                            </div>
-                          </td>
-                          <td style={{ fontSize: '0.78rem', color: '#67676B' }}>
-                            {camp.file_name || 'contacts.xlsx'}
-                          </td>
-                          <td>
-                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', background: '#EEEEF0', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
-                              {camp.template_name || 'Template'}
-                            </span>
-                          </td>
-                          <td style={{ fontWeight: 700 }}>
-                            {targets.toLocaleString()}
-                          </td>
-                          <td>
-                            <div style={{ minWidth: '100px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: 600, color: '#2F5219', marginBottom: '3px' }}>
-                                <span>{sent} sent</span>
-                                <span>{progressPct}%</span>
-                              </div>
-                              <div style={{ width: '100%', height: '6px', borderRadius: '999px', background: '#E5E5E8', overflow: 'hidden' }}>
-                                <div style={{ width: `${progressPct}%`, height: '100%', background: '#2876B8', borderRadius: '999px' }} />
-                              </div>
-                            </div>
-                          </td>
-                          <td style={{ fontWeight: 700, color: camp.failed_count > 0 ? '#9B2C2C' : '#96969C' }}>
-                            {camp.failed_count || 0}
-                          </td>
-                          <td>
-                            {camp.status === 'SCHEDULED' ? (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                <span className="badge" style={{ background: '#EDE9FE', color: '#7A2E83', border: '1px solid #EFB0F6', fontWeight: 800, fontSize: '0.72rem' }}>
-                                  ⏰ SCHEDULED
-                                </span>
-                                {camp.scheduled_at && (
-                                  <span style={{ fontSize: '0.68rem', color: '#7A2E83', fontWeight: 600 }}>
-                                    {formatIndianDateTime(camp.scheduled_at)}
-                                  </span>
-                                )}
-                              </div>
-                            ) : camp.status === 'RUNNING' ? (
-                              <span className="badge badge-info" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <span className="pulse-glow" style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#2563EB' }} />
-                                RUNNING
-                              </span>
-                            ) : camp.status === 'PAUSED' ? (
-                              <span className="badge" style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A', fontWeight: 700 }}>
-                                ⏸ PAUSED
-                              </span>
-                            ) : camp.status === 'CANCELLED' ? (
-                              <span className="badge" style={{ background: '#EEEEF0', color: '#67676B', border: '1px solid #D4D4D9', fontWeight: 700 }}>
-                                🛑 CANCELLED
-                              </span>
-                            ) : camp.status === 'FAILED' ? (
-                              <span className="badge badge-danger">
-                                ✕ FAILED
-                              </span>
-                            ) : (
-                              <span className="badge badge-success">
-                                ✓ {camp.status || 'COMPLETED'}
-                              </span>
-                            )}
-                          </td>
-                          <td style={{ fontSize: '0.75rem', color: '#67676B' }}>
-                            {camp.scheduled_at ? (
-                              <div>
-                                <div style={{ fontWeight: 600, color: '#171719' }}>{formatIndianDateTime(camp.scheduled_at)}</div>
-                                <div style={{ fontSize: '0.68rem', color: '#96969C' }}>Created: {formatIndianDate(camp.created_at)}</div>
-                              </div>
-                            ) : (
-                              camp.created_at ? formatIndianDateTime(camp.created_at) : 'N/A'
-                            )}
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', gap: '5px', alignItems: 'center', flexWrap: 'wrap' }}>
-                              {/* SCHEDULED CAMPAIGN ACTIONS */}
-                              {camp.status === 'SCHEDULED' && (
-                                <>
-                                  <button
-                                    onClick={() => handleRunNow(camp.id, camp.name)}
-                                    className="btn"
-                                    style={{
-                                      padding: '4px 8px',
-                                      fontSize: '0.72rem',
-                                      gap: '4px',
-                                      background: '#EDF4E6',
-                                      color: '#2F5219',
-                                      border: '1px solid #C3D1AC',
-                                      fontWeight: 700
-                                    }}
-                                    title="Run this scheduled campaign immediately"
-                                  >
-                                    <Play size={12} />
-                                    <span>Run Now</span>
-                                  </button>
-                                  <button
-                                    onClick={() => handleCancelCampaign(camp.id, camp.name)}
-                                    className="btn"
-                                    style={{
-                                      padding: '4px 8px',
-                                      fontSize: '0.72rem',
-                                      gap: '4px',
-                                      background: '#FDF0F0',
-                                      color: '#9B2C2C',
-                                      border: '1px solid #FCA5A5',
-                                      fontWeight: 700
-                                    }}
-                                    title="Cancel this scheduled broadcast"
-                                  >
-                                    <StopCircle size={12} />
-                                    <span>Cancel</span>
-                                  </button>
-                                </>
-                              )}
-
-                              {/* RUNNING CAMPAIGN ACTIONS */}
-                              {camp.status === 'RUNNING' && (
-                                <>
-                                  <button
-                                    onClick={() => handlePauseCampaign(camp.id, camp.name)}
-                                    className="btn btn-secondary"
-                                    style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
-                                    title="Pause broadcast"
-                                  >
-                                    <Pause size={12} color="#D97706" />
-                                    <span>Pause</span>
-                                  </button>
-                                  <button
-                                    onClick={() => handleCancelCampaign(camp.id, camp.name)}
-                                    className="btn btn-danger"
-                                    style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
-                                    title="Stop and cancel ongoing broadcast"
-                                  >
-                                    <StopCircle size={12} />
-                                    <span>Stop</span>
-                                  </button>
-                                </>
-                              )}
-
-                              {/* PAUSED CAMPAIGN ACTIONS */}
-                              {camp.status === 'PAUSED' && (
-                                <>
-                                  <button
-                                    onClick={() => handleResumeCampaign(camp.id, camp.name)}
-                                    className="btn btn-secondary"
-                                    style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
-                                    title="Resume broadcast"
-                                  >
-                                    <Play size={12} color="#2876B8" />
-                                    <span>Resume</span>
-                                  </button>
-                                  <button
-                                    onClick={() => handleCancelCampaign(camp.id, camp.name)}
-                                    className="btn btn-danger"
-                                    style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
-                                    title="Cancel paused broadcast"
-                                  >
-                                    <StopCircle size={12} />
-                                    <span>Cancel</span>
-                                  </button>
-                                </>
-                              )}
-
-                              {/* RECIPIENTS AUDIT */}
-                              <button
-                                onClick={() => handleViewCampaignRecipients(camp.id)}
-                                className="btn btn-secondary"
-                                style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
-                                title="View individual recipient logs"
-                              >
-                                <Users size={12} />
-                                <span>Recipients</span>
-                              </button>
-
-                              {/* EXPORT DATA */}
-                              <button
-                                onClick={() => handleExport('xlsx', camp.id)}
-                                className="btn btn-secondary"
-                                style={{ padding: '4px 8px', fontSize: '0.72rem', gap: '4px' }}
-                                title="Export campaign to Excel"
-                              >
-                                <Download size={12} />
-                                <span>Export</span>
-                              </button>
-
-                              {/* DELETE CAMPAIGN */}
-                              {camp.id !== 'campaign_booking_lifecycle' && (
-                                <button
-                                  onClick={() => handleDeleteCampaign(camp.id, camp.name)}
-                                  className="btn btn-secondary"
-                                  style={{ padding: '4px 6px', fontSize: '0.72rem', color: '#96969C' }}
-                                  title="Delete campaign record"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              columns={campaignColumns}
+              data={filteredPastCampaigns}
+              density="compact"
+              pageSize={10}
+              loading={loading && pastCampaigns.length === 0}
+              emptyMessage="No broadcast campaigns found matching the current period or search filter."
+            />
           </div>
         </div>
       )}
@@ -1182,141 +1421,14 @@ export default function ReportsPage() {
             </div>
           )}
 
-          <div className="table-wrapper" tabIndex={0} role="region" aria-label="Recipient delivery audit logs table">
-            <table className="responsive-table data-table">
-              <thead>
-                <tr>
-                  <th>Recipient Contact</th>
-                  <th>Phone Number</th>
-                  <th>Campaign & Template</th>
-                  <th>Delivery Status</th>
-                  <th>Delivered At</th>
-                  <th>Read At</th>
-                  <th>Dispatched At</th>
-                  <th>Meta Message ID</th>
-                  <th>Error Diagnostic</th>
-                  <th>Inspect</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredCampaignReports.length === 0 ? (
-                  <tr>
-                    <td colSpan="10" style={{ textAlign: 'center', padding: '36px', color: '#96969C' }}>
-                      No recipient delivery logs matching current filter.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredCampaignReports.map((item, idx) => {
-                    const recipientName = item.contact_name || item.recipient_name || 'Guest';
-                    const rawStatus = (item.status || item.delivery_status || 'SENT').toUpperCase();
-                    const sentTime = item.sent_at || item.dispatched_at;
-                    const deliveredTime = item.delivered_at;
-                    const readTime = item.read_at;
-
-                    return (
-                      <tr 
-                        key={item.id || idx}
-                        onClick={() => setSelectedRecipient(item)}
-                        style={{ cursor: 'pointer' }}
-                        title="Click to inspect complete Message Audit Dossier"
-                      >
-                        <td style={{ fontWeight: 700, color: '#171719' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span>{recipientName}</span>
-                          </div>
-                        </td>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.825rem' }}>
-                          +{item.clean_phone || item.phone_number}
-                        </td>
-                        <td>
-                          <div style={{ color: '#171719', fontWeight: 600, fontSize: '0.825rem' }}>
-                            {item.campaign_name || 'Campaign'}
-                          </div>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', background: '#EEEEF0', padding: '1px 6px', borderRadius: '4px', color: '#67676B' }}>
-                            {item.template_name || 'Template'}
-                          </span>
-                        </td>
-                        <td>
-                          {rawStatus === 'READ' ? (
-                            <span className="badge" style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
-                              <CheckCheck size={13} color="#2563EB" /> READ
-                            </span>
-                          ) : rawStatus === 'DELIVERED' ? (
-                            <span className="badge" style={{ background: '#F3F6EE', color: '#2F5219', border: '1px solid #C3D1AC', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 700 }}>
-                              <CheckCheck size={13} color="#2F5219" /> DELIVERED
-                            </span>
-                          ) : rawStatus === 'SENT' ? (
-                            <span className="badge badge-warning" style={{ fontWeight: 700 }}>
-                              DISPATCHED
-                            </span>
-                          ) : rawStatus === 'PENDING' ? (
-                            <span className="badge" style={{ background: '#EEEEF0', color: '#67676B', border: '1px solid #E5E5E8', fontWeight: 700 }}>
-                              PENDING
-                            </span>
-                          ) : (
-                            <span className="badge badge-danger" style={{ fontWeight: 700 }}>
-                              ✕ FAILED
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ fontSize: '0.75rem', color: deliveredTime ? '#2F5219' : '#96969C', fontWeight: deliveredTime ? 600 : 400 }}>
-                          {deliveredTime ? formatIndianTime(deliveredTime, true) : '—'}
-                        </td>
-                        <td style={{ fontSize: '0.75rem', color: readTime ? '#2563EB' : '#96969C', fontWeight: readTime ? 700 : 400 }}>
-                          {readTime ? formatIndianTime(readTime, true) : '—'}
-                        </td>
-                        <td style={{ fontSize: '0.75rem', color: '#67676B' }}>
-                          {sentTime ? formatIndianDateTime(sentTime) : 'N/A'}
-                        </td>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: '#67676B', maxWidth: '140px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.meta_message_id || ''}>
-                          {item.meta_message_id || '—'}
-                        </td>
-                        <td>
-                          {item.error_message || item.error_code ? (
-                            <div style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {(String(item.error_code) === '131049' || String(item.error_code) === '131049_COOLDOWN') ? (
-                                <span className="badge" style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FCD34D', fontSize: '0.68rem', padding: '2px 6px', fontWeight: 700 }}>
-                                  Meta Marketing Cap (Not Charged — Retry in 24h)
-                                </span>
-                              ) : (
-                                <>
-                                  {item.error_code && (
-                                    <span className="badge" style={{ background: '#FDF0F0', color: '#9B2C2C', fontSize: '0.65rem', padding: '1px 5px', marginRight: '4px' }}>
-                                      #{item.error_code}
-                                    </span>
-                                  )}
-                                  <span style={{ color: '#9B2C2C', fontSize: '0.75rem' }}>
-                                    {item.error_message || item.error_reason}
-                                  </span>
-                                </>
-                              )}
-                            </div>
-                          ) : (
-                            <span style={{ color: '#96969C', fontSize: '0.75rem' }}>—</span>
-                          )}
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedRecipient(item);
-                            }}
-                            className="btn btn-secondary"
-                            style={{ padding: '3px 8px', fontSize: '0.72rem', gap: '4px' }}
-                            title="Inspect complete delivery timeline and Meta telemetry"
-                          >
-                            <Info size={12} />
-                            <span>Inspect</span>
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={recipientColumns}
+            data={filteredCampaignReports}
+            density="compact"
+            pageSize={10}
+            onRowClick={(item) => setSelectedRecipient(item)}
+            emptyMessage="No recipient delivery logs matching current filter."
+          />
         </div>
       )}
 
@@ -1325,70 +1437,13 @@ export default function ReportsPage() {
           ========================================================================= */}
       {activeTab === 'automation' && (
         <div className="saas-card" style={{ overflow: 'hidden' }}>
-          <div className="table-wrapper" tabIndex={0} role="region" aria-label="Booking automations audit table">
-            <table className="responsive-table data-table">
-              <thead>
-                <tr>
-                  <th>Guest / Booking</th>
-                  <th>Customer Contact</th>
-                  <th>Property Name</th>
-                  <th>Check-in / Check-out</th>
-                  <th>Lifecycle Stage</th>
-                  <th>Template Dispatched</th>
-                  <th>Status</th>
-                  <th>Execution Timestamp</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredAutomationReports.length === 0 ? (
-                  <tr>
-                    <td colSpan="8" style={{ textAlign: 'center', padding: '36px', color: '#96969C' }}>
-                      No automated lifecycle dispatches recorded matching current filter.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredAutomationReports.map((item, idx) => (
-                    <tr key={item.id || idx}>
-                      <td>
-                        <div style={{ fontWeight: 700, color: '#171719' }}>{item.guest_name || item.customer_name || 'Guest'}</div>
-                        <div style={{ fontSize: '0.7rem', color: '#96969C', fontFamily: 'var(--font-mono)' }}>
-                          {item.booking_id || `KT-AUTO-${idx + 1}`}
-                        </div>
-                      </td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.825rem' }}>
-                        {item.clean_phone || item.phone_number}
-                      </td>
-                      <td style={{ fontWeight: 600, color: '#3A3A3E' }}>
-                        {item.property_name || 'KonkanTrip Beach Resort'}
-                      </td>
-                      <td style={{ fontSize: '0.75rem', color: '#67676B' }}>
-                        {item.checkin_date || '—'} → {item.checkout_date || '—'}
-                      </td>
-                      <td>
-                        <span className="badge badge-success" style={{ fontSize: '0.72rem' }}>
-                          {item.stage_key || item.stage || 'Check-in Lifecycle'}
-                        </span>
-                      </td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>
-                        {item.template_name || 'booking_notice'}
-                      </td>
-                      <td>
-                        <span className={`badge ${
-                          item.status === 'READ' ? 'badge-info' :
-                          item.status === 'DELIVERED' || item.status === 'SENT' ? 'badge-success' : 'badge-danger'
-                        }`}>
-                          {item.status || 'SENT'}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: '0.75rem', color: '#67676B' }}>
-                        {item.dispatched_at || item.created_at ? formatIndianDateTime(item.dispatched_at || item.created_at) : 'Just now'}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={automationColumns}
+            data={filteredAutomationReports}
+            density="compact"
+            pageSize={10}
+            emptyMessage="No automated lifecycle dispatches recorded matching current filter."
+          />
         </div>
       )}
 

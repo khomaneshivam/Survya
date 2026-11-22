@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import AddPhoneNumberModal from '../components/AddPhoneNumberModal';
 import MetaEmbeddedSignupButton from '../components/MetaEmbeddedSignupButton';
@@ -554,6 +554,133 @@ export default function SystemAdminPanel({ onNavigate }) {
     { id: 'audit', label: 'Security Audit Logs', icon: ShieldCheck, badge: auditTotal }
   ];
 
+  const phoneColumns = useMemo(() => [
+    {
+      key: 'display_name',
+      header: 'Sender Label',
+      sortable: true,
+      render: (v) => <span style={{ fontWeight: 600 }}>{v}</span>
+    },
+    {
+      key: 'phone_number',
+      header: 'Phone Number',
+      sortable: true,
+      render: (v) => <span style={{ fontFamily: 'monospace' }}>{v}</span>
+    },
+    {
+      key: 'phone_number_id',
+      header: 'Phone Number ID',
+      sortable: true,
+      render: (v) => <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>{v}</span>
+    },
+    {
+      key: 'status',
+      header: 'Meta Status',
+      sortable: true,
+      render: (v) => {
+        const st = (v || 'VERIFIED').toUpperCase();
+        const isConnected = ['CONNECTED', 'VERIFIED', 'REGISTERED'].includes(st);
+        return <Badge variant={isConnected ? 'success' : 'warning'}>{st}</Badge>;
+      }
+    },
+    {
+      key: 'quality_rating',
+      header: 'Quality Rating',
+      sortable: true,
+      render: (v) => (
+        <Badge variant={v === 'GREEN' ? 'success' : 'warning'}>
+          {v || 'GREEN'}
+        </Badge>
+      )
+    },
+    {
+      key: 'is_default',
+      header: 'Priority',
+      align: 'center',
+      render: (v, phone) => (
+        v ? (
+          <Badge variant="primary">★ DEFAULT LINE</Badge>
+        ) : (
+          <Button variant="ghost" size="sm" onClick={() => handleSetDefaultPhone(phone.id)}>
+            Set Default
+          </Button>
+        )
+      )
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      render: (_, phone) => {
+        const isDefault = Boolean(phone.is_default);
+        return (
+          <div style={{ display: 'inline-flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleTestPhoneLine(phone.id)}
+              disabled={testingPhoneId === phone.id}
+              title="Verify line connection directly with Meta Graph API"
+            >
+              <RefreshCw size={13} className={testingPhoneId === phone.id ? 'spin-slow' : ''} />
+              <span>{testingPhoneId === phone.id ? 'Verifying...' : 'Verify'}</span>
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleOpenRegisterPinModal(phone)}
+              title="Register 2-step verification PIN to Meta Graph API"
+            >
+              <KeyRound size={13} />
+              <span>Register PIN</span>
+            </Button>
+            {!isDefault && (
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => handleDeletePhone(phone.id, phone.display_name)}
+                title="Remove line from platform"
+              >
+                <Trash2 size={13} />
+              </Button>
+            )}
+          </div>
+        );
+      }
+    }
+  ], [testingPhoneId, handleSetDefaultPhone, handleTestPhoneLine, handleOpenRegisterPinModal, handleDeletePhone]);
+
+  const auditLogColumns = useMemo(() => [
+    {
+      key: 'created_at',
+      header: 'Timestamp',
+      sortable: true,
+      render: (v) => <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{formatIndianDate(v)}</span>
+    },
+    {
+      key: 'actor',
+      header: 'Actor',
+      sortable: true,
+      render: (_, log) => <span style={{ fontWeight: 600 }}>{log.user_name || log.user_id || 'System'}</span>
+    },
+    {
+      key: 'action',
+      header: 'Action',
+      sortable: true,
+      render: (v) => <Badge variant="primary">{v}</Badge>
+    },
+    {
+      key: 'details',
+      header: 'Details',
+      render: (v) => <span style={{ color: 'var(--text-secondary)' }}>{v || '—'}</span>
+    },
+    {
+      key: 'ip_address',
+      header: 'IP Address',
+      render: (v) => <span style={{ fontFamily: 'monospace', fontSize: '12px', color: 'var(--text-muted)' }}>{v || 'Internal'}</span>
+    }
+  ], []);
+
   return (
     <div className="app-content-container" style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
       {/* Executive Header */}
@@ -683,89 +810,13 @@ export default function SystemAdminPanel({ onNavigate }) {
               }
             />
             <CardBody>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="sarvya-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                      <th style={{ padding: '10px 14px' }}>Sender Label</th>
-                      <th style={{ padding: '10px 14px' }}>Phone Number</th>
-                      <th style={{ padding: '10px 14px' }}>Phone Number ID</th>
-                      <th style={{ padding: '10px 14px' }}>Meta Status</th>
-                      <th style={{ padding: '10px 14px' }}>Quality Rating</th>
-                      <th style={{ padding: '10px 14px' }}>Priority</th>
-                      <th style={{ padding: '10px 14px', textAlign: 'right' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {phoneNumbers.map((phone) => {
-                      const isDefault = Boolean(phone.is_default);
-                      const st = (phone.status || 'VERIFIED').toUpperCase();
-                      const isConnected = ['CONNECTED', 'VERIFIED', 'REGISTERED'].includes(st);
-                      return (
-                        <tr key={phone.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                          <td style={{ padding: '12px 14px', fontWeight: 600 }}>{phone.display_name}</td>
-                          <td style={{ padding: '12px 14px', fontFamily: 'monospace' }}>{phone.phone_number}</td>
-                          <td style={{ padding: '12px 14px', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{phone.phone_number_id}</td>
-                          <td style={{ padding: '12px 14px' }}>
-                            <Badge variant={isConnected ? 'success' : 'warning'}>
-                              {st}
-                            </Badge>
-                          </td>
-                          <td style={{ padding: '12px 14px' }}>
-                            <Badge variant={phone.quality_rating === 'GREEN' ? 'success' : 'warning'}>
-                              {phone.quality_rating || 'GREEN'}
-                            </Badge>
-                          </td>
-                          <td style={{ padding: '12px 14px' }}>
-                            {isDefault ? (
-                              <Badge variant="primary">★ DEFAULT LINE</Badge>
-                            ) : (
-                              <Button variant="ghost" size="sm" onClick={() => handleSetDefaultPhone(phone.id)}>
-                                Set Default
-                              </Button>
-                            )}
-                          </td>
-                          <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                            <div style={{ display: 'inline-flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => handleTestPhoneLine(phone.id)}
-                                disabled={testingPhoneId === phone.id}
-                                title="Verify line connection directly with Meta Graph API"
-                              >
-                                <RefreshCw size={13} className={testingPhoneId === phone.id ? 'spin-slow' : ''} />
-                                <span>{testingPhoneId === phone.id ? 'Verifying...' : 'Verify'}</span>
-                              </Button>
-
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => handleOpenRegisterPinModal(phone)}
-                                title="Register 2-step verification PIN to Meta Graph API"
-                              >
-                                <KeyRound size={13} />
-                                <span>Register PIN</span>
-                              </Button>
-
-                              {!isDefault && (
-                                <Button
-                                  variant="danger"
-                                  size="sm"
-                                  onClick={() => handleDeletePhone(phone.id, phone.display_name)}
-                                  title="Remove line from platform"
-                                >
-                                  <Trash2 size={13} />
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                columns={phoneColumns}
+                data={phoneNumbers}
+                density="compact"
+                pageSize={10}
+                emptyMessage="No WhatsApp sender lines registered yet."
+              />
             </CardBody>
           </Card>
 
@@ -1539,48 +1590,13 @@ export default function SystemAdminPanel({ onNavigate }) {
             }
           />
           <CardBody>
-            <div style={{ overflowX: 'auto' }}>
-              <table className="sarvya-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                    <th style={{ padding: '10px 14px' }}>Timestamp</th>
-                    <th style={{ padding: '10px 14px' }}>Actor</th>
-                    <th style={{ padding: '10px 14px' }}>Action</th>
-                    <th style={{ padding: '10px 14px' }}>Details</th>
-                    <th style={{ padding: '10px 14px' }}>IP Address</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {auditLogs.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                        No audit events recorded yet. Platform actions are automatically logged here.
-                      </td>
-                    </tr>
-                  ) : (
-                    auditLogs.map((log) => (
-                      <tr key={log.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: '12px' }}>
-                          {formatIndianDate(log.created_at)}
-                        </td>
-                        <td style={{ padding: '10px 14px', fontWeight: 600 }}>
-                          {log.user_name || log.user_id || 'System'}
-                        </td>
-                        <td style={{ padding: '10px 14px' }}>
-                          <Badge variant="primary">{log.action}</Badge>
-                        </td>
-                        <td style={{ padding: '10px 14px', color: 'var(--text-secondary)' }}>
-                          {log.details || '—'}
-                        </td>
-                        <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontSize: '12px', color: 'var(--text-muted)' }}>
-                          {log.ip_address || 'Internal'}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              columns={auditLogColumns}
+              data={auditLogs}
+              density="compact"
+              pageSize={10}
+              emptyMessage="No audit events recorded yet. Platform actions are automatically logged here."
+            />
           </CardBody>
         </Card>
       )}

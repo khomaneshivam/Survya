@@ -14,7 +14,7 @@ module.exports = {
 
     const flowSessionId = session.id || session.session_id || context.flowSessionId || null;
     const customerPhone = context.recipientPhone || session.sender_phone || session.customerPhone || null;
-    const customerName = session.guest_name || context.variableContext?.guest_name || session.customerName || "Valued Customer";
+    const customerName = session.guest_name || session.customerName || "Valued Customer";
 
     // 1. Resumption check: If we were waiting for this node to finish in-app
     if (isWaitingForThisNode) {
@@ -54,11 +54,10 @@ module.exports = {
       ? cfg.carrySessionVars
       : ["selected_location_id", "selected_category_id", "guest_name", "check_in", "check_out", "phone", "email"];
 
-    const dataPool = { ...(context.variableContext || {}), ...(context.session || {}), ...session };
     const initialData = {};
     for (const vKey of carryVars) {
-      if (dataPool[vKey] !== undefined) {
-        initialData[vKey] = dataPool[vKey];
+      if (session[vKey] !== undefined) {
+        initialData[vKey] = session[vKey];
       }
     }
 
@@ -120,3 +119,4 @@ module.exports = {
     };
   }
 };
+

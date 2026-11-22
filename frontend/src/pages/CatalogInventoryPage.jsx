@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import IndustryBlueprintsModal from '../components/catalog/IndustryBlueprintsModal';
 import UniversalAvailabilityTab from '../components/catalog/UniversalAvailabilityTab';
 import UniversalAddonsPricingTab from '../components/catalog/UniversalAddonsPricingTab';
+import { DataTable, HelpTip } from '../components/ui';
 import {
   Store,
   Plus,
@@ -358,6 +359,235 @@ export default function CatalogInventoryPage() {
     }
     return true;
   });
+
+  const handleEditItem = (item) => {
+    setEditingItem(item);
+    setItemForm({
+      title: item.title,
+      category_id: item.category_id || '',
+      item_type: item.item_type,
+      base_price: item.base_price,
+      tax_rate: item.tax_rate || 5,
+      short_description: item.short_description || '',
+      image_url: item.image_url || '',
+      sku: item.sku || '',
+      max_adults: item.max_adults || 2,
+      max_children: item.max_children || 1,
+      bed_type: item.bed_type || 'King Bed',
+      carpet_area_sqft: item.carpet_area_sqft || '',
+      dietary_flag: item.dietary_flag || 'NONE',
+      spice_level: item.spice_level || 0,
+      prep_time_minutes: item.prep_time_minutes || 15,
+      stock_quantity: item.stock_quantity || 20,
+      duration_minutes: item.duration_minutes || 30
+    });
+    setShowItemModal(true);
+  };
+
+  const itemColumns = useMemo(() => [
+    {
+      header: 'Item / Description',
+      accessor: 'title',
+      cell: (item) => {
+        const isSoldOut = !!item.is_sold_out_today;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: isSoldOut ? 0.75 : 1 }}>
+            {item.image_url && (
+              <div style={{ width: '32px', height: '32px', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-color)', flexShrink: 0, background: '#F8FAFC' }}>
+                <img
+                  src={item.image_url}
+                  alt={item.title}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                />
+              </div>
+            )}
+            {item.dietary_flag === 'VEG' && (
+              <span title="Vegetarian" style={{ width: '12px', height: '12px', border: '1px solid #16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#16A34A' }} />
+              </span>
+            )}
+            {item.dietary_flag === 'NON_VEG' && (
+              <span title="Non-Vegetarian" style={{ width: '12px', height: '12px', border: '1px solid #DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#DC2626' }} />
+              </span>
+            )}
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '13px', color: isSoldOut ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
+                {item.title}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                {item.sku ? `SKU: ${item.sku}` : ''} {item.short_description ? `· ${item.short_description}` : ''}
+              </div>
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      header: 'Category',
+      accessor: 'category_name',
+      cell: (item) => (
+        <span style={{ fontSize: '11px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', padding: '1px 6px', borderRadius: '4px' }}>
+          {item.category_name || 'Uncategorized'}
+        </span>
+      )
+    },
+    {
+      header: 'Specifications',
+      cell: (item) => (
+        <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
+          {item.item_type === 'ROOM' && (
+            <span>{item.max_adults} Adults · {item.bed_type || 'King'} {item.carpet_area_sqft ? `· ${item.carpet_area_sqft} sqft` : ''}</span>
+          )}
+          {item.item_type === 'FOOD' && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+              <Clock size={11} /> {item.prep_time_minutes}m
+              {item.spice_level > 0 && <span style={{ color: '#EA580C', marginLeft: '4px', display: 'inline-flex', alignItems: 'center' }}><Flame size={11} /> {item.spice_level}</span>}
+            </span>
+          )}
+          {item.item_type === 'PRODUCT' && (
+            <span>Stock: {item.stock_quantity} units</span>
+          )}
+          {item.item_type === 'SERVICE' && (
+            <span><Clock size={11} /> {item.duration_minutes} mins</span>
+          )}
+        </div>
+      )
+    },
+    {
+      header: 'Tariff / Price',
+      accessor: 'base_price',
+      numeric: true,
+      align: 'right',
+      cell: (item) => (
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontWeight: 700, fontSize: '13px' }} className="tabular-nums">
+            ₹{Number(item.base_price || 0).toLocaleString('en-IN')}
+          </div>
+          <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)' }}>
+            +{item.tax_rate || 0}% GST
+          </div>
+        </div>
+      )
+    },
+    {
+      header: 'Availability',
+      cell: (item) => {
+        const isSoldOut = !!item.is_sold_out_today;
+        return (
+          <button
+            type="button"
+            onClick={() => handleToggle86(item)}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              color: isSoldOut ? '#DC2626' : '#16A34A',
+              fontWeight: 600,
+              fontSize: '12px'
+            }}
+            title={isSoldOut ? "Item is marked SOLD OUT today. Click to mark available." : "Item is ACTIVE. Click to 86/sold out today."}
+          >
+            {isSoldOut ? <ToggleLeft size={18} /> : <ToggleRight size={18} />}
+            <span>{isSoldOut ? "86'd (Sold Out)" : "In Stock"}</span>
+          </button>
+        );
+      }
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      cell: (item) => (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+          {item.item_type === 'ROOM' && (
+            <button
+              type="button"
+              className="sarvya-btn sarvya-btn-secondary"
+              onClick={() => handleOpenInventory(item)}
+              style={{ padding: '3px 7px', fontSize: '11px', gap: '3px' }}
+              title="Daily Rate & Block Calendar"
+            >
+              <Calendar size={12} />
+              <span>Rates</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="sarvya-btn sarvya-btn-secondary"
+            onClick={() => handleEditItem(item)}
+            style={{ padding: '3px 7px', fontSize: '11px' }}
+            title="Edit Item"
+          >
+            <Edit2 size={12} />
+          </button>
+          <button
+            type="button"
+            className="sarvya-btn sarvya-btn-danger"
+            onClick={() => handleDeleteItem(item.id)}
+            style={{ padding: '3px 7px', fontSize: '11px' }}
+            title="Delete Item"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      )
+    }
+  ], [handleToggle86, handleOpenInventory, handleDeleteItem]);
+
+  const inventoryMatrixColumns = [
+    {
+      header: 'Date',
+      accessor: 'inventory_date',
+      cell: (row) => <span style={{ fontWeight: 600 }}>{row.inventory_date}</span>
+    },
+    {
+      header: 'Available Keys',
+      accessor: 'available_qty',
+      numeric: true,
+      cell: (row) => (
+        <span style={{ fontWeight: 700, color: row.available_qty > 0 ? '#16A34A' : '#EF4444' }} className="tabular-nums">
+          {row.available_qty}
+        </span>
+      )
+    },
+    {
+      header: 'Booked Keys',
+      accessor: 'booked_qty',
+      numeric: true,
+      cell: (row) => <span className="tabular-nums">{row.booked_qty}</span>
+    },
+    {
+      header: 'Surge / Override',
+      numeric: true,
+      align: 'right',
+      cell: (row) => (
+        row.rate_override ? (
+          <span style={{ fontWeight: 600 }} className="tabular-nums">₹{row.rate_override.toLocaleString('en-IN')}</span>
+        ) : (
+          <span style={{ color: 'var(--text-secondary)' }}>Base (₹{inventoryItem?.base_price})</span>
+        )
+      )
+    },
+    {
+      header: 'Status',
+      cell: (row) => (
+        <span style={{
+          fontSize: '11px',
+          fontWeight: 700,
+          padding: '2px 8px',
+          borderRadius: '4px',
+          background: row.is_closed ? 'var(--status-error-bg)' : 'var(--status-success-bg)',
+          color: row.is_closed ? 'var(--status-error-text)' : 'var(--status-success-text)'
+        }}>
+          {row.is_closed ? 'Blocked' : 'Open'}
+        </span>
+      )
+    }
+  ];
 
   return (
     <div className="sarvya-page-container">
@@ -760,20 +990,15 @@ export default function CatalogInventoryPage() {
             </div>
           </div>
 
-          {/* Table */}
-          {loading ? (
-            <div style={{ padding: '48px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13.5px' }}>
-              Loading catalog records...
-            </div>
-          ) : filteredItems.length === 0 ? (
-            <div style={{ padding: '48px', textAlign: 'center' }}>
-              <div style={{ width: '48px', height: '48px', margin: '0 auto 12px', borderRadius: '50%', background: 'var(--bg-app)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Store size={24} color="var(--text-secondary)" />
-              </div>
-              <h3 style={{ fontSize: '15px', fontWeight: 600, marginBottom: '6px' }}>No items match your filter</h3>
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                Add your first room, dish, or SKU, or launch a starter pack in 3 minutes.
-              </p>
+          <DataTable
+            density="compact"
+            columns={itemColumns}
+            data={filteredItems}
+            rows={filteredItems}
+            loading={loading}
+            emptyTitle="No items match your filter"
+            emptyMessage="Add your first room, dish, or SKU, or launch a starter pack in 3 minutes."
+            emptyAction={
               <button
                 type="button"
                 className="sarvya-btn sarvya-btn-secondary"
@@ -781,205 +1006,8 @@ export default function CatalogInventoryPage() {
               >
                 <Sparkles size={14} color="var(--sarvya-blue)" /> Seed 1-Click Starter Kit
               </button>
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="sarvya-table">
-                <thead>
-                  <tr>
-                    <th>Item / Description</th>
-                    <th>Category</th>
-                    <th>Specifications</th>
-                    <th>Tariff / Price</th>
-                    <th>Availability (86 Switch)</th>
-                    <th style={{ textAlign: 'right' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredItems.map(item => {
-                    const isSoldOut = !!item.is_sold_out_today;
-                    return (
-                      <tr key={item.id} style={{ opacity: isSoldOut ? 0.75 : 1 }}>
-                        {/* Title & SKU */}
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            {item.image_url && (
-                              <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--border-color)', flexShrink: 0, background: '#F8FAFC' }}>
-                                <img
-                                  src={item.image_url}
-                                  alt={item.title}
-                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                                  onError={(e) => { e.target.style.display = 'none'; }}
-                                />
-                              </div>
-                            )}
-                            {item.dietary_flag === 'VEG' && (
-                              <span title="Vegetarian" style={{ width: '14px', height: '14px', border: '1px solid #16A34A', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16A34A' }} />
-                              </span>
-                            )}
-                            {item.dietary_flag === 'NON_VEG' && (
-                              <span title="Non-Vegetarian" style={{ width: '14px', height: '14px', border: '1px solid #DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#DC2626' }} />
-                              </span>
-                            )}
-                            <div>
-                              <div style={{ fontWeight: 600, fontSize: '13.5px', color: isSoldOut ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
-                                {item.title}
-                              </div>
-                              <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
-                                {item.sku ? `SKU: ${item.sku}` : ''} {item.short_description ? `· ${item.short_description}` : ''}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Category */}
-                        <td>
-                          <span style={{ fontSize: '12px', background: 'var(--bg-app)', border: '1px solid var(--border-color)', padding: '2px 8px', borderRadius: 'var(--radius-sm)' }}>
-                            {item.category_name || 'Uncategorized'}
-                          </span>
-                        </td>
-
-                        {/* Specifications based on Domain */}
-                        <td>
-                          <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            {item.item_type === 'ROOM' && (
-                              <span>{item.max_adults} Adults · {item.bed_type || 'King'} {item.carpet_area_sqft ? `· ${item.carpet_area_sqft} sqft` : ''}</span>
-                            )}
-                            {item.item_type === 'FOOD' && (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <Clock size={12} /> {item.prep_time_minutes}m
-                                {item.spice_level > 0 && <span style={{ color: '#EA580C', marginLeft: '6px', display: 'inline-flex', alignItems: 'center' }}><Flame size={12} /> {item.spice_level}</span>}
-                              </span>
-                            )}
-                            {item.item_type === 'PRODUCT' && (
-                              <span>Stock: {item.stock_quantity} units</span>
-                            )}
-                            {item.item_type === 'SERVICE' && (
-                              <span><Clock size={12} /> {item.duration_minutes} mins</span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Price */}
-                        <td>
-                          <div style={{ fontWeight: 700, fontSize: '13.5px' }}>
-                            ₹{item.base_price.toLocaleString('en-IN')}
-                          </div>
-                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                            +{item.tax_rate}% GST
-                          </div>
-                        </td>
-
-                        {/* 1-Click 86 Switch */}
-                        <td>
-                          <button
-                            type="button"
-                            onClick={() => handleToggle86(item)}
-                            title={isSoldOut ? 'Click to make item available' : 'Click to 86 / mark sold out for today'}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              padding: '4px 10px',
-                              borderRadius: 'var(--radius-sm)',
-                              border: `1px solid ${isSoldOut ? 'var(--status-warning-border)' : 'var(--status-success-border)'}`,
-                              background: isSoldOut ? 'var(--status-warning-bg)' : 'var(--status-success-bg)',
-                              color: isSoldOut ? 'var(--status-warning-text)' : 'var(--status-success-text)',
-                              fontSize: '12px',
-                              fontWeight: 700,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            {isSoldOut ? <ToggleLeft size={16} color="var(--status-warning-text)" /> : <ToggleRight size={16} color="var(--status-success-text)" />}
-                            <span>{isSoldOut ? "86'd (Sold Out)" : "Available"}</span>
-                          </button>
-                        </td>
-
-                        {/* Actions */}
-                        <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                            {item.item_type === 'ROOM' && (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenInventory(item)}
-                                title="Daily Inventory & Rates Calendar"
-                                style={{
-                                  padding: '5px',
-                                  borderRadius: 'var(--radius-sm)',
-                                  border: '1px solid var(--border-color)',
-                                  background: '#FFFFFF',
-                                  cursor: 'pointer',
-                                  color: 'var(--sarvya-blue)'
-                                }}
-                              >
-                                <Calendar size={14} />
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingItem(item);
-                                setItemForm({
-                                  title: item.title,
-                                  category_id: item.category_id || '',
-                                  item_type: item.item_type,
-                                  base_price: item.base_price,
-                                  tax_rate: item.tax_rate || 5,
-                                  short_description: item.short_description || '',
-                                  image_url: item.image_url || '',
-                                  sku: item.sku || '',
-                                  max_adults: item.max_adults || 2,
-                                  max_children: item.max_children || 1,
-                                  bed_type: item.bed_type || 'King Bed',
-                                  carpet_area_sqft: item.carpet_area_sqft || '',
-                                  dietary_flag: item.dietary_flag || 'NONE',
-                                  spice_level: item.spice_level || 0,
-                                  prep_time_minutes: item.prep_time_minutes || 15,
-                                  stock_quantity: item.stock_quantity || 20,
-                                  duration_minutes: item.duration_minutes || 30
-                                });
-                                setShowItemModal(true);
-                              }}
-                              title="Edit Item"
-                              style={{
-                                padding: '5px',
-                                borderRadius: 'var(--radius-sm)',
-                                border: '1px solid var(--border-color)',
-                                background: '#FFFFFF',
-                                cursor: 'pointer',
-                                color: 'var(--text-secondary)'
-                              }}
-                            >
-                              <Edit2 size={14} />
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteItem(item.id)}
-                              title="Delete Item"
-                              style={{
-                                padding: '5px',
-                                borderRadius: 'var(--radius-sm)',
-                                border: '1px solid var(--border-color)',
-                                background: '#FFFFFF',
-                                cursor: 'pointer',
-                                color: '#EF4444'
-                              }}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+            }
+          />
         </div>
       </div>
       )}
@@ -1513,50 +1541,16 @@ export default function CatalogInventoryPage() {
               </button>
             </div>
 
-            <div style={{ overflowX: 'auto', marginBottom: '16px' }}>
-              <table className="sarvya-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Available Keys</th>
-                    <th>Booked Keys</th>
-                    <th>Surge / Tariff Override</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {inventoryMatrix.slice(0, 14).map(row => (
-                    <tr key={row.id}>
-                      <td style={{ fontWeight: 600 }}>{row.inventory_date}</td>
-                      <td>
-                        <span style={{ fontWeight: 700, color: row.available_qty > 0 ? '#16A34A' : '#EF4444' }}>
-                          {row.available_qty}
-                        </span>
-                      </td>
-                      <td>{row.booked_qty}</td>
-                      <td>
-                        {row.rate_override ? (
-                          <span style={{ fontWeight: 600 }}>₹{row.rate_override.toLocaleString('en-IN')}</span>
-                        ) : (
-                          <span style={{ color: 'var(--text-secondary)' }}>Base (₹{inventoryItem.base_price})</span>
-                        )}
-                      </td>
-                      <td>
-                        <span style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          background: row.is_closed ? 'var(--status-error-bg)' : 'var(--status-success-bg)',
-                          color: row.is_closed ? 'var(--status-error-text)' : 'var(--status-success-text)'
-                        }}>
-                          {row.is_closed ? 'Blocked' : 'Open'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div style={{ marginBottom: '16px' }}>
+              <DataTable
+                density="compact"
+                columns={inventoryMatrixColumns}
+                data={inventoryMatrix.slice(0, 14)}
+                rows={inventoryMatrix.slice(0, 14)}
+                pagination={false}
+                emptyTitle="No Daily Rates"
+                emptyMessage="No availability records found for this period."
+              />
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>

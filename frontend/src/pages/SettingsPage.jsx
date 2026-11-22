@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   PageHeader,
@@ -8,7 +8,9 @@ import {
   CardBody,
   Badge,
   Button,
-  Modal
+  Modal,
+  DataTable,
+  HelpTip
 } from '../components/ui';
 import {
   User,
@@ -451,6 +453,80 @@ export default function SettingsPage() {
     { id: 'autoreply', label: 'Inbound Auto-Reply', icon: Bot }
   ];
 
+  const invoiceColumns = useMemo(() => [
+    {
+      key: 'invoice_number',
+      header: 'Invoice Number',
+      sortable: true,
+      render: (v, inv) => (
+        <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>
+          {v || `INV-${inv.id}`}
+        </span>
+      )
+    },
+    {
+      key: 'created_at',
+      header: 'Date',
+      sortable: true,
+      render: (v) => v ? v.slice(0, 10) : '-'
+    },
+    {
+      key: 'plan_code',
+      header: 'Plan',
+      sortable: true,
+      render: (v) => <span style={{ fontWeight: 600 }}>{v}</span>
+    },
+    {
+      key: 'billing_cycle',
+      header: 'Cycle',
+      sortable: true
+    },
+    {
+      key: 'amount_inr',
+      header: 'Taxable (₹)',
+      align: 'right',
+      sortable: true,
+      render: (v) => <span className="tabular-nums">₹{Number(v).toFixed(2)}</span>
+    },
+    {
+      key: 'gst_inr',
+      header: 'GST 18% (₹)',
+      align: 'right',
+      sortable: true,
+      render: (v) => <span className="tabular-nums">₹{Number(v).toFixed(2)}</span>
+    },
+    {
+      key: 'total_inr',
+      header: 'Total (₹)',
+      align: 'right',
+      sortable: true,
+      render: (v) => <span className="tabular-nums" style={{ fontWeight: 700 }}>₹{Number(v).toFixed(2)}</span>
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      align: 'center',
+      render: (v) => <Badge variant={v === 'ACTIVE' ? 'success' : 'neutral'}>PAID</Badge>
+    },
+    {
+      key: 'action',
+      header: 'Action',
+      align: 'right',
+      render: (_, inv) => (
+        <a
+          href={`/api/v1/billing/invoices/${inv.invoice_number || inv.id}/html`}
+          target="_blank"
+          rel="noreferrer"
+          className="sarvya-btn sarvya-btn-secondary sarvya-btn-sm"
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
+        >
+          <Download size={13} />
+          <span>HTML</span>
+        </a>
+      )
+    }
+  ], []);
+
   return (
     <div className="app-content-container" style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
       <PageHeader
@@ -522,52 +598,44 @@ export default function SettingsPage() {
             </Button>
           </div>
 
-          {/* Permanent Token Architecture Guide Card */}
-          <div style={{
-            padding: '16px 18px',
-            borderRadius: '10px',
-            background: 'var(--color-info-subtle, #f0fdf4)',
-            border: '1px solid var(--color-info-border, #bbf7d0)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: '#166534', fontSize: '14px' }}>
-                <ShieldCheck size={18} color="#16a34a" />
-                <span>How to Create a Never-Expiring Meta Permanent System User Token</span>
+          {/* Permanent Token Setup Guide (Collapsible) */}
+          <details className="sarvya-card" style={{ padding: '14px 18px', background: 'var(--color-info-subtle, #f0fdf4)', border: '1px solid var(--color-info-border, #bbf7d0)' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#166534', fontSize: '13.5px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ShieldCheck size={16} color="#16a34a" />
+              <span>Meta Permanent System User Token &amp; Webhook Setup Guide</span>
+              <HelpTip text="Follow these steps to generate a permanent System User token that never expires." />
+            </summary>
+            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <a
+                  href="https://business.facebook.com/settings/system-users"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: '#15803d',
+                    textDecoration: 'none',
+                    background: '#dcfce7',
+                    padding: '4px 10px',
+                    borderRadius: '6px'
+                  }}
+                >
+                  <span>Open Meta Business Settings</span>
+                  <ExternalLink size={12} />
+                </a>
               </div>
-              <a
-                href="https://business.facebook.com/settings/system-users"
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  fontSize: '12.5px',
-                  fontWeight: 600,
-                  color: '#15803d',
-                  textDecoration: 'none',
-                  background: '#dcfce7',
-                  padding: '4px 10px',
-                  borderRadius: '6px'
-                }}
-              >
-                <span>Open Meta Business Settings</span>
-                <ExternalLink size={12} />
-              </a>
+              <ol style={{ margin: 0, paddingLeft: '20px', fontSize: '12px', color: '#166534', lineHeight: 1.6 }}>
+                <li>Go to <strong>Meta Business Suite &gt; Business Settings &gt; Users &gt; System Users</strong>.</li>
+                <li>Click <strong>Add</strong> to create a System User (role: <strong>Admin</strong>), then assign your WhatsApp App as an asset.</li>
+                <li>Click <strong>Generate New Token</strong> with <code>whatsapp_business_messaging</code> &amp; <code>whatsapp_business_management</code>, and select <strong>Never</strong> for expiration.</li>
+                <li>Click <strong>Update Permanent Token</strong> on your phone line below and paste your token to verify.</li>
+              </ol>
             </div>
-            <p style={{ margin: 0, fontSize: '12.5px', color: '#14532d', lineHeight: 1.5 }}>
-              Temporary tokens generated in the Graph API Explorer expire after 24 hours. For reliable 24/7 campaigns, generate a <strong>Permanent System User Access Token</strong>:
-            </p>
-            <ol style={{ margin: '4px 0 0', paddingLeft: '20px', fontSize: '12px', color: '#166534', lineHeight: 1.6 }}>
-              <li>Go to <strong>Meta Business Suite &gt; Business Settings &gt; Users &gt; System Users</strong>.</li>
-              <li>Click <strong>Add</strong> to create a System User (set role to <strong>Admin</strong>), then assign your WhatsApp App as an asset.</li>
-              <li>Click <strong>Generate New Token</strong>, select permissions <code>whatsapp_business_messaging</code> &amp; <code>whatsapp_business_management</code>, and choose <strong>Never</strong> for expiration.</li>
-              <li>Click <strong>"Update Permanent Token"</strong> on your phone line below and paste the token to verify and save it permanently!</li>
-            </ol>
-          </div>
+          </details>
 
           {/* Phone Numbers List */}
           {loadingPhones ? (
@@ -967,59 +1035,13 @@ export default function SettingsPage() {
           <Card>
             <CardHeader title="GST Tax Invoices (SAC 998314)" icon={FileText} />
             <CardBody>
-              {invoices.length === 0 ? (
-                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                  No past invoices generated yet. Invoices appear here automatically upon subscription activation.
-                </div>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="sarvya-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border-subtle)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                        <th style={{ padding: '10px 14px' }}>Invoice Number</th>
-                        <th style={{ padding: '10px 14px' }}>Date</th>
-                        <th style={{ padding: '10px 14px' }}>Plan</th>
-                        <th style={{ padding: '10px 14px' }}>Cycle</th>
-                        <th style={{ padding: '10px 14px', textAlign: 'right' }}>Taxable (₹)</th>
-                        <th style={{ padding: '10px 14px', textAlign: 'right' }}>GST 18% (₹)</th>
-                        <th style={{ padding: '10px 14px', textAlign: 'right' }}>Total (₹)</th>
-                        <th style={{ padding: '10px 14px' }}>Status</th>
-                        <th style={{ padding: '10px 14px', textAlign: 'right' }}>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {invoices.map((inv) => (
-                        <tr key={inv.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                          <td style={{ padding: '10px 14px', fontWeight: 600, fontFamily: 'monospace' }}>
-                            {inv.invoice_number || `INV-${inv.id}`}
-                          </td>
-                          <td style={{ padding: '10px 14px' }}>{inv.created_at ? inv.created_at.slice(0, 10) : '-'}</td>
-                          <td style={{ padding: '10px 14px', fontWeight: 600 }}>{inv.plan_code}</td>
-                          <td style={{ padding: '10px 14px' }}>{inv.billing_cycle}</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right' }}>₹{Number(inv.amount_inr).toFixed(2)}</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right' }}>₹{Number(inv.gst_inr).toFixed(2)}</td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>₹{Number(inv.total_inr).toFixed(2)}</td>
-                          <td style={{ padding: '10px 14px' }}>
-                            <Badge variant={inv.status === 'ACTIVE' ? 'success' : 'neutral'}>PAID</Badge>
-                          </td>
-                          <td style={{ padding: '10px 14px', textAlign: 'right' }}>
-                            <a
-                              href={`/api/v1/billing/invoices/${inv.invoice_number || inv.id}/html`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="sarvya-btn sarvya-btn-secondary sarvya-btn-sm"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
-                            >
-                              <Download size={13} />
-                              <span>HTML</span>
-                            </a>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <DataTable
+                columns={invoiceColumns}
+                data={invoices}
+                density="compact"
+                pageSize={10}
+                emptyMessage="No past invoices generated yet. Invoices appear here automatically upon subscription activation."
+              />
             </CardBody>
           </Card>
 

@@ -339,6 +339,7 @@ export default function DashboardPage({ setActiveTab }) {
         />
         <CardBody style={{ padding: 0 }}>
           <DataTable
+            density="compact"
             loading={loading}
             data={filteredCampaigns}
             pageSize={6}

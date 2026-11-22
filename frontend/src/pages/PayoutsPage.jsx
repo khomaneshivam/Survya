@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { DataTable, HelpTip } from '../components/ui';
 import {
   Landmark,
   Building,
@@ -28,6 +29,102 @@ export default function PayoutsPage() {
   const [paymentConfig, setPaymentConfig] = useState(null);
   const [savingPaymentMode, setSavingPaymentMode] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  const settlementColumns = useMemo(() => [
+    {
+      key: 'settled_at',
+      header: 'Settlement Date & Time',
+      sortable: true,
+      render: (_, row) => (
+        <div>
+          <div style={{ fontWeight: 600, fontSize: '13px' }}>
+            {new Date(row.settled_at || row.created_at).toLocaleDateString('en-IN', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric'
+            })}
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+            {new Date(row.settled_at || row.created_at).toLocaleTimeString('en-IN', {
+              hour: '2-digit',
+              minute: '2-digit'
+            })}
+          </div>
+        </div>
+      )
+    },
+    {
+      key: 'payout_batch_id',
+      header: 'Batch Reference',
+      sortable: true,
+      render: (v) => (
+        <span style={{ fontSize: '12px', fontFamily: 'monospace', background: 'var(--bg-app)', padding: '2px 6px', borderRadius: '4px' }}>
+          {v}
+        </span>
+      )
+    },
+    {
+      key: 'gross_amount',
+      header: 'Gross Collected',
+      align: 'right',
+      sortable: true,
+      render: (v) => <span className="tabular-nums" style={{ fontWeight: 600 }}>₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+    },
+    {
+      key: 'platform_fee',
+      header: 'Platform Fee (2%)',
+      align: 'right',
+      sortable: true,
+      render: (_, row) => (
+        <span className="tabular-nums" style={{ color: 'var(--text-secondary)', fontSize: '12.5px' }}>
+          -₹{(Number(row.platform_fee) + Number(row.tax_on_fee)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+        </span>
+      )
+    },
+    {
+      key: 'net_payout_amount',
+      header: 'Net Dispatched to Bank',
+      align: 'right',
+      sortable: true,
+      render: (v) => (
+        <span className="tabular-nums" style={{ fontWeight: 700, color: '#16A34A', fontSize: '13.5px' }}>
+          ₹{Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+        </span>
+      )
+    },
+    {
+      key: 'bank_utr',
+      header: 'Bank IMPS UTR',
+      sortable: true,
+      render: (v) => (
+        <span style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)' }}>
+          {v}
+        </span>
+      )
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      align: 'right',
+      render: () => (
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '4px',
+          background: 'var(--status-success-bg)',
+          color: 'var(--status-success-text)',
+          border: '1px solid var(--status-success-border)',
+          padding: '2px 8px',
+          borderRadius: 'var(--radius-sm)',
+          fontSize: '11.5px',
+          fontWeight: 700
+        }}>
+          <CheckCircle2 size={12} />
+          Settled
+        </span>
+      )
+    }
+  ], []);
   const [actionLoading, setActionLoading] = useState(false);
   const [notification, setNotification] = useState(null);
 
@@ -383,11 +480,8 @@ export default function PayoutsPage() {
                 }}>
                   Zero-Escrow TSP Mode
                 </span>
+                <HelpTip text="Under RBI circular RBI/DPSS/2019-20/174, SARVYA operates strictly as a Technology Service Provider (TSP). Customer payments from WhatsApp Flows, UPI QR, and payment links disburse directly to your merchant account without intermediary pooling or holding." />
               </div>
-              <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0 0', lineHeight: 1.5 }}>
-                Under RBI circular <strong>RBI/DPSS/2019-20/174</strong>, SARVYA operates strictly as a Technology Service Provider (TSP). 
-                Customer payments from WhatsApp Flows, UPI QR, and payment links disburse directly to your merchant account without intermediary pooling or holding.
-              </p>
             </div>
           </div>
 
@@ -585,96 +679,14 @@ export default function PayoutsPage() {
           </button>
         </div>
 
-        {ledger.length === 0 ? (
-          <div style={{ padding: '48px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            <Receipt size={32} style={{ margin: '0 auto 10px', color: 'var(--text-secondary)' }} />
-            <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '4px' }}>No settlement history yet</h4>
-            <p style={{ fontSize: '12.5px' }}>Completed payouts and daily batch deposits will appear here.</p>
-          </div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="sarvya-table">
-              <thead>
-                <tr>
-                  <th>Settlement Date & Time</th>
-                  <th>Batch Reference</th>
-                  <th>Gross Collected</th>
-                  <th>Platform Fee (2%)</th>
-                  <th>Net Dispatched to Bank</th>
-                  <th>Bank IMPS UTR</th>
-                  <th style={{ textAlign: 'right' }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ledger.map(row => (
-                  <tr key={row.id}>
-                    <td>
-                      <div style={{ fontWeight: 600, fontSize: '13px' }}>
-                        {new Date(row.settled_at || row.created_at).toLocaleDateString('en-IN', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric'
-                        })}
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                        {new Date(row.settled_at || row.created_at).toLocaleTimeString('en-IN', {
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </div>
-                    </td>
-
-                    <td>
-                      <span style={{ fontSize: '12px', fontFamily: 'monospace', background: 'var(--bg-app)', padding: '2px 6px', borderRadius: '4px' }}>
-                        {row.payout_batch_id}
-                      </span>
-                    </td>
-
-                    <td>
-                      <span style={{ fontWeight: 600 }}>₹{row.gross_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                    </td>
-
-                    <td>
-                      <span style={{ color: 'var(--text-secondary)', fontSize: '12.5px' }}>
-                        -₹{(row.platform_fee + row.tax_on_fee).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </span>
-                    </td>
-
-                    <td>
-                      <span style={{ fontWeight: 700, color: '#16A34A', fontSize: '13.5px' }}>
-                        ₹{row.net_payout_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </span>
-                    </td>
-
-                    <td>
-                      <span style={{ fontSize: '12px', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {row.bank_utr}
-                      </span>
-                    </td>
-
-                    <td style={{ textAlign: 'right' }}>
-                      <span style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        background: 'var(--status-success-bg)',
-                        color: 'var(--status-success-text)',
-                        border: '1px solid var(--status-success-border)',
-                        padding: '2px 8px',
-                        borderRadius: 'var(--radius-sm)',
-                        fontSize: '11.5px',
-                        fontWeight: 700
-                      }}>
-                        <CheckCircle2 size={12} />
-                        Settled
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <DataTable
+          columns={settlementColumns}
+          data={ledger}
+          density="compact"
+          pageSize={10}
+          loading={loading && ledger.length === 0}
+          emptyMessage="No settlement history yet. Completed payouts and daily batch deposits will appear here."
+        />
       </div>
 
       {/* MODAL 1: Request Instant Payout */}

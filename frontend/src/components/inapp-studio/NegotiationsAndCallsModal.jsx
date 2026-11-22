@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Modal, Button, Badge, Skeleton } from '../ui';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Modal, Button, Badge, Skeleton, DataTable } from '../ui';
 import { getAuthHeaders } from '../../utils/apiAuth';
 import {
   MessageSquareDiff,
@@ -93,6 +93,176 @@ export default function NegotiationsAndCallsModal({
     }
   };
 
+  const negotiationColumns = useMemo(() => [
+    {
+      header: 'Item / Experience',
+      accessor: 'item_title',
+      cell: (neg) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <span style={{ fontWeight: 600, color: '#0F172A' }}>{neg.item_title}</span>
+          <span style={{ fontSize: '0.72rem', color: '#64748B' }}>{neg.experience_name}</span>
+        </div>
+      )
+    },
+    {
+      header: 'Offer vs List',
+      cell: (neg) => {
+        const base = Number(neg.base_unit_price || 0);
+        const offer = Number(neg.customer_offer_price || 0);
+        const discount = base > 0 ? Math.round(((base - offer) / base) * 100) : 0;
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+            <span style={{ fontWeight: 700, color: '#0F172A' }} className="tabular-nums">
+              ₹{offer.toLocaleString('en-IN')} <span style={{ fontSize: '0.72rem', color: '#16A34A' }}>({discount}% OFF)</span>
+            </span>
+            <span style={{ fontSize: '0.72rem', color: '#94A3B8' }} className="tabular-nums">
+              List: ₹{base.toLocaleString('en-IN')} • Qty: {neg.quantity}
+            </span>
+          </div>
+        );
+      }
+    },
+    {
+      header: 'Visitor',
+      accessor: 'visitor_name',
+      cell: (neg) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+          <span style={{ fontWeight: 600, fontSize: '0.78rem' }}>{neg.visitor_name || 'Guest'}</span>
+          <span style={{ fontSize: '0.72rem', color: '#64748B' }}>{neg.visitor_phone || '—'}</span>
+        </div>
+      )
+    },
+    {
+      header: 'Status',
+      accessor: 'status',
+      cell: (neg) => {
+        const isPending = neg.status === 'PENDING_AGENT';
+        return (
+          <Badge variant={isPending ? 'warning' : (neg.status === 'AUTO_APPROVED' || neg.status === 'ACCEPTED' ? 'success' : 'default')}>
+            {neg.status}
+          </Badge>
+        );
+      }
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      cell: (neg) => {
+        const isPending = neg.status === 'PENDING_AGENT';
+        const base = Number(neg.base_unit_price || 0);
+        const offer = Number(neg.customer_offer_price || 0);
+        if (!isPending) return <span style={{ fontSize: '0.74rem', color: '#94A3B8' }}>Resolved</span>;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => handleAgentAction(neg.id, 'APPROVE')}
+              disabled={acting}
+            >
+              <CheckCircle2 size={13} />
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setSelectedNeg(neg);
+                setCounterPrice(Math.round((base + offer) / 2));
+                setCounterModalOpen(true);
+              }}
+            >
+              Counter
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleAgentAction(neg.id, 'REJECT')}
+              disabled={acting}
+              style={{ color: '#ef4444' }}
+            >
+              <XCircle size={13} />
+            </Button>
+          </div>
+        );
+      }
+    }
+  ], [acting, handleAgentAction]);
+
+  const callColumns = useMemo(() => [
+    {
+      header: 'Visitor & Contact',
+      cell: (call) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <span style={{ fontWeight: 600, color: '#0F172A' }}>{call.visitor_name || 'Customer'}</span>
+          <span style={{ fontSize: '0.74rem', fontFamily: 'monospace', color: '#64748B' }}>{call.visitor_phone}</span>
+        </div>
+      )
+    },
+    {
+      header: 'Topic & Type',
+      cell: (call) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Badge variant="default">{call.call_type}</Badge>
+          <span style={{ fontSize: '0.76rem', color: '#334155' }}>{call.topic}</span>
+        </div>
+      )
+    },
+    {
+      header: 'Time / Slot',
+      cell: (call) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+          <span style={{ fontSize: '0.75rem', color: '#0F172A' }}>{call.preferred_slot_at || 'Immediate'}</span>
+          <span style={{ fontSize: '0.7rem', color: '#94A3B8' }}>
+            {new Date(call.created_at).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}
+          </span>
+        </div>
+      )
+    },
+    {
+      header: 'Status',
+      accessor: 'status',
+      cell: (call) => (
+        <Badge variant={call.status === 'QUEUED' ? 'warning' : (call.status === 'COMPLETED' || call.status === 'CALLED' ? 'success' : 'default')}>
+          {call.status}
+        </Badge>
+      )
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      cell: (call) => (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+          <a
+            href={`tel:${call.visitor_phone}`}
+            style={{
+              padding: '4px 8px',
+              borderRadius: '5px',
+              backgroundColor: '#0F172A',
+              color: '#FFFFFF',
+              fontSize: '11px',
+              fontWeight: 600,
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            <PhoneCall size={11} /> Call
+          </a>
+          {call.status === 'QUEUED' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleUpdateCall(call.id, 'CALLED')}
+            >
+              <CheckCircle2 size={12} />
+            </Button>
+          )}
+        </div>
+      )
+    }
+  ], [handleUpdateCall]);
+
   if (!isOpen) return null;
 
   return (
@@ -161,163 +331,23 @@ export default function NegotiationsAndCallsModal({
             <Skeleton style={{ height: '70px', borderRadius: '8px' }} />
           </div>
         ) : activeTab === 'negotiations' ? (
-          negotiations.length === 0 ? (
-            <div style={{ padding: '40px 20px', textAlign: 'center', color: '#64748b' }}>
-              No active rate negotiations recorded yet.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {negotiations.map((neg) => {
-                const base = Number(neg.base_unit_price || 0);
-                const offer = Number(neg.customer_offer_price || 0);
-                const discount = base > 0 ? Math.round(((base - offer) / base) * 100) : 0;
-                const isPending = neg.status === 'PENDING_AGENT';
-
-                return (
-                  <div
-                    key={neg.id}
-                    style={{
-                      padding: '14px',
-                      borderRadius: '10px',
-                      border: '1px solid #e2e8f0',
-                      backgroundColor: '#ffffff',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: '12px'
-                    }}
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>
-                          {neg.item_title}
-                        </span>
-                        <Badge variant={isPending ? 'warning' : (neg.status === 'AUTO_APPROVED' || neg.status === 'ACCEPTED' ? 'success' : 'default')}>
-                          {neg.status}
-                        </Badge>
-                      </div>
-
-                      <div style={{ fontSize: '12.5px', color: '#64748b', marginTop: '3px' }}>
-                        Customer Offer: <strong>₹{offer.toLocaleString('en-IN')}</strong> (List: ₹{base.toLocaleString('en-IN')} • {discount}% OFF) • Qty: {neg.quantity}
-                      </div>
-
-                      <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '2px' }}>
-                        Visitor: {neg.visitor_name || 'Guest'} {neg.visitor_phone ? `(${neg.visitor_phone})` : ''} • Experience: {neg.experience_name}
-                      </div>
-                    </div>
-
-                    {isPending && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => handleAgentAction(neg.id, 'APPROVE')}
-                          disabled={acting}
-                        >
-                          <CheckCircle2 size={14} /> Approve
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedNeg(neg);
-                            setCounterPrice(Math.round((base + offer) / 2));
-                            setCounterModalOpen(true);
-                          }}
-                        >
-                          Counter
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleAgentAction(neg.id, 'REJECT')}
-                          disabled={acting}
-                          style={{ color: '#ef4444' }}
-                        >
-                          <XCircle size={14} /> Reject
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )
+          <DataTable
+            density="compact"
+            columns={negotiationColumns}
+            data={negotiations}
+            rows={negotiations}
+            emptyTitle="No Negotiations"
+            emptyMessage="No active rate negotiations recorded yet."
+          />
         ) : (
-          calls.length === 0 ? (
-            <div style={{ padding: '40px 20px', textAlign: 'center', color: '#64748b' }}>
-              No callback requests logged yet.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {calls.map((call) => (
-                <div
-                  key={call.id}
-                  style={{
-                    padding: '14px',
-                    borderRadius: '10px',
-                    border: '1px solid #e2e8f0',
-                    backgroundColor: '#ffffff',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: '12px'
-                  }}
-                >
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>
-                        {call.visitor_name || 'Customer'} — {call.visitor_phone}
-                      </span>
-                      <Badge variant={call.status === 'QUEUED' ? 'warning' : (call.status === 'COMPLETED' || call.status === 'CALLED' ? 'success' : 'default')}>
-                        {call.status}
-                      </Badge>
-                      <Badge variant="default">{call.call_type}</Badge>
-                    </div>
-
-                    <div style={{ fontSize: '12.5px', color: '#64748b', marginTop: '3px' }}>
-                      Topic: <strong>{call.topic}</strong> {call.preferred_slot_at ? `• Preferred Slot: ${call.preferred_slot_at}` : ''}
-                    </div>
-
-                    <div style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: '2px' }}>
-                      Logged: {new Date(call.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} (IST) • Experience: {call.experience_name}
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <a
-                      href={`tel:${call.visitor_phone}`}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '6px',
-                        backgroundColor: '#0f172a',
-                        color: '#ffffff',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        textDecoration: 'none',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                    >
-                      <PhoneCall size={12} /> Call
-                    </a>
-                    {call.status === 'QUEUED' && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleUpdateCall(call.id, 'CALLED')}
-                      >
-                        <CheckCircle2 size={13} /> Mark Called
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )
+          <DataTable
+            density="compact"
+            columns={callColumns}
+            data={calls}
+            rows={calls}
+            emptyTitle="No Callback Requests"
+            emptyMessage="No callback requests logged yet."
+          />
         )}
 
         {/* Counter Offer Modal */}

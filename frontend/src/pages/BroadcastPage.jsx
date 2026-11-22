@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { formatIndianDateTime, formatIndianTime, getIndianCurrentInputString } from '../utils/indianTime';
 import AddPhoneNumberModal from '../components/AddPhoneNumberModal';
+import { DataTable, HelpTip } from '../components/ui';
 
 export default function BroadcastPage() {
   const { token } = useAuth();
@@ -952,16 +953,155 @@ export default function BroadcastPage() {
     { number: 3, title: 'Preview & Schedule' },
   ];
 
+  const scheduledQueueColumns = [
+    {
+      header: 'Campaign Name',
+      accessor: 'name',
+      cell: (item) => <span style={{ fontWeight: 700, color: '#171719' }}>{item.name}</span>
+    },
+    {
+      header: 'Template',
+      accessor: 'template_name',
+      cell: (item) => <span>{item.template_name}</span>
+    },
+    {
+      header: 'Targets',
+      numeric: true,
+      cell: (item) => <span className="tabular-nums">{item.valid_contacts || item.total_contacts || 0}</span>
+    },
+    {
+      header: 'Scheduled For (IST)',
+      cell: (item) => <span style={{ color: '#7A2E83', fontWeight: 600 }}>{formatIndianDateTime(item.scheduled_at)}</span>
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      cell: (item) => (
+        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+          <button
+            type="button"
+            onClick={() => handleRunScheduledNow(item.id)}
+            className="btn btn-secondary"
+            style={{
+              padding: '4px 10px',
+              fontSize: '0.74rem',
+              background: '#EDF4E6',
+              color: '#2F5219',
+              borderColor: '#C3D1AC',
+              fontWeight: 700,
+              gap: '4px'
+            }}
+            title="Launch this campaign immediately right now"
+          >
+            <Play size={12} />
+            <span>Run Now</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleCancelCampaign(item.id)}
+            className="btn btn-danger"
+            style={{ padding: '4px 8px', fontSize: '0.74rem' }}
+            title="Cancel this scheduled broadcast"
+          >
+            <StopCircle size={12} />
+          </button>
+        </div>
+      )
+    }
+  ];
+
+  const contactPreviewColumns = [
+    {
+      header: '#',
+      width: '45px',
+      cell: (_, idx) => <span style={{ color: '#96969C' }}>{idx + 1}</span>
+    },
+    {
+      header: 'Contact Name',
+      cell: (row) => {
+        const nameVal = nameColumn && row.data ? row.data[nameColumn] : (row.contactName || '—');
+        return <span style={{ fontWeight: 600, color: '#171719' }}>{nameVal || '—'}</span>;
+      }
+    },
+    {
+      header: 'Raw Phone',
+      cell: (row) => {
+        const rawP = phoneColumn && row.data ? row.data[phoneColumn] : (row.rawPhone || '—');
+        return <span style={{ fontFamily: 'monospace', color: '#67676B' }}>{rawP || '—'}</span>;
+      }
+    },
+    {
+      header: 'Cleaned Phone (+Country)',
+      cell: (row) => (
+        <span style={{ fontFamily: 'monospace', color: '#171719', fontWeight: 600 }}>
+          {row.cleanPhone || '—'}
+        </span>
+      )
+    },
+    {
+      header: 'Validation Status',
+      cell: (row) => {
+        if (row.isValid) {
+          return (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              background: '#EDF4E6',
+              color: '#2F5219',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              fontSize: '0.72rem',
+              fontWeight: 600
+            }}>
+              ✓ Valid
+            </span>
+          );
+        }
+        if (row.isDuplicate) {
+          return (
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              background: '#FEF3C7',
+              color: '#B45309',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              fontSize: '0.72rem',
+              fontWeight: 600
+            }}>
+              🔁 Duplicate
+            </span>
+          );
+        }
+        return (
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            background: '#FDF0F0',
+            color: '#9B2C2C',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            fontSize: '0.72rem',
+            fontWeight: 600
+          }}>
+            ✗ {row.validationNote || 'Invalid'}
+          </span>
+        );
+      }
+    }
+  ];
+
   return (
-    <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '28px 24px' }}>
+    <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '24px' }}>
       {/* Page Header */}
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '1.65rem', fontWeight: 800, color: '#171719', letterSpacing: '-0.02em' }}>
-          WhatsApp Broadcast Studio
+      <div style={{ marginBottom: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <h1 style={{ fontSize: '1.3rem', fontWeight: 700, color: '#171719', margin: 0, letterSpacing: '-0.01em' }}>
+          Broadcast Campaigns
         </h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '4px' }}>
-          Target customer lists with official Meta-approved templates, variable tag mapping, and live smartphone preview.
-        </p>
+        <HelpTip text="Target contact lists with Meta-approved templates, custom variable mapping, and live throttle control." />
       </div>
 
       {/* Upcoming Scheduled Broadcasts Queue Banner */}
@@ -969,86 +1109,27 @@ export default function BroadcastPage() {
         <div style={{
           background: '#FCF2FE',
           border: '1px solid #EFB0F6',
-          borderRadius: '12px',
-          padding: '16px 20px',
-          marginBottom: '24px',
+          borderRadius: '10px',
+          padding: '14px 18px',
+          marginBottom: '20px',
           boxShadow: 'var(--shadow-xs)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Clock size={20} color="#7A2E83" />
-              <span style={{ fontWeight: 800, color: '#7A2E83', fontSize: '0.95rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Clock size={18} color="#7A2E83" />
+              <span style={{ fontWeight: 700, color: '#7A2E83', fontSize: '0.9rem' }}>
                 Upcoming Scheduled Broadcasts ({scheduledQueue.length})
               </span>
             </div>
-            <span style={{ fontSize: '0.78rem', color: '#7A2E83' }}>
-              These campaigns are queued to send automatically at their scheduled times.
-            </span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {scheduledQueue.map(item => (
-              <div
-                key={item.id}
-                style={{
-                  background: '#FFFFFF',
-                  border: '1px solid #EFB0F6',
-                  borderRadius: '10px',
-                  padding: '12px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  flexWrap: 'wrap'
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 700, color: '#171719', fontSize: '0.9rem' }}>
-                    {item.name}
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#67676B', display: 'flex', gap: '12px', marginTop: '2px', flexWrap: 'wrap' }}>
-                    <span>Template: <strong>{item.template_name}</strong></span>
-                    <span>Targets: <strong>{item.valid_contacts || item.total_contacts}</strong></span>
-                    <span style={{ color: '#7A2E83', fontWeight: 600 }}>
-                      ⏰ Scheduled for: <strong>{formatIndianDateTime(item.scheduled_at)} (IST)</strong>
-                    </span>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    type="button"
-                    onClick={() => handleRunScheduledNow(item.id)}
-                    className="btn btn-secondary"
-                    style={{
-                      padding: '5px 12px',
-                      fontSize: '0.75rem',
-                      background: '#EDF4E6',
-                      color: '#2F5219',
-                      borderColor: '#C3D1AC',
-                      fontWeight: 700,
-                      gap: '4px'
-                    }}
-                    title="Launch this campaign immediately right now"
-                  >
-                    <Play size={12} />
-                    <span>Run Now</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleCancelCampaign(item.id)}
-                    className="btn btn-danger"
-                    style={{ padding: '5px 12px', fontSize: '0.75rem', gap: '4px' }}
-                    title="Cancel this scheduled broadcast"
-                  >
-                    <StopCircle size={12} />
-                    <span>Cancel Schedule</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+          <DataTable
+            density="compact"
+            columns={scheduledQueueColumns}
+            data={scheduledQueue}
+            rows={scheduledQueue}
+            pagination={false}
+          />
         </div>
       )}
 
@@ -1441,84 +1522,15 @@ export default function BroadcastPage() {
                         </span>
                       </div>
 
-                      <div style={{
-                        overflowX: 'auto',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '8px',
-                        background: '#FFFFFF'
-                      }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem', textAlign: 'left' }}>
-                          <thead>
-                            <tr style={{ background: '#F5F5F6', borderBottom: '1px solid var(--border-color)', color: '#67676B', fontWeight: 600 }}>
-                              <th style={{ padding: '8px 12px', width: '40px' }}>#</th>
-                              <th style={{ padding: '8px 12px' }}>Contact Name</th>
-                              <th style={{ padding: '8px 12px' }}>Raw Phone</th>
-                              <th style={{ padding: '8px 12px' }}>Cleaned Phone (+Country)</th>
-                              <th style={{ padding: '8px 12px' }}>Validation Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filePreviewRows.slice(0, 10).map((row, idx) => {
-                              const rawP = phoneColumn && row.data ? row.data[phoneColumn] : (row.rawPhone || '—');
-                              const nameVal = nameColumn && row.data ? row.data[nameColumn] : (row.contactName || '—');
-                              const cleanP = row.cleanPhone || '—';
-                              return (
-                                <tr key={idx} style={{ borderBottom: idx < filePreviewRows.length - 1 ? '1px solid #EEEEF0' : 'none' }}>
-                                  <td style={{ padding: '8px 12px', color: '#96969C' }}>{idx + 1}</td>
-                                  <td style={{ padding: '8px 12px', fontWeight: 600, color: '#171719' }}>{nameVal || '—'}</td>
-                                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#67676B' }}>{rawP || '—'}</td>
-                                  <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: '#171719', fontWeight: 600 }}>{cleanP || '—'}</td>
-                                  <td style={{ padding: '8px 12px' }}>
-                                    {row.isValid ? (
-                                      <span style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        background: '#EDF4E6',
-                                        color: '#2F5219',
-                                        padding: '2px 8px',
-                                        borderRadius: '4px',
-                                        fontSize: '0.72rem',
-                                        fontWeight: 600
-                                      }}>
-                                        ✓ Valid
-                                      </span>
-                                    ) : row.isDuplicate ? (
-                                      <span style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        background: '#FEF3C7',
-                                        color: '#B45309',
-                                        padding: '2px 8px',
-                                        borderRadius: '4px',
-                                        fontSize: '0.72rem',
-                                        fontWeight: 600
-                                      }}>
-                                        🔁 Duplicate
-                                      </span>
-                                    ) : (
-                                      <span style={{
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                        background: '#FDF0F0',
-                                        color: '#9B2C2C',
-                                        padding: '2px 8px',
-                                        borderRadius: '4px',
-                                        fontSize: '0.72rem',
-                                        fontWeight: 600
-                                      }}>
-                                        ✗ {row.validationNote || 'Invalid'}
-                                      </span>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                      <DataTable
+                        density="compact"
+                        columns={contactPreviewColumns}
+                        data={filePreviewRows.slice(0, 10)}
+                        rows={filePreviewRows.slice(0, 10)}
+                        pagination={false}
+                        emptyTitle="No Preview Contacts"
+                        emptyMessage="Upload a CSV or Excel file to preview validated phone numbers."
+                      />
                     </div>
                   )}
                 </div>

@@ -667,12 +667,8 @@ export default function ChatLinksPage({ onNavigate }) {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="SARVYA Links — Click-to-Chat & In-App Messaging"
-        subtitle={
-          isAdmin
-            ? "Generate shareable branded links with pre-filled default messages, in-app chat, and automated reply triggers across all accounts."
-            : "Generate shareable branded links mapped to your account with pre-filled default messages, in-app chat, and automated reply triggers."
-        }
+        title="SARVYA Links — Click-to-Chat"
+        subtitle="Branded wa.me & in-app links with pre-filled messages and QR codes."
         actions={
           <>
             <Button
@@ -781,7 +777,7 @@ export default function ChatLinksPage({ onNavigate }) {
       <Card>
         <CardBody className="p-0">
           {filteredLinks.length > 0 ? (
-            <DataTable columns={columns} data={filteredLinks} rows={filteredLinks} rowKey={(r) => r.id} keyField="id" />
+            <DataTable density="compact" columns={columns} data={filteredLinks} rows={filteredLinks} rowKey={(r) => r.id} keyField="id" />
           ) : (
             <EmptyState
               icon={Link2}

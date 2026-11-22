@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { DataTable, HelpTip } from '../components/ui';
 import { 
   Sheet, 
   Play, 
@@ -502,6 +503,140 @@ export default function AutomationPage() {
     }
   ];
 
+  const renderStageStatus = (stageObj) => {
+    if (!stageObj) return <span style={{ color: '#96969C', fontSize: '0.72rem' }}>—</span>;
+    if (stageObj.status === 'DISABLED') {
+      return <span style={{ color: '#96969C', fontSize: '0.72rem' }}>Disabled</span>;
+    }
+    if (stageObj.status === 'ALREADY_SENT') {
+      return (
+        <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '2px' }}>
+          <span className="badge badge-success" style={{ fontSize: '0.68rem', padding: '2px 8px' }}>
+            ✓ Sent
+          </span>
+          <span style={{ fontSize: '0.66rem', color: '#2F5219' }}>{stageObj.targetDate}</span>
+        </div>
+      );
+    }
+    if (stageObj.status === 'DUE_FOR_SEND') {
+      return (
+        <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '2px' }}>
+          <span className="badge badge-warning pulse-glow" style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}>
+            ⚡ Due Now
+          </span>
+          <span style={{ fontSize: '0.66rem', color: '#B45309' }}>{stageObj.dispatchTime}</span>
+        </div>
+      );
+    }
+    if (stageObj.status === 'SCHEDULED_FOR_TODAY') {
+      return (
+        <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '2px' }}>
+          <span className="badge" style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#DBEAFE', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
+            🕒 Today at {stageObj.dispatchTime}
+          </span>
+          <span style={{ fontSize: '0.66rem', color: '#2563EB' }}>Target: {stageObj.targetDate}</span>
+        </div>
+      );
+    }
+    if (stageObj.status === 'FUTURE_UPCOMING') {
+      return (
+        <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '2px' }}>
+          <span className="badge badge-neutral" style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#EEEEF0', color: '#3A3A3E' }}>
+            📅 {stageObj.targetDate}
+          </span>
+          <span style={{ fontSize: '0.66rem', color: '#67676B' }}>Time: {stageObj.dispatchTime}</span>
+        </div>
+      );
+    }
+    if (stageObj.status === 'PAST') {
+      return (
+        <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '2px' }}>
+          <span style={{ fontSize: '0.68rem', color: '#96969C' }}>Past ({stageObj.targetDate})</span>
+        </div>
+      );
+    }
+    return <span style={{ fontSize: '0.72rem', color: '#67676B' }}>{stageObj.status}</span>;
+  };
+
+  const sheetColumns = useMemo(() => [
+    {
+      key: 'idx',
+      header: '#',
+      render: (_, __, idx) => <span style={{ color: '#96969C', fontSize: '0.78rem' }}>{idx + 1}</span>
+    },
+    {
+      key: 'guestName',
+      header: 'Guest / Contact',
+      sortable: true,
+      render: (_, row) => {
+        const rowObj = row.rawData || row.data || row;
+        const gName = row.guestName || rowObj['name'] || rowObj['Guest Name'] || 'Guest';
+        const phone = row.cleanPhone || row.rawPhone || rowObj['contact'] || rowObj['Phone'] || '—';
+        return (
+          <div>
+            <div style={{ fontWeight: 700, color: '#171719', fontSize: '0.85rem' }}>{gName}</div>
+            <div style={{ fontSize: '0.74rem', color: '#67676B', fontFamily: 'monospace' }}>+{phone}</div>
+          </div>
+        );
+      }
+    },
+    {
+      key: 'dates',
+      header: 'Dates (In / Out)',
+      render: (_, row) => {
+        const rowObj = row.rawData || row.data || row;
+        const inDate = row.checkinDate || rowObj['check-in'] || rowObj['Checkin Date'] || '—';
+        const outDate = row.checkoutDate || rowObj['check-out'] || rowObj['Checkout Date'] || '—';
+        return (
+          <div>
+            <div style={{ fontSize: '0.78rem', color: '#171719' }}>In: <strong>{inDate}</strong></div>
+            <div style={{ fontSize: '0.78rem', color: '#67676B' }}>Out: <strong>{outDate}</strong></div>
+          </div>
+        );
+      }
+    },
+    {
+      key: 'stage1',
+      header: '🚗 1. Pre-Checkin',
+      render: (_, row) => {
+        const st = row.stages || {};
+        return renderStageStatus(st.beforeCheckin);
+      }
+    },
+    {
+      key: 'stage2',
+      header: '🏨 2. Check-in Day',
+      render: (_, row) => {
+        const st = row.stages || {};
+        return renderStageStatus(st.onCheckin);
+      }
+    },
+    {
+      key: 'stage3',
+      header: '🧳 3. Check-out Day',
+      render: (_, row) => {
+        const st = row.stages || {};
+        return renderStageStatus(st.onCheckout);
+      }
+    },
+    {
+      key: 'stage4',
+      header: '⭐ 4. Post-Checkout',
+      render: (_, row) => {
+        const st = row.stages || {};
+        return renderStageStatus(st.afterCheckout);
+      }
+    },
+    {
+      key: 'property',
+      header: 'Property',
+      render: (_, row) => {
+        const rowObj = row.rawData || row.data || row;
+        return <span style={{ fontSize: '0.8rem', color: '#3A3A3E' }}>{row.propertyName || rowObj['resort'] || rowObj['Property Name'] || '—'}</span>;
+      }
+    }
+  ], []);
+
   return (
     <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '28px 24px' }}>
       {/* Top Module Sub-Navigation Switcher */}
@@ -576,12 +711,12 @@ export default function AutomationPage() {
           {/* Page Header */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
             <div>
-              <h1 style={{ fontSize: '1.65rem', fontWeight: 800, color: '#171719', letterSpacing: '-0.02em' }}>
-                Booking Lifecycle Automation
-              </h1>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '4px' }}>
-                Continuous hands-free WhatsApp messaging synchronized with live Google Sheets, Excel (.xlsx/.xls), or CSV booking dates.
-              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h1 style={{ fontSize: '1.65rem', fontWeight: 800, color: '#171719', letterSpacing: '-0.02em', margin: 0 }}>
+                  Booking Lifecycle Automation
+                </h1>
+                <HelpTip text="Continuous hands-free WhatsApp messaging synchronized with live Google Sheets, Excel (.xlsx/.xls), or CSV booking dates." />
+              </div>
             </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1148,132 +1283,14 @@ export default function AutomationPage() {
             <RefreshCw size={24} className="pulse-glow" style={{ margin: '0 auto 8px auto' }} />
             <div>Fetching live booking spreadsheet records...</div>
           </div>
-        ) : sheetData.length === 0 ? (
-          <div style={{
-            padding: '40px 20px',
-            textAlign: 'center',
-            background: '#F5F5F6',
-            borderRadius: '10px',
-            border: '1px dashed var(--border-color)'
-          }}>
-            <Sheet size={32} color="#96969C" style={{ margin: '0 auto 10px auto' }} />
-            <div style={{ fontWeight: 600, color: '#3A3A3E' }}>No spreadsheet records loaded</div>
-            <div style={{ fontSize: '0.8rem', color: '#67676B', marginTop: '4px' }}>
-              Enter a Google Sheet URL above and click "Sync Sheet", or click "Upload Excel / CSV" to choose an Excel or CSV file.
-            </div>
-          </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '35px' }}>#</th>
-                  <th>Guest / Contact</th>
-                  <th>Dates (In / Out)</th>
-                  <th style={{ background: 'rgba(37, 99, 235, 0.05)' }}>🚗 1. Pre-Checkin</th>
-                  <th style={{ background: 'rgba(21, 128, 61, 0.05)' }}>🏨 2. Check-in Day</th>
-                  <th style={{ background: 'rgba(217, 119, 6, 0.05)' }}>🧳 3. Check-out Day</th>
-                  <th style={{ background: 'rgba(147, 51, 234, 0.05)' }}>⭐ 4. Post-Checkout</th>
-                  <th>Property</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sheetData.slice(0, 50).map((row, idx) => {
-                  const rowObj = row.rawData || row.data || row;
-                  const gName = row.guestName || rowObj['name'] || rowObj['Guest Name'] || 'Guest';
-                  const phone = row.cleanPhone || row.rawPhone || rowObj['contact'] || rowObj['Phone'] || '—';
-                  const inDate = row.checkinDate || rowObj['check-in'] || rowObj['Checkin Date'] || '—';
-                  const outDate = row.checkoutDate || rowObj['check-out'] || rowObj['Checkout Date'] || '—';
-                  const property = row.propertyName || rowObj['resort'] || rowObj['Property Name'] || '—';
-                  const st = row.stages || {};
-
-                  const renderStageStatus = (stageObj, defaultLabel) => {
-                    if (!stageObj) return <span style={{ color: '#96969C', fontSize: '0.72rem' }}>—</span>;
-                    if (stageObj.status === 'DISABLED') {
-                      return <span style={{ color: '#96969C', fontSize: '0.72rem' }}>Disabled</span>;
-                    }
-                    if (stageObj.status === 'ALREADY_SENT') {
-                      return (
-                        <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '2px' }}>
-                          <span className="badge badge-success" style={{ fontSize: '0.68rem', padding: '2px 8px' }}>
-                            ✓ Sent
-                          </span>
-                          <span style={{ fontSize: '0.66rem', color: '#2F5219' }}>{stageObj.targetDate}</span>
-                        </div>
-                      );
-                    }
-                    if (stageObj.status === 'DUE_FOR_SEND') {
-                      return (
-                        <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '2px' }}>
-                          <span className="badge badge-warning pulse-glow" style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}>
-                            ⚡ Due Now
-                          </span>
-                          <span style={{ fontSize: '0.66rem', color: '#B45309' }}>{stageObj.dispatchTime}</span>
-                        </div>
-                      );
-                    }
-                    if (stageObj.status === 'SCHEDULED_FOR_TODAY') {
-                      return (
-                        <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '2px' }}>
-                          <span className="badge" style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#DBEAFE', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
-                            🕒 Today at {stageObj.dispatchTime}
-                          </span>
-                          <span style={{ fontSize: '0.66rem', color: '#2563EB' }}>Target: {stageObj.targetDate}</span>
-                        </div>
-                      );
-                    }
-                    if (stageObj.status === 'FUTURE_UPCOMING') {
-                      return (
-                        <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '2px' }}>
-                          <span className="badge badge-neutral" style={{ fontSize: '0.68rem', padding: '2px 8px', background: '#EEEEF0', color: '#3A3A3E' }}>
-                            📅 {stageObj.targetDate}
-                          </span>
-                          <span style={{ fontSize: '0.66rem', color: '#67676B' }}>Time: {stageObj.dispatchTime}</span>
-                        </div>
-                      );
-                    }
-                    if (stageObj.status === 'PAST') {
-                      return (
-                        <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '2px' }}>
-                          <span style={{ fontSize: '0.68rem', color: '#96969C' }}>Past ({stageObj.targetDate})</span>
-                        </div>
-                      );
-                    }
-                    return <span style={{ fontSize: '0.72rem', color: '#67676B' }}>{stageObj.status}</span>;
-                  };
-
-                  return (
-                    <tr key={idx}>
-                      <td style={{ color: '#96969C', fontSize: '0.78rem' }}>{idx + 1}</td>
-                      <td>
-                        <div style={{ fontWeight: 700, color: '#171719', fontSize: '0.85rem' }}>{gName}</div>
-                        <div style={{ fontSize: '0.74rem', color: '#67676B', fontFamily: 'monospace' }}>+{phone}</div>
-                      </td>
-                      <td>
-                        <div style={{ fontSize: '0.78rem', color: '#171719' }}>In: <strong>{inDate}</strong></div>
-                        <div style={{ fontSize: '0.78rem', color: '#67676B' }}>Out: <strong>{outDate}</strong></div>
-                      </td>
-                      <td style={{ background: 'rgba(37, 99, 235, 0.02)' }}>
-                        {renderStageStatus(st.beforeCheckin, 'Pre-Checkin')}
-                      </td>
-                      <td style={{ background: 'rgba(21, 128, 61, 0.02)' }}>
-                        {renderStageStatus(st.onCheckin, 'Check-in')}
-                      </td>
-                      <td style={{ background: 'rgba(217, 119, 6, 0.02)' }}>
-                        {renderStageStatus(st.onCheckout, 'Check-out')}
-                      </td>
-                      <td style={{ background: 'rgba(147, 51, 234, 0.02)' }}>
-                        {renderStageStatus(st.afterCheckout, 'Post-Checkout')}
-                      </td>
-                      <td style={{ fontSize: '0.8rem', color: '#3A3A3E' }}>
-                        {property}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={sheetColumns}
+            data={sheetData.slice(0, 50)}
+            density="compact"
+            pageSize={10}
+            emptyMessage="No spreadsheet records loaded. Enter a Google Sheet URL above and click 'Sync Sheet', or click 'Upload Excel / CSV' to choose an Excel or CSV file."
+          />
         )}
       </div>
       </>

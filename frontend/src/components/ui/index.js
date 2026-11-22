@@ -13,7 +13,8 @@ export {
   SearchInput,
   FilterBar,
   EmptyState,
-  Skeleton
+  Skeleton,
+  HelpTip
 } from './Primitives';
 export { PastelBarChart, PastelBreakdownCard } from './ChartCard';
 

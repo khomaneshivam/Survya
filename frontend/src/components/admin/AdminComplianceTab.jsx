@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ShieldCheck,
   Download,
@@ -23,7 +23,8 @@ import {
   CardBody,
   Button,
   Badge,
-  Tabs
+  Tabs,
+  DataTable
 } from '../ui';
 import { formatIndianDate } from '../../utils/indianTime';
 
@@ -292,6 +293,118 @@ export default function AdminComplianceTab({
     { id: 'requests', label: 'Grievance & Erasure Tickets', icon: FileText }
   ];
 
+  const consentColumns = useMemo(() => [
+    {
+      header: 'Phone & BSUID',
+      accessor: 'phone_e164',
+      render: (phone, row) => (
+        <div>
+          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{phone}</div>
+          {row.wa_bsuid && (
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+              BSUID: {row.wa_bsuid.substring(0, 16)}...
+            </div>
+          )}
+        </div>
+      )
+    },
+    {
+      header: 'Purpose',
+      accessor: 'purpose',
+      render: (purpose) => (
+        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+          {purpose}
+        </span>
+      )
+    },
+    {
+      header: 'Consent Status',
+      accessor: 'status',
+      render: (status) => (
+        <Badge variant={status === 'GRANTED' ? 'success' : 'danger'}>
+          {status === 'GRANTED' ? 'CONSENT GRANTED' : 'WITHDRAWN (OPT-OUT)'}
+        </Badge>
+      )
+    },
+    {
+      header: 'Source / Channel',
+      accessor: 'source',
+      render: (source) => source || 'WHATSAPP_CHAT'
+    },
+    {
+      header: 'Notice Ver.',
+      accessor: 'notice_version',
+      render: (noticeVer) => (
+        <span style={{ fontSize: '12px', fontFamily: 'monospace' }}>{noticeVer || 'v1.0'}</span>
+      )
+    },
+    {
+      header: 'Recorded At',
+      accessor: 'created_at',
+      render: (createdAt) => (
+        <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+          {formatIndianDate(createdAt)}
+        </span>
+      )
+    }
+  ], []);
+
+  const requestColumns = useMemo(() => [
+    {
+      header: 'Ticket ID',
+      accessor: 'id',
+      render: (id) => (
+        <span style={{ fontWeight: 600, fontFamily: 'monospace' }}>
+          #{id}
+        </span>
+      )
+    },
+    {
+      header: 'Phone Number',
+      accessor: 'phone_e164',
+      render: (phone) => <strong>{phone}</strong>
+    },
+    {
+      header: 'Request Type',
+      accessor: 'request_type',
+      render: (type) => <Badge variant="secondary">{type}</Badge>
+    },
+    {
+      header: 'Status',
+      accessor: 'status',
+      render: (status) => (
+        <Badge variant={status === 'COMPLETED' ? 'success' : status === 'SCHEDULED_48H' ? 'warning' : 'primary'}>
+          {status}
+        </Badge>
+      )
+    },
+    {
+      header: 'Created At',
+      accessor: 'created_at',
+      render: (createdAt) => (
+        <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+          {formatIndianDate(createdAt)}
+        </span>
+      )
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      render: (_, req) => (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            setEditTicket(req);
+            setTicketStatusForm({ status: req.status, details: req.details || '' });
+          }}
+        >
+          Update Ticket
+        </Button>
+      )
+    }
+  ], []);
+
   return (
     <Card>
       <CardHeader
@@ -349,72 +462,14 @@ export default function AdminComplianceTab({
               </Button>
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
-              <table className="sarvya-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                    <th style={{ padding: '10px 14px' }}>Phone & BSUID</th>
-                    <th style={{ padding: '10px 14px' }}>Purpose</th>
-                    <th style={{ padding: '10px 14px' }}>Consent Status</th>
-                    <th style={{ padding: '10px 14px' }}>Source / Channel</th>
-                    <th style={{ padding: '10px 14px' }}>Notice Ver.</th>
-                    <th style={{ padding: '10px 14px' }}>Recorded At</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loadingConsent ? (
-                    <tr>
-                      <td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                        Loading consent ledger...
-                      </td>
-                    </tr>
-                  ) : consentList.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                        No consent records found. Customer opt-ins from WhatsApp Flows and forms will appear here.
-                      </td>
-                    </tr>
-                  ) : (
-                    consentList.map((row) => (
-                      <tr key={row.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '12px 14px' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{row.phone_e164}</div>
-                          {row.wa_bsuid && (
-                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                              BSUID: {row.wa_bsuid.substring(0, 16)}...
-                            </div>
-                          )}
-                        </td>
-
-                        <td style={{ padding: '12px 14px' }}>
-                          <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                            {row.purpose}
-                          </span>
-                        </td>
-
-                        <td style={{ padding: '12px 14px' }}>
-                          <Badge variant={row.status === 'GRANTED' ? 'success' : 'danger'}>
-                            {row.status === 'GRANTED' ? 'CONSENT GRANTED' : 'WITHDRAWN (OPT-OUT)'}
-                          </Badge>
-                        </td>
-
-                        <td style={{ padding: '12px 14px', color: 'var(--text-secondary)' }}>
-                          {row.source || 'WHATSAPP_CHAT'}
-                        </td>
-
-                        <td style={{ padding: '12px 14px' }}>
-                          <span style={{ fontSize: '12px', fontFamily: 'monospace' }}>{row.notice_version || 'v1.0'}</span>
-                        </td>
-
-                        <td style={{ padding: '12px 14px', color: 'var(--text-muted)', fontSize: '12px' }}>
-                          {formatIndianDate(row.created_at)}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              columns={consentColumns}
+              data={consentList}
+              density="compact"
+              pageSize={10}
+              loading={loadingConsent}
+              emptyMessage="No consent records found. Customer opt-ins from WhatsApp Flows and forms will appear here."
+            />
           </div>
         )}
 
@@ -646,74 +701,14 @@ export default function AdminComplianceTab({
               </div>
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
-              <table className="sarvya-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                    <th style={{ padding: '10px 14px' }}>Ticket ID</th>
-                    <th style={{ padding: '10px 14px' }}>Phone Number</th>
-                    <th style={{ padding: '10px 14px' }}>Request Type</th>
-                    <th style={{ padding: '10px 14px' }}>Status</th>
-                    <th style={{ padding: '10px 14px' }}>Created At</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loadingRequests ? (
-                    <tr>
-                      <td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                        Loading compliance tickets...
-                      </td>
-                    </tr>
-                  ) : requestsList.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                        No compliance grievance or erasure requests pending.
-                      </td>
-                    </tr>
-                  ) : (
-                    requestsList.map((req) => (
-                      <tr key={req.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '12px 14px', fontWeight: 600, fontFamily: 'monospace' }}>
-                          #{req.id}
-                        </td>
-
-                        <td style={{ padding: '12px 14px', fontWeight: 600 }}>
-                          {req.phone_e164}
-                        </td>
-
-                        <td style={{ padding: '12px 14px' }}>
-                          <Badge variant="secondary">{req.request_type}</Badge>
-                        </td>
-
-                        <td style={{ padding: '12px 14px' }}>
-                          <Badge variant={req.status === 'COMPLETED' ? 'success' : req.status === 'SCHEDULED_48H' ? 'warning' : 'primary'}>
-                            {req.status}
-                          </Badge>
-                        </td>
-
-                        <td style={{ padding: '12px 14px', color: 'var(--text-muted)', fontSize: '12px' }}>
-                          {formatIndianDate(req.created_at)}
-                        </td>
-
-                        <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => {
-                              setEditTicket(req);
-                              setTicketStatusForm({ status: req.status, details: req.details || '' });
-                            }}
-                          >
-                            Update Ticket
-                          </Button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              columns={requestColumns}
+              data={requestsList}
+              density="compact"
+              pageSize={10}
+              loading={loadingRequests}
+              emptyMessage="No compliance grievance or erasure requests pending."
+            />
           </div>
         )}
       </CardBody>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   PageHeader,
@@ -278,6 +278,69 @@ export default function AiAssistantPage() {
     if (logFilterHandoff) return Boolean(l.triggered_handoff);
     return true;
   });
+
+  const aiLogColumns = useMemo(() => [
+    {
+      key: 'created_at',
+      header: 'Time (IST)',
+      sortable: true,
+      render: (v) => <span style={{ whiteSpace: 'nowrap', color: '#67676B' }}>{formatIndianDateTime(v)}</span>
+    },
+    {
+      key: 'sender_phone',
+      header: 'Phone',
+      sortable: true,
+      render: (v) => <span style={{ fontWeight: 600 }}>{v}</span>
+    },
+    {
+      key: 'input_type',
+      header: 'Type',
+      sortable: true,
+      render: (v) => <Badge variant="neutral">{v}</Badge>
+    },
+    {
+      key: 'user_input',
+      header: 'User Query',
+      render: (v) => <div style={{ maxWidth: '220px', wordBreak: 'break-word' }}>{v}</div>
+    },
+    {
+      key: 'detected_language',
+      header: 'Lang',
+      sortable: true,
+      render: (v) => <Badge variant="neutral">{(v || 'en').toUpperCase()}</Badge>
+    },
+    {
+      key: 'ai_reply',
+      header: 'AI Reply',
+      render: (v) => <div style={{ maxWidth: '260px', wordBreak: 'break-word' }}>{v}</div>
+    },
+    {
+      key: 'confidence',
+      header: 'Confidence',
+      align: 'right',
+      sortable: true,
+      render: (v) => (
+        <Badge variant={v >= 0.65 ? 'success' : 'warning'}>
+          <span className="tabular-nums">{(v * 100).toFixed(0)}%</span>
+        </Badge>
+      )
+    },
+    {
+      key: 'triggered_handoff',
+      header: 'Handoff',
+      align: 'center',
+      render: (v) => (
+        v ? <Badge variant="error">Escalated</Badge> : <Badge variant="success">Handled</Badge>
+      )
+    },
+    {
+      key: 'latency_ms',
+      header: 'Latency',
+      align: 'right',
+      sortable: true,
+      render: (v) => <span className="tabular-nums" style={{ color: '#67676B' }}>{v} ms</span>
+    }
+  ], []);
 
   return (
     <div className="app-content-container">
@@ -810,66 +873,13 @@ export default function AiAssistantPage() {
             }
           />
           <CardBody>
-            {filteredLogs.length === 0 ? (
-              <EmptyState
-                icon={History}
-                title="No AI Logs Yet"
-                description="Audit logs will appear here in real-time as customer inquiries are processed by the AI agent."
-              />
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid #E5E5E8', color: '#67676B', textAlign: 'left' }}>
-                      <th style={{ padding: '8px' }}>Time (IST)</th>
-                      <th style={{ padding: '8px' }}>Phone</th>
-                      <th style={{ padding: '8px' }}>Type</th>
-                      <th style={{ padding: '8px' }}>User Query</th>
-                      <th style={{ padding: '8px' }}>Lang</th>
-                      <th style={{ padding: '8px' }}>AI Reply</th>
-                      <th style={{ padding: '8px' }}>Confidence</th>
-                      <th style={{ padding: '8px' }}>Handoff</th>
-                      <th style={{ padding: '8px' }}>Latency</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredLogs.map((log) => (
-                      <tr key={log.id} style={{ borderBottom: '1px solid #F4F4F6' }}>
-                        <td style={{ padding: '8px', whiteSpace: 'nowrap', color: '#67676B' }}>
-                          {formatIndianDateTime(log.created_at)}
-                        </td>
-                        <td style={{ padding: '8px', fontWeight: 600 }}>{log.sender_phone}</td>
-                        <td style={{ padding: '8px' }}>
-                          <Badge variant="neutral">{log.input_type}</Badge>
-                        </td>
-                        <td style={{ padding: '8px', maxWidth: '220px', wordBreak: 'break-word' }}>
-                          {log.user_input}
-                        </td>
-                        <td style={{ padding: '8px' }}>
-                          <Badge variant="neutral">{(log.detected_language || 'en').toUpperCase()}</Badge>
-                        </td>
-                        <td style={{ padding: '8px', maxWidth: '260px', wordBreak: 'break-word' }}>
-                          {log.ai_reply}
-                        </td>
-                        <td style={{ padding: '8px' }}>
-                          <Badge variant={log.confidence >= 0.65 ? 'success' : 'warning'}>
-                            {(log.confidence * 100).toFixed(0)}%
-                          </Badge>
-                        </td>
-                        <td style={{ padding: '8px' }}>
-                          {log.triggered_handoff ? (
-                            <Badge variant="error">Escalated</Badge>
-                          ) : (
-                            <Badge variant="success">Handled</Badge>
-                          )}
-                        </td>
-                        <td style={{ padding: '8px', color: '#67676B' }}>{log.latency_ms} ms</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <DataTable
+              columns={aiLogColumns}
+              data={filteredLogs}
+              density="compact"
+              pageSize={10}
+              emptyMessage="No AI logs recorded matching active filters."
+            />
           </CardBody>
         </Card>
       )}

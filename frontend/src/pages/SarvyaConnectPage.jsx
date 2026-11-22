@@ -32,6 +32,7 @@ import {
   DataTable,
   EmptyState,
   FilterBar,
+  HelpTip,
   KpiCard,
   Modal,
   PageHeader,
@@ -445,10 +446,9 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="SARVYA Connect — WhatsApp Messaging"
-        subtitle="Connect your registered WhatsApp number once, design & submit custom Meta templates, enforce 24h rules, and dispatch campaigns directly inside SARVYA."
         actions={
           <>
             <MetaEmbeddedSignupButton onSuccess={() => { fetchAccounts(); fetchTemplates(); }} />
@@ -478,53 +478,38 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
         }
       />
 
-      {/* Top Wireframe Summary Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Connected Sender Account Card */}
-        <Card>
-          <CardBody className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-[var(--text-muted)]">Connected sender account</span>
-              <Badge tone={accountsData.connected ? 'green' : 'coral'}>
-                {accountsData.connected ? 'Connected' : 'Setup Needed'}
-              </Badge>
-            </div>
-            <div>
-              <p className="text-base font-semibold text-[var(--text-primary)]">
-                {activeSender?.display_name || 'No Sender Connected'}
-              </p>
-              <p className="text-sm font-mono text-[var(--text-secondary)] mt-0.5">
-                {activeSender?.phone_number || 'Add Phone Number ID'}
-              </p>
-            </div>
-            <div className="flex items-center justify-between pt-2 border-t border-[var(--border-subtle)]">
-              <span className="text-xs text-[var(--text-muted)]">
-                {activeSender ? `${activeSender.status || 'Active'} · Quality ${activeSender.quality_rating || 'GREEN'}` : 'Connect WABA number'}
-              </span>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setConnectOpen(true)}>
-                {activeSender ? 'Add / Edit' : 'Connect'}
-              </Button>
-            </div>
-          </CardBody>
-        </Card>
-
-        {/* Templates Summary Card */}
+      {/* Top Summary 4-KPI Strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KpiCard
-          label="Templates"
-          value={tplSummary.total}
-          hint={`${tplSummary.approved} approved · ${tplSummary.pending} pending · ${tplSummary.other} drafts or other statuses`}
-          icon={Layers}
+          label="Connected Numbers"
+          value={accountsData.accounts?.length || (accountsData.connected ? 1 : 0)}
+          hint={activeSender ? `Active: ${activeSender.display_name}` : 'Setup needed'}
+          icon={Phone}
           tone="blue"
           loading={loading}
         />
-
-        {/* Messages Sent Card */}
         <KpiCard
-          label="Messages sent"
-          value={accountsData.summary?.messagesSent ?? usageData.totals?.messages ?? 0}
-          hint={`Est. usage ₹${Number(usageData.totals?.estimatedSpend || 0).toFixed(2)} INR across campaigns & 1-to-1`}
-          icon={Send}
+          label="Active WABA Lines"
+          value={accountsData.connected ? 1 : 0}
+          hint={accountsData.connected ? 'Meta Cloud API Live' : 'Not Connected'}
+          icon={ShieldCheck}
           tone="green"
+          loading={loading}
+        />
+        <KpiCard
+          label="Meta Templates"
+          value={tplSummary.total}
+          hint={`${tplSummary.approved} Approved · ${tplSummary.pending} Pending`}
+          icon={Layers}
+          tone="purple"
+          loading={loading}
+        />
+        <KpiCard
+          label="Monthly Spend ₹"
+          value={`₹${Number(usageData.totals?.estimatedSpend || 0).toFixed(2)}`}
+          hint={`${accountsData.summary?.messagesSent ?? usageData.totals?.messages ?? 0} msgs sent`}
+          icon={IndianRupee}
+          tone="amber"
           loading={loading}
         />
       </div>
@@ -566,7 +551,6 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
           <Card>
             <CardHeader
               title="Connected WhatsApp Sender Accounts"
-              subtitle="One-time Meta Cloud API / WABA connection managed centrally across SARVYA modules"
               action={
                 <Button type="button" variant="primary" size="sm" icon={Plus} onClick={() => setConnectOpen(true)}>
                   Connect Number
@@ -599,7 +583,7 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
                 <EmptyState
                   icon={Phone}
                   title="No WhatsApp sender connected yet"
-                  description="Connect your registered Meta Phone Number ID and WABA ID once to start creating templates and sending directly from SARVYA."
+                  description="Connect your Meta Phone Number ID and WABA ID to start messaging."
                   action={
                     <div className="flex gap-2 items-center flex-wrap justify-center">
                       <MetaEmbeddedSignupButton onSuccess={() => { fetchAccounts(); fetchTemplates(); }} />
@@ -718,12 +702,12 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
           <Card>
             <CardBody className="p-0">
               {filteredTemplates.length > 0 ? (
-                <DataTable columns={templateColumns} data={filteredTemplates} rows={filteredTemplates} keyField="id" />
+                <DataTable density="compact" columns={templateColumns} data={filteredTemplates} rows={filteredTemplates} keyField="id" />
               ) : (
                 <EmptyState
                   icon={Layers}
                   title="No matching templates found"
-                  description="Create a custom draft template with our visual builder or sync existing templates from your Meta WABA."
+                  description="Create custom draft templates or sync from your Meta WABA."
                   action={
                     <Button
                       type="button"
@@ -750,7 +734,6 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
           <Card className="lg:col-span-7">
             <CardHeader
               title="One-to-One WhatsApp Composer"
-              subtitle="Enforces opt-out suppression, approved template gates, and Meta 24-hour customer-service windows"
             />
             <CardBody>
               <form className="space-y-4" onSubmit={handleSendOneToOne}>
@@ -999,20 +982,19 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
 
           <PastelBarChart
             title="Messages Dispatched by Meta Category"
-            subtitle="Category mix determines billing rate and approval compliance"
             data={usageChartData}
           />
 
           <Card>
-            <CardHeader title="Recent Usage & Billing Ledger" subtitle="Tracks estimated vs. webhook-confirmed conversation costs" />
+            <CardHeader title="Recent Usage & Billing Ledger" />
             <CardBody className="p-0">
               {usageData.ledger?.length > 0 ? (
-                <DataTable columns={ledgerColumns} data={usageData.ledger} rows={usageData.ledger} keyField="id" />
+                <DataTable density="compact" columns={ledgerColumns} data={usageData.ledger} rows={usageData.ledger} keyField="id" />
               ) : (
                 <EmptyState
                   icon={IndianRupee}
                   title="No usage events recorded yet"
-                  description="Send a 1-to-1 template or launch a broadcast campaign to generate real-time usage accounting."
+                  description="Send a 1-to-1 template or launch a broadcast campaign to view real-time ledger accounting."
                 />
               )}
             </CardBody>
@@ -1033,7 +1015,6 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
         open={connectOpen}
         onClose={() => setConnectOpen(false)}
         title="Connect WhatsApp Sender Account"
-        subtitle="Connect your registered Meta WhatsApp Business number once for all SARVYA messaging"
         size="md"
       >
         <form className="space-y-4" onSubmit={handleConnectSubmit}>

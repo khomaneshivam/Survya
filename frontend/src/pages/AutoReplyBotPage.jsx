@@ -59,6 +59,7 @@ import FlowExecutionsModal from '../components/flow-studio/FlowExecutionsModal';
 import AiFlowGeneratorModal from '../components/flow-studio/AiFlowGeneratorModal';
 import IndustryBlueprintsModal from '../components/catalog/IndustryBlueprintsModal';
 import HospitalityImageUploadModule from '../components/HospitalityImageUploadModule';
+import { DataTable, HelpTip } from '../components/ui';
 
 function TabSaveFooter({ hasUnsavedChanges, saving, onSave }) {
   return (
@@ -957,6 +958,113 @@ export default function AutoReplyBotPage({ onNavigate }) {
     setSettings(nextSettings);
     await handleSave(nextSettings);
   };
+
+  const dynamicRuleColumns = useMemo(() => [
+    {
+      header: 'Active',
+      accessor: 'isActive',
+      width: '54px',
+      cell: (rule) => (
+        <button
+          type="button"
+          onClick={() => handleToggleRuleActive(rule.id)}
+          style={{
+            width: '24px',
+            height: '24px',
+            borderRadius: '5px',
+            background: rule.isActive !== false ? '#EDF4E6' : '#F4F4F5',
+            color: rule.isActive !== false ? '#2F5219' : '#96969C',
+            border: 'none',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer'
+          }}
+          title={rule.isActive !== false ? 'Deactivate rule' : 'Activate rule'}
+        >
+          {rule.isActive !== false ? <Check size={13} /> : <Pause size={11} />}
+        </button>
+      )
+    },
+    {
+      header: 'Rule Title & Matcher',
+      accessor: 'title',
+      cell: (rule) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontWeight: 600, color: '#171719' }}>{rule.title}</span>
+            <span style={{
+              fontSize: '0.68rem',
+              background: '#EEF5FB',
+              color: '#2876B8',
+              padding: '1px 5px',
+              borderRadius: '4px',
+              fontWeight: 600
+            }}>
+              {rule.matcherType || 'CONTAINS'}
+            </span>
+          </div>
+          <span style={{ fontSize: '0.72rem', color: '#67676B' }}>
+            {rule.actionType || 'REPLY_TEXT'}
+          </span>
+        </div>
+      )
+    },
+    {
+      header: 'Trigger Terms',
+      accessor: 'matchTerms',
+      cell: (rule) => (
+        <code style={{ background: '#F4F4F5', padding: '2px 6px', borderRadius: '4px', fontSize: '0.76rem', color: '#0F172A' }}>
+          {rule.matchTerms || '—'}
+        </code>
+      )
+    },
+    {
+      header: 'Response',
+      accessor: 'responsePayload',
+      cell: (rule) => (
+        <span style={{ fontSize: '0.76rem', color: '#67676B', maxWidth: '260px' }} className="truncate" title={rule.responsePayload}>
+          {rule.responsePayload || '—'}
+        </span>
+      )
+    },
+    {
+      header: 'Priority',
+      accessor: 'priority',
+      numeric: true,
+      align: 'right',
+      cell: (rule) => <span className="tabular-nums" style={{ fontSize: '0.78rem' }}>{rule.priority || 1}</span>
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      cell: (rule) => (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+          <button
+            type="button"
+            onClick={() => {
+              setEditingRule({ ...rule });
+              setRuleModalOpen(true);
+            }}
+            className="btn btn-secondary"
+            style={{ padding: '4px 8px', fontSize: '0.74rem' }}
+            title="Edit Rule"
+          >
+            <Edit2 size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleDeleteRule(rule.id)}
+            className="btn btn-secondary"
+            style={{ padding: '4px 8px', fontSize: '0.74rem', color: '#DC2626' }}
+            title="Delete Rule"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      )
+    }
+  ], [handleToggleRuleActive, handleDeleteRule]);
 
   // Interactive In-Memory Simulation Dispatcher
   const handleSimSend = (textToSend) => {
@@ -3439,148 +3547,44 @@ export default function AutoReplyBotPage({ onNavigate }) {
 
             {/* TAB 6: ⚡ Dynamic Rules Engine (Admin Programmable) */}
             {activeTab === 'dynamic' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 4px 0' }}>
-                      Admin-Programmable Dynamic Rules Engine
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0 }}>
+                      Dynamic Trigger Rules
                     </h3>
-                    <p style={{ fontSize: '0.82rem', color: '#67676B', margin: 0 }}>
-                      Define custom keywords, trigger patterns, and actions without writing or altering backend code.
-                    </p>
+                    <HelpTip text="Define custom keyword and pattern trigger matches with automated text, media, or flow jump actions." />
                   </div>
                   <button
                     type="button"
                     onClick={handleOpenAddRule}
                     className="btn btn-primary"
-                    style={{ gap: '6px', fontSize: '0.82rem', background: '#2F5219' }}
+                    style={{ gap: '6px', fontSize: '0.8rem', background: '#2F5219', padding: '6px 14px' }}
                   >
-                    <Plus size={15} />
+                    <Plus size={14} />
                     <span>Create Dynamic Rule</span>
                   </button>
                 </div>
 
-                {/* Rules List / Table */}
-                {(settings.dynamicOptions || []).length === 0 ? (
-                  <div style={{
-                    padding: '36px 20px',
-                    textAlign: 'center',
-                    background: '#FAFAFB',
-                    border: '1px dashed #D4D4D9',
-                    borderRadius: '10px'
-                  }}>
-                    <Zap size={32} color="#96969C" style={{ margin: '0 auto 10px auto' }} />
-                    <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#171719' }}>No Custom Rules Defined</div>
-                    <p style={{ fontSize: '0.8rem', color: '#67676B', maxWidth: '420px', margin: '6px auto 16px auto' }}>
-                      Add programmable rules to reply automatically when guests ask for menus, pool hours, taxi tariffs, or custom amenities.
-                    </p>
+                {/* Rules DataTable */}
+                <DataTable
+                  density="compact"
+                  columns={dynamicRuleColumns}
+                  data={settings.dynamicOptions || []}
+                  rows={settings.dynamicOptions || []}
+                  emptyTitle="No Custom Rules Defined"
+                  emptyMessage="Add programmable trigger rules to reply automatically when guests ask for menus, tariffs, or custom amenities."
+                  emptyAction={
                     <button
                       type="button"
                       onClick={handleOpenAddRule}
                       className="btn btn-secondary"
-                      style={{ fontSize: '0.82rem' }}
+                      style={{ fontSize: '0.8rem' }}
                     >
                       + Add First Rule
                     </button>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {(settings.dynamicOptions || []).map((rule, idx) => (
-                      <div
-                        key={rule.id || idx}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '14px 16px',
-                          border: '1px solid #E5E5E8',
-                          borderRadius: '8px',
-                          background: rule.isActive !== false ? '#FFFFFF' : '#FAFAFB',
-                          opacity: rule.isActive !== false ? 1 : 0.7
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleRuleActive(rule.id)}
-                            style={{
-                              width: '28px',
-                              height: '28px',
-                              borderRadius: '6px',
-                              background: rule.isActive !== false ? '#EDF4E6' : '#F4F4F5',
-                              color: rule.isActive !== false ? '#2F5219' : '#96969C',
-                              border: 'none',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              cursor: 'pointer'
-                            }}
-                            title={rule.isActive !== false ? 'Click to deactivate rule' : 'Click to activate rule'}
-                          >
-                            {rule.isActive !== false ? <Check size={16} /> : <Pause size={14} />}
-                          </button>
-
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontWeight: 700, fontSize: '0.88rem', color: '#171719' }}>
-                                {rule.title}
-                              </span>
-                              <span style={{
-                                fontSize: '0.7rem',
-                                background: '#EEF5FB',
-                                color: '#2876B8',
-                                padding: '1px 6px',
-                                borderRadius: '4px',
-                                fontWeight: 600
-                              }}>
-                                {rule.matcherType || 'CONTAINS'}
-                              </span>
-                              <span style={{
-                                fontSize: '0.7rem',
-                                background: '#F3F6EE',
-                                color: '#3F5724',
-                                padding: '1px 6px',
-                                borderRadius: '4px',
-                                fontWeight: 600
-                              }}>
-                                {rule.actionType || 'REPLY_TEXT'}
-                              </span>
-                            </div>
-
-                            <div style={{ fontSize: '0.78rem', color: '#67676B', marginTop: '3px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                              Keywords: <code style={{ background: '#F4F4F5', padding: '1px 4px', borderRadius: '3px' }}>{rule.matchTerms}</code> • Response: {rule.responsePayload?.slice(0, 50)}...
-                            </div>
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingRule({ ...rule });
-                              setRuleModalOpen(true);
-                            }}
-                            className="btn btn-secondary"
-                            style={{ padding: '6px 10px', fontSize: '0.76rem' }}
-                            title="Edit Rule"
-                          >
-                            <Edit2 size={13} />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteRule(rule.id)}
-                            className="btn btn-secondary"
-                            style={{ padding: '6px 10px', fontSize: '0.76rem', color: '#DC2626' }}
-                            title="Delete Rule"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                  }
+                />
 
                 <TabSaveFooter
                   hasUnsavedChanges={hasUnsavedChanges}

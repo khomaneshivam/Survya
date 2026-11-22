@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { DataTable, HelpTip } from '../components/ui';
 import { 
   Layers, 
   Plus, 
@@ -527,6 +528,84 @@ export default function FlowsPage() {
     return matchesSearch && matchesCat && matchesStatus;
   });
 
+  const responseColumns = useMemo(() => [
+    {
+      key: 'created_at',
+      header: 'Timestamp',
+      sortable: true,
+      render: (v) => (
+        <span style={{ whiteSpace: 'nowrap', color: '#67676B', fontSize: '0.8rem' }}>
+          {v ? new Date(v).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '—'}
+        </span>
+      )
+    },
+    {
+      key: 'customer_name',
+      header: 'Customer',
+      sortable: true,
+      render: (v, item) => (
+        <div>
+          <div style={{ fontWeight: 700, color: '#171719' }}>{v || 'Customer'}</div>
+          <div style={{ fontSize: '0.78rem', color: '#67676B', fontFamily: 'monospace' }}>+{item.from_phone}</div>
+        </div>
+      )
+    },
+    {
+      key: 'flow_name',
+      header: 'Flow Name',
+      sortable: true,
+      render: (v, item) => (
+        <span style={{ fontWeight: 600, color: '#171719' }}>
+          {v || `Flow ${item.flow_id}`}
+        </span>
+      )
+    },
+    {
+      key: 'parsed_data',
+      header: 'Submitted Answers',
+      render: (v) => (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', maxWidth: '380px' }}>
+          {Object.entries(v || {})
+            .filter(([k]) => k !== 'flow_token')
+            .slice(0, 4)
+            .map(([k, val], idx) => (
+              <span key={idx} style={{
+                fontSize: '0.72rem',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                background: '#EEEEF0',
+                color: '#3A3A3E'
+              }}>
+                <strong>{k.replace(/^[a-zA-Z0-9]+_/, '')}:</strong> {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+              </span>
+            ))}
+        </div>
+      )
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      render: (_, item) => (
+        <button
+          onClick={() => setSelectedResponse(item)}
+          style={{
+            padding: '5px 10px',
+            borderRadius: '6px',
+            background: '#F5F5F6',
+            border: '1px solid #D4D4D9',
+            color: '#3A3A3E',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+        >
+          View Details
+        </button>
+      )
+    }
+  ], []);
+
   return (
     <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '24px 20px 48px' }}>
       
@@ -610,12 +689,12 @@ export default function FlowsPage() {
               <Layers size={20} />
             </div>
             <div>
-              <h1 className="sarvya-page-title">
-                SARVYA Forms — Interactive Flows
-              </h1>
-              <p className="sarvya-page-desc">
-                Design, inspect, publish, and dispatch native WhatsApp interactive data collection forms.
-              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h1 className="sarvya-page-title">
+                  SARVYA Forms — Interactive Flows
+                </h1>
+                <HelpTip text="Design, inspect, publish, and dispatch native WhatsApp interactive data collection forms." />
+              </div>
             </div>
           </div>
         </div>
@@ -1191,91 +1270,18 @@ export default function FlowsPage() {
             </div>
           </div>
 
-          {loadingResponses ? (
-            <div style={{ padding: '60px', textAlign: 'center', color: '#96969C' }}>
-              <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 10px', color: '#2876B8' }} />
-              <div>Loading submissions...</div>
-            </div>
-          ) : responses.length === 0 ? (
-            <div style={{ padding: '60px 20px', textAlign: 'center', color: '#67676B' }}>
-              <Inbox size={36} color="#D4D4D9" style={{ margin: '0 auto 10px' }} />
-              <div style={{ fontWeight: 600 }}>No Flow Submissions Yet</div>
-              <div style={{ fontSize: '0.82rem', marginTop: '4px' }}>
-                When customers fill out and submit interactive Flows on their WhatsApp device, their answers will automatically appear here.
-              </div>
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                <thead>
-                  <tr style={{ background: '#F5F5F6', borderBottom: '1px solid #E5E5E8', color: '#67676B', textAlign: 'left' }}>
-                    <th style={{ padding: '10px 14px' }}>Timestamp</th>
-                    <th style={{ padding: '10px 14px' }}>Customer</th>
-                    <th style={{ padding: '10px 14px' }}>Flow Name</th>
-                    <th style={{ padding: '10px 14px' }}>Submitted Answers</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {responses
-                    .filter(r => !responseSearch || 
-                      r.customer_name?.toLowerCase().includes(responseSearch.toLowerCase()) ||
-                      r.from_phone?.includes(responseSearch) ||
-                      JSON.stringify(r.parsed_data || {}).toLowerCase().includes(responseSearch.toLowerCase())
-                    )
-                    .map(item => (
-                      <tr key={item.id} style={{ borderBottom: '1px solid #EEEEF0' }}>
-                        <td style={{ padding: '12px 14px', whiteSpace: 'nowrap', color: '#67676B', fontSize: '0.8rem' }}>
-                          {item.created_at ? new Date(item.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '—'}
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <div style={{ fontWeight: 700, color: '#171719' }}>{item.customer_name || 'Customer'}</div>
-                          <div style={{ fontSize: '0.78rem', color: '#67676B', fontFamily: 'monospace' }}>+{item.from_phone}</div>
-                        </td>
-                        <td style={{ padding: '12px 14px', fontWeight: 600, color: '#171719' }}>
-                          {item.flow_name || `Flow ${item.flow_id}`}
-                        </td>
-                        <td style={{ padding: '12px 14px', maxWidth: '380px' }}>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                            {Object.entries(item.parsed_data || {})
-                              .filter(([k]) => k !== 'flow_token')
-                              .slice(0, 4)
-                              .map(([k, v], idx) => (
-                                <span key={idx} style={{
-                                  fontSize: '0.72rem',
-                                  padding: '2px 6px',
-                                  borderRadius: '4px',
-                                  background: '#EEEEF0',
-                                  color: '#3A3A3E'
-                                }}>
-                                  <strong>{k.replace(/^[a-zA-Z0-9]+_/, '')}:</strong> {typeof v === 'object' ? JSON.stringify(v) : String(v)}
-                                </span>
-                              ))}
-                          </div>
-                        </td>
-                        <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                          <button
-                            onClick={() => setSelectedResponse(item)}
-                            style={{
-                              padding: '5px 10px',
-                              borderRadius: '6px',
-                              background: '#F5F5F6',
-                              border: '1px solid #D4D4D9',
-                              color: '#3A3A3E',
-                              fontSize: '0.75rem',
-                              fontWeight: 600,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            View Details
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <DataTable
+            columns={responseColumns}
+            data={responses.filter(r => !responseSearch || 
+              r.customer_name?.toLowerCase().includes(responseSearch.toLowerCase()) ||
+              r.from_phone?.includes(responseSearch) ||
+              JSON.stringify(r.parsed_data || {}).toLowerCase().includes(responseSearch.toLowerCase())
+            )}
+            density="compact"
+            pageSize={10}
+            loading={loadingResponses}
+            emptyMessage="When customers fill out and submit interactive Flows on their WhatsApp device, their answers will automatically appear here."
+          />
         </div>
       )}
 

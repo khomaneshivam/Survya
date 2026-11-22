@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getAuthHeaders } from '../../utils/apiAuth';
 import {
   Card,
@@ -8,7 +8,8 @@ import {
   Badge,
   Modal,
   KpiCard,
-  Skeleton
+  Skeleton,
+  DataTable
 } from '../ui';
 import {
   Server,
@@ -248,6 +249,218 @@ export default function JobQueueMonitor({ token, toast }) {
     }
   };
 
+  const jobColumns = useMemo(() => [
+    {
+      header: 'ID',
+      accessor: 'id',
+      width: '80px',
+      render: (id) => <strong style={{ color: '#1E293B' }}>#{id}</strong>
+    },
+    {
+      header: 'Queue',
+      accessor: 'queue_name',
+      render: (queue) => (
+        <span style={{
+          background: '#F1F5F9',
+          padding: '2px 8px',
+          borderRadius: '4px',
+          fontSize: '11px',
+          fontWeight: 600,
+          color: '#334155'
+        }}>
+          {queue}
+        </span>
+      )
+    },
+    {
+      header: 'Job Type',
+      accessor: 'job_type',
+      render: (type) => <span style={{ fontWeight: 600, color: '#0F172A' }}>{type}</span>
+    },
+    {
+      header: 'Priority',
+      accessor: 'priority',
+      width: '70px',
+      render: (pri) => <span style={{ color: '#64748B' }}>P{pri}</span>
+    },
+    {
+      header: 'Status',
+      accessor: 'status',
+      width: '100px',
+      render: (status) => (
+        <Badge variant={getStatusBadgeVariant(status)}>
+          {status}
+        </Badge>
+      )
+    },
+    {
+      header: 'Attempts',
+      accessor: 'attempts',
+      width: '90px',
+      render: (attempts, job) => (
+        <span style={{ color: '#64748B' }}>
+          {attempts} / {job.max_attempts}
+        </span>
+      )
+    },
+    {
+      header: 'Run At (UTC)',
+      accessor: 'run_at',
+      render: (runAt) => (
+        <span style={{ color: '#475569', fontSize: '12px' }}>
+          {runAt ? String(runAt).replace('T', ' ').slice(0, 19) : '-'}
+        </span>
+      )
+    },
+    {
+      header: 'Worker / Error',
+      accessor: 'last_error',
+      render: (_, job) => {
+        if (job.status === 'PROCESSING' && job.locked_by) {
+          return (
+            <span style={{ color: '#D97706', fontSize: '11px', fontWeight: 600 }}>
+              ⚙️ {job.locked_by}
+            </span>
+          );
+        }
+        if (job.last_error) {
+          return (
+            <span style={{ color: '#DC2626', fontSize: '11px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '240px' }} title={job.last_error}>
+              ⚠️ {job.last_error}
+            </span>
+          );
+        }
+        if (job.completed_at) {
+          return (
+            <span style={{ color: '#059669', fontSize: '11px' }}>
+              ✓ {String(job.completed_at).replace('T', ' ').slice(0, 19)}
+            </span>
+          );
+        }
+        return <span style={{ color: '#94A3B8' }}>-</span>;
+      }
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      render: (_, job) => (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            type="button"
+            title="Inspect Payload"
+            onClick={() => setInspectJob(job)}
+            style={{ background: '#F1F5F9', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', color: '#475569' }}
+          >
+            <Eye size={13} />
+          </button>
+
+          {(job.status === 'FAILED' || job.status === 'DEAD_LETTER' || job.status === 'CANCELLED') && (
+            <button
+              type="button"
+              title="Retry Job"
+              disabled={actionLoading}
+              onClick={() => handleRetryJob(job.id)}
+              style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', color: '#2563EB' }}
+            >
+              <RotateCcw size={13} />
+            </button>
+          )}
+
+          {job.status === 'PENDING' && (
+            <button
+              type="button"
+              title="Cancel Job"
+              disabled={actionLoading}
+              onClick={() => handleCancelJob(job.id)}
+              style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', color: '#DC2626' }}
+            >
+              <Ban size={13} />
+            </button>
+          )}
+
+          {(job.status === 'DONE' || job.status === 'DEAD_LETTER' || job.status === 'CANCELLED') && (
+            <button
+              type="button"
+              title="Delete Job"
+              disabled={actionLoading}
+              onClick={() => handleDeleteJob(job.id)}
+              style={{ background: '#F1F5F9', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', color: '#94A3B8' }}
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
+      )
+    }
+  ], [actionLoading]);
+
+  const scheduleColumns = useMemo(() => [
+    {
+      header: 'Schedule Name',
+      accessor: 'schedule_name',
+      render: (name) => <strong style={{ color: '#1E293B' }}>{name}</strong>
+    },
+    {
+      header: 'Job Type',
+      accessor: 'job_type',
+      render: (type) => <span style={{ fontWeight: 600 }}>{type}</span>
+    },
+    {
+      header: 'Queue',
+      accessor: 'queue_name',
+      render: (q) => (
+        <span style={{ background: '#F1F5F9', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600 }}>
+          {q}
+        </span>
+      )
+    },
+    {
+      header: 'Interval',
+      accessor: 'interval_seconds',
+      render: (sec) => <span style={{ color: '#64748B' }}>Every {sec}s</span>
+    },
+    {
+      header: 'Status',
+      accessor: 'is_enabled',
+      render: (enabled) => (
+        <Badge variant={enabled ? 'success' : 'secondary'}>
+          {enabled ? 'Active' : 'Disabled'}
+        </Badge>
+      )
+    },
+    {
+      header: 'Next Run At',
+      accessor: 'next_run_at',
+      render: (nextRun) => (
+        <span style={{ fontSize: '12px', color: '#475569' }}>
+          {nextRun ? String(nextRun).replace('T', ' ').slice(0, 19) : '-'}
+        </span>
+      )
+    },
+    {
+      header: 'Toggle',
+      align: 'right',
+      render: (_, sched) => (
+        <button
+          type="button"
+          onClick={() => handleToggleSchedule(sched)}
+          style={{
+            background: sched.is_enabled ? '#FEF2F2' : '#EFF6FF',
+            color: sched.is_enabled ? '#DC2626' : '#2563EB',
+            border: `1px solid ${sched.is_enabled ? '#FECACA' : '#BFDBFE'}`,
+            borderRadius: '6px',
+            padding: '4px 10px',
+            fontSize: '12px',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
+        >
+          {sched.is_enabled ? 'Disable' : 'Enable'}
+        </button>
+      )
+    }
+  ], []);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Top Header Card */}
@@ -399,133 +612,14 @@ export default function JobQueueMonitor({ token, toast }) {
               <Skeleton style={{ height: '40px', marginBottom: '8px' }} />
               <Skeleton style={{ height: '40px' }} />
             </div>
-          ) : jobs.length === 0 ? (
-            <div style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-              <Server size={36} style={{ color: '#94A3B8', marginBottom: '10px' }} />
-              <p style={{ margin: 0, fontWeight: 600 }}>No jobs found matching criteria</p>
-              <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>Enqueued jobs will automatically appear here.</p>
-            </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ background: '#F8FAFC', borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: '#475569' }}>
-                    <th style={{ padding: '10px 16px' }}>ID</th>
-                    <th style={{ padding: '10px 16px' }}>Queue</th>
-                    <th style={{ padding: '10px 16px' }}>Job Type</th>
-                    <th style={{ padding: '10px 16px' }}>Priority</th>
-                    <th style={{ padding: '10px 16px' }}>Status</th>
-                    <th style={{ padding: '10px 16px' }}>Attempts</th>
-                    <th style={{ padding: '10px 16px' }}>Run At (UTC)</th>
-                    <th style={{ padding: '10px 16px' }}>Worker / Error</th>
-                    <th style={{ padding: '10px 16px', textAlign: 'right' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {jobs.map(job => (
-                    <tr key={job.id} style={{ borderBottom: '1px solid var(--border-color)', verticalAlign: 'middle' }}>
-                      <td style={{ padding: '12px 16px', fontWeight: 700, color: '#1E293B' }}>
-                        #{job.id}
-                      </td>
-                      <td style={{ padding: '12px 16px' }}>
-                        <span style={{
-                          background: '#F1F5F9',
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          color: '#334155'
-                        }}>
-                          {job.queue_name}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px 16px', fontWeight: 600, color: '#0F172A' }}>
-                        {job.job_type}
-                      </td>
-                      <td style={{ padding: '12px 16px', color: '#64748B' }}>
-                        P{job.priority}
-                      </td>
-                      <td style={{ padding: '12px 16px' }}>
-                        <Badge variant={getStatusBadgeVariant(job.status)}>
-                          {job.status}
-                        </Badge>
-                      </td>
-                      <td style={{ padding: '12px 16px', color: '#64748B' }}>
-                        {job.attempts} / {job.max_attempts}
-                      </td>
-                      <td style={{ padding: '12px 16px', color: '#475569', fontSize: '12px' }}>
-                        {job.run_at ? String(job.run_at).replace('T', ' ').slice(0, 19) : '-'}
-                      </td>
-                      <td style={{ padding: '12px 16px', maxWidth: '240px' }}>
-                        {job.status === 'PROCESSING' && job.locked_by ? (
-                          <span style={{ color: '#D97706', fontSize: '11px', fontWeight: 600 }}>
-                            ⚙️ {job.locked_by}
-                          </span>
-                        ) : job.last_error ? (
-                          <span style={{ color: '#DC2626', fontSize: '11px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={job.last_error}>
-                            ⚠️ {job.last_error}
-                          </span>
-                        ) : job.completed_at ? (
-                          <span style={{ color: '#059669', fontSize: '11px' }}>
-                            ✓ {String(job.completed_at).replace('T', ' ').slice(0, 19)}
-                          </span>
-                        ) : (
-                          <span style={{ color: '#94A3B8' }}>-</span>
-                        )}
-                      </td>
-                      <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                          <button
-                            type="button"
-                            title="Inspect Payload"
-                            onClick={() => setInspectJob(job)}
-                            style={{ background: '#F1F5F9', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', color: '#475569' }}
-                          >
-                            <Eye size={13} />
-                          </button>
-
-                          {(job.status === 'FAILED' || job.status === 'DEAD_LETTER' || job.status === 'CANCELLED') && (
-                            <button
-                              type="button"
-                              title="Retry Job"
-                              disabled={actionLoading}
-                              onClick={() => handleRetryJob(job.id)}
-                              style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', color: '#2563EB' }}
-                            >
-                              <RotateCcw size={13} />
-                            </button>
-                          )}
-
-                          {job.status === 'PENDING' && (
-                            <button
-                              type="button"
-                              title="Cancel Job"
-                              disabled={actionLoading}
-                              onClick={() => handleCancelJob(job.id)}
-                              style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', color: '#DC2626' }}
-                            >
-                              <Ban size={13} />
-                            </button>
-                          )}
-
-                          {(job.status === 'DONE' || job.status === 'DEAD_LETTER' || job.status === 'CANCELLED') && (
-                            <button
-                              type="button"
-                              title="Delete Job"
-                              disabled={actionLoading}
-                              onClick={() => handleDeleteJob(job.id)}
-                              style={{ background: '#F1F5F9', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', color: '#94A3B8' }}
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              columns={jobColumns}
+              data={jobs}
+              density="compact"
+              sortable={false}
+              emptyMessage="No jobs found matching criteria. Enqueued jobs will automatically appear here."
+            />
           )}
 
           {/* Pagination bar */}
@@ -565,67 +659,13 @@ export default function JobQueueMonitor({ token, toast }) {
           </h4>
         </CardHeader>
         <CardBody style={{ padding: 0 }}>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ background: '#F8FAFC', borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: '#475569' }}>
-                  <th style={{ padding: '10px 16px' }}>Schedule Name</th>
-                  <th style={{ padding: '10px 16px' }}>Job Type</th>
-                  <th style={{ padding: '10px 16px' }}>Queue</th>
-                  <th style={{ padding: '10px 16px' }}>Interval</th>
-                  <th style={{ padding: '10px 16px' }}>Status</th>
-                  <th style={{ padding: '10px 16px' }}>Next Run At</th>
-                  <th style={{ padding: '10px 16px', textAlign: 'right' }}>Toggle</th>
-                </tr>
-              </thead>
-              <tbody>
-                {schedules.map(sched => (
-                  <tr key={sched.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                    <td style={{ padding: '12px 16px', fontWeight: 700, color: '#1E293B' }}>
-                      {sched.schedule_name}
-                    </td>
-                    <td style={{ padding: '12px 16px', fontWeight: 600 }}>
-                      {sched.job_type}
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={{ background: '#F1F5F9', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600 }}>
-                        {sched.queue_name}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 16px', color: '#64748B' }}>
-                      Every {sched.interval_seconds}s
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <Badge variant={sched.is_enabled ? 'success' : 'secondary'}>
-                        {sched.is_enabled ? 'Active' : 'Disabled'}
-                      </Badge>
-                    </td>
-                    <td style={{ padding: '12px 16px', fontSize: '12px', color: '#475569' }}>
-                      {sched.next_run_at ? String(sched.next_run_at).replace('T', ' ').slice(0, 19) : '-'}
-                    </td>
-                    <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleSchedule(sched)}
-                        style={{
-                          background: sched.is_enabled ? '#FEF2F2' : '#EFF6FF',
-                          color: sched.is_enabled ? '#DC2626' : '#2563EB',
-                          border: `1px solid ${sched.is_enabled ? '#FECACA' : '#BFDBFE'}`,
-                          borderRadius: '6px',
-                          padding: '4px 10px',
-                          fontSize: '12px',
-                          fontWeight: 600,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {sched.is_enabled ? 'Disable' : 'Enable'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={scheduleColumns}
+            data={schedules}
+            density="compact"
+            sortable={false}
+            emptyMessage="No recurring background schedules registered."
+          />
         </CardBody>
       </Card>
 

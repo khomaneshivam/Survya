@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { DataTable, HelpTip } from '../components/ui';
 import {
   Receipt,
   Search,
@@ -253,6 +254,206 @@ export default function BookingsOrdersPage() {
     document.body.removeChild(link);
   };
 
+  const transactionColumns = useMemo(() => [
+    {
+      key: 'reference_code',
+      header: 'Reference',
+      sortable: true,
+      render: (v, txn) => (
+        <div>
+          <span style={{ fontFamily: 'var(--font-mono, monospace)', fontWeight: 700, color: '#171719' }}>
+            {v}
+          </span>
+          <div style={{ fontSize: '0.725rem', color: '#96969C' }}>
+            {new Date(txn.created_at).toLocaleDateString('en-IN')}
+          </div>
+        </div>
+      )
+    },
+    {
+      key: 'customer_name',
+      header: 'Customer',
+      sortable: true,
+      render: (v, txn) => (
+        <div>
+          <div style={{ fontWeight: 600, color: '#171719' }}>
+            {v || 'Guest'}
+          </div>
+          <a
+            href={`https://wa.me/${txn.customer_phone}`}
+            target="_blank"
+            rel="noreferrer"
+            style={{ fontSize: '0.75rem', color: '#059669', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '3px' }}
+          >
+            <Phone size={11} /> +{txn.customer_phone}
+          </a>
+        </div>
+      )
+    },
+    {
+      key: 'transaction_type',
+      header: 'Type & Branch',
+      sortable: true,
+      render: (v, txn) => (
+        <div>
+          <span style={{
+            display: 'inline-block',
+            fontSize: '0.7rem',
+            fontWeight: 700,
+            padding: '2px 8px',
+            borderRadius: '4px',
+            background: v === 'BOOKING' ? '#EDE9FE' : (v === 'APPOINTMENT' ? '#E0F2FE' : '#FEF3C7'),
+            color: v === 'BOOKING' ? '#6D28D9' : (v === 'APPOINTMENT' ? '#0369A1' : '#B45309')
+          }}>
+            {v}
+          </span>
+          <div style={{ fontSize: '0.75rem', color: '#67676B', marginTop: '2px' }}>
+            {txn.location_name || 'Main Location'}
+          </div>
+        </div>
+      )
+    },
+    {
+      key: 'service_date',
+      header: 'Service Date',
+      sortable: true,
+      render: (v, txn) => (
+        v ? (
+          <div style={{ fontWeight: 600 }}>
+            {v}
+            {txn.service_end_date && <span style={{ color: '#67676B' }}> to {txn.service_end_date}</span>}
+          </div>
+        ) : (
+          <span style={{ color: '#96969C' }}>Immediate</span>
+        )
+      )
+    },
+    {
+      key: 'grand_total',
+      header: 'Total & Balance',
+      align: 'right',
+      sortable: true,
+      render: (v, txn) => (
+        <div>
+          <div className="tabular-nums" style={{ fontWeight: 800, color: '#171719' }}>
+            ₹{Number(v).toLocaleString('en-IN')}
+          </div>
+          {txn.balance_due > 0 ? (
+            <div className="tabular-nums" style={{ fontSize: '0.74rem', color: '#B45309', fontWeight: 600 }}>
+              Due: ₹{Number(txn.balance_due).toLocaleString('en-IN')}
+            </div>
+          ) : (
+            <div style={{ fontSize: '0.74rem', color: '#059669', fontWeight: 600 }}>
+              Paid in Full
+            </div>
+          )}
+        </div>
+      )
+    },
+    {
+      key: 'payment_status',
+      header: 'Payment',
+      align: 'center',
+      sortable: true,
+      render: (v) => {
+        const isPaid = v === 'PAID';
+        const isPartPaid = v === 'PARTIALLY_PAID';
+        return (
+          <span style={{
+            display: 'inline-block',
+            fontSize: '0.72rem',
+            fontWeight: 700,
+            padding: '3px 8px',
+            borderRadius: '6px',
+            background: isPaid ? '#EDF4E6' : (isPartPaid ? '#FEF3C7' : '#FEE2E2'),
+            color: isPaid ? '#2F5219' : (isPartPaid ? '#B45309' : '#991B1B'),
+            border: `1px solid ${isPaid ? '#C3D1AC' : (isPartPaid ? '#FDE68A' : '#FCA5A5')}`
+          }}>
+            {v}
+          </span>
+        );
+      }
+    },
+    {
+      key: 'fulfillment_status',
+      header: 'Fulfillment',
+      align: 'center',
+      render: (v, txn) => {
+        const isCompleted = v === 'COMPLETED';
+        const isConfirmed = v === 'CONFIRMED';
+        return (
+          <select
+            value={v}
+            disabled={actionLoading}
+            onChange={e => handleUpdateStatus(txn.id, e.target.value)}
+            style={{
+              padding: '4px 8px',
+              borderRadius: '6px',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              border: '1px solid #D4D4D9',
+              background: isCompleted ? '#EDF4E6' : (isConfirmed ? '#EFF6FF' : '#FFFFFF'),
+              color: isCompleted ? '#2F5219' : (isConfirmed ? '#1D4ED8' : '#3A3A3E')
+            }}
+          >
+            <option value="PENDING">Pending</option>
+            <option value="CONFIRMED">Confirmed</option>
+            <option value="IN_PROGRESS">In Progress</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
+        );
+      }
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      render: (_, txn) => {
+        const isPaid = txn.payment_status === 'PAID';
+        return (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+            {!isPaid && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOfflineModalTxn(txn);
+                  setOfflineAmount(String(txn.balance_due || txn.grand_total));
+                }}
+                className="btn btn-secondary"
+                style={{ padding: '4px 8px', fontSize: '0.725rem', gap: '4px' }}
+                title="Record Offline Payment (Cash / UPI / POS)"
+              >
+                <CreditCard size={12} /> Pay
+              </button>
+            )}
+            <a
+              href={`/api/v1/public/receipt/${txn.reference_code}`}
+              target="_blank"
+              rel="noreferrer"
+              className="btn btn-secondary"
+              style={{ padding: '4px 8px', fontSize: '0.725rem', gap: '4px', textDecoration: 'none' }}
+              title="Printable GST Receipt / Voucher"
+            >
+              <ExternalLink size={12} /> Receipt
+            </a>
+            {!isPaid && (
+              <button
+                type="button"
+                onClick={() => handleSendPaymentLink(txn.id)}
+                className="btn btn-secondary"
+                style={{ padding: '4px 8px', fontSize: '0.725rem' }}
+                title="Resend payment link to customer"
+              >
+                Link
+              </button>
+            )}
+          </div>
+        );
+      }
+    }
+  ], [actionLoading, handleUpdateStatus, handleSendPaymentLink]);
+
   return (
     <div className="page-container" style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
       {/* Top Banner Header */}
@@ -272,12 +473,12 @@ export default function BookingsOrdersPage() {
               <Receipt size={22} />
             </div>
             <div>
-              <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#171719', margin: 0 }}>
-                {pageTitle}
-              </h1>
-              <p style={{ fontSize: '0.85rem', color: '#67676B', margin: '2px 0 0 0' }}>
-                Universal Multi-Sector Orders, Bookings, Quotations & Payment Reconciliation
-              </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#171719', margin: 0 }}>
+                  {pageTitle}
+                </h1>
+                <HelpTip text="Universal Multi-Sector Orders, Bookings, Quotations & Payment Reconciliation" />
+              </div>
             </div>
           </div>
         </div>
@@ -427,205 +628,14 @@ export default function BookingsOrdersPage() {
         overflow: 'hidden',
         boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
       }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-            <thead>
-              <tr style={{ background: '#F8FAF5', borderBottom: '1px solid #E5E5E8', color: '#2F5219', textAlign: 'left' }}>
-                <th style={{ padding: '12px 16px', fontWeight: 700 }}>Reference</th>
-                <th style={{ padding: '12px 16px', fontWeight: 700 }}>Customer</th>
-                <th style={{ padding: '12px 16px', fontWeight: 700 }}>Type & Branch</th>
-                <th style={{ padding: '12px 16px', fontWeight: 700 }}>Service Date</th>
-                <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'right' }}>Total & Balance</th>
-                <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'center' }}>Payment</th>
-                <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'center' }}>Fulfillment</th>
-                <th style={{ padding: '12px 16px', fontWeight: 700, textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && transactions.length === 0 ? (
-                <tr>
-                  <td colSpan={8} style={{ padding: '36px', textAlign: 'center', color: '#96969C' }}>
-                    Loading transactions...
-                  </td>
-                </tr>
-              ) : transactions.length === 0 ? (
-                <tr>
-                  <td colSpan={8} style={{ padding: '36px', textAlign: 'center', color: '#96969C' }}>
-                    No transactions found matching active filters.
-                  </td>
-                </tr>
-              ) : (
-                transactions.map(txn => {
-                  const isPaid = txn.payment_status === 'PAID';
-                  const isPartPaid = txn.payment_status === 'PARTIALLY_PAID';
-                  const isConfirmed = txn.fulfillment_status === 'CONFIRMED';
-                  const isCompleted = txn.fulfillment_status === 'COMPLETED';
-
-                  return (
-                    <tr key={txn.id} style={{ borderBottom: '1px solid #EEEEF0', transition: 'background 0.15s' }}>
-                      {/* Reference Code */}
-                      <td style={{ padding: '12px 16px' }}>
-                        <span style={{ fontFamily: 'var(--font-mono, monospace)', fontWeight: 700, color: '#171719' }}>
-                          {txn.reference_code}
-                        </span>
-                        <div style={{ fontSize: '0.725rem', color: '#96969C' }}>
-                          {new Date(txn.created_at).toLocaleDateString('en-IN')}
-                        </div>
-                      </td>
-
-                      {/* Customer */}
-                      <td style={{ padding: '12px 16px' }}>
-                        <div style={{ fontWeight: 600, color: '#171719' }}>
-                          {txn.customer_name || 'Guest'}
-                        </div>
-                        <a
-                          href={`https://wa.me/${txn.customer_phone}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ fontSize: '0.75rem', color: '#059669', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '3px' }}
-                        >
-                          <Phone size={11} /> +{txn.customer_phone}
-                        </a>
-                      </td>
-
-                      {/* Type & Branch */}
-                      <td style={{ padding: '12px 16px' }}>
-                        <span style={{
-                          display: 'inline-block',
-                          fontSize: '0.7rem',
-                          fontWeight: 700,
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          background: txn.transaction_type === 'BOOKING' ? '#EDE9FE' : (txn.transaction_type === 'APPOINTMENT' ? '#E0F2FE' : '#FEF3C7'),
-                          color: txn.transaction_type === 'BOOKING' ? '#6D28D9' : (txn.transaction_type === 'APPOINTMENT' ? '#0369A1' : '#B45309')
-                        }}>
-                          {txn.transaction_type}
-                        </span>
-                        <div style={{ fontSize: '0.75rem', color: '#67676B', marginTop: '2px' }}>
-                          {txn.location_name || 'Main Location'}
-                        </div>
-                      </td>
-
-                      {/* Service Date */}
-                      <td style={{ padding: '12px 16px' }}>
-                        {txn.service_date ? (
-                          <div style={{ fontWeight: 600 }}>
-                            {txn.service_date}
-                            {txn.service_end_date && <span style={{ color: '#67676B' }}> to {txn.service_end_date}</span>}
-                          </div>
-                        ) : (
-                          <span style={{ color: '#96969C' }}>Immediate</span>
-                        )}
-                      </td>
-
-                      {/* Total & Balance */}
-                      <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                        <div style={{ fontWeight: 800, color: '#171719' }}>
-                          ₹{Number(txn.grand_total).toLocaleString('en-IN')}
-                        </div>
-                        {txn.balance_due > 0 ? (
-                          <div style={{ fontSize: '0.74rem', color: '#B45309', fontWeight: 600 }}>
-                            Due: ₹{Number(txn.balance_due).toLocaleString('en-IN')}
-                          </div>
-                        ) : (
-                          <div style={{ fontSize: '0.74rem', color: '#059669', fontWeight: 600 }}>
-                            Paid in Full
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Payment Status */}
-                      <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                        <span style={{
-                          display: 'inline-block',
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          padding: '3px 8px',
-                          borderRadius: '6px',
-                          background: isPaid ? '#EDF4E6' : (isPartPaid ? '#FEF3C7' : '#FEE2E2'),
-                          color: isPaid ? '#2F5219' : (isPartPaid ? '#B45309' : '#991B1B'),
-                          border: `1px solid ${isPaid ? '#C3D1AC' : (isPartPaid ? '#FDE68A' : '#FCA5A5')}`
-                        }}>
-                          {txn.payment_status}
-                        </span>
-                      </td>
-
-                      {/* Fulfillment Status */}
-                      <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                        <select
-                          value={txn.fulfillment_status}
-                          disabled={actionLoading}
-                          onChange={e => handleUpdateStatus(txn.id, e.target.value)}
-                          style={{
-                            padding: '4px 8px',
-                            borderRadius: '6px',
-                            fontSize: '0.75rem',
-                            fontWeight: 700,
-                            border: '1px solid #D4D4D9',
-                            background: isCompleted ? '#EDF4E6' : (isConfirmed ? '#EFF6FF' : '#FFFFFF'),
-                            color: isCompleted ? '#2F5219' : (isConfirmed ? '#1D4ED8' : '#3A3A3E')
-                          }}
-                        >
-                          <option value="PENDING">Pending</option>
-                          <option value="CONFIRMED">Confirmed</option>
-                          <option value="IN_PROGRESS">In Progress</option>
-                          <option value="COMPLETED">Completed</option>
-                          <option value="CANCELLED">Cancelled</option>
-                        </select>
-                      </td>
-
-                      {/* Quick Actions */}
-                      <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-                          {/* Record Payment Button */}
-                          {!isPaid && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setOfflineModalTxn(txn);
-                                setOfflineAmount(String(txn.balance_due || txn.grand_total));
-                              }}
-                              className="btn btn-secondary"
-                              style={{ padding: '4px 8px', fontSize: '0.725rem', gap: '4px' }}
-                              title="Record Offline Payment (Cash / UPI / POS)"
-                            >
-                              <CreditCard size={12} /> Pay
-                            </button>
-                          )}
-
-                          {/* View GST Receipt */}
-                          <a
-                            href={`/api/v1/public/receipt/${txn.reference_code}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="btn btn-secondary"
-                            style={{ padding: '4px 8px', fontSize: '0.725rem', gap: '4px', textDecoration: 'none' }}
-                            title="Printable GST Receipt / Voucher"
-                          >
-                            <ExternalLink size={12} /> Receipt
-                          </a>
-
-                          {/* Re-send link */}
-                          {!isPaid && (
-                            <button
-                              type="button"
-                              onClick={() => handleSendPaymentLink(txn.id)}
-                              className="btn btn-secondary"
-                              style={{ padding: '4px 8px', fontSize: '0.725rem' }}
-                              title="Resend payment link to customer"
-                            >
-                              Link
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={transactionColumns}
+          data={filteredTransactions}
+          density="compact"
+          pageSize={10}
+          loading={loading && transactions.length === 0}
+          emptyMessage="No transactions found matching active filters."
+        />
       </div>
 
       {/* Record Offline Payment Modal */}
@@ -746,3 +756,4 @@ export default function BookingsOrdersPage() {
     </div>
   );
 }
+

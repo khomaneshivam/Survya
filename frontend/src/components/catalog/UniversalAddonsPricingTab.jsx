@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { DataTable } from '../ui';
 import {
   Sparkles,
   Plus,
@@ -52,6 +53,96 @@ export default function UniversalAddonsPricingTab({ token, selectedEntityId, sho
   const [sandboxPromo, setSandboxPromo] = useState('');
   const [sandboxQuote, setSandboxQuote] = useState(null);
   const [calculatingQuote, setCalculatingQuote] = useState(false);
+
+  const addonColumns = useMemo(() => [
+    {
+      key: 'name',
+      header: 'Option Name',
+      sortable: true,
+      render: (v) => <span style={{ fontWeight: 600 }}>{v}</span>
+    },
+    {
+      key: 'price_mode',
+      header: 'Price Mode',
+      render: (v) => <code>{v}</code>
+    },
+    {
+      key: 'price',
+      header: 'Price (₹)',
+      align: 'right',
+      sortable: true,
+      render: (v) => <span className="tabular-nums" style={{ fontWeight: 700, color: '#16A34A' }}>₹{v}</span>
+    },
+    {
+      key: 'gst_percent',
+      header: 'GST %',
+      align: 'right',
+      sortable: true,
+      render: (v) => <span className="tabular-nums">{v}%</span>
+    },
+    {
+      key: 'is_default',
+      header: 'Default',
+      align: 'center',
+      render: (v) => (v ? '✅ Yes' : 'No')
+    }
+  ], []);
+
+  const pricingRuleColumns = useMemo(() => [
+    {
+      key: 'title',
+      header: 'Rule Title',
+      sortable: true,
+      render: (v) => <span style={{ fontWeight: 600 }}>{v}</span>
+    },
+    {
+      key: 'rule_type',
+      header: 'Rule Type',
+      sortable: true,
+      render: (v) => (
+        <span style={{
+          padding: '2px 8px',
+          borderRadius: '10px',
+          fontSize: '0.72rem',
+          fontWeight: 600,
+          background: v === 'PROMO_CODE' ? '#FEF3C7' : (v === 'BULK_TIER' ? '#DBEAFE' : '#DCFCE7'),
+          color: v === 'PROMO_CODE' ? '#92400E' : (v === 'BULK_TIER' ? '#1E40AF' : '#166534')
+        }}>
+          {v}
+        </span>
+      )
+    },
+    {
+      key: 'discount_value',
+      header: 'Discount / Surge Value',
+      align: 'right',
+      sortable: true,
+      render: (v, r) => (
+        <span className="tabular-nums" style={{ fontWeight: 600, color: Number(v) < 0 ? '#DC2626' : '#16A34A' }}>
+          {r.discount_mode === 'PERCENTAGE' ? `${v}%` : `₹${v}`}
+          {Number(v) < 0 ? ' (Surge)' : ' (Discount)'}
+        </span>
+      )
+    },
+    {
+      key: 'promo_code',
+      header: 'Promo Code',
+      render: (v) => (v ? <code>{v}</code> : '-')
+    },
+    {
+      key: 'priority',
+      header: 'Priority',
+      align: 'right',
+      sortable: true,
+      render: (v) => <span className="tabular-nums">{v}</span>
+    },
+    {
+      key: 'is_active',
+      header: 'Status',
+      align: 'center',
+      render: (v) => (v ? '🟢 Active' : '⚪ Paused')
+    }
+  ], []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -274,30 +365,13 @@ export default function UniversalAddonsPricingTab({ token, selectedEntityId, sho
                   </div>
 
                   {group.addons?.length > 0 ? (
-                    <div style={{ overflowX: 'auto' }}>
-                      <table className="sarvya-table" style={{ width: '100%', fontSize: '0.8rem' }}>
-                        <thead>
-                          <tr>
-                            <th>Option Name</th>
-                            <th>Price Mode</th>
-                            <th>Price (₹)</th>
-                            <th>GST %</th>
-                            <th>Default</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.addons.map(addon => (
-                            <tr key={addon.id}>
-                              <td style={{ fontWeight: 600 }}>{addon.name}</td>
-                              <td><code>{addon.price_mode}</code></td>
-                              <td style={{ fontWeight: 700, color: '#16A34A' }}>₹{addon.price}</td>
-                              <td>{addon.gst_percent}%</td>
-                              <td>{addon.is_default ? '✅ Yes' : 'No'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <DataTable
+                      columns={addonColumns}
+                      data={group.addons}
+                      density="compact"
+                      pageSize={10}
+                      emptyMessage="No options yet in this group."
+                    />
                   ) : (
                     <div style={{ fontSize: '0.78rem', color: '#9CA3AF', padding: '8px 0' }}>No options yet in this group.</div>
                   )}
@@ -332,51 +406,14 @@ export default function UniversalAddonsPricingTab({ token, selectedEntityId, sho
 
           {loading ? (
             <div style={{ padding: '32px', textAlign: 'center', color: '#6B7280' }}>Loading rules...</div>
-          ) : pricingRules.length === 0 ? (
-            <div style={{ padding: '32px', textAlign: 'center', color: '#6B7280', background: '#F9FAFB', borderRadius: '8px' }}>
-              No dynamic pricing rules configured.
-            </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table className="sarvya-table" style={{ width: '100%', fontSize: '0.82rem' }}>
-                <thead>
-                  <tr>
-                    <th>Rule Title</th>
-                    <th>Rule Type</th>
-                    <th>Discount / Surge Value</th>
-                    <th>Promo Code</th>
-                    <th>Priority</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pricingRules.map(r => (
-                    <tr key={r.id}>
-                      <td style={{ fontWeight: 600 }}>{r.title}</td>
-                      <td>
-                        <span style={{
-                          padding: '2px 8px',
-                          borderRadius: '10px',
-                          fontSize: '0.72rem',
-                          fontWeight: 600,
-                          background: r.rule_type === 'PROMO_CODE' ? '#FEF3C7' : (r.rule_type === 'BULK_TIER' ? '#DBEAFE' : '#DCFCE7'),
-                          color: r.rule_type === 'PROMO_CODE' ? '#92400E' : (r.rule_type === 'BULK_TIER' ? '#1E40AF' : '#166534')
-                        }}>
-                          {r.rule_type}
-                        </span>
-                      </td>
-                      <td style={{ fontWeight: 600, color: Number(r.discount_value) < 0 ? '#DC2626' : '#16A34A' }}>
-                        {r.discount_mode === 'PERCENTAGE' ? `${r.discount_value}%` : `₹${r.discount_value}`}
-                        {Number(r.discount_value) < 0 ? ' (Surge)' : ' (Discount)'}
-                      </td>
-                      <td>{r.promo_code ? <code>{r.promo_code}</code> : '-'}</td>
-                      <td>{r.priority}</td>
-                      <td>{r.is_active ? '🟢 Active' : '⚪ Paused'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              columns={pricingRuleColumns}
+              data={pricingRules}
+              density="compact"
+              pageSize={10}
+              emptyMessage="No dynamic pricing rules configured."
+            />
           )}
         </div>
       )}

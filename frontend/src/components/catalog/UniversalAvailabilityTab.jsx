@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { DataTable } from '../ui';
 import {
   Calendar,
   Clock,
@@ -36,6 +37,75 @@ export default function UniversalAvailabilityTab({ token, selectedEntityId, show
     catalogItemId: ''
   });
   const [actionLoading, setActionLoading] = useState(false);
+
+  const inventoryColumns = useMemo(() => [
+    {
+      key: 'title',
+      header: 'Item / Offering',
+      sortable: true,
+      render: (v) => <span style={{ fontWeight: 600, color: '#111827' }}>{v}</span>
+    },
+    {
+      key: 'category_name',
+      header: 'Category',
+      sortable: true,
+      render: (v, r) => v || r.item_type || '-'
+    },
+    {
+      key: 'inventory_mode',
+      header: 'Inventory Mode',
+      sortable: true,
+      render: (v) => {
+        const mode = v || 'UNIT_STOCK';
+        return (
+          <span style={{
+            padding: '3px 8px',
+            borderRadius: '12px',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            background: mode === 'DATE_RANGE' ? '#DCFCE7' : (mode === 'TIME_SLOT' ? '#EDE9FE' : (mode === 'QUOTE_SERVICE' ? '#FEF3C7' : '#E0F2FE')),
+            color: mode === 'DATE_RANGE' ? '#166534' : (mode === 'TIME_SLOT' ? '#5B21B6' : (mode === 'QUOTE_SERVICE' ? '#92400E' : '#0369A1'))
+          }}>
+            {mode}
+          </span>
+        );
+      }
+    },
+    {
+      key: 'stock_qty',
+      header: 'Total Stock',
+      align: 'right',
+      sortable: true,
+      render: (v, r) => <span className="tabular-nums">{r.track_inventory ? v : '∞ Infinite'}</span>
+    },
+    {
+      key: 'reserved_qty',
+      header: 'Reserved (Held)',
+      align: 'right',
+      sortable: true,
+      render: (v) => <span className="tabular-nums" style={{ color: v > 0 ? '#D97706' : '#6B7280' }}>{v || 0}</span>
+    },
+    {
+      key: 'available',
+      header: 'Available Balance',
+      align: 'right',
+      sortable: true,
+      accessor: (r) => Math.max(0, (r.stock_qty || 0) - (r.reserved_qty || 0)),
+      render: (v, r) => (
+        <span className="tabular-nums" style={{ fontWeight: 700, color: v > 0 ? '#16A34A' : '#DC2626' }}>
+          {r.track_inventory ? v : 'Available'}
+        </span>
+      )
+    },
+    {
+      key: 'is_sold_out',
+      header: 'Status',
+      align: 'center',
+      render: (v) => (
+        v ? <span style={{ color: '#DC2626', fontWeight: 600 }}>Sold Out</span> : <span style={{ color: '#16A34A', fontWeight: 600 }}>In Stock</span>
+      )
+    }
+  ], []);
 
   const fetchItems = useCallback(async () => {
     try {
@@ -204,63 +274,14 @@ export default function UniversalAvailabilityTab({ token, selectedEntityId, show
           <div style={{ padding: '32px', textAlign: 'center', color: '#6B7280', fontSize: '0.85rem' }}>
             Loading inventory records...
           </div>
-        ) : items.length === 0 ? (
-          <div style={{ padding: '32px', textAlign: 'center', color: '#6B7280', fontSize: '0.85rem' }}>
-            No catalog items found for this entity. Seed a blueprint or add items in Tab 1.
-          </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="sarvya-table" style={{ width: '100%', fontSize: '0.85rem' }}>
-              <thead>
-                <tr>
-                  <th>Item / Offering</th>
-                  <th>Category</th>
-                  <th>Inventory Mode</th>
-                  <th>Total Stock</th>
-                  <th>Reserved (Held)</th>
-                  <th>Available Balance</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map(item => {
-                  const available = Math.max(0, (item.stock_qty || 0) - (item.reserved_qty || 0));
-                  return (
-                    <tr key={item.id}>
-                      <td style={{ fontWeight: 600, color: '#111827' }}>{item.title}</td>
-                      <td>{item.category_name || item.item_type || '-'}</td>
-                      <td>
-                        <span style={{
-                          padding: '3px 8px',
-                          borderRadius: '12px',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          background: item.inventory_mode === 'DATE_RANGE' ? '#DCFCE7' : (item.inventory_mode === 'TIME_SLOT' ? '#EDE9FE' : (item.inventory_mode === 'QUOTE_SERVICE' ? '#FEF3C7' : '#E0F2FE')),
-                          color: item.inventory_mode === 'DATE_RANGE' ? '#166534' : (item.inventory_mode === 'TIME_SLOT' ? '#5B21B6' : (item.inventory_mode === 'QUOTE_SERVICE' ? '#92400E' : '#0369A1'))
-                        }}>
-                          {item.inventory_mode || 'UNIT_STOCK'}
-                        </span>
-                      </td>
-                      <td>{item.track_inventory ? item.stock_qty : '∞ Infinite'}</td>
-                      <td style={{ color: item.reserved_qty > 0 ? '#D97706' : '#6B7280' }}>
-                        {item.reserved_qty || 0}
-                      </td>
-                      <td style={{ fontWeight: 700, color: available > 0 ? '#16A34A' : '#DC2626' }}>
-                        {item.track_inventory ? available : 'Available'}
-                      </td>
-                      <td>
-                        {item.is_sold_out ? (
-                          <span style={{ color: '#DC2626', fontWeight: 600 }}>Sold Out</span>
-                        ) : (
-                          <span style={{ color: '#16A34A', fontWeight: 600 }}>In Stock</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={inventoryColumns}
+            data={items}
+            density="compact"
+            pageSize={10}
+            emptyMessage="No catalog items found for this entity. Seed a blueprint or add items in Tab 1."
+          />
         )}
       </div>
 

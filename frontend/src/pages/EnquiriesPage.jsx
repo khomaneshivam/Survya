@@ -524,6 +524,7 @@ export default function EnquiriesPage() {
           />
 
           <DataTable
+            density="compact"
             loading={loading}
             data={enquiries}
             selectedKey={selectedEnquiry?.id}
@@ -936,6 +937,7 @@ export default function EnquiriesPage() {
           {/* Table View */}
           {crmView === 'table' && (
             <DataTable
+              density="compact"
               rows={crmRecords}
               keyField="id"
               loading={crmLoading}
@@ -1023,6 +1025,7 @@ export default function EnquiriesPage() {
           />
 
           <DataTable
+            density="compact"
             loading={contactsLoading}
             data={contacts}
             ariaLabel="CRM Contacts Directory"

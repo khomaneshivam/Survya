@@ -946,35 +946,42 @@ function syncInappCompletionToFlowSession(sessionToken, payload = {}) {
     catalog_item_id: payload.catalogItemId || payload.selectedItemId || inappState.selectedItemId || existingCollected.catalog_item_id || null,
     selected_item_id: payload.selectedItemId || payload.catalogItemId || inappState.selectedItemId || existingCollected.selected_item_id || null,
     selected_addons: payload.addons || inappState.selectedAddons || existingCollected.selected_addons || [],
-    transaction_id: payload.transaction_id || payload.transactionId || existingCollected.transaction_id || null,
-    transaction_ref: payload.transaction_ref || payload.transactionRef || payload.referenceCode || payload.reference_code || existingCollected.transaction_ref || null,
+    transaction_id: payload.transactionId || payload.transaction_id || existingCollected.transaction_id || null,
+    transaction_ref: payload.referenceCode || payload.reference_code || payload.transaction_ref || payload.transactionRef || existingCollected.transaction_ref || null,
     negotiation_id: payload.negotiationId || payload.negotiation_id || inappState.negotiationId || null
   };
 
   // Find linked flow's next node
   let advancedNodeId = flowSession.current_node_id;
-  try {
-    const flowVersion = db.prepare(`
-      SELECT v.transitions_json
-      FROM conversation_flow_versions v
-      JOIN conversation_flows f ON v.id = COALESCE(f.published_version_id, f.current_draft_version_id)
-      WHERE f.id = ?
-    `).get(flowSession.flow_id) || db.prepare(`SELECT transitions_json FROM conversation_flow_versions WHERE flow_id = ? ORDER BY version_number DESC LIMIT 1`).get(flowSession.flow_id);
-
-    if (flowVersion?.transitions_json) {
-      const transitions = JSON.parse(flowVersion.transitions_json);
-      const curId = flowSession.current_node_id;
-      const compTrans = transitions.find(t =>
-        (t.source === curId || t.sourceNodeId === curId || t.source_node_id === curId) &&
-        (t.handle === "completed" || t.sourceHandle === "completed")
-      ) || transitions.find(t =>
-        (t.source === curId || t.sourceNodeId === curId || t.source_node_id === curId)
-      );
-      if (compTrans) {
-        advancedNodeId = compTrans.target || compTrans.targetNodeId || compTrans.target_node_id;
-      }
+  const flow = db.prepare(`SELECT * FROM conversation_flows WHERE id = ?`).get(flowSession.flow_id);
+  let transitions = [];
+  const versionId = flowSession.flow_version_id || flow?.published_version_id || flow?.current_draft_version_id;
+  if (versionId) {
+    const ver = db.prepare(`SELECT * FROM conversation_flow_versions WHERE id = ?`).get(versionId);
+    if (ver?.transitions_json) {
+      try {
+        transitions = typeof ver.transitions_json === "string" ? JSON.parse(ver.transitions_json) : (ver.transitions_json || []);
+      } catch (_) {}
     }
-  } catch (_) {}
+  }
+  if (transitions.length === 0 && flow?.definition_json) {
+    try {
+      const def = typeof flow.definition_json === "string" ? JSON.parse(flow.definition_json) : (flow.definition_json || {});
+      transitions = def.transitions || [];
+    } catch (_) {}
+  }
+
+  if (transitions.length > 0) {
+    const compTrans = transitions.find(t =>
+      (t.sourceNodeId === flowSession.current_node_id || t.source === flowSession.current_node_id) &&
+      (t.sourceHandle === "completed" || t.handle === "completed")
+    ) || transitions.find(t =>
+      (t.sourceNodeId === flowSession.current_node_id || t.source === flowSession.current_node_id)
+    );
+    if (compTrans?.targetNodeId || compTrans?.target) {
+      advancedNodeId = compTrans.targetNodeId || compTrans.target;
+    }
+  }
 
   db.prepare(`
     UPDATE conversation_flow_sessions

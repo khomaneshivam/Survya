@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Card, CardBody, Button, Badge, SearchInput, Modal } from '../ui';
+import React, { useState, useMemo } from 'react';
+import { Card, CardBody, Button, Badge, SearchInput, Modal, DataTable } from '../ui';
 import { getAuthHeaders } from '../../utils/apiAuth';
 import {
   Plus,
@@ -120,8 +120,150 @@ export default function ExperiencesListView({
     }
   };
 
+  const experienceColumns = useMemo(() => [
+    {
+      header: 'Experience',
+      accessor: 'name',
+      cell: (exp) => (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span
+              style={{ fontWeight: 600, color: '#0F172A', cursor: 'pointer' }}
+              onClick={() => onSelectExperience && onSelectExperience(exp)}
+            >
+              {exp.name}
+            </span>
+            <Badge variant="default">{exp.domain_type}</Badge>
+          </div>
+        </div>
+      )
+    },
+    {
+      header: 'URL Slug',
+      accessor: 'slug',
+      cell: (exp) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <code style={{ fontSize: '0.75rem', color: '#64748B' }}>/x/{exp.slug}</code>
+          <button
+            type="button"
+            onClick={() => handleCopyLink(exp)}
+            style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: '2px', color: copiedId === exp.id ? '#16A34A' : '#94A3B8' }}
+            title="Copy URL"
+          >
+            {copiedId === exp.id ? <Check size={12} /> : <Copy size={12} />}
+          </button>
+          <a
+            href={`${window.location.origin}/x/${exp.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: '#3B82F6', display: 'inline-flex' }}
+            title="Open in new tab"
+          >
+            <ExternalLink size={12} />
+          </a>
+        </div>
+      )
+    },
+    {
+      header: 'Screens',
+      accessor: 'screens_count',
+      numeric: true,
+      align: 'right',
+      cell: (exp) => (
+        <span className="tabular-nums" style={{ fontSize: '0.8rem' }}>
+          {exp.screens_count || 0}
+        </span>
+      )
+    },
+    {
+      header: 'Status',
+      accessor: 'status',
+      cell: (exp) => {
+        const isPub = exp.status === 'PUBLISHED';
+        const isPaused = exp.status === 'PAUSED';
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              type="button"
+              onClick={() => handleToggleStatus(exp)}
+              style={{
+                width: '30px',
+                height: '16px',
+                borderRadius: '8px',
+                background: isPub ? '#10B981' : '#CBD5E1',
+                border: 'none',
+                position: 'relative',
+                cursor: 'pointer',
+                padding: 0
+              }}
+              title={isPub ? 'Pause Experience' : 'Publish Experience'}
+            >
+              <span style={{
+                position: 'absolute',
+                top: '2px',
+                left: isPub ? '16px' : '2px',
+                width: '12px',
+                height: '12px',
+                borderRadius: '6px',
+                background: '#FFFFFF',
+                transition: 'all 0.15s ease'
+              }} />
+            </button>
+            <Badge variant={isPub ? 'success' : (isPaused ? 'warning' : 'default')}>
+              {exp.status}
+            </Badge>
+          </div>
+        );
+      }
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      cell: (exp) => (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+          <button
+            type="button"
+            onClick={() => setPreviewExp(exp)}
+            className="btn btn-secondary"
+            style={{ padding: '3px 7px', fontSize: '0.74rem' }}
+            title="Live Mobile Preview"
+          >
+            <Smartphone size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenQr(exp)}
+            className="btn btn-secondary"
+            style={{ padding: '3px 7px', fontSize: '0.74rem' }}
+            title="View QR Code"
+          >
+            <QrCode size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onSelectExperience(exp)}
+            className="btn btn-secondary"
+            style={{ padding: '3px 7px', fontSize: '0.74rem' }}
+            title="Edit Screens"
+          >
+            <Edit size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleDelete(exp)}
+            className="btn btn-secondary"
+            style={{ padding: '3px 7px', fontSize: '0.74rem', color: '#DC2626' }}
+            title="Delete Experience"
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      )
+    }
+  ], [copiedId, onSelectExperience, onOpenQr]);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {/* Top Action Bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '280px' }}>
@@ -159,121 +301,25 @@ export default function ExperiencesListView({
         </div>
       </div>
 
-      {/* Experience Cards Grid */}
-      {filtered.length === 0 ? (
-        <Card>
-          <CardBody>
-            <div style={{ textAlign: 'center', padding: '50px 20px' }}>
-              <Smartphone size={48} style={{ color: 'var(--text-tertiary, #94a3b8)', marginBottom: '14px' }} />
-              <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', fontWeight: '600' }}>
-                No In-App Experiences Found
-              </h3>
-              <p style={{ margin: '0 0 20px 0', fontSize: '14px', color: 'var(--text-secondary)' }}>
-                Instantiate a 1-click domain starter pack or create a custom multi-screen flow.
-              </p>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
-                <Button variant="primary" onClick={onOpenStarterModal}>
-                  <Sparkles size={16} /> Choose a Starter Pack
-                </Button>
-                <Button variant="secondary" onClick={() => setCreateModalOpen(true)}>
-                  <Plus size={16} /> Blank Custom Experience
-                </Button>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '16px' }}>
-          {filtered.map(exp => {
-            const isPub = exp.status === 'PUBLISHED';
-            const isPaused = exp.status === 'PAUSED';
-            const statusBadgeVariant = isPub ? 'success' : (isPaused ? 'warning' : 'default');
-
-            return (
-              <Card key={exp.id} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                <CardBody style={{ padding: '20px', display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-between' }}>
-                  <div>
-                    {/* Header line */}
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', marginBottom: '8px' }}>
-                      <h4
-                        style={{ margin: 0, fontSize: '16px', fontWeight: '600', cursor: 'pointer', color: 'var(--text-primary)' }}
-                        onClick={() => onSelectExperience(exp)}
-                      >
-                        {exp.name}
-                      </h4>
-                      <Badge variant={statusBadgeVariant}>{exp.status}</Badge>
-                    </div>
-
-                    {/* Metadata tags */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                      <Badge variant="default">{exp.domain_type}</Badge>
-                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                        <Layers size={13} style={{ display: 'inline', verticalAlign: '-2px', marginRight: '3px' }} />
-                        {exp.screens_count || 0} Screens
-                      </span>
-                    </div>
-
-                    {/* URL preview */}
-                    <div style={{
-                      backgroundColor: 'var(--bg-secondary, #f8fafc)',
-                      borderRadius: '6px',
-                      padding: '8px 10px',
-                      fontSize: '12px',
-                      fontFamily: 'monospace',
-                      color: 'var(--text-secondary)',
-                      wordBreak: 'break-all',
-                      marginBottom: '16px',
-                      border: '1px solid var(--border-color)'
-                    }}>
-                      /x/{exp.slug}
-                    </div>
-                  </div>
-
-                  {/* Actions Bar */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', paddingTop: '14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Button variant="secondary" size="sm" onClick={() => setPreviewExp(exp)} title="Live Mobile Preview">
-                        <Smartphone size={14} />
-                      </Button>
-
-                      <Button variant="secondary" size="sm" onClick={() => onOpenQr(exp)} title="View QR Code">
-                        <QrCode size={14} />
-                      </Button>
-
-                      <Button variant="secondary" size="sm" onClick={() => handleCopyLink(exp)} title="Copy URL">
-                        {copiedId === exp.id ? <Check size={14} /> : <Copy size={14} />}
-                      </Button>
-
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleToggleStatus(exp)}
-                        title={isPub ? 'Pause Experience' : 'Publish Experience'}
-                      >
-                        {isPub ? <Pause size={14} /> : <Play size={14} />}
-                      </Button>
-
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleDelete(exp)}
-                        title="Delete Experience"
-                        style={{ color: '#ef4444' }}
-                      >
-                        <Trash2 size={14} />
-                      </Button>
-                    </div>
-
-                    <Button variant="primary" size="sm" onClick={() => onSelectExperience(exp)}>
-                      <Edit size={14} /> Manage Experience
-                    </Button>
-                  </div>
-                </CardBody>
-              </Card>
-            );
-          })}
-        </div>
-      )}
+      {/* Experience DataTable */}
+      <DataTable
+        density="compact"
+        columns={experienceColumns}
+        data={filtered}
+        rows={filtered}
+        emptyTitle="No In-App Experiences Found"
+        emptyMessage="Instantiate a 1-click domain starter pack or create a custom multi-screen flow."
+        emptyAction={
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
+            <Button variant="primary" onClick={onOpenStarterModal}>
+              <Sparkles size={14} /> Starter Pack
+            </Button>
+            <Button variant="secondary" onClick={() => setCreateModalOpen(true)}>
+              <Plus size={14} /> New Experience
+            </Button>
+          </div>
+        }
+      />
 
       {/* New Custom Experience Modal */}
       <Modal

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus,
   Search,
@@ -11,6 +11,7 @@ import {
   ArrowDown,
   X
 } from 'lucide-react';
+import { DataTable } from '../ui';
 
 export default function MasterCrudTable({
   masterType,
@@ -213,6 +214,111 @@ export default function MasterCrudTable({
     );
   });
 
+  const tableColumns = useMemo(() => [
+    {
+      header: 'Order',
+      width: '50px',
+      sortable: false,
+      render: (_, item) => {
+        const index = filteredItems.findIndex(x => x.id === item.id);
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <button
+              type="button"
+              onClick={() => handleMoveOrder(index, -1)}
+              disabled={index <= 0}
+              style={{ border: 'none', background: 'transparent', cursor: index <= 0 ? 'not-allowed' : 'pointer', color: index <= 0 ? '#CBD5E1' : '#64748B', padding: '1px' }}
+            >
+              <ArrowUp size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={() => handleMoveOrder(index, 1)}
+              disabled={index < 0 || index >= filteredItems.length - 1}
+              style={{ border: 'none', background: 'transparent', cursor: (index < 0 || index >= filteredItems.length - 1) ? 'not-allowed' : 'pointer', color: (index < 0 || index >= filteredItems.length - 1) ? '#CBD5E1' : '#64748B', padding: '1px' }}
+            >
+              <ArrowDown size={12} />
+            </button>
+          </div>
+        );
+      }
+    },
+    ...columns.map(col => ({
+      header: col.label,
+      accessor: col.key,
+      width: col.width || 'auto',
+      render: (val, item) => {
+        let displayVal = val;
+        if (col.type === 'json' && typeof displayVal === 'object') {
+          displayVal = JSON.stringify(displayVal);
+        }
+        if (col.render) {
+          return col.render(displayVal, item);
+        }
+        return (
+          <span style={{ color: '#1E293B', fontWeight: col.isPrimary ? 600 : 400 }}>
+            {displayVal !== undefined && displayVal !== null ? String(displayVal) : '—'}
+          </span>
+        );
+      }
+    })),
+    {
+      header: 'Status',
+      accessor: 'active_status',
+      width: '90px',
+      render: (active, item) => {
+        const isActive = Boolean(active);
+        return (
+          <button
+            type="button"
+            onClick={() => handleToggleActive(item.id)}
+            style={{
+              border: 'none',
+              background: isActive ? '#DCFCE7' : '#F1F5F9',
+              color: isActive ? '#15803D' : '#64748B',
+              padding: '3px 8px',
+              borderRadius: '12px',
+              fontSize: '0.74rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            {isActive ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+            {isActive ? 'Active' : 'Inactive'}
+          </button>
+        );
+      }
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      width: '100px',
+      render: (_, item) => (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
+          <button
+            type="button"
+            onClick={() => handleOpenEdit(item)}
+            title="Edit record"
+            style={{ border: 'none', background: '#F1F5F9', color: '#334155', padding: '5px', borderRadius: '6px', cursor: 'pointer' }}
+          >
+            <Edit2 size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleDelete(item.id, item[columns[0]?.key] || item.name || item.title)}
+            title="Delete record"
+            style={{ border: 'none', background: '#FEF2F2', color: '#DC2626', padding: '5px', borderRadius: '6px', cursor: 'pointer' }}
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      )
+    }
+  ], [columns, filteredItems]);
+
   return (
     <div style={{ background: '#FFFFFF', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '20px' }}>
       {/* Header bar */}
@@ -312,125 +418,14 @@ export default function MasterCrudTable({
       </div>
 
       {/* Table */}
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.84rem' }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid #E2E8F0', color: '#64748B' }}>
-              <th style={{ padding: '10px 8px', width: '50px' }}>Order</th>
-              {columns.map(col => (
-                <th key={col.key} style={{ padding: '10px 12px', width: col.width || 'auto' }}>
-                  {col.label}
-                </th>
-              ))}
-              <th style={{ padding: '10px 12px', width: '90px' }}>Status</th>
-              <th style={{ padding: '10px 12px', width: '100px', textAlign: 'right' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredItems.map((item, index) => {
-              const isActive = Boolean(item.active_status);
-              return (
-                <tr
-                  key={item.id}
-                  style={{
-                    borderBottom: '1px solid #F1F5F9',
-                    background: isActive ? '#FFFFFF' : '#F8FAFC',
-                    opacity: isActive ? 1 : 0.65
-                  }}
-                >
-                  <td style={{ padding: '8px', verticalAlign: 'middle' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleMoveOrder(index, -1)}
-                        disabled={index === 0}
-                        style={{ border: 'none', background: 'transparent', cursor: index === 0 ? 'not-allowed' : 'pointer', color: index === 0 ? '#CBD5E1' : '#64748B', padding: '1px' }}
-                      >
-                        <ArrowUp size={12} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleMoveOrder(index, 1)}
-                        disabled={index === filteredItems.length - 1}
-                        style={{ border: 'none', background: 'transparent', cursor: index === filteredItems.length - 1 ? 'not-allowed' : 'pointer', color: index === filteredItems.length - 1 ? '#CBD5E1' : '#64748B', padding: '1px' }}
-                      >
-                        <ArrowDown size={12} />
-                      </button>
-                    </div>
-                  </td>
-
-                  {columns.map(col => {
-                    let val = item[col.key];
-                    if (col.type === 'json' && typeof val === 'object') {
-                      val = JSON.stringify(val);
-                    }
-                    if (col.render) {
-                      return <td key={col.key} style={{ padding: '10px 12px' }}>{col.render(val, item)}</td>;
-                    }
-                    return (
-                      <td key={col.key} style={{ padding: '10px 12px', color: '#1E293B', fontWeight: col.isPrimary ? 600 : 400 }}>
-                        {val !== undefined && val !== null ? String(val) : '—'}
-                      </td>
-                    );
-                  })}
-
-                  <td style={{ padding: '10px 12px' }}>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleActive(item.id)}
-                      style={{
-                        border: 'none',
-                        background: isActive ? '#DCFCE7' : '#F1F5F9',
-                        color: isActive ? '#15803D' : '#64748B',
-                        padding: '3px 8px',
-                        borderRadius: '12px',
-                        fontSize: '0.74rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                    >
-                      {isActive ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                      {isActive ? 'Active' : 'Inactive'}
-                    </button>
-                  </td>
-
-                  <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEdit(item)}
-                        title="Edit record"
-                        style={{ border: 'none', background: '#F1F5F9', color: '#334155', padding: '5px', borderRadius: '6px', cursor: 'pointer' }}
-                      >
-                        <Edit2 size={13} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(item.id, item[columns[0]?.key] || item.name || item.title)}
-                        title="Delete record"
-                        style={{ border: 'none', background: '#FEF2F2', color: '#DC2626', padding: '5px', borderRadius: '6px', cursor: 'pointer' }}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-
-            {filteredItems.length === 0 && !loading && (
-              <tr>
-                <td colSpan={columns.length + 3} style={{ textAlign: 'center', padding: '32px 16px', color: '#94A3B8' }}>
-                  {emptyText}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        columns={tableColumns}
+        data={filteredItems}
+        density="compact"
+        sortable={false}
+        loading={loading}
+        emptyMessage={emptyText}
+      />
 
       {/* Modal Dialog */}
       {modalOpen && (

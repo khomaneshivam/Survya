@@ -1,5 +1,5 @@
-import React from 'react';
-import { Search, Inbox } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, Inbox, HelpCircle } from 'lucide-react';
 
 export function Button({ variant = 'secondary', size = 'md', className = '', children, loading, ...props }) {
   const variantClass = {
@@ -96,12 +96,33 @@ export function CardBody({ children, style }) {
   );
 }
 
-export function PageHeader({ title, description, actions, children }) {
+export function PageHeader({ title, description, subtitle, actions, children }) {
+  const shortDesc = description || subtitle;
+  const displayDesc = shortDesc ? (shortDesc.length > 65 ? `${shortDesc.slice(0, 62)}...` : shortDesc) : null;
+
   return (
-    <div className="sarvya-page-header">
-      <div style={{ minWidth: 0 }}>
-        <h1 className="sarvya-page-title">{title}</h1>
-        {description && <p className="sarvya-page-desc">{description}</p>}
+    <div
+      className="sarvya-page-header"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '12px',
+        flexWrap: 'wrap',
+        paddingBottom: '10px',
+        marginBottom: '16px',
+        borderBottom: '1px solid var(--border-color)'
+      }}
+    >
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <h1 className="sarvya-page-title" style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+          {title}
+        </h1>
+        {displayDesc && (
+          <p className="sarvya-page-desc" style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '2px 0 0 0' }} title={shortDesc}>
+            {displayDesc}
+          </p>
+        )}
         {children}
       </div>
       {actions && (
@@ -113,9 +134,9 @@ export function PageHeader({ title, description, actions, children }) {
   );
 }
 
-export function KpiCard({ label, title, value, meta, subtitle, icon: Icon, accentTone = 'blue', onClick }) {
+export function KpiCard({ label, title, value, meta, subtitle, delta, icon: Icon, accentTone = 'blue', onClick }) {
   const displayLabel = label || title;
-  const displayMeta = meta || subtitle;
+  const displayMeta = meta || subtitle || delta;
 
   const pillStyles = {
     blue: { bg: '#EAF4FB', color: '#1B5886' },
@@ -130,30 +151,107 @@ export function KpiCard({ label, title, value, meta, subtitle, icon: Icon, accen
       className="sarvya-kpi-card"
       onClick={onClick}
       style={{
+        padding: '10px 14px',
         cursor: onClick ? 'pointer' : 'default',
         transition: 'border-color 140ms ease'
       }}
     >
-      <div className="sarvya-kpi-label">
-        <span>{displayLabel}</span>
+      <div className="sarvya-kpi-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: '11.5px', fontWeight: 500, color: 'var(--text-secondary)' }}>{displayLabel}</span>
         {Icon && (
           <span style={{
-            width: '26px',
-            height: '26px',
-            borderRadius: '6px',
+            width: '20px',
+            height: '20px',
+            borderRadius: '5px',
             background: pillStyles.bg,
             color: pillStyles.color,
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center'
           }}>
-            {React.isValidElement(Icon) ? Icon : (typeof Icon === 'function' || typeof Icon === 'object') ? <Icon size={14} /> : null}
+            {React.isValidElement(Icon) ? Icon : (typeof Icon === 'function' || typeof Icon === 'object') && Icon ? <Icon size={12} /> : null}
           </span>
         )}
       </div>
-      <div className="sarvya-kpi-value">{value}</div>
-      {displayMeta && <div className="sarvya-kpi-meta">{displayMeta}</div>}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginTop: '2px' }}>
+        <div className="sarvya-kpi-value tabular-nums" style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>
+          {value}
+        </div>
+        {displayMeta && (
+          <span className="sarvya-kpi-meta" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+            {displayMeta}
+          </span>
+        )}
+      </div>
     </div>
+  );
+}
+
+/**
+ * Compact, accessible help tooltip popover
+ */
+export function HelpTip({ text, title, align = 'center' }) {
+  const [open, setOpen] = useState(false);
+  if (!text) return null;
+
+  return (
+    <span
+      className="sarvya-helptip-wrapper"
+      style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle', marginInlineStart: '4px' }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+      onFocus={() => setOpen(true)}
+      onBlur={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        className="sarvya-helptip-btn"
+        aria-label={title || 'More information'}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((prev) => !prev); }}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          padding: '2px',
+          cursor: 'pointer',
+          color: 'var(--text-muted)',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: '50%'
+        }}
+      >
+        <HelpCircle size={13} />
+      </button>
+      {open && (
+        <span
+          role="tooltip"
+          className="sarvya-helptip-popover"
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 6px)',
+            left: align === 'right' ? 'auto' : align === 'left' ? '0' : '50%',
+            right: align === 'right' ? '0' : 'auto',
+            transform: align === 'center' ? 'translateX(-50%)' : 'none',
+            background: '#0F172A',
+            color: '#F8FAFC',
+            fontSize: '11px',
+            lineHeight: '1.4',
+            padding: '6px 10px',
+            borderRadius: '6px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.18)',
+            whiteSpace: 'normal',
+            width: 'max-content',
+            maxWidth: '240px',
+            zIndex: 1000,
+            pointerEvents: 'none',
+            textAlign: 'start'
+          }}
+        >
+          {title && <strong style={{ display: 'block', marginBottom: '2px', color: '#E2E8F0' }}>{title}</strong>}
+          {text}
+        </span>
+      )}
+    </span>
   );
 }
 

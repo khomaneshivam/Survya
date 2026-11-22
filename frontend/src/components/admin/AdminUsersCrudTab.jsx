@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Users,
   Plus,
@@ -18,7 +18,8 @@ import {
   CardBody,
   Button,
   Badge,
-  Modal
+  Modal,
+  DataTable
 } from '../ui';
 import { formatIndianDate } from '../../utils/indianTime';
 
@@ -252,6 +253,124 @@ export default function AdminUsersCrudTab({
     }
   };
 
+  const userColumns = useMemo(() => [
+    {
+      header: 'User Details',
+      accessor: 'name',
+      render: (name, u) => {
+        const isSelf = u.id === currentUser?.id;
+        return (
+          <div>
+            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+              {name} {isSelf && <span style={{ color: 'var(--sarvya-blue)', fontSize: '11px' }}>(You)</span>}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              {u.email} • {u.phone || 'No Phone'}
+            </div>
+          </div>
+        );
+      }
+    },
+    {
+      header: 'Role',
+      accessor: 'role',
+      render: (role) => (
+        <Badge variant={role === 'ADMIN' ? 'primary' : 'secondary'}>
+          {role === 'ADMIN' ? 'MASTER ADMIN' : 'STAFF USER'}
+        </Badge>
+      )
+    },
+    {
+      header: 'Status',
+      accessor: 'status',
+      render: (status) => (
+        <Badge variant={status === 'ACTIVE' ? 'success' : 'danger'}>
+          {status}
+        </Badge>
+      )
+    },
+    {
+      header: 'Assigned WABA Sender Line',
+      accessor: 'assigned_phone_id',
+      render: (assignedPhoneId, u) => (
+        <select
+          className="sarvya-input"
+          style={{ padding: '3px 8px', fontSize: '12px', minWidth: '170px' }}
+          value={assignedPhoneId || ''}
+          onChange={(e) => handleAssignPhone(u.id, e.target.value)}
+        >
+          <option value="">Default Workspace Line</option>
+          {phoneNumbers.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.display_name} ({p.phone_number})
+            </option>
+          ))}
+        </select>
+      )
+    },
+    {
+      header: 'Registered At',
+      accessor: 'created_at',
+      render: (createdAt) => (
+        <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+          {formatIndianDate(createdAt)}
+        </span>
+      )
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      render: (_, u) => {
+        const isSelf = u.id === currentUser?.id;
+        return (
+          <div style={{ display: 'inline-flex', gap: '6px' }}>
+            <Button
+              variant="secondary"
+              size="sm"
+              title="Edit User"
+              onClick={() => openEditModal(u)}
+            >
+              <Edit2 size={13} /> Edit
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              title="Reset Password"
+              onClick={() => {
+                setResetModalUser(u);
+                setNewPassword('');
+              }}
+            >
+              <Key size={13} /> Password
+            </Button>
+
+            {!isSelf && (
+              <>
+                <Button
+                  variant={u.status === 'ACTIVE' ? 'secondary' : 'primary'}
+                  size="sm"
+                  onClick={() => handleToggleStatus(u)}
+                >
+                  {u.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
+                </Button>
+
+                <Button
+                  variant="danger"
+                  size="sm"
+                  title="Move to Recycle Bin"
+                  onClick={() => setDeleteModalUser(u)}
+                >
+                  <Trash2 size={13} />
+                </Button>
+              </>
+            )}
+          </div>
+        );
+      }
+    }
+  ], [currentUser, phoneNumbers]);
+
   return (
     <Card>
       <CardHeader
@@ -291,123 +410,13 @@ export default function AdminUsersCrudTab({
         </div>
 
         {/* Users Table */}
-        <div style={{ overflowX: 'auto' }}>
-          <table className="sarvya-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                <th style={{ padding: '10px 14px' }}>User Details</th>
-                <th style={{ padding: '10px 14px' }}>Role</th>
-                <th style={{ padding: '10px 14px' }}>Status</th>
-                <th style={{ padding: '10px 14px' }}>Assigned WABA Sender Line</th>
-                <th style={{ padding: '10px 14px' }}>Registered At</th>
-                <th style={{ padding: '10px 14px', textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredUsers.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    No users matching the search criteria.
-                  </td>
-                </tr>
-              ) : (
-                filteredUsers.map((u) => {
-                  const isSelf = u.id === currentUser?.id;
-                  return (
-                    <tr key={u.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '12px 14px' }}>
-                        <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                          {u.name} {isSelf && <span style={{ color: 'var(--sarvya-blue)', fontSize: '11px' }}>(You)</span>}
-                        </div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                          {u.email} • {u.phone || 'No Phone'}
-                        </div>
-                      </td>
-
-                      <td style={{ padding: '12px 14px' }}>
-                        <Badge variant={u.role === 'ADMIN' ? 'primary' : 'secondary'}>
-                          {u.role === 'ADMIN' ? 'MASTER ADMIN' : 'STAFF USER'}
-                        </Badge>
-                      </td>
-
-                      <td style={{ padding: '12px 14px' }}>
-                        <Badge variant={u.status === 'ACTIVE' ? 'success' : 'danger'}>
-                          {u.status}
-                        </Badge>
-                      </td>
-
-                      <td style={{ padding: '12px 14px' }}>
-                        <select
-                          className="sarvya-input"
-                          style={{ padding: '4px 8px', fontSize: '12px', minWidth: '180px' }}
-                          value={u.assigned_phone_id || ''}
-                          onChange={(e) => handleAssignPhone(u.id, e.target.value)}
-                        >
-                          <option value="">Default Workspace Line</option>
-                          {phoneNumbers.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.display_name} ({p.phone_number})
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-
-                      <td style={{ padding: '12px 14px', color: 'var(--text-muted)', fontSize: '12px' }}>
-                        {formatIndianDate(u.created_at)}
-                      </td>
-
-                      <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                        <div style={{ display: 'inline-flex', gap: '6px' }}>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            title="Edit User"
-                            onClick={() => openEditModal(u)}
-                          >
-                            <Edit2 size={13} /> Edit
-                          </Button>
-
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            title="Reset Password"
-                            onClick={() => {
-                              setResetModalUser(u);
-                              setNewPassword('');
-                            }}
-                          >
-                            <Key size={13} /> Password
-                          </Button>
-
-                          {!isSelf && (
-                            <>
-                              <Button
-                                variant={u.status === 'ACTIVE' ? 'secondary' : 'primary'}
-                                size="sm"
-                                onClick={() => handleToggleStatus(u)}
-                              >
-                                {u.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
-                              </Button>
-
-                              <Button
-                                variant="danger"
-                                size="sm"
-                                title="Move to Recycle Bin"
-                                onClick={() => setDeleteModalUser(u)}
-                              >
-                                <Trash2 size={13} />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={userColumns}
+          data={filteredUsers}
+          density="compact"
+          pageSize={10}
+          emptyMessage="No users matching the search criteria."
+        />
       </CardBody>
 
       {/* CREATE USER MODAL */}
