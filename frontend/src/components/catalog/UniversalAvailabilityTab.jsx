@@ -18,12 +18,22 @@ export default function UniversalAvailabilityTab({ token, selectedEntityId, show
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [slots, setSlots] = useState([]);
   const [showSlotModal, setShowSlotModal] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
   const [slotForm, setSlotForm] = useState({
     slot_date: new Date().toISOString().split('T')[0],
     start_time: '10:00:00',
     end_time: '11:00:00',
     total_capacity: 10,
     catalog_item_id: ''
+  });
+  const [bulkForm, setBulkForm] = useState({
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+    startTime: '09:00:00',
+    endTime: '18:00:00',
+    slotDurationMinutes: 30,
+    totalCapacity: 5,
+    catalogItemId: ''
   });
   const [actionLoading, setActionLoading] = useState(false);
 
@@ -71,6 +81,35 @@ export default function UniversalAvailabilityTab({ token, selectedEntityId, show
       showToast('Availability time slot added successfully!');
       setShowSlotModal(false);
       setSlots(prev => [...prev, data.slot]);
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkGenerate = async (e) => {
+    e.preventDefault();
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/v1/universal/availability/slots/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...bulkForm,
+          catalogItemId: bulkForm.catalogItemId || null
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to generate bulk slots');
+      }
+      showToast(`Generated ${data.slotsGenerated || 0} slots across ${data.totalDates || 0} dates!`);
+      setShowBulkModal(false);
+      fetchItems();
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
@@ -142,6 +181,13 @@ export default function UniversalAvailabilityTab({ token, selectedEntityId, show
             >
               <RefreshCw size={14} />
               <span>Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowBulkModal(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', border: '1px solid #7C3AED', background: '#F5F3FF', color: '#7C3AED', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
+            >
+              <span>⚡ Bulk Generator</span>
             </button>
             <button
               type="button"
@@ -310,6 +356,130 @@ export default function UniversalAvailabilityTab({ token, selectedEntityId, show
                   style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#16A34A', color: '#fff', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
                 >
                   {actionLoading ? 'Saving...' : 'Save Slot'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Slot Generator Modal */}
+      {showBulkModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+          <div style={{ background: '#fff', borderRadius: '12px', width: '100%', maxWidth: '480px', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: '0 0 4px', color: '#111827' }}>
+              ⚡ Bulk Availability Slot Generator
+            </h3>
+            <p style={{ fontSize: '0.82rem', color: '#6B7280', margin: '0 0 16px' }}>
+              Generate recurring daily time slots for clinics, salons, wellness appointments, or sessions.
+            </p>
+
+            <form onSubmit={handleBulkGenerate} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>Start Date</label>
+                  <input
+                    type="date"
+                    value={bulkForm.startDate}
+                    onChange={e => setBulkForm({ ...bulkForm, startDate: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #D1D5DB' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>End Date</label>
+                  <input
+                    type="date"
+                    value={bulkForm.endDate}
+                    onChange={e => setBulkForm({ ...bulkForm, endDate: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #D1D5DB' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>Daily Start Time</label>
+                  <input
+                    type="time"
+                    step="1"
+                    value={bulkForm.startTime}
+                    onChange={e => setBulkForm({ ...bulkForm, startTime: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #D1D5DB' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>Daily End Time</label>
+                  <input
+                    type="time"
+                    step="1"
+                    value={bulkForm.endTime}
+                    onChange={e => setBulkForm({ ...bulkForm, endTime: e.target.value })}
+                    required
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #D1D5DB' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>Slot Duration (Mins)</label>
+                  <select
+                    value={bulkForm.slotDurationMinutes}
+                    onChange={e => setBulkForm({ ...bulkForm, slotDurationMinutes: Number(e.target.value) })}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #D1D5DB' }}
+                  >
+                    <option value={15}>15 Minutes</option>
+                    <option value={30}>30 Minutes</option>
+                    <option value={45}>45 Minutes</option>
+                    <option value={60}>60 Minutes (1 Hour)</option>
+                    <option value={90}>90 Minutes</option>
+                    <option value={120}>120 Minutes (2 Hours)</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>Capacity Per Slot</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={bulkForm.totalCapacity}
+                    onChange={e => setBulkForm({ ...bulkForm, totalCapacity: Number(e.target.value) })}
+                    required
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #D1D5DB' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>Link to Specific Service (Optional)</label>
+                <select
+                  value={bulkForm.catalogItemId}
+                  onChange={e => setBulkForm({ ...bulkForm, catalogItemId: e.target.value })}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #D1D5DB' }}
+                >
+                  <option value="">All Services (Universal Slots)</option>
+                  {items.filter(i => i.inventory_mode === 'TIME_SLOT').map(i => (
+                    <option key={i.id} value={i.id}>{i.title}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowBulkModal(false)}
+                  style={{ padding: '8px 14px', borderRadius: '6px', border: '1px solid #D1D5DB', background: '#fff', fontSize: '0.82rem', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#7C3AED', color: '#fff', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {actionLoading ? 'Generating...' : '⚡ Generate Slots'}
                 </button>
               </div>
             </form>

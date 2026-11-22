@@ -95,6 +95,7 @@ function checkAvailability(tenantId = 1, options = {}) {
   if (mode === "TIME_SLOT") {
     const slotId = options.slotId;
     const slotDate = options.slotDate || options.date;
+    const resourceId = options.masterResourceId || options.master_resource_id || options.resourceId;
 
     if (slotId) {
       const slot = db.prepare(`
@@ -113,6 +114,7 @@ function checkAvailability(tenantId = 1, options = {}) {
         slotDate: slot.slot_date,
         startTime: slot.start_time,
         endTime: slot.end_time,
+        masterResourceId: slot.master_resource_id,
         remainingCapacity: Math.max(0, remainingCapacity),
         reason: isAvailable ? "Slot available" : "Time slot fully booked"
       };
@@ -120,14 +122,28 @@ function checkAvailability(tenantId = 1, options = {}) {
 
     // If slotDate provided, list available slots for that date
     if (slotDate) {
-      const slots = db.prepare(`
-        SELECT id, slot_date, start_time, end_time, (total_capacity - booked_capacity - held_capacity) as remaining_capacity
+      let sql = `
+        SELECT id, slot_date, start_time, end_time, slot_start, slot_end,
+               master_resource_id, override_price,
+               (total_capacity - booked_capacity - held_capacity) as remaining_capacity
         FROM catalog_availability_slots
-        WHERE tenant_id = ? AND (catalog_item_id = ? OR catalog_item_id IS NULL)
-          AND slot_date = ? AND is_active = 1
+        WHERE tenant_id = ? AND is_active = 1 AND is_blocked = 0
+          AND slot_date = ?
           AND (total_capacity - booked_capacity - held_capacity) >= ?
-        ORDER BY start_time ASC
-      `).all(numericTenantId, itemId, slotDate, quantity);
+      `;
+      const params = [numericTenantId, slotDate, quantity];
+
+      if (itemId) {
+        sql += " AND (catalog_item_id = ? OR catalog_item_id IS NULL)";
+        params.push(itemId);
+      }
+      if (resourceId) {
+        sql += " AND master_resource_id = ?";
+        params.push(resourceId);
+      }
+
+      sql += " ORDER BY start_time ASC";
+      const slots = db.prepare(sql).all(...params);
 
       return {
         available: slots.length > 0,
@@ -158,6 +174,7 @@ function checkAvailability(tenantId = 1, options = {}) {
 function createInventoryHold(tenantId = 1, options = {}) {
   const numericTenantId = Number(tenantId) || 1;
   const { itemId, slotId, quantity = 1, holdMinutes = 15, customerPhone, customerName } = options;
+  const masterResourceId = options.masterResourceId || options.master_resource_id || options.resourceId || null;
 
   if (!itemId && !slotId) {
     throw new Error("itemId or slotId is required to create hold.");
@@ -181,23 +198,27 @@ function createInventoryHold(tenantId = 1, options = {}) {
       throw new Error("Requested time slot no longer has sufficient capacity.");
     }
 
+    const slot = db.prepare("SELECT master_resource_id FROM catalog_availability_slots WHERE id = ?").get(slotId);
+    const resolvedResId = masterResourceId || slot?.master_resource_id || null;
+
     db.prepare(`
       INSERT INTO catalog_inventory_holds (
-        tenant_id, catalog_item_id, slot_id, hold_token, session_ref, hold_type,
+        tenant_id, catalog_item_id, slot_id, master_resource_id, hold_token, session_ref, hold_type,
         quantity, status, expires_at, customer_phone, customer_name,
         created_at, updated_at
       ) VALUES (
-        ?, ?, ?, ?, ?, 'SLOT',
+        ?, ?, ?, ?, ?, ?, 'SLOT',
         ?, 'HELD', DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE), ?, ?,
         UTC_TIMESTAMP(), UTC_TIMESTAMP()
       )
-    `).run(numericTenantId, itemId || null, slotId, holdToken, holdToken, qty, holdMinutes, cleanPhone, cleanName);
+    `).run(numericTenantId, itemId || null, slotId, resolvedResId, holdToken, holdToken, qty, holdMinutes, cleanPhone, cleanName);
 
     return {
       success: true,
       holdToken,
       holdType: "SLOT",
       slotId,
+      masterResourceId: resolvedResId,
       quantity: qty,
       expiresInMinutes: holdMinutes
     };
@@ -223,21 +244,22 @@ function createInventoryHold(tenantId = 1, options = {}) {
 
     db.prepare(`
       INSERT INTO catalog_inventory_holds (
-        tenant_id, catalog_item_id, slot_id, hold_token, session_ref, hold_type,
+        tenant_id, catalog_item_id, slot_id, master_resource_id, hold_token, session_ref, hold_type,
         quantity, status, expires_at, customer_phone, customer_name,
         created_at, updated_at
       ) VALUES (
-        ?, ?, NULL, ?, ?, 'ITEM_STOCK',
+        ?, ?, NULL, ?, ?, ?, 'ITEM_STOCK',
         ?, 'HELD', DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE), ?, ?,
         UTC_TIMESTAMP(), UTC_TIMESTAMP()
       )
-    `).run(numericTenantId, itemId, holdToken, holdToken, qty, holdMinutes, cleanPhone, cleanName);
+    `).run(numericTenantId, itemId, masterResourceId, holdToken, holdToken, qty, holdMinutes, cleanPhone, cleanName);
 
     return {
       success: true,
       holdToken,
       holdType: "ITEM_STOCK",
       itemId,
+      masterResourceId,
       quantity: qty,
       expiresInMinutes: holdMinutes
     };
@@ -378,20 +400,21 @@ function releaseExpiredHolds(tenantId = null) {
 }
 
 /**
- * Creates / seeds availability slots for date/time
+ * Creates / seeds a single availability slot
  */
 function createAvailabilitySlot(tenantId = 1, data = {}) {
   const numericTenantId = Number(tenantId) || 1;
   const startTime = data.start_time || data.slot_start || "09:00:00";
   const endTime = data.end_time || data.slot_end || "10:00:00";
+  const masterResourceId = data.master_resource_id || data.masterResourceId || null;
   const stmt = db.prepare(`
     INSERT INTO catalog_availability_slots (
-      tenant_id, entity_id, catalog_item_id, slot_date, start_time, end_time, slot_start, slot_end,
-      total_capacity, booked_capacity, held_capacity, is_active, active_status,
+      tenant_id, entity_id, catalog_item_id, master_resource_id, slot_date, start_time, end_time, slot_start, slot_end,
+      total_capacity, booked_capacity, held_capacity, override_price, is_active, active_status,
       created_at, updated_at
     ) VALUES (
-      ?, ?, ?, ?, ?, ?, ?, ?,
-      ?, 0, 0, 1, 1,
+      ?, ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, 1, 1,
       UTC_TIMESTAMP(), UTC_TIMESTAMP()
     )
   `);
@@ -400,22 +423,197 @@ function createAvailabilitySlot(tenantId = 1, data = {}) {
     numericTenantId,
     data.entity_id || null,
     data.catalog_item_id || null,
+    masterResourceId,
     data.slot_date,
     startTime,
     endTime,
     startTime,
     endTime,
-    Number(data.total_capacity) || 10
+    Number(data.total_capacity) || 10,
+    Number(data.booked_capacity) || 0,
+    Number(data.held_capacity) || 0,
+    data.override_price ? Number(data.override_price) : null
   );
 
   return db.prepare("SELECT * FROM catalog_availability_slots WHERE id = ?").get(info.lastInsertRowid);
 }
 
+/**
+ * List availability slots with filters (date, resource, item)
+ */
+function listAvailabilitySlots(tenantId = 1, filter = {}) {
+  const numericTenantId = Number(tenantId) || 1;
+  let sql = `
+    SELECT s.*,
+           r.name as master_resource_name, r.resource_code, r.resource_type,
+           i.title as catalog_item_title,
+           (s.total_capacity - s.booked_capacity - s.held_capacity) as remaining_capacity
+    FROM catalog_availability_slots s
+    LEFT JOIN master_resources r ON r.id = s.master_resource_id AND r.delete_status = 0
+    LEFT JOIN catalog_items i ON i.id = s.catalog_item_id AND i.delete_status = 0
+    WHERE s.tenant_id = ? AND s.delete_status = 0 AND s.is_active = 1
+  `;
+  const params = [numericTenantId];
+
+  if (filter.catalogItemId || filter.itemId) {
+    sql += " AND (s.catalog_item_id = ? OR s.catalog_item_id IS NULL)";
+    params.push(filter.catalogItemId || filter.itemId);
+  }
+
+  if (filter.masterResourceId || filter.resourceId) {
+    sql += " AND s.master_resource_id = ?";
+    params.push(filter.masterResourceId || filter.resourceId);
+  }
+
+  if (filter.slotDate || filter.date) {
+    sql += " AND s.slot_date = ?";
+    params.push(filter.slotDate || filter.date);
+  }
+
+  if (filter.startDate) {
+    sql += " AND s.slot_date >= ?";
+    params.push(filter.startDate);
+  }
+
+  if (filter.endDate) {
+    sql += " AND s.slot_date <= ?";
+    params.push(filter.endDate);
+  }
+
+  sql += " ORDER BY s.slot_date ASC, s.start_time ASC, s.id ASC";
+
+  if (filter.limit) {
+    const limit = Math.max(1, Math.min(200, Number(filter.limit) || 50));
+    const offset = Math.max(0, Number(filter.offset) || 0);
+    sql += " LIMIT ? OFFSET ?";
+    params.push(limit, offset);
+  }
+
+  return db.prepare(sql).all(...params);
+}
+
+/**
+ * Bulk availability slot generator for a date range and daily time blocks
+ */
+function generateAvailabilitySlots(tenantId = 1, options = {}) {
+  const numericTenantId = Number(tenantId) || 1;
+  const catalogItemId = options.catalogItemId || options.catalog_item_id || null;
+  const masterResourceId = options.masterResourceId || options.master_resource_id || null;
+  const {
+    startDate,
+    endDate,
+    startTime = "09:00:00",
+    endTime = "18:00:00",
+    slotDurationMinutes = 30,
+    totalCapacity = 1,
+    overridePrice = null
+  } = options;
+
+  if (!startDate || !endDate) {
+    throw new Error("startDate and endDate are required for bulk slot generation.");
+  }
+
+  const durationMin = Math.max(5, Math.min(480, Number(slotDurationMinutes) || 30));
+  const capacity = Math.max(1, Number(totalCapacity) || 1);
+  const price = overridePrice !== null && overridePrice !== undefined ? Number(overridePrice) : null;
+
+  // Generate date strings between startDate and endDate
+  const dates = [];
+  let curr = new Date(startDate);
+  const end = new Date(endDate);
+  while (curr <= end) {
+    const yyyy = curr.getFullYear();
+    const mm = String(curr.getMonth() + 1).padStart(2, "0");
+    const dd = String(curr.getDate()).padStart(2, "0");
+    dates.push(`${yyyy}-${mm}-${dd}`);
+    curr.setDate(curr.getDate() + 1);
+  }
+
+  const timeIntervals = [];
+  if (Array.isArray(options.timeIntervals) && options.timeIntervals.length > 0) {
+    for (const t of options.timeIntervals) {
+      const s = t.startTime || t.start;
+      const e = t.endTime || t.end;
+      if (s && e) {
+        timeIntervals.push({
+          start: s.length === 5 ? `${s}:00` : s,
+          end: e.length === 5 ? `${e}:00` : e
+        });
+      }
+    }
+  } else {
+    // Parse start and end time into minutes from midnight
+    const [sH, sM] = String(startTime).split(":").map(Number);
+    const [eH, eM] = String(endTime).split(":").map(Number);
+    const startMin = (sH || 0) * 60 + (sM || 0);
+    const endMin = (eH || 0) * 60 + (eM || 0);
+
+    for (let m = startMin; m + durationMin <= endMin; m += durationMin) {
+      const slotStartH = String(Math.floor(m / 60)).padStart(2, "0");
+      const slotStartM = String(m % 60).padStart(2, "0");
+      const slotEndH = String(Math.floor((m + durationMin) / 60)).padStart(2, "0");
+      const slotEndM = String((m + durationMin) % 60).padStart(2, "0");
+      timeIntervals.push({
+        start: `${slotStartH}:${slotStartM}:00`,
+        end: `${slotEndH}:${slotEndM}:00`
+      });
+    }
+  }
+
+  let createdCount = 0;
+  const insertStmt = db.prepare(`
+    INSERT INTO catalog_availability_slots (
+      tenant_id, catalog_item_id, master_resource_id, slot_date, slot_start, slot_end,
+      start_time, end_time, total_capacity, booked_capacity, held_capacity,
+      override_price, is_blocked, is_active, active_status, delete_status,
+      created_at, updated_at
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, 0, 0,
+      ?, 0, 1, 1, 0,
+      UTC_TIMESTAMP(), UTC_TIMESTAMP()
+    )
+    ON DUPLICATE KEY UPDATE total_capacity = VALUES(total_capacity), override_price = VALUES(override_price)
+  `);
+
+  for (const d of dates) {
+    for (const t of timeIntervals) {
+      try {
+        insertStmt.run(
+          numericTenantId,
+          catalogItemId || null,
+          masterResourceId || null,
+          d,
+          t.start,
+          t.end,
+          t.start,
+          t.end,
+          capacity,
+          price
+        );
+        createdCount++;
+      } catch (err) {
+        // ignore duplicate
+      }
+    }
+  }
+
+  return {
+    success: true,
+    totalDates: dates.length,
+    slotsPerDay: timeIntervals.length,
+    slotsGenerated: createdCount
+  };
+}
+
 module.exports = {
   checkAvailability,
   createInventoryHold,
+  createHold: createInventoryHold,
   confirmHold,
   releaseHold,
   releaseExpiredHolds,
-  createAvailabilitySlot
+  createAvailabilitySlot,
+  listAvailabilitySlots,
+  generateAvailabilitySlots
 };

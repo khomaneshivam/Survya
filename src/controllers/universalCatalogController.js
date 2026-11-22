@@ -208,14 +208,65 @@ async function deletePricingRule(req, res) {
   }
 }
 
+async function reorderMedia(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const media = universalCatalogService.reorderMedia(tenantId, req.params.id, req.body.mediaIds);
+    return res.json({ success: true, media });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
+async function setPrimaryMedia(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const media = universalCatalogService.setPrimaryMedia(tenantId, req.params.id, req.params.mediaId);
+    return res.json({ success: true, media });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
+async function getOrCacheMetaMediaId(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const metaMediaId = await universalCatalogService.getOrUploadMetaMediaId(tenantId, req.params.mediaId, req.body?.phoneNumberId);
+    return res.json({ success: true, metaMediaId });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+async function getApplicableAddons(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const addonGroups = universalCatalogService.getApplicableAddons(tenantId, req.query.itemId, req.query.masterCategoryId);
+    return res.json({ success: true, addonGroups });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
 // 4. AVAILABILITY, SLOTS & HOLDS
 async function checkAvailability(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
-    const result = universalAvailabilityService.checkAvailability(tenantId, req.query);
-    return res.json({ success: true, ...result });
+    const payload = req.method === "POST" ? { ...req.query, ...req.body } : req.query;
+    const result = universalAvailabilityService.checkAvailability(tenantId, payload);
+    return res.json({ success: true, availability: result, ...result });
   } catch (err) {
     return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
+async function listAvailabilitySlots(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const slots = universalAvailabilityService.listAvailabilitySlots(tenantId, req.query);
+    return res.json({ success: true, slots, count: slots.length });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 }
 
@@ -224,6 +275,16 @@ async function createAvailabilitySlot(req, res) {
     const tenantId = req.user?.tenant_id || 1;
     const slot = universalAvailabilityService.createAvailabilitySlot(tenantId, req.body);
     return res.status(201).json({ success: true, slot });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
+async function generateAvailabilitySlots(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const result = universalAvailabilityService.generateAvailabilitySlots(tenantId, req.body);
+    return res.status(201).json(result);
   } catch (err) {
     return res.status(400).json({ success: false, error: err.message });
   }
@@ -309,9 +370,13 @@ module.exports = {
   updateItem,
   deleteItem,
   addMedia,
+  reorderMedia,
+  setPrimaryMedia,
+  getOrCacheMetaMediaId,
   deleteMedia,
   searchCatalog,
   listAddonGroups,
+  getApplicableAddons,
   createAddonGroup,
   updateAddonGroup,
   deleteAddonGroup,
@@ -323,7 +388,9 @@ module.exports = {
   updatePricingRule,
   deletePricingRule,
   checkAvailability,
+  listAvailabilitySlots,
   createAvailabilitySlot,
+  generateAvailabilitySlots,
   createHold,
   confirmHold,
   releaseHold,

@@ -854,6 +854,7 @@ router.use(require("./chatLinkRoutes"));
 
 // Multi-Industry Polymorphic Commerce & Catalog
 router.use(require("./commerceRoutes"));
+router.use(["/commerce", "/v1/commerce"], require("./commerceRoutes"));
 
 // Pay-In Checkout, Merchant Payouts & Settlements
 router.use(require("./payoutRoutes"));

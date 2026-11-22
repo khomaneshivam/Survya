@@ -1,6 +1,7 @@
 const { db } = require("../../config/database");
 const crypto = require("crypto");
 const metaWhatsAppService = require("../metaWhatsAppService");
+const masterCacheService = require("../masters/masterCacheService");
 
 /**
  * Universal Multi-Sector Catalog Service
@@ -23,9 +24,18 @@ function slugify(text) {
 function listItems(tenantId = 1, options = {}) {
   const numericTenantId = Number(tenantId) || 1;
   let sql = `
-    SELECT i.*, e.name as entity_name, e.domain as entity_domain
+    SELECT i.*, e.name as entity_name, e.domain as entity_domain,
+           mc.name as master_category_name, mc.category_code as master_category_code,
+           mu.name as master_unit_name, mu.unit_symbol as master_unit_symbol,
+           mt.title as master_tax_slab_title, mt.tax_rate as master_tax_rate,
+           ml.name as master_location_name, ml.location_code as master_location_code,
+           (SELECT media_url FROM catalog_item_media WHERE catalog_item_id = i.id AND delete_status = 0 ORDER BY is_primary DESC, sort_order ASC, id ASC LIMIT 1) as primary_image_url
     FROM catalog_items i
     LEFT JOIN business_entities e ON e.id = i.entity_id
+    LEFT JOIN master_categories mc ON mc.id = i.master_category_id AND mc.delete_status = 0
+    LEFT JOIN master_units mu ON mu.id = i.master_unit_id AND mu.delete_status = 0
+    LEFT JOIN master_tax_slabs mt ON mt.id = i.master_tax_slab_id AND mt.delete_status = 0
+    LEFT JOIN master_locations ml ON ml.id = i.master_location_id AND ml.delete_status = 0
     WHERE i.tenant_id = ? AND i.delete_status = 0
   `;
   const params = [numericTenantId];
@@ -35,9 +45,19 @@ function listItems(tenantId = 1, options = {}) {
     params.push(options.entityId);
   }
 
+  if (options.masterLocationId || options.locationId) {
+    sql += " AND i.master_location_id = ?";
+    params.push(options.masterLocationId || options.locationId);
+  }
+
+  if (options.masterCategoryId) {
+    sql += " AND i.master_category_id = ?";
+    params.push(options.masterCategoryId);
+  }
+
   if (options.categoryName) {
-    sql += " AND i.category_name = ?";
-    params.push(options.categoryName);
+    sql += " AND (i.category_name = ? OR mc.name = ?)";
+    params.push(options.categoryName, options.categoryName);
   }
 
   if (options.inventoryMode) {
@@ -55,9 +75,9 @@ function listItems(tenantId = 1, options = {}) {
   }
 
   if (options.search) {
-    sql += " AND (i.title LIKE ? OR i.sku LIKE ? OR i.description LIKE ?)";
+    sql += " AND (i.title LIKE ? OR i.sku LIKE ? OR i.description LIKE ? OR mc.name LIKE ?)";
     const term = `%${options.search.trim()}%`;
-    params.push(term, term, term);
+    params.push(term, term, term, term);
   }
 
   sql += " ORDER BY i.sort_order ASC, i.id ASC";
@@ -89,9 +109,17 @@ function listItems(tenantId = 1, options = {}) {
 function getItemById(tenantId = 1, id) {
   const numericTenantId = Number(tenantId) || 1;
   const item = db.prepare(`
-    SELECT i.*, e.name as entity_name, e.domain as entity_domain
+    SELECT i.*, e.name as entity_name, e.domain as entity_domain,
+           mc.name as master_category_name, mc.category_code as master_category_code,
+           mu.name as master_unit_name, mu.unit_symbol as master_unit_symbol,
+           mt.title as master_tax_slab_title, mt.tax_rate as master_tax_rate,
+           ml.name as master_location_name, ml.location_code as master_location_code
     FROM catalog_items i
     LEFT JOIN business_entities e ON e.id = i.entity_id
+    LEFT JOIN master_categories mc ON mc.id = i.master_category_id AND mc.delete_status = 0
+    LEFT JOIN master_units mu ON mu.id = i.master_unit_id AND mu.delete_status = 0
+    LEFT JOIN master_tax_slabs mt ON mt.id = i.master_tax_slab_id AND mt.delete_status = 0
+    LEFT JOIN master_locations ml ON ml.id = i.master_location_id AND ml.delete_status = 0
     WHERE i.tenant_id = ? AND i.id = ? AND i.delete_status = 0
   `).get(numericTenantId, id);
 
@@ -100,22 +128,25 @@ function getItemById(tenantId = 1, id) {
   // Fetch gallery media
   const media = db.prepare(`
     SELECT * FROM catalog_item_media
-    WHERE tenant_id = ? AND catalog_item_id = ?
+    WHERE tenant_id = ? AND catalog_item_id = ? AND delete_status = 0
     ORDER BY is_primary DESC, sort_order ASC, id ASC
   `).all(numericTenantId, id);
 
   // Fetch linked add-on groups
   const addonGroups = db.prepare(`
     SELECT g.* FROM catalog_addon_groups g
-    WHERE g.tenant_id = ? AND g.delete_status = 0 AND (g.catalog_item_id = ? OR (g.catalog_item_id IS NULL AND (g.entity_id = ? OR g.entity_id IS NULL)))
+    WHERE g.tenant_id = ? AND g.delete_status = 0
+      AND (g.catalog_item_id = ? OR (g.catalog_item_id IS NULL AND (g.master_category_id = ? OR (g.entity_id = ? OR g.entity_id IS NULL))))
     ORDER BY g.sort_order ASC, g.id ASC
-  `).all(numericTenantId, id, item.entity_id || null);
+  `).all(numericTenantId, id, item.master_category_id || null, item.entity_id || null);
 
   for (const group of addonGroups) {
     group.addons = db.prepare(`
-      SELECT * FROM catalog_addons
-      WHERE group_id = ? AND delete_status = 0 AND active_status = 1
-      ORDER BY sort_order ASC, id ASC
+      SELECT a.*, mt.tax_rate as master_tax_rate, mt.slab_code as master_slab_code
+      FROM catalog_addons a
+      LEFT JOIN master_tax_slabs mt ON mt.id = a.master_tax_slab_id AND mt.delete_status = 0
+      WHERE a.group_id = ? AND a.delete_status = 0 AND a.active_status = 1
+      ORDER BY a.sort_order ASC, a.id ASC
     `).all(group.id);
   }
 
@@ -159,17 +190,43 @@ function createItem(tenantId = 1, data = {}, userId = "system") {
 
   const variantsJson = JSON.stringify(data.variants || data.variants_json || []);
 
+  // Resolve or create default business entity if not supplied
+  let resolvedEntityId = data.entity_id;
+  if (!resolvedEntityId) {
+    const existing = db.prepare("SELECT id FROM business_entities WHERE tenant_id = ? AND delete_status = 0 ORDER BY id ASC LIMIT 1").get(numericTenantId);
+    if (existing) {
+      resolvedEntityId = existing.id;
+    } else {
+      const baseSlug = slugify(data.title || "Business");
+      let finalSlug = baseSlug || "entity";
+      let cnt = 1;
+      while (db.prepare("SELECT id FROM business_entities WHERE slug = ?").get(finalSlug)) {
+        finalSlug = `${baseSlug}-${cnt++}`;
+      }
+      const ins = db.prepare(`
+        INSERT INTO business_entities (
+          tenant_id, domain, name, slug, phone_e164, city, status, active_status, delete_status, created_at, updated_at
+        ) VALUES (
+          ?, 'GENERAL', 'Main Business', ?, '+910000000000', 'Mumbai', 'ACTIVE', 1, 0, UTC_TIMESTAMP(), UTC_TIMESTAMP()
+        )
+      `).run(numericTenantId, finalSlug);
+      resolvedEntityId = ins.lastInsertRowid;
+    }
+  }
+
   const stmt = db.prepare(`
     INSERT INTO catalog_items (
       tenant_id, entity_id, item_type, title, slug, sku, description,
       base_price, compare_at_price, gst_percent, currency,
       inventory_mode, category_name, stock_qty, reserved_qty, track_inventory, is_sold_out,
       allow_rate_discussion, auto_approve_min_price, hard_floor_price, variants_json,
+      master_category_id, master_unit_id, master_tax_slab_id, master_location_id,
       is_active, active_status, delete_status, sort_order, created_by, updated_by, created_at, updated_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?,
       ?, ?, ?, 0, ?, 0,
+      ?, ?, ?, ?,
       ?, ?, ?, ?,
       1, 1, 0, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP()
     )
@@ -177,7 +234,7 @@ function createItem(tenantId = 1, data = {}, userId = "system") {
 
   const info = stmt.run(
     numericTenantId,
-    data.entity_id || null,
+    resolvedEntityId,
     data.item_type || "PRODUCT",
     String(data.title).trim(),
     finalSlug,
@@ -195,12 +252,19 @@ function createItem(tenantId = 1, data = {}, userId = "system") {
     autoApproveMinPrice,
     hardFloorPrice,
     variantsJson,
+    data.master_category_id || null,
+    data.master_unit_id || null,
+    data.master_tax_slab_id || null,
+    data.master_location_id || null,
     Number(data.sort_order) || 0,
     userId,
     userId
   );
 
   const itemId = info.lastInsertRowid;
+
+  // Invalidate master cache for tenant
+  masterCacheService.invalidateTenantMasters(numericTenantId);
 
   // If initial media items supplied
   if (Array.isArray(data.media) && data.media.length > 0) {
@@ -235,7 +299,8 @@ function updateItem(tenantId = 1, id, data = {}, userId = "system") {
     "base_price", "compare_at_price", "gst_percent", "currency",
     "inventory_mode", "category_name", "stock_qty", "track_inventory",
     "is_sold_out", "allow_rate_discussion", "auto_approve_min_price",
-    "hard_floor_price", "is_active", "sort_order"
+    "hard_floor_price", "is_active", "sort_order",
+    "master_category_id", "master_unit_id", "master_tax_slab_id", "master_location_id"
   ];
 
   for (const field of allowedFields) {
@@ -261,6 +326,9 @@ function updateItem(tenantId = 1, id, data = {}, userId = "system") {
     WHERE tenant_id = ? AND id = ?
   `).run(...params);
 
+  // Invalidate master cache for tenant
+  masterCacheService.invalidateTenantMasters(numericTenantId);
+
   return getItemById(numericTenantId, id);
 }
 
@@ -277,34 +345,70 @@ function deleteItem(tenantId = 1, id, userId = "system") {
     WHERE tenant_id = ? AND id = ?
   `).run(userId, numericTenantId, id);
 
+  // Invalidate master cache for tenant
+  masterCacheService.invalidateTenantMasters(numericTenantId);
+
   return { success: true, id };
 }
 
 /**
  * Fast indexed search for flow studio / customer inquiry
+ * Zero N+1 queries: resolves primary image, master category, unit symbol, and tax rate in ONE single query.
  */
 function searchCatalog(tenantId = 1, params = {}) {
   const numericTenantId = Number(tenantId) || 1;
   let sql = `
-    SELECT i.id, i.entity_id, i.item_type, i.title, i.slug, i.sku, i.description,
-           i.base_price, i.compare_at_price, i.gst_percent, i.currency,
-           i.inventory_mode, i.category_name, i.stock_qty, i.reserved_qty, i.is_sold_out,
-           (SELECT media_url FROM catalog_item_media WHERE catalog_item_id = i.id ORDER BY is_primary DESC, sort_order ASC LIMIT 1) as primary_image_url
+    SELECT i.id, i.tenant_id, i.entity_id, i.master_location_id, i.master_category_id,
+           i.master_unit_id, i.master_tax_slab_id, i.item_type, i.title, i.slug, i.sku,
+           i.short_description, i.description, i.base_price, i.compare_at_price,
+           i.gst_percent, i.currency, i.inventory_mode, i.stock_qty, i.reserved_qty,
+           i.track_inventory, i.is_sold_out, i.allow_rate_discussion,
+           i.auto_approve_min_price, i.hard_floor_price, i.variants_json,
+           COALESCE(mc.name, i.category_name) as category_name,
+           mc.name as master_category_name,
+           mc.category_code,
+           mu.name as unit_name,
+           mu.name as master_unit_name,
+           mu.unit_symbol,
+           mu.unit_symbol as master_unit_symbol,
+           COALESCE(mt.tax_rate, i.gst_percent) as tax_rate,
+           mt.tax_rate as master_tax_rate,
+           mt.title as master_tax_slab_title,
+           mt.slab_code as tax_slab_code,
+           ml.name as location_name,
+           ml.name as master_location_name,
+           ml.location_code,
+           (SELECT media_url FROM catalog_item_media WHERE catalog_item_id = i.id AND delete_status = 0 ORDER BY is_primary DESC, sort_order ASC, id ASC LIMIT 1) as primary_image_url
     FROM catalog_items i
-    WHERE i.tenant_id = ? AND i.delete_status = 0 AND i.is_active = 1
+    LEFT JOIN master_categories mc ON mc.id = i.master_category_id AND mc.delete_status = 0
+    LEFT JOIN master_units mu ON mu.id = i.master_unit_id AND mu.delete_status = 0
+    LEFT JOIN master_tax_slabs mt ON mt.id = i.master_tax_slab_id AND mt.delete_status = 0
+    LEFT JOIN master_locations ml ON ml.id = i.master_location_id AND ml.delete_status = 0
+    WHERE i.tenant_id = ? AND i.delete_status = 0 AND i.active_status = 1 AND i.is_active = 1
   `;
   const sqlParams = [numericTenantId];
+
+  if (params.masterLocationId || params.locationId) {
+    sql += " AND i.master_location_id = ?";
+    sqlParams.push(params.masterLocationId || params.locationId);
+  }
+
+  if (params.masterCategoryId) {
+    sql += " AND i.master_category_id = ?";
+    sqlParams.push(params.masterCategoryId);
+  }
 
   const searchQuery = params.search || params.query;
   if (searchQuery && String(searchQuery).trim()) {
     const q = `%${String(searchQuery).trim()}%`;
-    sql += " AND (i.title LIKE ? OR i.category_name LIKE ? OR i.description LIKE ?)";
-    sqlParams.push(q, q, q);
+    sql += " AND (i.title LIKE ? OR i.sku LIKE ? OR i.description LIKE ? OR i.category_name LIKE ? OR mc.name LIKE ?)";
+    sqlParams.push(q, q, q, q, q);
   }
 
   if (params.category && String(params.category).trim()) {
-    sql += " AND i.category_name = ?";
-    sqlParams.push(String(params.category).trim());
+    sql += " AND (i.category_name = ? OR mc.name = ? OR mc.category_code = ?)";
+    const cat = String(params.category).trim();
+    sqlParams.push(cat, cat, cat);
   }
 
   if (params.inventoryMode) {
@@ -328,12 +432,24 @@ function searchCatalog(tenantId = 1, params = {}) {
 
   sql += " ORDER BY i.sort_order ASC, i.id ASC";
 
-  const limit = Math.max(1, Math.min(20, Number(params.limit) || 10));
+  const limit = Math.max(1, Math.min(100, Number(params.limit) || 20));
   const offset = Math.max(0, Number(params.offset) || 0);
   sql += " LIMIT ? OFFSET ?";
   sqlParams.push(limit, offset);
 
-  return db.prepare(sql).all(...sqlParams);
+  const items = db.prepare(sql).all(...sqlParams);
+  return items.map(item => {
+    let variants = [];
+    try {
+      variants = typeof item.variants_json === "string" ? JSON.parse(item.variants_json || "[]") : (item.variants_json || []);
+    } catch (_) {
+      variants = [];
+    }
+    return {
+      ...item,
+      variants
+    };
+  });
 }
 
 // -------------------------------------------------------------
@@ -344,7 +460,7 @@ function listMedia(tenantId = 1, itemId) {
   const numericTenantId = Number(tenantId) || 1;
   return db.prepare(`
     SELECT * FROM catalog_item_media
-    WHERE tenant_id = ? AND catalog_item_id = ?
+    WHERE tenant_id = ? AND catalog_item_id = ? AND delete_status = 0
     ORDER BY is_primary DESC, sort_order ASC, id ASC
   `).all(numericTenantId, itemId);
 }
@@ -381,11 +497,11 @@ function addMedia(tenantId = 1, itemId, mediaData = {}) {
     INSERT INTO catalog_item_media (
       tenant_id, catalog_item_id, media_type, media_url, image_url, thumbnail_url,
       caption, is_primary, sort_order, display_order, meta_media_id, meta_media_expires_at,
-      file_size_kb, created_at, updated_at
+      file_size_kb, active_status, delete_status, created_at, updated_at
     ) VALUES (
       ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, ?,
-      ?, UTC_TIMESTAMP(), UTC_TIMESTAMP()
+      ?, 1, 0, UTC_TIMESTAMP(), UTC_TIMESTAMP()
     )
   `);
 
@@ -408,10 +524,36 @@ function addMedia(tenantId = 1, itemId, mediaData = {}) {
   return db.prepare("SELECT * FROM catalog_item_media WHERE id = ?").get(info.lastInsertRowid);
 }
 
+function reorderMedia(tenantId = 1, itemId, mediaIds = []) {
+  const numericTenantId = Number(tenantId) || 1;
+  if (!Array.isArray(mediaIds)) return listMedia(numericTenantId, itemId);
+
+  for (let idx = 0; idx < mediaIds.length; idx++) {
+    db.prepare(`
+      UPDATE catalog_item_media
+      SET sort_order = ?, display_order = ?, updated_at = UTC_TIMESTAMP()
+      WHERE tenant_id = ? AND catalog_item_id = ? AND id = ?
+    `).run(idx, idx, numericTenantId, itemId, mediaIds[idx]);
+  }
+  return listMedia(numericTenantId, itemId);
+}
+
+function setPrimaryMedia(tenantId = 1, itemId, mediaId) {
+  const numericTenantId = Number(tenantId) || 1;
+  db.prepare(`
+    UPDATE catalog_item_media
+    SET is_primary = CASE WHEN id = ? THEN 1 ELSE 0 END, updated_at = UTC_TIMESTAMP()
+    WHERE tenant_id = ? AND catalog_item_id = ?
+  `).run(mediaId, numericTenantId, itemId);
+  return listMedia(numericTenantId, itemId);
+}
+
 function deleteMedia(tenantId = 1, mediaId) {
   const numericTenantId = Number(tenantId) || 1;
   db.prepare(`
-    DELETE FROM catalog_item_media WHERE tenant_id = ? AND id = ?
+    UPDATE catalog_item_media
+    SET delete_status = 1, active_status = 0, deleted_at = UTC_TIMESTAMP()
+    WHERE tenant_id = ? AND id = ?
   `).run(numericTenantId, mediaId);
   return { success: true, id: mediaId };
 }
@@ -423,7 +565,7 @@ async function getOrUploadMetaMediaId(tenantId = 1, mediaId, phoneNumberId = nul
   const numericTenantId = Number(tenantId) || 1;
   const media = db.prepare(`
     SELECT * FROM catalog_item_media
-    WHERE tenant_id = ? AND id = ?
+    WHERE tenant_id = ? AND id = ? AND delete_status = 0
   `).get(numericTenantId, mediaId);
 
   if (!media) return null;
@@ -476,7 +618,9 @@ async function getOrUploadMetaMediaId(tenantId = 1, mediaId, phoneNumberId = nul
 function listAddonGroups(tenantId = 1, filter = {}) {
   const numericTenantId = Number(tenantId) || 1;
   let sql = `
-    SELECT g.* FROM catalog_addon_groups g
+    SELECT g.*, mc.name as master_category_name
+    FROM catalog_addon_groups g
+    LEFT JOIN master_categories mc ON mc.id = g.master_category_id AND mc.delete_status = 0
     WHERE g.tenant_id = ? AND g.delete_status = 0
   `;
   const params = [numericTenantId];
@@ -484,6 +628,10 @@ function listAddonGroups(tenantId = 1, filter = {}) {
   if (filter.itemId) {
     sql += " AND (g.catalog_item_id = ? OR g.catalog_item_id IS NULL)";
     params.push(filter.itemId);
+  }
+  if (filter.masterCategoryId) {
+    sql += " AND (g.master_category_id = ? OR g.master_category_id IS NULL)";
+    params.push(filter.masterCategoryId);
   }
   if (filter.entityId) {
     sql += " AND (g.entity_id = ? OR g.entity_id IS NULL)";
@@ -495,12 +643,50 @@ function listAddonGroups(tenantId = 1, filter = {}) {
 
   for (const g of groups) {
     g.addons = db.prepare(`
-      SELECT * FROM catalog_addons
-      WHERE group_id = ? AND delete_status = 0 AND active_status = 1
-      ORDER BY sort_order ASC, id ASC
+      SELECT a.*, mt.tax_rate as master_tax_rate, mt.slab_code as master_slab_code
+      FROM catalog_addons a
+      LEFT JOIN master_tax_slabs mt ON mt.id = a.master_tax_slab_id AND mt.delete_status = 0
+      WHERE a.group_id = ? AND a.delete_status = 0 AND a.active_status = 1
+      ORDER BY a.sort_order ASC, a.id ASC
     `).all(g.id);
   }
 
+  return groups;
+}
+
+function getApplicableAddons(tenantId = 1, itemId = null, masterCategoryId = null) {
+  const numericTenantId = Number(tenantId) || 1;
+  let sql = `
+    SELECT g.*, mc.name as master_category_name
+    FROM catalog_addon_groups g
+    LEFT JOIN master_categories mc ON mc.id = g.master_category_id AND mc.delete_status = 0
+    WHERE g.tenant_id = ? AND g.delete_status = 0 AND g.active_status = 1
+  `;
+  const params = [numericTenantId];
+
+  const orConditions = [];
+  if (itemId) {
+    orConditions.push("g.catalog_item_id = ?");
+    params.push(itemId);
+  }
+  if (masterCategoryId) {
+    orConditions.push("g.master_category_id = ?");
+    params.push(masterCategoryId);
+  }
+  orConditions.push("(g.catalog_item_id IS NULL AND g.master_category_id IS NULL)");
+
+  sql += ` AND (${orConditions.join(" OR ")}) ORDER BY g.sort_order ASC, g.id ASC`;
+
+  const groups = db.prepare(sql).all(...params);
+  for (const group of groups) {
+    group.addons = db.prepare(`
+      SELECT a.*, mt.tax_rate as master_tax_rate, mt.slab_code as master_slab_code
+      FROM catalog_addons a
+      LEFT JOIN master_tax_slabs mt ON mt.id = a.master_tax_slab_id AND mt.delete_status = 0
+      WHERE a.group_id = ? AND a.delete_status = 0 AND a.active_status = 1 AND a.is_available = 1
+      ORDER BY a.sort_order ASC, a.id ASC
+    `).all(group.id);
+  }
   return groups;
 }
 
@@ -513,11 +699,11 @@ function createAddonGroup(tenantId = 1, data = {}, userId = "system") {
   const sortOrder = Number(data.sort_order ?? data.display_order ?? 0) || 0;
   const stmt = db.prepare(`
     INSERT INTO catalog_addon_groups (
-      tenant_id, entity_id, catalog_item_id, name, title, code, description,
+      tenant_id, entity_id, catalog_item_id, master_category_id, name, title, code, description,
       selection_type, min_select, max_select, is_required, sort_order, display_order,
       active_status, delete_status, created_by, updated_by, created_at, updated_at
     ) VALUES (
-      ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, ?,
       1, 0, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP()
     )
@@ -527,6 +713,7 @@ function createAddonGroup(tenantId = 1, data = {}, userId = "system") {
     numericTenantId,
     data.entity_id || null,
     data.catalog_item_id || null,
+    data.master_category_id || null,
     groupTitle,
     groupTitle,
     code,
@@ -549,6 +736,7 @@ function createAddonGroup(tenantId = 1, data = {}, userId = "system") {
     }
   }
 
+  masterCacheService.invalidateTenantMasters(numericTenantId);
   return listAddonGroups(numericTenantId).find(g => g.id === groupId);
 }
 
@@ -557,7 +745,7 @@ function updateAddonGroup(tenantId = 1, id, data = {}, userId = "system") {
   const updates = [];
   const params = [];
 
-  const allowed = ["title", "code", "description", "selection_type", "min_select", "max_select", "is_required", "sort_order", "active_status"];
+  const allowed = ["title", "name", "code", "description", "selection_type", "min_select", "max_select", "is_required", "sort_order", "active_status", "master_category_id", "catalog_item_id"];
   for (const f of allowed) {
     if (data[f] !== undefined) {
       updates.push(`${f} = ?`);
@@ -571,6 +759,7 @@ function updateAddonGroup(tenantId = 1, id, data = {}, userId = "system") {
     db.prepare(`UPDATE catalog_addon_groups SET ${updates.join(", ")} WHERE tenant_id = ? AND id = ?`).run(...params);
   }
 
+  masterCacheService.invalidateTenantMasters(numericTenantId);
   return listAddonGroups(numericTenantId).find(g => g.id === Number(id));
 }
 
@@ -581,21 +770,31 @@ function deleteAddonGroup(tenantId = 1, id, userId = "system") {
     SET delete_status = 1, active_status = 0, deleted_at = UTC_TIMESTAMP(), deleted_by = ?
     WHERE tenant_id = ? AND id = ?
   `).run(userId, numericTenantId, id);
+
+  masterCacheService.invalidateTenantMasters(numericTenantId);
   return { success: true, id };
 }
 
-function createAddon(tenantId = 1, groupId, data = {}, userId = "system") {
+function createAddon(tenantId = 1, groupIdOrData, data = {}, userId = "system") {
   const numericTenantId = Number(tenantId) || 1;
-  if (!data.name) throw new Error("Add-on name is required.");
+  let groupId = groupIdOrData;
+  let payload = data;
+  let author = userId;
+  if (typeof groupIdOrData === "object" && groupIdOrData !== null) {
+    payload = groupIdOrData;
+    groupId = payload.group_id || payload.groupId;
+    author = typeof data === "string" ? data : "system";
+  }
+  if (!payload.name) throw new Error("Add-on name is required.");
 
-  const sortOrder = Number(data.sort_order ?? data.display_order ?? 0) || 0;
+  const sortOrder = Number(payload.sort_order ?? payload.display_order ?? 0) || 0;
   const stmt = db.prepare(`
     INSERT INTO catalog_addons (
-      tenant_id, group_id, name, description, price_mode, price,
+      tenant_id, group_id, master_tax_slab_id, name, description, price_mode, price,
       is_default, max_quantity, gst_percent, sort_order, display_order, active_status, delete_status,
       created_by, updated_by, created_at, updated_at
     ) VALUES (
-      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, 1, 0,
       ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP()
     )
@@ -604,19 +803,21 @@ function createAddon(tenantId = 1, groupId, data = {}, userId = "system") {
   const info = stmt.run(
     numericTenantId,
     groupId,
-    String(data.name).trim(),
-    data.description || null,
-    data.price_mode || "FIXED", // FIXED | PER_UNIT | PER_NIGHT_OR_SLOT | PERCENTAGE
-    Number(data.price) >= 0 ? Number(data.price) : 0,
-    data.is_default ? 1 : 0,
-    Number(data.max_quantity) || 1,
-    Number(data.gst_percent) >= 0 ? Number(data.gst_percent) : 0,
+    payload.master_tax_slab_id || null,
+    String(payload.name).trim(),
+    payload.description || null,
+    payload.price_mode || "FIXED", // FIXED | PER_UNIT | PER_NIGHT_OR_SLOT | PERCENTAGE
+    Number(payload.price) >= 0 ? Number(payload.price) : 0,
+    payload.is_default ? 1 : 0,
+    Number(payload.max_quantity) || 1,
+    Number(payload.gst_percent) >= 0 ? Number(payload.gst_percent) : 0,
     sortOrder,
     sortOrder,
-    userId,
-    userId
+    author,
+    author
   );
 
+  masterCacheService.invalidateTenantMasters(numericTenantId);
   return db.prepare("SELECT * FROM catalog_addons WHERE id = ?").get(info.lastInsertRowid);
 }
 
@@ -625,7 +826,7 @@ function updateAddon(tenantId = 1, id, data = {}, userId = "system") {
   const updates = [];
   const params = [];
 
-  const allowed = ["name", "description", "price_mode", "price", "is_default", "max_quantity", "gst_percent", "sort_order", "active_status"];
+  const allowed = ["name", "description", "price_mode", "price", "is_default", "max_quantity", "gst_percent", "sort_order", "active_status", "master_tax_slab_id"];
   for (const f of allowed) {
     if (data[f] !== undefined) {
       updates.push(`${f} = ?`);
@@ -639,6 +840,7 @@ function updateAddon(tenantId = 1, id, data = {}, userId = "system") {
     db.prepare(`UPDATE catalog_addons SET ${updates.join(", ")} WHERE tenant_id = ? AND id = ?`).run(...params);
   }
 
+  masterCacheService.invalidateTenantMasters(numericTenantId);
   return db.prepare("SELECT * FROM catalog_addons WHERE id = ?").get(id);
 }
 
@@ -649,6 +851,8 @@ function deleteAddon(tenantId = 1, id, userId = "system") {
     SET delete_status = 1, active_status = 0, deleted_at = UTC_TIMESTAMP(), deleted_by = ?
     WHERE tenant_id = ? AND id = ?
   `).run(userId, numericTenantId, id);
+
+  masterCacheService.invalidateTenantMasters(numericTenantId);
   return { success: true, id };
 }
 
@@ -659,7 +863,9 @@ function deleteAddon(tenantId = 1, id, userId = "system") {
 function listPricingRules(tenantId = 1, filter = {}) {
   const numericTenantId = Number(tenantId) || 1;
   let sql = `
-    SELECT r.* FROM catalog_pricing_rules r
+    SELECT r.*, mc.name as master_category_name
+    FROM catalog_pricing_rules r
+    LEFT JOIN master_categories mc ON mc.id = r.master_category_id AND mc.delete_status = 0
     WHERE r.tenant_id = ? AND r.delete_status = 0
   `;
   const params = [numericTenantId];
@@ -667,6 +873,11 @@ function listPricingRules(tenantId = 1, filter = {}) {
   if (filter.itemId) {
     sql += " AND (r.catalog_item_id = ? OR r.catalog_item_id IS NULL)";
     params.push(filter.itemId);
+  }
+
+  if (filter.masterCategoryId) {
+    sql += " AND (r.master_category_id = ? OR r.master_category_id IS NULL)";
+    params.push(filter.masterCategoryId);
   }
 
   if (filter.ruleType) {
@@ -703,12 +914,12 @@ function createPricingRule(tenantId = 1, data = {}, userId = "system") {
 
   const stmt = db.prepare(`
     INSERT INTO catalog_pricing_rules (
-      tenant_id, entity_id, catalog_item_id, applies_to_item_id, rule_type, name, title,
+      tenant_id, entity_id, catalog_item_id, master_category_id, applies_to_item_id, rule_type, name, title,
       discount_mode, adjustment_type, discount_value, adjustment_value, criteria_json,
       start_date, date_from, end_date, date_to, promo_code, priority, is_active,
       active_status, delete_status, created_by, updated_by, created_at, updated_at
     ) VALUES (
-      ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?, ?, 1,
       1, 0, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP()
@@ -719,6 +930,7 @@ function createPricingRule(tenantId = 1, data = {}, userId = "system") {
     numericTenantId,
     data.entity_id || null,
     itemId,
+    data.master_category_id || null,
     itemId,
     data.rule_type || "PROMO_CODE", // BULK_TIER | WEEKEND_SURGE | SEASONAL | PROMO_CODE
     ruleTitle,
@@ -738,6 +950,7 @@ function createPricingRule(tenantId = 1, data = {}, userId = "system") {
     userId
   );
 
+  masterCacheService.invalidateTenantMasters(numericTenantId);
   return listPricingRules(numericTenantId).find(r => r.id === info.lastInsertRowid);
 }
 
@@ -747,8 +960,9 @@ function updatePricingRule(tenantId = 1, id, data = {}, userId = "system") {
   const params = [];
 
   const allowed = [
-    "title", "rule_type", "discount_mode", "discount_value",
-    "start_date", "end_date", "promo_code", "priority", "is_active"
+    "title", "name", "rule_type", "discount_mode", "discount_value",
+    "start_date", "end_date", "promo_code", "priority", "is_active",
+    "catalog_item_id", "master_category_id"
   ];
   for (const f of allowed) {
     if (data[f] !== undefined) {
@@ -768,6 +982,7 @@ function updatePricingRule(tenantId = 1, id, data = {}, userId = "system") {
     db.prepare(`UPDATE catalog_pricing_rules SET ${updates.join(", ")} WHERE tenant_id = ? AND id = ?`).run(...params);
   }
 
+  masterCacheService.invalidateTenantMasters(numericTenantId);
   return listPricingRules(numericTenantId).find(r => r.id === Number(id));
 }
 
@@ -778,6 +993,8 @@ function deletePricingRule(tenantId = 1, id, userId = "system") {
     SET delete_status = 1, active_status = 0, is_active = 0, deleted_at = UTC_TIMESTAMP(), deleted_by = ?
     WHERE tenant_id = ? AND id = ?
   `).run(userId, numericTenantId, id);
+
+  masterCacheService.invalidateTenantMasters(numericTenantId);
   return { success: true, id };
 }
 
@@ -1641,9 +1858,13 @@ module.exports = {
   searchCatalog,
   listMedia,
   addMedia,
+  reorderMedia,
+  setPrimaryMedia,
   deleteMedia,
   getOrUploadMetaMediaId,
+  getOrCacheMetaMediaId: getOrUploadMetaMediaId,
   listAddonGroups,
+  getApplicableAddons,
   createAddonGroup,
   updateAddonGroup,
   deleteAddonGroup,

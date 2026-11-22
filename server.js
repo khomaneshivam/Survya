@@ -323,6 +323,10 @@ app.use(["/api/v1/ai", "/api/ai"], aiAssistantRoutes);
 const masterRoutes = require("./src/routes/masterRoutes");
 app.use(["/api/v1/masters", "/api/masters"], masterRoutes);
 
+// 4h. Universal Catalog, Availability, Addons & Pricing Engine API (/api/v1/universal-catalog)
+const universalCatalogRoutes = require("./src/routes/universalCatalogRoutes");
+app.use(["/api/v1/universal-catalog", "/api/universal-catalog"], universalCatalogRoutes);
+
 // 5. API routes
 app.use("/api", apiRoutes);
 

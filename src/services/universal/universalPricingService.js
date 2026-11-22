@@ -1,9 +1,10 @@
 const { db } = require("../../config/database");
+const masterCacheService = require("../masters/masterCacheService");
 
 /**
  * Universal Multi-Sector Dynamic Pricing & Quotation Engine
  * Evaluates variants, bulk tiers, weekend/seasonal surges, promo codes,
- * add-ons by price mode, and GST itemization.
+ * add-ons by price mode, master tax slabs/units, and GST itemization.
  */
 
 function formatCurrency(amount, currency = "INR") {
@@ -12,6 +13,30 @@ function formatCurrency(amount, currency = "INR") {
     return `₹${num.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
   }
   return `${currency} ${num.toFixed(2)}`;
+}
+
+/**
+ * Helper to get master tax slab details with cache
+ */
+function getMasterTaxSlab(tenantId, slabId) {
+  if (!slabId) return null;
+  const cached = masterCacheService.get(tenantId, "master_tax_slabs");
+  if (cached?.byId && cached.byId[slabId]) {
+    return cached.byId[slabId];
+  }
+  return db.prepare("SELECT * FROM master_tax_slabs WHERE tenant_id = ? AND id = ? AND delete_status = 0").get(tenantId, slabId);
+}
+
+/**
+ * Helper to get master unit details with cache
+ */
+function getMasterUnit(tenantId, unitId) {
+  if (!unitId) return null;
+  const cached = masterCacheService.get(tenantId, "master_units");
+  if (cached?.byId && cached.byId[unitId]) {
+    return cached.byId[unitId];
+  }
+  return db.prepare("SELECT * FROM master_units WHERE tenant_id = ? AND id = ? AND delete_status = 0").get(tenantId, unitId);
 }
 
 /**
@@ -46,7 +71,13 @@ function calculateCartQuote(tenantId = 1, options = {}) {
 
   for (const raw of rawItems) {
     const item = db.prepare(`
-      SELECT * FROM catalog_items WHERE tenant_id = ? AND id = ? AND delete_status = 0
+      SELECT i.*, mc.name as master_category_name, mu.name as master_unit_name, mu.unit_symbol as master_unit_symbol,
+             mt.tax_rate as master_tax_rate, mt.cgst_rate, mt.sgst_rate, mt.igst_rate
+      FROM catalog_items i
+      LEFT JOIN master_categories mc ON mc.id = i.master_category_id AND mc.delete_status = 0
+      LEFT JOIN master_units mu ON mu.id = i.master_unit_id AND mu.delete_status = 0
+      LEFT JOIN master_tax_slabs mt ON mt.id = i.master_tax_slab_id AND mt.delete_status = 0
+      WHERE i.tenant_id = ? AND i.id = ? AND i.delete_status = 0
     `).get(numericTenantId, raw.itemId);
 
     if (!item) continue;
@@ -72,12 +103,13 @@ function calculateCartQuote(tenantId = 1, options = {}) {
     const lineNights = item.inventory_mode === "DATE_RANGE" ? nights : 1;
     let lineRawSubtotal = unitBasePrice * qty * lineNights;
 
-    // Apply item-specific dynamic rules (e.g. bulk tier or surge)
+    // Apply item-specific dynamic rules (bulk tier, weekend surge, seasonal)
     let itemDiscountAmount = 0;
     let ruleAppliedTitle = null;
 
     for (const rule of activeRules) {
       if (rule.catalog_item_id && rule.catalog_item_id !== item.id) continue;
+      if (rule.master_category_id && rule.master_category_id !== item.master_category_id) continue;
 
       let criteria = {};
       try {
@@ -105,18 +137,35 @@ function calculateCartQuote(tenantId = 1, options = {}) {
         const dayName = new Date(checkDate).toLocaleDateString("en-US", { weekday: "long" }).toUpperCase();
         const targetDays = Array.isArray(criteria.days) ? criteria.days.map(d => String(d).toUpperCase()) : ["FRIDAY", "SATURDAY", "SUNDAY"];
         if (targetDays.includes(dayName)) {
-          // Surge value can be negative discount (e.g. -15 means +15% surge)
           const factor = Number(rule.discount_value);
           const surgeAmount = (lineRawSubtotal * factor) / 100;
           lineRawSubtotal -= surgeAmount; // If factor is -15, minus -15 adds 15%
           ruleAppliedTitle = rule.title;
         }
       }
+
+      // Seasonal rule check
+      if (rule.rule_type === "SEASONAL") {
+        const checkDateStr = (options.date || options.checkIn || new Date().toISOString()).split("T")[0];
+        const sDate = rule.start_date || rule.date_from;
+        const eDate = rule.end_date || rule.date_to;
+        if (sDate && eDate && checkDateStr >= sDate && checkDateStr <= eDate) {
+          const factor = Number(rule.discount_value);
+          if (rule.discount_mode === "PERCENTAGE") {
+            const disc = (lineRawSubtotal * factor) / 100;
+            itemDiscountAmount = Math.max(itemDiscountAmount, disc);
+            ruleAppliedTitle = rule.title;
+          }
+        }
+      }
     }
 
     const lineFinalSubtotal = Math.max(0, lineRawSubtotal - itemDiscountAmount);
-    const gstPercent = Number(item.gst_percent) || 0;
-    const lineGst = (lineFinalSubtotal * gstPercent) / 100;
+    const resolvedGstPercent = item.master_tax_rate !== null && item.master_tax_rate !== undefined
+      ? Number(item.master_tax_rate)
+      : (Number(item.gst_percent) || 0);
+
+    const lineGst = (lineFinalSubtotal * resolvedGstPercent) / 100;
 
     itemsSubtotal += lineFinalSubtotal;
     itemsGstTotal += lineGst;
@@ -127,9 +176,10 @@ function calculateCartQuote(tenantId = 1, options = {}) {
       variantSku: raw.variantSku || null,
       variantName,
       unitPrice: unitBasePrice,
+      unitSymbol: item.master_unit_symbol || null,
       quantity: qty,
       nights: lineNights,
-      gstPercent,
+      gstPercent: resolvedGstPercent,
       gstAmount: lineGst,
       ruleApplied: ruleAppliedTitle,
       ruleDiscountAmount: itemDiscountAmount,
@@ -144,9 +194,10 @@ function calculateCartQuote(tenantId = 1, options = {}) {
 
   for (const raw of rawAddons) {
     const addon = db.prepare(`
-      SELECT a.*, g.title as group_title
+      SELECT a.*, g.title as group_title, mt.tax_rate as master_tax_rate
       FROM catalog_addons a
       JOIN catalog_addon_groups g ON g.id = a.group_id
+      LEFT JOIN master_tax_slabs mt ON mt.id = a.master_tax_slab_id AND mt.delete_status = 0
       WHERE a.tenant_id = ? AND a.id = ? AND a.delete_status = 0 AND a.active_status = 1
     `).get(numericTenantId, raw.addonId);
 
@@ -160,7 +211,6 @@ function calculateCartQuote(tenantId = 1, options = {}) {
     if (addon.price_mode === "FIXED") {
       lineCost = addonPrice * qty;
     } else if (addon.price_mode === "PER_UNIT") {
-      // Multiply by total item quantity
       const totalItemQty = processedItems.reduce((acc, i) => acc + i.quantity, 0) || 1;
       lineCost = addonPrice * qty * totalItemQty;
     } else if (addon.price_mode === "PER_NIGHT_OR_SLOT") {
@@ -169,8 +219,11 @@ function calculateCartQuote(tenantId = 1, options = {}) {
       lineCost = (itemsSubtotal * addonPrice) / 100;
     }
 
-    const gstPercent = Number(addon.gst_percent) || 0;
-    const lineGst = (lineCost * gstPercent) / 100;
+    const resolvedGstPercent = addon.master_tax_rate !== null && addon.master_tax_rate !== undefined
+      ? Number(addon.master_tax_rate)
+      : (Number(addon.gst_percent) || 0);
+
+    const lineGst = (lineCost * resolvedGstPercent) / 100;
 
     addonsSubtotal += lineCost;
     addonsGstTotal += lineGst;
@@ -182,7 +235,7 @@ function calculateCartQuote(tenantId = 1, options = {}) {
       priceMode: addon.price_mode,
       price: addonPrice,
       quantity: qty,
-      gstPercent,
+      gstPercent: resolvedGstPercent,
       gstAmount: lineGst,
       lineSubtotal: lineCost
     });
@@ -219,6 +272,18 @@ function calculateCartQuote(tenantId = 1, options = {}) {
   const totalGst = itemsGstTotal + addonsGstTotal;
   const grandTotal = Math.round(netSubtotal + totalGst);
 
+  // 5. Deposit calculation (if requested or configured)
+  let depositDueNow = null;
+  let balanceDueLater = null;
+  if (options.depositPercent !== undefined && options.depositPercent !== null && Number(options.depositPercent) > 0) {
+    const pct = Math.min(100, Math.max(1, Number(options.depositPercent)));
+    depositDueNow = Math.round((grandTotal * pct) / 100);
+    balanceDueLater = Math.max(0, grandTotal - depositDueNow);
+  } else if (options.depositAmount !== undefined && options.depositAmount !== null && Number(options.depositAmount) > 0) {
+    depositDueNow = Math.min(grandTotal, Math.round(Number(options.depositAmount)));
+    balanceDueLater = Math.max(0, grandTotal - depositDueNow);
+  }
+
   return {
     items: processedItems,
     addOns: processedAddons,
@@ -230,6 +295,8 @@ function calculateCartQuote(tenantId = 1, options = {}) {
     netSubtotal,
     totalGst,
     grandTotal,
+    depositDueNow,
+    balanceDueLater,
     nights: options.checkIn && options.checkOut ? nights : null,
     currency: options.currency || "INR",
     receiptText: formatWhatsAppReceipt({
@@ -240,6 +307,8 @@ function calculateCartQuote(tenantId = 1, options = {}) {
       netSubtotal,
       totalGst,
       grandTotal,
+      depositDueNow,
+      balanceDueLater,
       currency: options.currency || "INR"
     })
   };
@@ -255,7 +324,8 @@ function formatWhatsAppReceipt(quote = {}) {
 
   // Items
   for (const item of (quote.items || [])) {
-    const qtyStr = item.quantity > 1 ? ` (x${item.quantity})` : "";
+    const unitStr = item.unitSymbol ? ` ${item.unitSymbol}` : "";
+    const qtyStr = item.quantity > 1 ? ` (x${item.quantity}${unitStr})` : (item.unitSymbol ? ` (1 ${item.unitSymbol})` : "");
     const nightStr = item.nights > 1 ? ` for ${item.nights} nights` : "";
     const variantStr = item.variantName ? ` [${item.variantName}]` : "";
     lines.push(`• *${item.title}*${variantStr}${qtyStr}${nightStr}: ${formatCurrency(item.lineSubtotal, cur)}`);
@@ -279,10 +349,17 @@ function formatWhatsAppReceipt(quote = {}) {
   lines.push(`Taxes & GST: ${formatCurrency(quote.totalGst, cur)}`);
   lines.push(`*Grand Total: ${formatCurrency(quote.grandTotal, cur)}*`);
 
+  if (quote.depositDueNow !== null && quote.depositDueNow !== undefined) {
+    lines.push("────────────────────");
+    lines.push(`⚡ *Deposit Due Now: ${formatCurrency(quote.depositDueNow, cur)}*`);
+    lines.push(`Remaining Balance (At Check-in/Delivery): ${formatCurrency(quote.balanceDueLater, cur)}`);
+  }
+
   return lines.join("\n");
 }
 
 module.exports = {
+  calculateQuote: calculateCartQuote,
   calculateCartQuote,
   formatWhatsAppReceipt,
   formatCurrency

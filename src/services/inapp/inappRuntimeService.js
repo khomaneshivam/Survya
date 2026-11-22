@@ -475,6 +475,24 @@ function getCatalogItems(slug, query = {}) {
       }
     }
 
+    // Also include media from catalog_item_media if available
+    try {
+      const dbMedia = db.prepare(`
+        SELECT media_url, caption, is_primary FROM catalog_item_media
+        WHERE catalog_item_id = ? AND delete_status = 0
+        ORDER BY is_primary DESC, sort_order ASC, id ASC
+      `).all(item.id);
+      for (const m of dbMedia) {
+        if (m.media_url && !images.some(ex => ex.url === m.media_url)) {
+          images.push({
+            url: m.media_url,
+            caption: m.caption || item.title,
+            isPrimary: m.is_primary === 1
+          });
+        }
+      }
+    } catch (_) {}
+
     const variants = getVariantsStmt.all(item.id);
 
     return {

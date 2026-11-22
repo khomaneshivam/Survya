@@ -16,11 +16,15 @@ router.get("/v1/universal/items/:id", authenticateToken, universalCatalogControl
 router.put("/v1/universal/items/:id", authenticateToken, universalCatalogController.updateItem);
 router.delete("/v1/universal/items/:id", authenticateToken, universalCatalogController.deleteItem);
 router.post("/v1/universal/items/:id/media", authenticateToken, universalCatalogController.addMedia);
+router.put("/v1/universal/items/:id/media/reorder", authenticateToken, universalCatalogController.reorderMedia);
+router.put("/v1/universal/items/:id/media/:mediaId/primary", authenticateToken, universalCatalogController.setPrimaryMedia);
+router.post("/v1/universal/media/:mediaId/meta-cache", authenticateToken, universalCatalogController.getOrCacheMetaMediaId);
 router.delete("/v1/universal/media/:mediaId", authenticateToken, universalCatalogController.deleteMedia);
 router.get("/v1/universal/search", authenticateToken, universalCatalogController.searchCatalog);
 
 // Add-On Groups & Add-Ons
 router.get("/v1/universal/addon-groups", authenticateToken, universalCatalogController.listAddonGroups);
+router.get("/v1/universal/applicable-addons", authenticateToken, universalCatalogController.getApplicableAddons);
 router.post("/v1/universal/addon-groups", authenticateToken, universalCatalogController.createAddonGroup);
 router.put("/v1/universal/addon-groups/:id", authenticateToken, universalCatalogController.updateAddonGroup);
 router.delete("/v1/universal/addon-groups/:id", authenticateToken, universalCatalogController.deleteAddonGroup);
@@ -36,13 +40,17 @@ router.delete("/v1/universal/pricing-rules/:id", authenticateToken, universalCat
 
 // Availability, Slots & Atomic Inventory Holds
 router.get("/v1/universal/availability/check", authenticateToken, universalCatalogController.checkAvailability);
+router.get("/v1/universal/availability/slots", authenticateToken, universalCatalogController.listAvailabilitySlots);
 router.post("/v1/universal/availability/slots", authenticateToken, universalCatalogController.createAvailabilitySlot);
+router.post("/v1/universal/availability/slots/generate", authenticateToken, universalCatalogController.generateAvailabilitySlots);
 router.post("/v1/universal/holds", authenticateToken, universalCatalogController.createHold);
 router.post("/v1/universal/holds/:token/confirm", authenticateToken, universalCatalogController.confirmHold);
 router.post("/v1/universal/holds/:token/release", authenticateToken, universalCatalogController.releaseHold);
 
 // Dynamic Quotation Engine
 router.post("/v1/universal/pricing/quote", authenticateToken, universalCatalogController.calculateQuote);
+router.post("/quote", optionalAuth, universalCatalogController.calculateQuote);
+router.get("/catalog/search", optionalAuth, universalCatalogController.searchCatalog);
 
 // 8 Industry Blueprints 1-Click Seeder
 router.get("/v1/universal/blueprints", authenticateToken, universalCatalogController.listBlueprints);
