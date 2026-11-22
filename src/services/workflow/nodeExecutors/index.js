@@ -46,6 +46,7 @@ const EXECUTORS = {
 
   // Intake
   COLLECT_INPUT: intakeExecutor,
+  SCHEMA_INPUT: intakeExecutor,
   INPUT_COLLECTION: intakeExecutor,
   QUESTION: intakeExecutor,
 

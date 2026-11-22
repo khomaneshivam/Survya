@@ -519,6 +519,7 @@ class WebhookService {
 
     let processedMessages = 0;
     let processedStatuses = 0;
+    const processingFailures = [];
 
     for (const entry of entries) {
       const changes = Array.isArray(entry.changes) ? entry.changes : [];
@@ -570,6 +571,7 @@ class WebhookService {
               }
             } catch (err) {
               console.error("[Webhook] Error saving customer reply:", err);
+              processingFailures.push(err);
             }
           }
         }
@@ -585,10 +587,17 @@ class WebhookService {
               }
             } catch (err) {
               console.error("[Webhook] Error processing delivery status:", err);
+              processingFailures.push(err);
             }
           }
         }
       }
+    }
+
+    if (processingFailures.length > 0) {
+      // The durable webhook job must retry unprocessed items rather than
+      // silently mark a partially failed batch as successful.
+      throw new AggregateError(processingFailures, "Some webhook events were not processed");
     }
 
     return {

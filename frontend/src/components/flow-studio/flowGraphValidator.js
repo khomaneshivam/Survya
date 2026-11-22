@@ -132,7 +132,7 @@ export function validateFlowGraph(nodes = [], transitions = []) {
     }
 
     // Collect Input
-    if (type === 'COLLECT_INPUT' || type === 'INPUT_COLLECTION' || type === 'QUESTION') {
+    if (type === 'COLLECT_INPUT' || type === 'INPUT_COLLECTION' || type === 'QUESTION' || type === 'SCHEMA_INPUT') {
       const variableName = config.saveAs || config.variable;
       if (!variableName || !String(variableName).trim()) {
         errors.push({
@@ -147,6 +147,23 @@ export function validateFlowGraph(nodes = [], transitions = []) {
           severity: 'warning',
           message: `Data Intake step '${node.title || node.id}' has an empty question prompt.`
         });
+      }
+    }
+
+    // Configurable input fields are validated again by the backend on publish.
+    if (type === 'SCHEMA_INPUT') {
+      if (!/^[A-Za-z_][A-Za-z0-9_.]{0,63}$/.test(config.saveAs || '') ||
+          String(config.saveAs || '').split('.').some(v => ['__proto__', 'constructor', 'prototype'].includes(v))) {
+        errors.push({ nodeId: node.id, severity: 'error', message: 'Choose a safe variable name.' });
+      }
+      if (!String(config.prompt || '').trim() || String(config.prompt).length > 1024) {
+        errors.push({ nodeId: node.id, severity: 'error', message: 'Question text must be between 1 and 1024 characters.' });
+      }
+      if (!['TEXT', 'EMAIL', 'PHONE', 'NUMBER', 'DATE'].includes(String(config.inputType || '').toUpperCase())) {
+        errors.push({ nodeId: node.id, severity: 'error', message: 'Answer type is not supported.' });
+      }
+      if (!Number.isInteger(Number(config.maxRetries)) || Number(config.maxRetries) < 1 || Number(config.maxRetries) > 10) {
+        errors.push({ nodeId: node.id, severity: 'error', message: 'Retry count must be between 1 and 10.' });
       }
     }
 

@@ -82,40 +82,38 @@ function handleVerification(req, res) {
  * Handles Meta Webhook Event Notification (POST /webhook or POST /api/webhook)
  */
 function handleIncomingEvent(req, res) {
-  // 1. Verify Meta signature before accepting or processing
-  const isValidSig = verifyMetaSignature(req);
-  if (!isValidSig) {
-    console.warn("[Webhook Security] Rejected incoming webhook with invalid or missing X-Hub-Signature-256.");
+  if (!verifyMetaSignature(req)) {
     return res.status(403).json({ success: false, message: "Forbidden: Invalid webhook signature." });
   }
 
-  // 2. Acknowledge immediately to Meta with 200 OK
-  res.status(200).send("EVENT_RECEIVED");
-
-  // 3. Durably log & asynchronously process payload without exposing PII in console
-  const payload = req.body;
-  const entriesCount = Array.isArray(payload?.entry) ? payload.entry.length : 0;
-  console.log(`[Webhook] Processing incoming Meta notification (entries: ${entriesCount})`);
-
-  // Durable event recording for auditing and recovery
+  // Acknowledge to Meta only after committing the payload to the durable queue.
+  // The content digest makes retries idempotent, unlike Meta's static WABA entry ID.
   try {
-    const eventId = payload?.entry?.[0]?.id || `evt_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
-    db.prepare(`
-      INSERT OR IGNORE INTO incoming_webhook_events (event_id, event_type, status, created_at)
-      VALUES (?, 'META_NOTIFICATION', 'PROCESSING', CURRENT_TIMESTAMP)
-    `).run(eventId);
-  } catch (e) {}
+    const payload = req.body;
+    if (!payload || typeof payload !== 'object') {
+      return res.status(400).json({ success: false, message: "Invalid webhook payload." });
+    }
 
-  webhookService
-    .processIncomingPayload(payload)
-    .then(result => {
-      if (result.processed > 0) {
-        console.log(`[WebhookController] Processed ${result.messages} customer reply(ies), ${result.statuses} delivery status update(s).`);
-      }
-    })
-    .catch(err => {
-      console.error("[WebhookController] Error processing payload:", err.message);
+    const rawBody = req.rawBody || Buffer.from(JSON.stringify(payload));
+    const digest = crypto.createHash('sha256').update(rawBody).digest('hex');
+    const { enqueueJob } = require("../services/queue/jobQueueService");
+    const queued = enqueueJob({
+      tenantId: 0, // System-scoped ingress; individual messages resolve their tenant on processing.
+      queueName: "webhook",
+      jobType: "META_WEBHOOK_INGEST",
+      idempotencyKey: `meta_ingest_${digest}`,
+      payload,
+      priority: 10,
+      maxAttempts: 7
     });
+
+    if (!queued?.success) throw new Error("Webhook event could not be durably queued");
+    return res.status(200).send("EVENT_RECEIVED");
+  } catch (error) {
+    console.error("[Webhook] Durable enqueue failed:", error.message);
+    // A 5xx instructs Meta to retry rather than losing a just-acknowledged event.
+    return res.status(503).json({ success: false, message: "Temporary webhook ingestion failure." });
+  }
 }
 
 /**

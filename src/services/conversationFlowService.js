@@ -182,9 +182,25 @@ function validateFlowGraph(nodes, transitions, variables = {}) {
       }
     }
 
-    if (n.type === "INPUT_COLLECTION" || n.type === "QUESTION" || n.type === "COLLECT_INPUT") {
+    if (n.type === "INPUT_COLLECTION" || n.type === "QUESTION" || n.type === "COLLECT_INPUT" || n.type === "SCHEMA_INPUT") {
       if (!cfg.variable && !cfg.saveAs) {
         warnings.push(`Input Collection node '${n.id}' does not specify a target variable. User input will not be stored.`);
+      }
+      if (n.type === "SCHEMA_INPUT") {
+        const name = String(cfg.saveAs || "").trim();
+        if (!/^[A-Za-z_][A-Za-z0-9_.]{0,63}$/.test(name)
+            || name.split(".").some(part => ["__proto__", "constructor", "prototype"].includes(part))) {
+          errors.push(`Configurable input '${n.id}' requires a safe variable name.`);
+        }
+        if (!String(cfg.prompt || "").trim() || String(cfg.prompt).length > 1024) {
+          errors.push(`Configurable input '${n.id}' requires a question of at most 1024 characters.`);
+        }
+        if (!["TEXT", "EMAIL", "PHONE", "NUMBER", "DATE"].includes(String(cfg.inputType || "").toUpperCase())) {
+          errors.push(`Configurable input '${n.id}' specifies an unsupported answer type.`);
+        }
+        if (!Number.isInteger(Number(cfg.maxRetries)) || Number(cfg.maxRetries) < 1 || Number(cfg.maxRetries) > 10) {
+          errors.push(`Configurable input '${n.id}' must allow between 1 and 10 retries.`);
+        }
       }
     }
   });
