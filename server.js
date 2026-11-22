@@ -327,6 +327,10 @@ app.use(["/api/v1/masters", "/api/masters"], masterRoutes);
 const universalCatalogRoutes = require("./src/routes/universalCatalogRoutes");
 app.use(["/api/v1/universal-catalog", "/api/universal-catalog"], universalCatalogRoutes);
 
+// 4i. Universal Multi-Flow Hub & Studio API (/api/v1/flows)
+const conversationFlowRoutes = require("./src/routes/conversationFlowRoutes");
+app.use(["/api/v1/flows", "/v1/flows"], conversationFlowRoutes);
+
 // 5. API routes
 app.use("/api", apiRoutes);
 

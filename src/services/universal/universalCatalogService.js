@@ -178,15 +178,15 @@ function createItem(tenantId = 1, data = {}, userId = "system") {
     finalSlug = `${baseSlug}-${counter++}`;
   }
 
-  const inventoryMode = data.inventory_mode || "UNIT_STOCK"; // UNIT_STOCK | DATE_RANGE | TIME_SLOT | QUOTE_SERVICE
-  const basePrice = Number(data.base_price) >= 0 ? Number(data.base_price) : 0;
-  const compareAtPrice = Number(data.compare_at_price) > 0 ? Number(data.compare_at_price) : null;
-  const gstPercent = Number(data.gst_percent) >= 0 ? Number(data.gst_percent) : 0;
-  const stockQty = Number(data.stock_qty) >= 0 ? Number(data.stock_qty) : 0;
-  const trackInventory = data.track_inventory === undefined ? 1 : (data.track_inventory ? 1 : 0);
-  const allowRateDiscussion = data.allow_rate_discussion ? 1 : 0;
-  const autoApproveMinPrice = Number(data.auto_approve_min_price) > 0 ? Number(data.auto_approve_min_price) : null;
-  const hardFloorPrice = Number(data.hard_floor_price) > 0 ? Number(data.hard_floor_price) : null;
+  const inventoryMode = data.inventory_mode || data.inventoryMode || "UNIT_STOCK"; // UNIT_STOCK | DATE_RANGE | TIME_SLOT | QUOTE_SERVICE
+  const basePrice = data.base_price !== undefined ? Number(data.base_price) : (data.basePrice !== undefined ? Number(data.basePrice) : 0);
+  const compareAtPrice = Number(data.compare_at_price || data.compareAtPrice) > 0 ? Number(data.compare_at_price || data.compareAtPrice) : null;
+  const gstPercent = data.gst_percent !== undefined ? Number(data.gst_percent) : (data.gstPercent !== undefined ? Number(data.gstPercent) : 0);
+  const stockQty = data.stock_qty !== undefined ? Number(data.stock_qty) : (data.stockQty !== undefined ? Number(data.stockQty) : 0);
+  const trackInventory = data.track_inventory !== undefined ? (data.track_inventory ? 1 : 0) : (data.trackInventory !== undefined ? (data.trackInventory ? 1 : 0) : 1);
+  const allowRateDiscussion = (data.allow_rate_discussion || data.allowRateDiscussion) ? 1 : 0;
+  const autoApproveMinPrice = Number(data.auto_approve_min_price || data.autoApproveMinPrice) > 0 ? Number(data.auto_approve_min_price || data.autoApproveMinPrice) : null;
+  const hardFloorPrice = Number(data.hard_floor_price || data.hardFloorPrice) > 0 ? Number(data.hard_floor_price || data.hardFloorPrice) : null;
 
   const variantsJson = JSON.stringify(data.variants || data.variants_json || []);
 
@@ -252,10 +252,10 @@ function createItem(tenantId = 1, data = {}, userId = "system") {
     autoApproveMinPrice,
     hardFloorPrice,
     variantsJson,
-    data.master_category_id || null,
-    data.master_unit_id || null,
-    data.master_tax_slab_id || null,
-    data.master_location_id || null,
+    data.master_category_id || data.masterCategoryId || null,
+    data.master_unit_id || data.masterUnitId || null,
+    data.master_tax_slab_id || data.masterTaxSlabId || null,
+    data.master_location_id || data.masterLocationId || null,
     Number(data.sort_order) || 0,
     userId,
     userId
@@ -400,9 +400,21 @@ function searchCatalog(tenantId = 1, params = {}) {
 
   const searchQuery = params.search || params.query;
   if (searchQuery && String(searchQuery).trim()) {
-    const q = `%${String(searchQuery).trim()}%`;
-    sql += " AND (i.title LIKE ? OR i.sku LIKE ? OR i.description LIKE ? OR i.category_name LIKE ? OR mc.name LIKE ?)";
-    sqlParams.push(q, q, q, q, q);
+    const rawQ = String(searchQuery).trim();
+    const q = `%${rawQ}%`;
+    const words = rawQ.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(w => w.length >= 4 && !["have", "want", "need", "like", "tell", "what", "where", "when", "does", "about", "show", "give", "available"].includes(w));
+    if (words.length > 0) {
+      const wordClauses = words.map(() => "(i.title LIKE ? OR i.sku LIKE ? OR i.description LIKE ?)");
+      sql += ` AND ((i.title LIKE ? OR i.sku LIKE ? OR i.description LIKE ? OR i.category_name LIKE ? OR mc.name LIKE ?) OR (${wordClauses.join(" OR ")}))`;
+      sqlParams.push(q, q, q, q, q);
+      for (const w of words) {
+        const wQ = `%${w}%`;
+        sqlParams.push(wQ, wQ, wQ);
+      }
+    } else {
+      sql += " AND (i.title LIKE ? OR i.sku LIKE ? OR i.description LIKE ? OR i.category_name LIKE ? OR mc.name LIKE ?)";
+      sqlParams.push(q, q, q, q, q);
+    }
   }
 
   if (params.category && String(params.category).trim()) {

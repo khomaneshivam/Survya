@@ -5,7 +5,7 @@ const universalAvailabilityService = require("../../universal/universalAvailabil
 /**
  * Universal Add-On Upsell & Quotation Node Executor (ADDON_UPSELL_AND_QUOTE)
  * Displays available add-ons/upgrades for the cart, applies promo codes,
- * and produces itemized GST quotation & receipt text.
+ * creates atomic 15-minute inventory hold, and produces itemized GST quotation & receipt text.
  */
 module.exports = {
   type: "ADDON_UPSELL_AND_QUOTE",
@@ -14,8 +14,8 @@ module.exports = {
     const { session = {}, userInput = "", userPayload = null, tenantId = 1, isWaitingForThisNode } = context;
     const cfg = { ...(node.config || {}), ...(node.data || {}) };
 
-    const selectedItemId = session.selectedItemId || cfg.defaultItemId || null;
-    const entityId = cfg.entityId || null;
+    const selectedItemId = session.selectedItemId || session.selected_item_id || cfg.defaultItemId || null;
+    const entityId = cfg.entityId || session.entityId || null;
     const allowPromoCode = cfg.allowPromoCode !== false;
 
     // Helper to acquire a 15-minute atomic inventory hold
@@ -34,6 +34,19 @@ module.exports = {
       }
     };
 
+    // Check inventory availability if item is tracked
+    if (selectedItemId) {
+      const item = universalCatalogService.getItemById(tenantId, selectedItemId);
+      if (item && item.track_inventory && (item.stock_qty - item.reserved_qty) <= 0 && item.is_sold_out) {
+        return {
+          action: "CONTINUE",
+          nextHandle: "unavailable",
+          replyMessages: ["We're sorry, this item is currently sold out or unavailable."],
+          traceNote: `Item #${selectedItemId} is out of stock. Routed to unavailable handle.`
+        };
+      }
+    }
+
     // Available add-on groups for this item/entity
     const addonGroups = universalCatalogService.listAddonGroups(tenantId, {
       itemId: selectedItemId,
@@ -46,6 +59,63 @@ module.exports = {
     if (isWaitingForThisNode) {
       const actionId = userPayload?.id || userInput;
       const cleanAction = String(actionId || "").trim();
+      const lowerAction = cleanAction.toLowerCase();
+
+      // Check confirm & pay
+      if (cleanAction === "confirm_pay" || cleanAction === "confirm_quote" || lowerAction === "confirm" || lowerAction === "pay" || lowerAction === "done") {
+        const quote = universalPricingService.calculateCartQuote(tenantId, {
+          items: selectedItemId ? [{ itemId: selectedItemId, quantity: session.quantity || 1 }] : [],
+          addOns: (session.selectedAddonIds || []).map(id => ({ addonId: id, quantity: 1 })),
+          promoCode: session.promoCode || null,
+          checkIn: session.check_in || session.checkIn,
+          checkOut: session.check_out || session.checkOut
+        });
+
+        const holdToken = acquireAtomicHold();
+
+        return {
+          action: "CONTINUE",
+          nextHandle: "confirmed",
+          replyMessages: [
+            "✅ *Order & Booking Confirmed!*\n\n" + quote.receiptText + "\n\n💳 Please proceed with payment or our team will connect with you."
+          ],
+          updatedData: {
+            confirmed: true,
+            quote,
+            holdToken: holdToken || session.holdToken,
+            cart: [{
+              itemId: selectedItemId,
+              variantId: session.selectedVariantId || null,
+              addonIds: session.selectedAddonIds || [],
+              qty: session.quantity || 1,
+              slotDate: session.slotDate || null,
+              checkIn: session.check_in || session.checkIn || null,
+              checkOut: session.check_out || session.checkOut || null
+            }]
+          },
+          traceNote: `Customer confirmed quote with grand total: ₹${quote.grandTotal}`
+        };
+      }
+
+      // Check add more items
+      if (cleanAction === "add_more" || lowerAction === "add more" || lowerAction === "browse" || lowerAction === "catalog") {
+        return {
+          action: "CONTINUE",
+          nextHandle: "add_more",
+          replyMessages: ["Great, let's explore more items from our catalog!"],
+          traceNote: "Customer chose to add more items."
+        };
+      }
+
+      // Check talk to desk / human handoff
+      if (cleanAction === "talk_desk" || cleanAction === "handoff" || lowerAction === "talk to desk" || lowerAction === "agent" || lowerAction === "human" || lowerAction === "help") {
+        return {
+          action: "CONTINUE",
+          nextHandle: "handoff",
+          replyMessages: ["Connecting you with our support team..."],
+          traceNote: "Customer requested desk handoff."
+        };
+      }
 
       // Check if user selected an add-on
       if (cleanAction.startsWith("addon_")) {
@@ -67,12 +137,20 @@ module.exports = {
 
         const holdToken = acquireAtomicHold();
 
+        // Present updated quote with 3 final action buttons
         return {
-          action: "CONTINUE",
-          nextHandle: "confirmed",
+          action: "WAIT_FOR_INPUT",
           replyMessages: [
-            "✅ *Add-On Added!*\n\n" + quote.receiptText
+            "✅ *Add-On Added!*\n\n" + quote.receiptText + "\n\nWould you like to confirm and pay, add another item, or talk to our desk?"
           ],
+          replyInteractive: {
+            type: "BUTTONS",
+            options: [
+              { id: "confirm_pay", title: "Confirm & Pay 💳" },
+              { id: "add_more", title: "Add More ➕" },
+              { id: "talk_desk", title: "Talk to Desk 💬" }
+            ]
+          },
           updatedData: {
             selectedAddonIds: currentAddonIds,
             holdToken: holdToken || session.holdToken,
@@ -82,8 +160,8 @@ module.exports = {
         };
       }
 
-      // Check skip / confirm
-      if (cleanAction === "skip_addons" || cleanAction === "confirm_quote" || cleanAction.toLowerCase() === "skip" || cleanAction.toLowerCase() === "done") {
+      // Check skip add-ons
+      if (cleanAction === "skip_addons" || lowerAction === "skip" || lowerAction === "no thanks") {
         const quote = universalPricingService.calculateCartQuote(tenantId, {
           items: selectedItemId ? [{ itemId: selectedItemId, quantity: session.quantity || 1 }] : [],
           addOns: (session.selectedAddonIds || []).map(id => ({ addonId: id, quantity: 1 })),
@@ -95,16 +173,23 @@ module.exports = {
         const holdToken = acquireAtomicHold();
 
         return {
-          action: "CONTINUE",
-          nextHandle: "confirmed",
+          action: "WAIT_FOR_INPUT",
           replyMessages: [
-            quote.receiptText
+            quote.receiptText + "\n\nWould you like to confirm and pay, add another item, or talk to our desk?"
           ],
+          replyInteractive: {
+            type: "BUTTONS",
+            options: [
+              { id: "confirm_pay", title: "Confirm & Pay 💳" },
+              { id: "add_more", title: "Add More ➕" },
+              { id: "talk_desk", title: "Talk to Desk 💬" }
+            ]
+          },
           updatedData: {
             quote,
             holdToken: holdToken || session.holdToken
           },
-          traceNote: `Customer confirmed quote with grand total: ₹${quote.grandTotal}`
+          traceNote: `Customer skipped add-ons. Presented final quote (₹${quote.grandTotal}).`
         };
       }
 
@@ -123,11 +208,18 @@ module.exports = {
           session.promoCode = promo;
           const holdToken = acquireAtomicHold();
           return {
-            action: "CONTINUE",
-            nextHandle: "confirmed",
+            action: "WAIT_FOR_INPUT",
             replyMessages: [
-              `🎉 Promo code *${promo}* applied successfully!\n\n` + quote.receiptText
+              `🎉 Promo code *${promo}* applied successfully!\n\n` + quote.receiptText + "\n\nWould you like to confirm and pay?"
             ],
+            replyInteractive: {
+              type: "BUTTONS",
+              options: [
+                { id: "confirm_pay", title: "Confirm & Pay 💳" },
+                { id: "add_more", title: "Add More ➕" },
+                { id: "talk_desk", title: "Talk to Desk 💬" }
+              ]
+            },
             updatedData: {
               promoCode: promo,
               quote,
@@ -150,23 +242,30 @@ module.exports = {
 
     const holdToken = acquireAtomicHold();
 
-    // If there are no add-ons configured, advance immediately
+    // If there are no add-ons configured, directly present quote with action buttons
     if (allAddons.length === 0) {
       return {
-        action: "CONTINUE",
-        nextHandle: "default",
+        action: "WAIT_FOR_INPUT",
         replyMessages: [
-          initialQuote.receiptText
+          initialQuote.receiptText + "\n\nWould you like to confirm and pay, add another item, or talk to our desk?"
         ],
+        replyInteractive: {
+          type: "BUTTONS",
+          options: [
+            { id: "confirm_pay", title: "Confirm & Pay 💳" },
+            { id: "add_more", title: "Add More ➕" },
+            { id: "talk_desk", title: "Talk to Desk 💬" }
+          ]
+        },
         updatedData: {
           quote: initialQuote,
           holdToken: holdToken || session.holdToken
         },
-        traceNote: "No add-on groups configured. Directly presented quote receipt."
+        traceNote: "No add-on groups configured. Presented quote receipt with action buttons."
       };
     }
 
-    // Build interactive options for add-ons
+    // Build interactive options for add-ons (up to 2-3 add-ons + Skip button)
     const buttons = [];
     for (let i = 0; i < Math.min(2, allAddons.length); i++) {
       const a = allAddons[i];
@@ -175,7 +274,7 @@ module.exports = {
         title: `+ ${a.name}`.substring(0, 20)
       });
     }
-    buttons.push({ id: "skip_addons", title: "No Thanks / Continue" });
+    buttons.push({ id: "skip_addons", title: "Skip / Continue" });
 
     const promptText = cfg.promptText || "✨ *Recommended Add-Ons & Upgrades*\n\nWould you like to enhance your booking with any of our signature extras?";
 

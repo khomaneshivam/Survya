@@ -250,6 +250,35 @@ function buildSystemCapabilitiesContext(tenantId = 1, propertyId = 1) {
       }
     },
     {
+      type: "CATALOG_BROWSER",
+      description: "Interactive catalog browsing with WhatsApp list/buttons, filters, and prices with master unit labels",
+      handles: ["item_selected", "selected", "empty", "default"],
+      configSchema: {
+        title: "Catalog title",
+        pageSize: 6,
+        categoryName: "string",
+        inventoryMode: "UNIT_STOCK | TIME_SLOT | DATE_RANGE | QUOTE_SERVICE"
+      }
+    },
+    {
+      type: "ADDON_UPSELL_AND_QUOTE",
+      description: "Presents signature add-on upsells, 15-min atomic inventory hold, dynamic GST quote calculation, and order/payment buttons",
+      handles: ["confirmed", "unavailable", "add_more", "handoff", "default"],
+      configSchema: {
+        title: "Add-on title",
+        allowAddons: true,
+        allowPromoCode: true
+      }
+    },
+    {
+      type: "AI_HYBRID_ASSIST",
+      description: "Answers free-text customer queries grounded in live masters & catalog without breaking active flow session",
+      handles: ["matched_item", "answered", "handoff", "default"],
+      configSchema: {
+        resumePrompt: "Prompt to continue active flow"
+      }
+    },
+    {
       type: "CATALOG_BOOKING",
       description: "Direct inventory lookup, quote calculation, and booking creation",
       handles: ["available", "unavailable"],

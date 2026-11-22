@@ -2,32 +2,58 @@
  * Workflow & Flow Runtime LRU Cache
  * Bounded O(1) in-memory cache for compiled flow graphs, trigger indices, and queries.
  * Prevents redundant JSON parsing, graph traversal, and SQL queries during high-concurrency turn processing.
+ * Enforces zero dependencies, JavaScript Map eviction ordering, and a 5-minute TTL.
  */
 
 class RuntimeLRUCache {
-  constructor(maxSize = 100) {
-    this.maxSize = maxSize;
+  constructor(maxSize = 100, defaultTtlMs = 5 * 60 * 1000) {
+    this.maxSize = Math.max(1, maxSize);
+    this.defaultTtlMs = defaultTtlMs;
     this.cache = new Map();
   }
 
   get(key) {
     if (!this.cache.has(key)) return null;
-    const value = this.cache.get(key);
+    const entry = this.cache.get(key);
+
+    // TTL expiration check
+    if (entry.expiresAt && Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return null;
+    }
+
     // Refresh position for LRU
     this.cache.delete(key);
-    this.cache.set(key, value);
-    return value;
+    this.cache.set(key, entry);
+    return entry.value;
   }
 
-  set(key, value) {
+  has(key) {
+    if (!this.cache.has(key)) return false;
+    const entry = this.cache.get(key);
+    if (entry.expiresAt && Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  set(key, value, customTtlMs = null) {
+    const ttl = customTtlMs !== null ? customTtlMs : this.defaultTtlMs;
+    const expiresAt = ttl > 0 ? Date.now() + ttl : null;
+
     if (this.cache.has(key)) {
       this.cache.delete(key);
     } else if (this.cache.size >= this.maxSize) {
-      // Evict oldest (first key in map)
+      // Evict oldest (first key in insertion-ordered Map)
       const oldestKey = this.cache.keys().next().value;
-      this.cache.delete(oldestKey);
+      if (oldestKey !== undefined) {
+        this.cache.delete(oldestKey);
+      }
     }
-    this.cache.set(key, value);
+
+    this.cache.set(key, { value, expiresAt });
+    return value;
   }
 
   delete(key) {
@@ -43,16 +69,17 @@ class RuntimeLRUCache {
   }
 }
 
-// Dedicated LRU caches
-const flowGraphCache = new RuntimeLRUCache(150);
-const triggerIndexCache = new RuntimeLRUCache(50);
-const catalogQueryCache = new RuntimeLRUCache(200);
+// Dedicated LRU caches (maxFlows = 200, maxTriggerIndices = 100, 5-minute TTL)
+const flowGraphCache = new RuntimeLRUCache(200, 5 * 60 * 1000);
+const triggerIndexCache = new RuntimeLRUCache(100, 5 * 60 * 1000);
+const catalogQueryCache = new RuntimeLRUCache(200, 3 * 60 * 1000);
 
 /**
  * Compiles a raw flow graph into O(1) lookup structures:
  * - nodeMap: Map<nodeId, node>
- * - adjacencyMap: Map<nodeId, Array<{ target, handle, optionId, condition }>>
- * - startNode: initial root trigger or start node
+ * - outgoingMap: Map<sourceId, Array<{ target, handle, optionId, condition }>>
+ * - adjacencyMap: alias of outgoingMap
+ * - startNodeId: ID of initial trigger / start node
  */
 function compileFlowGraph(flow) {
   if (!flow) return null;
@@ -73,12 +100,12 @@ function compileFlowGraph(flow) {
   }
 
   const nodeMap = new Map();
-  const adjacencyMap = new Map();
+  const outgoingMap = new Map();
   let startNode = null;
 
   for (const n of nodes) {
     nodeMap.set(n.id, n);
-    adjacencyMap.set(n.id, []);
+    outgoingMap.set(n.id, []);
     if (!startNode && (n.type.startsWith("TRIGGER_") || n.type === "START")) {
       startNode = n;
     }
@@ -87,8 +114,8 @@ function compileFlowGraph(flow) {
   for (const t of transitions) {
     const src = t.source || t.from;
     const tgt = t.target || t.to;
-    if (src && adjacencyMap.has(src)) {
-      adjacencyMap.get(src).push({
+    if (src && outgoingMap.has(src)) {
+      outgoingMap.get(src).push({
         id: t.id,
         target: tgt,
         sourceHandle: t.sourceHandle || (t.optionId ? String(t.optionId) : null) || (t.condition !== undefined ? String(t.condition) : "default"),
@@ -109,8 +136,10 @@ function compileFlowGraph(flow) {
     nodes,
     transitions,
     nodeMap,
-    adjacencyMap,
+    outgoingMap,
+    adjacencyMap: outgoingMap, // Backward compatibility alias
     startNode,
+    startNodeId: startNode ? startNode.id : (nodes[0]?.id || null),
     compiledAt: Date.now()
   };
 }
@@ -132,11 +161,111 @@ function getCompiledFlow(flow) {
 }
 
 /**
+ * Compiles a list of raw DB triggers into an O(1) indexed lookup structure
+ */
+function compileTriggerIndex(rawTriggers = []) {
+  const exactMap = new Map(); // tokenLower -> TriggerRef[]
+  const containsList = [];    // { keywordLower, triggerRef, ignoreCase }
+  const compiledRegexList = []; // { regex, triggerRef }
+  let catchAll = null;
+  let ctwa = null;
+
+  for (const trg of rawTriggers) {
+    let config = {};
+    try {
+      config = typeof trg.match_config_json === "string" ? JSON.parse(trg.match_config_json || "{}") : (trg.match_config_json || {});
+    } catch (_) {
+      continue;
+    }
+
+    const rawKeywords = config.keywords || trg.trigger_keywords || trg.keywords || [];
+    const keywords = Array.isArray(rawKeywords) ? rawKeywords : (typeof rawKeywords === "string" ? rawKeywords.split(",").map(k => k.trim()).filter(Boolean) : []);
+    const matchType = String(config.matchType || trg.match_type || trg.matchType || "CONTAINS").toUpperCase();
+    const ignoreCase = config.ignoreCase !== false && trg.ignoreCase !== false;
+
+    const triggerRef = {
+      id: trg.id,
+      flowId: trg.flow_id || trg.flowId,
+      phoneNumberId: trg.phone_number_id || trg.phoneNumberId,
+      nodeId: config.nodeId || trg.nodeId || trg.node_id,
+      triggerKey: trg.trigger_key || trg.triggerKey,
+      triggerType: trg.trigger_type || trg.triggerType,
+      priority: trg.priority || 100,
+      isCatchAll: Boolean(config.isCatchAll || trg.trigger_type === "CATCH_ALL" || trg.trigger_type === "INBOUND_ANY"),
+      isCtwa: Boolean(config.isCtwa || trg.trigger_type === "CTWA_AD"),
+      keywords,
+      matchType,
+      ignoreCase
+    };
+
+    if (triggerRef.isCtwa && !ctwa) {
+      ctwa = triggerRef;
+    }
+
+    if (triggerRef.isCatchAll && !catchAll) {
+      catchAll = triggerRef;
+    }
+
+    for (const kw of keywords) {
+      const cleanKw = String(kw || "").trim();
+      if (!cleanKw) continue;
+      const kwKey = ignoreCase ? cleanKw.toLowerCase() : cleanKw;
+
+      if (matchType === "EXACT") {
+        if (!exactMap.has(kwKey)) {
+          exactMap.set(kwKey, []);
+        }
+        exactMap.get(kwKey).push(triggerRef);
+      } else if (matchType === "REGEX") {
+        try {
+          const regex = new RegExp(cleanKw, ignoreCase ? "i" : "");
+          compiledRegexList.push({ regex, triggerRef, keyword: cleanKw });
+        } catch (_) {}
+      } else {
+        // CONTAINS
+        containsList.push({
+          keywordLower: kwKey,
+          rawKeyword: cleanKw,
+          ignoreCase,
+          triggerRef
+        });
+      }
+    }
+  }
+
+  return {
+    exactMap,
+    containsList,
+    compiledRegexList,
+    catchAll,
+    ctwa,
+    totalTriggers: rawTriggers.length,
+    compiledAt: Date.now()
+  };
+}
+
+/**
+ * Gets compiled trigger index from cache or loads via loaderFn
+ */
+function getCompiledTriggerIndex(tenantId = 1, phoneNumberId = null, loaderFn = null) {
+  const lineKey = phoneNumberId ? String(phoneNumberId).trim() : "GLOBAL";
+  const cacheKey = `trg_${Number(tenantId) || 1}_${lineKey}`;
+  let index = triggerIndexCache.get(cacheKey);
+
+  if (!index && typeof loaderFn === "function") {
+    const rawTriggers = loaderFn();
+    index = compileTriggerIndex(rawTriggers || []);
+    triggerIndexCache.set(cacheKey, index);
+  }
+
+  return index;
+}
+
+/**
  * Invalidate flow cache when flow is updated, published, or deleted
  */
 function invalidateFlow(flowId) {
   if (!flowId) return;
-  // Delete all keys matching this flowId
   for (const key of flowGraphCache.cache.keys()) {
     if (key.startsWith(`flow_${flowId}_`)) {
       flowGraphCache.delete(key);
@@ -147,9 +276,14 @@ function invalidateFlow(flowId) {
 /**
  * Invalidate trigger index cache when triggers change
  */
-function invalidateTriggers(tenantId = null) {
+function invalidateTriggers(tenantId = null, phoneNumberId = null) {
   if (tenantId) {
-    triggerIndexCache.delete(`trg_tenant_${tenantId}`);
+    const prefix = `trg_${Number(tenantId) || 1}_`;
+    for (const key of triggerIndexCache.cache.keys()) {
+      if (key.startsWith(prefix)) {
+        triggerIndexCache.delete(key);
+      }
+    }
   } else {
     triggerIndexCache.clear();
   }
@@ -171,8 +305,9 @@ module.exports = {
   catalogQueryCache,
   compileFlowGraph,
   getCompiledFlow,
+  compileTriggerIndex,
+  getCompiledTriggerIndex,
   invalidateFlow,
   invalidateTriggers,
   clearAll
 };
-

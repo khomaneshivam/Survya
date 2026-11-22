@@ -5,6 +5,7 @@
 
 const crypto = require("crypto");
 const { db } = require("../config/database");
+const { invalidateFlow, invalidateTriggers } = require("./workflow/runtimeCache");
 
 /**
  * Audit log helper
@@ -593,6 +594,7 @@ function saveFlowDraft(flowId, data, user = { id: "admin", name: "Administrator"
   }
 
   logAudit(tenantId, user.id, "SAVE_FLOW_DRAFT", flowId, { nodeCount: nodes.length, isValid: validationReport.isValid });
+  invalidateFlow(flowId);
 
   const updatedFlow = getFlowById(flowId, tenantId);
   return {
@@ -677,6 +679,9 @@ function publishFlow(flowId, user = { id: "admin", name: "Administrator" }, tena
     console.warn(`[ConversationFlowService] Warning: Failed to sync triggers for flow ${flowId}:`, trgErr.message);
   }
 
+  invalidateFlow(flowId);
+  invalidateTriggers(tenantId);
+
   return getFlowById(flowId, tenantId);
 }
 
@@ -719,6 +724,9 @@ function assignFlowToLine(flowId, phoneNumberId, user = { id: "admin", name: "Ad
     displayName: assignedPhone?.display_name || "ALL_LINES"
   });
 
+  invalidateFlow(flowId);
+  invalidateTriggers(tenantId);
+
   return getFlowById(flowId, tenantId);
 }
 
@@ -734,6 +742,9 @@ function setDefaultFlow(flowId, user = { id: "admin", name: "Administrator" }, t
     user.name || user.id || "admin",
     flowId
   );
+
+  invalidateFlow(flowId);
+  invalidateTriggers(tenantId);
 
   logAudit(tenantId, user.id, "SET_DEFAULT_FLOW", flowId, { flowName: flow.name });
   return getFlowById(flowId, tenantId);
@@ -760,6 +771,9 @@ function pauseFlow(flowId, user = { id: "admin", name: "Administrator" }, tenant
     console.warn(`[ConversationFlowService] Warning: Failed to deactivate triggers for flow ${flowId}:`, trgErr.message);
   }
 
+  invalidateFlow(flowId);
+  invalidateTriggers(tenantId);
+
   logAudit(tenantId, user.id, "PAUSE_CONVERSATION_FLOW", flowId, null);
   return getFlowById(flowId, tenantId);
 }
@@ -785,6 +799,9 @@ function archiveFlow(flowId, user = { id: "admin", name: "Administrator" }, tena
     console.warn(`[ConversationFlowService] Warning: Failed to deactivate triggers for flow ${flowId}:`, trgErr.message);
   }
 
+  invalidateFlow(flowId);
+  invalidateTriggers(tenantId);
+
   logAudit(tenantId, user.id, "ARCHIVE_CONVERSATION_FLOW", flowId, null);
   return getFlowById(flowId, tenantId);
 }
@@ -807,6 +824,9 @@ function deleteFlow(flowId, user = { id: "admin", name: "Administrator" }, tenan
   try {
     db.prepare("DELETE FROM workflow_triggers WHERE flow_id = ? AND tenant_id = ?").run(String(flowId), tenantId);
   } catch (e) {}
+
+  invalidateFlow(flowId);
+  invalidateTriggers(tenantId);
 
   // 2. Clean up events and sessions
   try {

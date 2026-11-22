@@ -1868,12 +1868,14 @@ async function generateFlowFromPrompt({
 
   // Apply visual layout coordinates
   let nodes = flowDraft.nodes || [];
-  let transitions = (flowDraft.transitions || []).map((t, idx) => ({
-    id: t.id || `t_ai_${idx + 1}`,
-    source: t.source || t.from,
-    target: t.target || t.to,
-    sourceHandle: t.sourceHandle || "default"
-  }));
+  let transitions = (flowDraft.transitions || [])
+    .map((t, idx) => ({
+      id: t.id || `t_ai_${idx + 1}`,
+      source: t.source || t.from,
+      target: t.target || t.to,
+      sourceHandle: t.sourceHandle || "default"
+    }))
+    .filter(t => t.source !== t.target); // strictly prevent self-loops
   const variables = flowDraft.variables || {};
 
   nodes = applyHierarchicalLayout(nodes, transitions);
@@ -1891,6 +1893,12 @@ async function generateFlowFromPrompt({
       assignedPhone = foundLine;
     }
   }
+
+  // Check if catalog is empty and provide suggested blueprint for quick seeding
+  const isCatalogEmpty = !systemContext.catalogItems || systemContext.catalogItems.length === 0;
+  const suggestedBlueprint = isCatalogEmpty
+    ? (SECTOR_BLUEPRINTS[flowDraft.category] || SECTOR_BLUEPRINTS.RETAIL_ECOM || null)
+    : null;
 
   // Create the flow in the database
   const createResult = flowService.createFlow({
@@ -1939,6 +1947,7 @@ async function generateFlowFromPrompt({
     publishedVersion,
     validationReport,
     usedProvider,
+    suggestedBlueprint,
     suggestedCatalogItems: flowDraft.suggestedCatalogItems || [],
     suggestedAddons: flowDraft.suggestedAddons || [],
     assignedPhone: assignedPhone ? {
@@ -1978,8 +1987,36 @@ async function refineFlowWithAi({
   const p = String(prompt).toLowerCase();
 
   let modified = false;
+  const addedNodes = [];
+  const updatedNodes = [];
+  const removedNodes = [];
+  const diffParts = [];
 
-  // 1. ADD WAIT_DELAY NODE
+  // 1. ADD MASTER_PICKER NODE
+  if (p.includes("picker") || p.includes("master") || p.includes("department") || p.includes("branch") || p.includes("category") || p.includes("doctor") || p.includes("specialist")) {
+    const masterId = `master_picker_ai_${Date.now()}`;
+    const masterType = (p.includes("branch") || p.includes("location")) ? "master_locations"
+      : (p.includes("doctor") || p.includes("resource") || p.includes("specialist")) ? "master_resources"
+      : "master_categories";
+    const masterNode = {
+      id: masterId,
+      type: "MASTER_PICKER",
+      title: "Dynamic Master Selector",
+      config: {
+        masterType,
+        promptText: "Please choose from our available options:",
+        outputVariable: "selected_master_id",
+        autoAdvanceOnSingle: true
+      },
+      position: { x: 350, y: 220 }
+    };
+    nodes.push(masterNode);
+    addedNodes.push(masterNode);
+    diffParts.push(`Added MASTER_PICKER (${masterType})`);
+    modified = true;
+  }
+
+  // 2. ADD WAIT_DELAY NODE
   if (p.includes("delay") || p.includes("wait") || p.includes("drip") || p.includes("follow up") || p.includes("followup")) {
     const delayId = `delay_ai_${Date.now()}`;
     const delayNode = {
@@ -2004,11 +2041,13 @@ async function refineFlowWithAi({
         target: delayId,
         sourceHandle: "default"
       });
+      addedNodes.push(delayNode);
+      diffParts.push("Added follow-up WAIT_DELAY node");
       modified = true;
     }
   }
 
-  // 2. ADD CRM_UPSERT NODE
+  // 3. ADD CRM_UPSERT NODE
   if (p.includes("crm") || p.includes("lead") || p.includes("deal") || p.includes("pipeline")) {
     const crmId = `crm_ai_${Date.now()}`;
     const crmNode = {
@@ -2025,10 +2064,12 @@ async function refineFlowWithAi({
       position: { x: 350, y: 400 }
     };
     nodes.push(crmNode);
+    addedNodes.push(crmNode);
+    diffParts.push("Added CRM_UPSERT pipeline node");
     modified = true;
   }
 
-  // 3. ADD PAYMENT LINK
+  // 4. ADD PAYMENT LINK
   if (p.includes("pay") || p.includes("upi") || p.includes("payment")) {
     const payId = `pay_ai_${Date.now()}`;
     const payNode = {
@@ -2045,10 +2086,12 @@ async function refineFlowWithAi({
       position: { x: 350, y: 450 }
     };
     nodes.push(payNode);
+    addedNodes.push(payNode);
+    diffParts.push("Added direct payment step");
     modified = true;
   }
 
-  // 4. ADD ADDON_UPSELL_AND_QUOTE NODE
+  // 5. ADD ADDON_UPSELL_AND_QUOTE NODE
   if (p.includes("upsell") || p.includes("add-on") || p.includes("addon") || p.includes("quote") || p.includes("pricing") || p.includes("gst") || p.includes("tax")) {
     const addonId = `addon_quote_ai_${Date.now()}`;
     const addonNode = {
@@ -2063,10 +2106,12 @@ async function refineFlowWithAi({
       position: { x: 350, y: 480 }
     };
     nodes.push(addonNode);
+    addedNodes.push(addonNode);
+    diffParts.push("Added ADDON_UPSELL_AND_QUOTE node");
     modified = true;
   }
 
-  // 5. ADD AI_HYBRID_ASSIST NODE
+  // 6. ADD AI_HYBRID_ASSIST NODE
   if (p.includes("hybrid") || p.includes("ai assistant") || p.includes("faq") || p.includes("copilot") || p.includes("answer question")) {
     const aiId = `ai_hybrid_${Date.now()}`;
     const aiNode = {
@@ -2079,10 +2124,12 @@ async function refineFlowWithAi({
       position: { x: 350, y: 520 }
     };
     nodes.push(aiNode);
+    addedNodes.push(aiNode);
+    diffParts.push("Added AI_HYBRID_ASSIST node");
     modified = true;
   }
 
-  // 6. ADD CATALOG_BROWSER NODE
+  // 7. ADD CATALOG_BROWSER NODE
   if (p.includes("catalog") || p.includes("browse") || p.includes("products") || p.includes("dishes") || p.includes("items")) {
     const catId = `cat_browser_ai_${Date.now()}`;
     const catNode = {
@@ -2096,16 +2143,51 @@ async function refineFlowWithAi({
       position: { x: 350, y: 350 }
     };
     nodes.push(catNode);
+    addedNodes.push(catNode);
+    diffParts.push("Added CATALOG_BROWSER node");
     modified = true;
   }
 
+  // 8. UPDATE EXISTING MESSAGE / TEXT (e.g. Hinglish / Tone)
+  if (p.includes("hinglish") || p.includes("welcome message") || p.includes("update text") || p.includes("greeting")) {
+    const welcomeNode = nodes.find(n => n.type === "SEND_MESSAGE");
+    if (welcomeNode) {
+      welcomeNode.config = {
+        ...welcomeNode.config,
+        text: p.includes("hinglish")
+          ? "Namaste ji! Welcome to our store. Hum aapko best catalog aur direct order facility provide karte hain. Neeche diye options check karein:"
+          : `Welcome! Thank you for connecting with us. How may we assist you today?`
+      };
+      updatedNodes.push(welcomeNode);
+      diffParts.push(`Updated ${welcomeNode.title} text`);
+      modified = true;
+    }
+  }
+
+  // 9. REMOVE NODES (e.g. remove delay, delete node)
+  if (p.includes("remove delay") || p.includes("delete delay")) {
+    const delayIdx = nodes.findIndex(n => n.type === "WAIT_DELAY");
+    if (delayIdx >= 0) {
+      const [removed] = nodes.splice(delayIdx, 1);
+      removedNodes.push(removed);
+      const remainingTransitions = transitions.filter(t => t.source !== removed.id && t.target !== removed.id);
+      transitions.length = 0;
+      transitions.push(...remainingTransitions);
+      diffParts.push(`Removed ${removed.title}`);
+      modified = true;
+    }
+  }
+
+  // Filter out any self-loops in transitions
+  const cleanTransitions = transitions.filter(t => (t.source || t.from) !== (t.target || t.to));
+
   // Default: Apply hierarchical layout
-  const layoutedNodes = applyHierarchicalLayout(nodes, transitions);
-  const validationReport = flowService.validateFlowGraph(layoutedNodes, transitions, variables);
+  const layoutedNodes = applyHierarchicalLayout(nodes, cleanTransitions);
+  const validationReport = flowService.validateFlowGraph(layoutedNodes, cleanTransitions, variables);
 
   const saveResult = flowService.saveFlowDraft(flowId, {
     nodes: layoutedNodes,
-    transitions,
+    transitions: cleanTransitions,
     variables,
     changelog: `Refined with AI: "${prompt.slice(0, 50)}"`
   }, user, tenantId);
@@ -2113,6 +2195,10 @@ async function refineFlowWithAi({
   return {
     success: true,
     modified,
+    addedNodes,
+    updatedNodes,
+    removedNodes,
+    diffSummary: diffParts.length > 0 ? diffParts.join("; ") : `Refined flow according to prompt: "${prompt}"`,
     flow: saveResult.flow,
     draftVersion: saveResult.draftVersion,
     validationReport

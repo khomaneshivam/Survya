@@ -72,6 +72,14 @@ function resolveNextTransition(currentNodeId, handle, transitions = [], nodeMap 
 
   // Handle Aliasing
   const aliasMap = {
+    'item_selected': ['item_selected', 'selected', 'valid', 'success', 'default'],
+    'selected': ['selected', 'item_selected', 'valid', 'success', 'default'],
+    'confirmed': ['confirmed', 'success', 'valid', 'default'],
+    'unavailable': ['unavailable', 'failure', 'error'],
+    'add_more': ['add_more', 'continue'],
+    'matched_item': ['matched_item', 'selected', 'item_selected', 'answered', 'default'],
+    'answered': ['answered', 'default', 'success'],
+    'handoff': ['handoff', 'human_handoff', 'agent'],
     'early_reply': ['early_reply', 'replied_early'],
     'replied_early': ['replied_early', 'early_reply'],
     'failure': ['failure', 'error', 'unavailable'],
@@ -227,6 +235,40 @@ function getActiveSession(tenantId = 1, senderPhone) {
 }
 
 /**
+ * Strips raw heavy arrays (e.g. catalog items with full images, heavy lists)
+ * leaving only compact scalar IDs, cart references, quotes, and user inputs.
+ */
+function compactSessionData(data = {}) {
+  if (!data || typeof data !== "object") return {};
+  const clean = {};
+  for (const [k, v] of Object.entries(data)) {
+    // Exclude large temporary arrays or raw catalog/media objects
+    if (k === "catalogItems" || k === "allItems" || k === "mediaList" || k === "fullCatalog" ||
+        k.startsWith("_") || k.toLowerCase().includes("catalog") || k.toLowerCase().includes("media")) {
+      continue;
+    }
+    // Exclude large strings / base64 payloads
+    if (typeof v === "string" && (v.startsWith("data:") || v.length > 2000)) {
+      continue;
+    }
+    if (k === "cart" && Array.isArray(v)) {
+      clean.cart = v.map(item => ({
+        itemId: item.itemId || item.id,
+        variantId: item.variantId || item.variantSku || null,
+        addonIds: Array.isArray(item.addonIds) ? item.addonIds : (item.addonId ? [item.addonId] : []),
+        qty: Number(item.qty || item.quantity) || 1,
+        slotDate: item.slotDate || null,
+        checkIn: item.checkIn || null,
+        checkOut: item.checkOut || null
+      }));
+      continue;
+    }
+    clean[k] = v;
+  }
+  return clean;
+}
+
+/**
  * Upserts an active flow session with UTC timestamps and sliding window expiration.
  */
 function upsertActiveSession({
@@ -245,7 +287,7 @@ function upsertActiveSession({
   extendDays = null
 }) {
   const normPhone = normalizePhone(senderPhone);
-  const dataJson = JSON.stringify(collectedData || {});
+  const dataJson = JSON.stringify(compactSessionData(collectedData) || {});
   const intervalMinutes = extendDays ? (extendDays * 1440) : (extendMinutes || 60);
 
   if (sessionId) {
@@ -1342,6 +1384,7 @@ module.exports = {
   executeBusinessAction,
   findNextNode,
   resolveNextTransition,
+  compactSessionData,
   resumeScheduledNode,
   processTurn
 };

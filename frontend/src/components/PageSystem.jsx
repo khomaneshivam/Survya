@@ -36,6 +36,7 @@ const AutomationPage = lazy(() => import('../pages/AutomationPage'));
 const InboxPage = lazy(() => import('../pages/InboxPage'));
 const AutoReplyBotPage = lazy(() => import('../pages/AutoReplyBotPage'));
 const BroadcastPage = lazy(() => import('../pages/BroadcastPage'));
+const FlowStudioPage = lazy(() => import('../pages/FlowStudioPage'));
 const ChatLinksPage = lazy(() => import('../pages/ChatLinksPage'));
 const InAppStudioPage = lazy(() => import('../pages/InAppStudioPage'));
 const AiAssistantPage = lazy(() => import('../pages/AiAssistantPage'));
@@ -148,6 +149,18 @@ export const PAGE_REGISTRY = {
     description: 'Inbound automation engine: instant room quotes, WhatsApp quick buttons, Meta Flows, and programmable dynamic rules.',
     adminOnly: false,
     component: AutoReplyBotPage
+  },
+  flowStudio: {
+    id: 'flowStudio',
+    title: 'Multi-Flow Hub & Studio',
+    module: 'Flow',
+    group: 'Operations & Messaging',
+    badge: 'Universal',
+    badgeTone: 'purple',
+    icon: BotMessageSquare,
+    description: 'High-speed multi-flow control hub with O(1) trigger router, conflict detector, AI Architect & dual-mode editor.',
+    adminOnly: false,
+    component: FlowStudioPage
   },
   broadcast: {
     id: 'broadcast',
