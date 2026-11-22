@@ -534,9 +534,10 @@ export default function InboxPage({ onNavigate }) {
     }
     try {
       const cleanPhone = String(phone).replace(/\D/g, '');
+      const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
       const [negRes, callRes] = await Promise.all([
-        fetch(`/api/v1/inapp/negotiations?phone=${encodeURIComponent(cleanPhone)}&limit=5`, { credentials: 'include' }),
-        fetch(`/api/v1/inapp/calls?phone=${encodeURIComponent(cleanPhone)}&limit=5`, { credentials: 'include' })
+        fetch(`/api/v1/inapp/negotiations?phone=${encodeURIComponent(cleanPhone)}&limit=5`, { headers: authHeader, credentials: 'include' }),
+        fetch(`/api/v1/inapp/calls?phone=${encodeURIComponent(cleanPhone)}&limit=5`, { headers: authHeader, credentials: 'include' })
       ]);
       const negData = await negRes.json();
       const callData = await callRes.json();
@@ -566,7 +567,10 @@ export default function InboxPage({ onNavigate }) {
       setInappActionLoading(true);
       const res = await fetch(`/api/v1/inapp/negotiations/${inappActiveNegotiation.id}/agent-action`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         credentials: 'include',
         body: JSON.stringify({ action, counterPrice, agentNote })
       });
@@ -592,7 +596,10 @@ export default function InboxPage({ onNavigate }) {
       setInappActionLoading(true);
       const res = await fetch(`/api/v1/inapp/calls/${inappActiveCall.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         credentials: 'include',
         body: JSON.stringify({ status, callNotes })
       });

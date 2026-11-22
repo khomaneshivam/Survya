@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Card, CardHeader, CardBody, Button, Badge, Modal } from '../ui';
+import { getAuthHeaders } from '../../utils/apiAuth';
 import {
   Plus,
   Trash2,
@@ -28,6 +29,7 @@ const SCREEN_TYPES = [
 
 export default function MultiScreenFlowTab({
   experience,
+  token,
   screens = [],
   onRefresh,
   onOpenFormBuilder,
@@ -98,8 +100,7 @@ export default function MultiScreenFlowTab({
 
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(token, { 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload)
       });
       const data = await res.json();
@@ -124,7 +125,7 @@ export default function MultiScreenFlowTab({
     try {
       const res = await fetch(`/api/v1/inapp/screens/${screenId}`, {
         method: 'DELETE',
-        credentials: 'include'
+        headers: getAuthHeaders(token)
       });
       const data = await res.json();
       if (data.success) {
@@ -151,8 +152,7 @@ export default function MultiScreenFlowTab({
     try {
       const res = await fetch(`/api/v1/inapp/experiences/${experience.id}/screens/reorder`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(token, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ screenIds })
       });
       const data = await res.json();

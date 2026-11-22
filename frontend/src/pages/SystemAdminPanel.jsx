@@ -1636,7 +1636,7 @@ export default function SystemAdminPanel({ onNavigate }) {
           TAB 5: TRANSACTIONAL JOB QUEUE & WORKERS
           ========================================================================= */}
       {activeTab === 'queue' && (
-        <JobQueueMonitor toast={(msg) => setSuccessMsg(msg)} />
+        <JobQueueMonitor token={token} toast={(msg) => setSuccessMsg(msg)} />
       )}
 
       {/* =========================================================================

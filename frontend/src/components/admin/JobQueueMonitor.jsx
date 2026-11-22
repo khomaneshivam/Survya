@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { getAuthHeaders } from '../../utils/apiAuth';
 import {
   Card,
   CardHeader,
@@ -48,7 +49,7 @@ const STATUS_TABS = [
   { id: 'CANCELLED', label: 'Cancelled' }
 ];
 
-export default function JobQueueMonitor({ toast }) {
+export default function JobQueueMonitor({ token, toast }) {
   const [stats, setStats] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [schedules, setSchedules] = useState([]);
@@ -68,23 +69,27 @@ export default function JobQueueMonitor({ toast }) {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/admin/queue/stats', { credentials: 'include' });
+      const res = await fetch('/api/v1/admin/queue/stats', {
+        headers: getAuthHeaders(token)
+      });
       const data = await res.json();
       if (data.success) {
         setStats(data.data);
       }
     } catch (_) {}
-  }, []);
+  }, [token]);
 
   const fetchSchedules = useCallback(async () => {
     try {
-      const res = await fetch('/api/v1/admin/queue/schedules', { credentials: 'include' });
+      const res = await fetch('/api/v1/admin/queue/schedules', {
+        headers: getAuthHeaders(token)
+      });
       const data = await res.json();
       if (data.success) {
         setSchedules(data.data || []);
       }
     } catch (_) {}
-  }, []);
+  }, [token]);
 
   const fetchJobs = useCallback(async (pg = 1) => {
     try {
@@ -96,7 +101,9 @@ export default function JobQueueMonitor({ toast }) {
       if (selectedQueue !== 'ALL') params.append('queueName', selectedQueue);
       if (selectedStatus !== 'ALL') params.append('status', selectedStatus);
 
-      const res = await fetch(`/api/v1/admin/queue/jobs?${params.toString()}`, { credentials: 'include' });
+      const res = await fetch(`/api/v1/admin/queue/jobs?${params.toString()}`, {
+        headers: getAuthHeaders(token)
+      });
       const data = await res.json();
       if (data.success) {
         setJobs(data.jobs || []);
@@ -108,7 +115,7 @@ export default function JobQueueMonitor({ toast }) {
     } finally {
       setLoading(false);
     }
-  }, [selectedQueue, selectedStatus]);
+  }, [token, selectedQueue, selectedStatus]);
 
   const refreshAll = useCallback(() => {
     fetchStats();
@@ -136,7 +143,7 @@ export default function JobQueueMonitor({ toast }) {
       setActionLoading(true);
       const res = await fetch(`/api/v1/admin/queue/jobs/${jobId}/retry`, {
         method: 'POST',
-        credentials: 'include'
+        headers: getAuthHeaders(token)
       });
       const data = await res.json();
       if (data.success) {
@@ -158,7 +165,7 @@ export default function JobQueueMonitor({ toast }) {
       setActionLoading(true);
       const res = await fetch(`/api/v1/admin/queue/jobs/${jobId}/cancel`, {
         method: 'POST',
-        credentials: 'include'
+        headers: getAuthHeaders(token)
       });
       const data = await res.json();
       if (data.success) {
@@ -178,7 +185,7 @@ export default function JobQueueMonitor({ toast }) {
       setActionLoading(true);
       const res = await fetch(`/api/v1/admin/queue/jobs/${jobId}`, {
         method: 'DELETE',
-        credentials: 'include'
+        headers: getAuthHeaders(token)
       });
       const data = await res.json();
       if (data.success) {
@@ -197,8 +204,7 @@ export default function JobQueueMonitor({ toast }) {
     try {
       const res = await fetch(`/api/v1/admin/queue/schedules/${schedule.id}/toggle`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(token, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ isEnabled: nextState })
       });
       const data = await res.json();
@@ -215,8 +221,7 @@ export default function JobQueueMonitor({ toast }) {
       setActionLoading(true);
       const res = await fetch('/api/v1/admin/queue/purge', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(token, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ olderThanDays: 7 })
       });
       const data = await res.json();
@@ -681,3 +686,4 @@ export default function JobQueueMonitor({ toast }) {
     </div>
   );
 }
+

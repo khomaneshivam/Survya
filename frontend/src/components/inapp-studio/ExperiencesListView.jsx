@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Card, CardBody, Button, Badge, SearchInput, Modal } from '../ui';
+import { getAuthHeaders } from '../../utils/apiAuth';
 import {
   Plus,
   Sparkles,
@@ -27,6 +28,7 @@ const DOMAIN_FILTERS = [
 
 export default function ExperiencesListView({
   experiences = [],
+  token,
   loading,
   onSelectExperience,
   onOpenStarterModal,
@@ -66,8 +68,7 @@ export default function ExperiencesListView({
     try {
       const res = await fetch(`/api/v1/inapp/experiences/${exp.id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(token, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ status: newStatus })
       });
       const data = await res.json();
@@ -83,7 +84,7 @@ export default function ExperiencesListView({
     try {
       const res = await fetch(`/api/v1/inapp/experiences/${exp.id}`, {
         method: 'DELETE',
-        credentials: 'include'
+        headers: getAuthHeaders(token)
       });
       const data = await res.json();
       if (data.success) {
@@ -99,8 +100,7 @@ export default function ExperiencesListView({
     try {
       const res = await fetch('/api/v1/inapp/experiences', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(token, { 'Content-Type': 'application/json' }),
         body: JSON.stringify(newExpData)
       });
       const data = await res.json();

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, Button, Badge, Skeleton } from '../ui';
+import { getAuthHeaders } from '../../utils/apiAuth';
 import {
   MessageSquareDiff,
   PhoneCall,
@@ -14,6 +15,7 @@ import {
 export default function NegotiationsAndCallsModal({
   isOpen,
   onClose,
+  token,
   toast
 }) {
   const [activeTab, setActiveTab] = useState('negotiations'); // 'negotiations' | 'calls'
@@ -29,9 +31,10 @@ export default function NegotiationsAndCallsModal({
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
+      const headers = getAuthHeaders(token);
       const [negRes, callRes] = await Promise.all([
-        fetch('/api/v1/inapp/negotiations', { credentials: 'include' }),
-        fetch('/api/v1/inapp/calls', { credentials: 'include' })
+        fetch('/api/v1/inapp/negotiations', { headers }),
+        fetch('/api/v1/inapp/calls', { headers })
       ]);
       const negData = await negRes.json();
       const callData = await callRes.json();
@@ -42,7 +45,7 @@ export default function NegotiationsAndCallsModal({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     if (isOpen) {
@@ -55,8 +58,7 @@ export default function NegotiationsAndCallsModal({
     try {
       const res = await fetch(`/api/v1/inapp/negotiations/${negotiationId}/agent-action`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(token, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ action, ...extra })
       });
       const data = await res.json();
@@ -78,8 +80,7 @@ export default function NegotiationsAndCallsModal({
     try {
       const res = await fetch(`/api/v1/inapp/calls/${callId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(token, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ status })
       });
       const data = await res.json();

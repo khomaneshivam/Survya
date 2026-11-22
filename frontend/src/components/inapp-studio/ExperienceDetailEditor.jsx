@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { PageHeader, Tabs, Button, Badge } from '../ui';
+import { getAuthHeaders } from '../../utils/apiAuth';
 import {
   ArrowLeft,
   QrCode,
@@ -20,6 +21,7 @@ import LiveMobilePreviewModal from './LiveMobilePreviewModal';
 
 export default function ExperienceDetailEditor({
   experience,
+  token,
   onBack,
   onRefresh,
   onOpenQr,
@@ -46,8 +48,7 @@ export default function ExperienceDetailEditor({
     try {
       const res = await fetch(`/api/v1/inapp/experiences/${experience.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(token, { 'Content-Type': 'application/json' }),
         body: JSON.stringify(updatedData)
       });
       const data = await res.json();
@@ -69,8 +70,7 @@ export default function ExperienceDetailEditor({
     try {
       const res = await fetch(`/api/v1/inapp/experiences/${experience.id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(token, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ status: newStatus })
       });
       const data = await res.json();
@@ -157,6 +157,7 @@ export default function ExperienceDetailEditor({
       {activeTab === 'screens' && (
         <MultiScreenFlowTab
           experience={experience}
+          token={token}
           screens={experience.screens || []}
           onRefresh={onRefresh}
           onOpenFormBuilder={handleJumpToFormBuilder}
@@ -167,6 +168,7 @@ export default function ExperienceDetailEditor({
       {activeTab === 'forms' && (
         <FormValidationBuilderTab
           experience={experience}
+          token={token}
           screens={experience.screens || []}
           selectedScreenId={targetFormScreenId}
           onRefresh={onRefresh}
@@ -177,6 +179,7 @@ export default function ExperienceDetailEditor({
       {activeTab === 'branding' && (
         <BrandingConnectionsTab
           experience={experience}
+          token={token}
           onSave={handleSaveBranding}
           saving={saving}
         />

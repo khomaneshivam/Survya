@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardBody, Button, Badge, Modal } from '../ui';
+import { getAuthHeaders } from '../../utils/apiAuth';
 import {
   Plus,
   Trash2,
@@ -44,6 +45,7 @@ const CRM_MAPPING_OPTIONS = [
 
 export default function FormValidationBuilderTab({
   experience,
+  token,
   screens = [],
   selectedScreenId = null,
   onRefresh,
@@ -199,8 +201,7 @@ export default function FormValidationBuilderTab({
 
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(token, { 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload)
       });
       const data = await res.json();
@@ -224,7 +225,7 @@ export default function FormValidationBuilderTab({
     try {
       const res = await fetch(`/api/v1/inapp/fields/${fieldId}`, {
         method: 'DELETE',
-        credentials: 'include'
+        headers: getAuthHeaders(token)
       });
       const data = await res.json();
       if (data.success) {
@@ -247,8 +248,7 @@ export default function FormValidationBuilderTab({
     try {
       await fetch(`/api/v1/inapp/screens/${activeScreenId}/fields/reorder`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(token, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ fieldIds })
       });
       if (onRefresh) onRefresh();

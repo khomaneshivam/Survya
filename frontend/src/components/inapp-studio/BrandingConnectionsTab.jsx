@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardBody, Button } from '../ui';
+import { getAuthHeaders } from '../../utils/apiAuth';
 import { Palette, Plug, Clock, Sliders, Save, Check } from 'lucide-react';
 
 const DOMAIN_OPTIONS = [
@@ -12,7 +13,7 @@ const DOMAIN_OPTIONS = [
   { value: 'CUSTOM', label: 'Custom Domain' }
 ];
 
-export default function BrandingConnectionsTab({ experience, onSave, saving }) {
+export default function BrandingConnectionsTab({ experience, token, onSave, saving }) {
   // Parse JSON configs safely
   const initialTheme = typeof experience.theme_json === 'string'
     ? JSON.parse(experience.theme_json || '{}')
@@ -61,30 +62,32 @@ export default function BrandingConnectionsTab({ experience, onSave, saving }) {
   const [phoneNumbers, setPhoneNumbers] = useState([]);
 
   useEffect(() => {
+    const headers = getAuthHeaders(token);
+
     // Fetch business entities
-    fetch('/api/commerce/entities', { credentials: 'include' })
+    fetch('/api/commerce/entities', { headers })
       .then(res => res.json())
       .then(d => { if (d.data) setEntities(d.data); })
       .catch(() => {});
 
     // Fetch CRM pipelines
-    fetch('/api/v1/crm/pipelines', { credentials: 'include' })
+    fetch('/api/v1/crm/pipelines', { headers })
       .then(res => res.json())
       .then(d => { if (d.data) setPipelines(d.data); })
       .catch(() => {
         // Fallback to /api/enquiries/pipelines
-        fetch('/api/enquiries/pipelines', { credentials: 'include' })
+        fetch('/api/enquiries/pipelines', { headers })
           .then(res => res.json())
           .then(d => { if (d.data) setPipelines(d.data); })
           .catch(() => {});
       });
 
     // Fetch WhatsApp phone lines
-    fetch('/api/phone-numbers', { credentials: 'include' })
+    fetch('/api/phone-numbers', { headers })
       .then(res => res.json())
       .then(d => { if (d.data) setPhoneNumbers(d.data); })
       .catch(() => {});
-  }, []);
+  }, [token]);
 
   const handleChange = (field, val) => {
     setFormData(prev => ({ ...prev, [field]: val }));

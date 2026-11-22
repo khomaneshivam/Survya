@@ -3,23 +3,59 @@ const config = require("../config/env");
 const { db } = require("../config/database");
 
 /**
- * Authenticates incoming request using JWT Bearer token in Authorization header.
+ * Extracts authentication token from Authorization header, custom auth headers,
+ * cookies, or query parameters.
+ */
+function extractRequestToken(req) {
+  if (!req) return null;
+
+  // 1. Standard Authorization: Bearer <token>
+  const authHeader = req.headers?.["authorization"] || req.headers?.["Authorization"];
+  if (authHeader && typeof authHeader === "string") {
+    if (authHeader.startsWith("Bearer ")) {
+      const tok = authHeader.substring(7).trim();
+      if (tok) return tok;
+    } else if (authHeader.trim()) {
+      return authHeader.trim();
+    }
+  }
+
+  // 2. Custom headers (x-auth-token or x-access-token)
+  const altHeader = req.headers?.["x-auth-token"] || req.headers?.["x-access-token"];
+  if (altHeader && typeof altHeader === "string" && altHeader.trim()) {
+    return altHeader.trim();
+  }
+
+  // 3. Cookies: parse token or auth_token cookie
+  if (req.cookies && (req.cookies.token || req.cookies.auth_token)) {
+    return String(req.cookies.token || req.cookies.auth_token).trim();
+  }
+  if (req.headers?.cookie) {
+    const match = req.headers.cookie.match(/(?:^|;\s*)(?:token|auth_token)=([^;]+)/);
+    if (match && match[1]) {
+      return decodeURIComponent(match[1]).trim();
+    }
+  }
+
+  // 4. Query param fallback (token or access_token)
+  if (req.query && (req.query.token || req.query.access_token)) {
+    return String(req.query.token || req.query.access_token).trim();
+  }
+
+  return null;
+}
+
+/**
+ * Authenticates incoming request using JWT Bearer token in Authorization header,
+ * cookie, or session context.
  * Fails closed with 401 if token is missing, malformed, expired, or user is not found/active.
  */
 function authenticateToken(req, res, next) {
-  const authHeader = req.headers["authorization"] || req.headers["Authorization"];
-  if (!authHeader || typeof authHeader !== "string" || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({
-      success: false,
-      message: "Access denied. Authentication Bearer token required in Authorization header."
-    });
-  }
-
-  const token = authHeader.substring(7).trim();
+  const token = extractRequestToken(req);
   if (!token) {
     return res.status(401).json({
       success: false,
-      message: "Access denied. Empty authentication token provided."
+      message: "Access denied. Authentication Bearer token required in Authorization header."
     });
   }
 

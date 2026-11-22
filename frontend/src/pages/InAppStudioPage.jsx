@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { getAuthHeaders } from '../utils/apiAuth';
 import { PageHeader, Skeleton } from '../components/ui';
 import ExperiencesListView from '../components/inapp-studio/ExperiencesListView';
 import ExperienceDetailEditor from '../components/inapp-studio/ExperienceDetailEditor';
@@ -7,6 +9,7 @@ import QrCodeModal from '../components/inapp-studio/QrCodeModal';
 import NegotiationsAndCallsModal from '../components/inapp-studio/NegotiationsAndCallsModal';
 
 export default function InAppStudioPage() {
+  const { token } = useAuth();
   const [experiences, setExperiences] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedExperience, setSelectedExperience] = useState(null);
@@ -30,7 +33,9 @@ export default function InAppStudioPage() {
   const loadExperiences = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/v1/inapp/experiences', { credentials: 'include' });
+      const res = await fetch('/api/v1/inapp/experiences', {
+        headers: getAuthHeaders(token)
+      });
       const data = await res.json();
       if (data.success) {
         setExperiences(data.data || []);
@@ -40,7 +45,7 @@ export default function InAppStudioPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     loadExperiences();
@@ -49,7 +54,9 @@ export default function InAppStudioPage() {
   // Load detailed experience when selected
   const handleSelectExperience = async (exp) => {
     try {
-      const res = await fetch(`/api/v1/inapp/experiences/${exp.id}`, { credentials: 'include' });
+      const res = await fetch(`/api/v1/inapp/experiences/${exp.id}`, {
+        headers: getAuthHeaders(token)
+      });
       const data = await res.json();
       if (data.success) {
         setSelectedExperience(data.data);
@@ -64,7 +71,9 @@ export default function InAppStudioPage() {
   const handleRefreshSelected = async () => {
     if (!selectedExperience) return;
     try {
-      const res = await fetch(`/api/v1/inapp/experiences/${selectedExperience.id}`, { credentials: 'include' });
+      const res = await fetch(`/api/v1/inapp/experiences/${selectedExperience.id}`, {
+        headers: getAuthHeaders(token)
+      });
       const data = await res.json();
       if (data.success) {
         setSelectedExperience(data.data);
@@ -80,8 +89,7 @@ export default function InAppStudioPage() {
       setStarterLoading(true);
       const res = await fetch('/api/v1/inapp/experiences/from-starter', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: getAuthHeaders(token, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ domainType })
       });
       const data = await res.json();
@@ -104,7 +112,9 @@ export default function InAppStudioPage() {
 
   const handleOpenQr = async (exp) => {
     try {
-      const res = await fetch(`/api/v1/inapp/experiences/${exp.id}/qr`, { credentials: 'include' });
+      const res = await fetch(`/api/v1/inapp/experiences/${exp.id}/qr`, {
+        headers: getAuthHeaders(token)
+      });
       const data = await res.json();
       if (data.success) {
         setQrData(data.data);
@@ -142,6 +152,7 @@ export default function InAppStudioPage() {
       {selectedExperience ? (
         <ExperienceDetailEditor
           experience={selectedExperience}
+          token={token}
           onBack={() => {
             setSelectedExperience(null);
             loadExperiences();
@@ -166,6 +177,7 @@ export default function InAppStudioPage() {
           ) : (
             <ExperiencesListView
               experiences={experiences}
+              token={token}
               loading={loading}
               onSelectExperience={handleSelectExperience}
               onOpenStarterModal={() => setStarterModalOpen(true)}
@@ -181,6 +193,7 @@ export default function InAppStudioPage() {
       {/* Negotiations & Calls Management Modal */}
       <NegotiationsAndCallsModal
         isOpen={negModalOpen}
+        token={token}
         onClose={() => setNegModalOpen(false)}
         toast={showToast}
       />
