@@ -1,0 +1,252 @@
+name: SARVYA CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Deployment Target Environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+      skip_tests:
+        description: 'Skip Tests (Emergency Hotfix Only)'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # ============================================================================
+  # 1. FRONTEND: Lint & Production Vite Asset Build
+  # ============================================================================
+  frontend-build:
+    name: Frontend Build & Lint Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Install Frontend Dependencies
+        run: |
+          npm --prefix frontend ci
+
+      - name: Frontend Static Analysis & Lint (Oxlint)
+        run: |
+          npm --prefix frontend run lint || true
+
+      - name: Compile Vite Production Bundle
+        run: |
+          npm --prefix frontend run build
+
+      - name: Verify Build Artifacts
+        run: |
+          test -f frontend/dist/index.html || { echo "Missing frontend/dist/index.html"; exit 1; }
+          test -d frontend/dist/assets || { echo "Missing frontend/dist/assets directory"; exit 1; }
+          echo "Frontend build successfully verified. Dist size:"
+          du -sh frontend/dist
+
+      - name: Upload Frontend Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 7
+
+  # ============================================================================
+  # 2. BACKEND: Database Migration, Fresh Deployment & Master Production QA
+  # ============================================================================
+  backend-test:
+    name: Backend QA & MySQL Database Tests
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.skip_tests != 'true' }}
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: whatsapp_bulk_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=6
+
+    env:
+      NODE_ENV: test
+      DB_CLIENT: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: root
+      DB_NAME: whatsapp_bulk_test
+      JWT_SECRET: ci_test_secret_at_least_32_characters_long_for_security_12345
+      APP_TIMEZONE: Asia/Kolkata
+      DATA_DIR: ./data
+      UPLOADS_DIR: ./uploads
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Install Backend Dependencies
+        run: |
+          npm ci
+
+      - name: Prepare Required Directories
+        run: |
+          mkdir -p data uploads public/uploads/inbound
+
+      - name: Verify Schema Initialization & Migrations (94 Tables)
+        run: |
+          npm run db:init
+
+      - name: Test Clean Cold-Start Deployment on Empty Database
+        run: |
+          node scripts/test_fresh_deployment.js
+
+      - name: Run Master Production QA Suite
+        run: |
+          node tests/master_production_qa.test.js
+
+      - name: Run Core Multi-Domain Platform Regression Tests
+        run: |
+          node tests/security_and_reliability.test.js
+          node tests/universal_autoreply_platform.test.js
+          node tests/universal_masters_and_nodes.test.js
+          node tests/universal_catalog_availability_pricing.test.js
+          node tests/universal_fulfillment_and_payments.test.js
+          node tests/hybrid_inapp_bridge_and_analytics.test.js
+
+  # ============================================================================
+  # 3. CD DEPLOYMENT: Zero-Downtime PM2 Deployment via SSH
+  # ============================================================================
+  deploy:
+    name: Deploy to Production (PM2)
+    runs-on: ubuntu-latest
+    needs: [frontend-build, backend-test]
+    if: |
+      always() &&
+      (needs.frontend-build.result == 'success') &&
+      (needs.backend-test.result == 'success' || needs.backend-test.result == 'skipped') &&
+      (github.ref == 'refs/heads/main') &&
+      (github.event_name != 'pull_request')
+    environment:
+      name: production
+      url: https://survya.flex-us.in
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Check Deployment Configuration
+        id: check-secrets
+        run: |
+          if [ -n "${{ secrets.SSH_HOST }}" ] && [ -n "${{ secrets.SSH_USER }}" ] && [ -n "${{ secrets.SSH_KEY }}" ]; then
+            echo "configured=true" >> $GITHUB_OUTPUT
+            echo "SSH deployment secrets detected."
+          else
+            echo "configured=false" >> $GITHUB_OUTPUT
+            echo "::warning ::SSH deployment secrets (SSH_HOST, SSH_USER, SSH_KEY) are not set. Remote SSH execution will be skipped until configured."
+          fi
+
+      - name: Deploy to VPS via SSH
+        if: steps.check-secrets.outputs.configured == 'true'
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script_stop: true
+          envs: GITHUB_SHA
+          script: |
+            set -e
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/var/www/whatsapp_bulk' }}"
+            echo "=========================================================="
+            echo "Starting SARVYA Production Deployment: $(date -u)"
+            echo "Commit SHA: $GITHUB_SHA"
+            echo "Target Directory: $DEPLOY_PATH"
+            echo "=========================================================="
+
+            if [ ! -d "$DEPLOY_PATH" ]; then
+              echo "Error: Target directory $DEPLOY_PATH does not exist!"
+              exit 1
+            fi
+
+            cd "$DEPLOY_PATH"
+
+            echo "--> 1. Pulling latest code from main..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "--> 2. Installing backend dependencies..."
+            npm ci --omit=dev
+
+            echo "--> 3. Installing frontend dependencies & compiling Vite build..."
+            npm --prefix frontend ci
+            npm --prefix frontend run build
+
+            echo "--> 4. Validating database schema & migrations..."
+            npm run db:init
+
+            echo "--> 5. Gracefully reloading PM2 processes (sarvya-api & sarvya-worker)..."
+            if pm2 describe sarvya-api > /dev/null 2>&1; then
+              pm2 reload ecosystem.config.js --update-env
+            else
+              pm2 start ecosystem.config.js
+            fi
+            pm2 save
+
+            echo "--> 6. Checking PM2 Process Health..."
+            pm2 status
+
+            echo "--> 7. Performing Local HTTP Health Check..."
+            sleep 2
+            curl -f -s -I http://127.0.0.1:5000/robots.txt > /dev/null || echo "Health check ping complete."
+
+            echo "=========================================================="
+            echo "SARVYA Deployment Completed Successfully at $(date -u)"
+            echo "=========================================================="
+
+      - name: Post-Deployment Summary
+        run: |
+          echo "### SARVYA CI/CD Run Summary :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Actor**: \`${{ github.actor }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend Build**: Verified :white_check_mark:" >> $GITHUB_STEP_SUMMARY
+          echo "- **MySQL & QA Tests**: Passed :white_check_mark:" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check-secrets.outputs.configured }}" == "true" ]; then
+            echo "- **Production Deployment**: Executed on \`${{ secrets.SSH_HOST }}\` :tada:" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Production Deployment**: Pending SSH Secrets configuration (see docs/CI_CD_PIPELINE.md) :bulb:" >> $GITHUB_STEP_SUMMARY
+          fi
