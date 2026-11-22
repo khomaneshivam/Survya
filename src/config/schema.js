@@ -302,6 +302,42 @@ function runColumnMigrations(db) {
     if (!crCols.includes("detected_language")) db.exec("ALTER TABLE customer_replies ADD COLUMN detected_language VARCHAR(16) NULL");
   } catch (e) {}
 
+  // Conversation ownership migration: legacy unscoped rows belong to tenant 1.
+  // All new inbound messages MUST explicitly resolve and write the owning tenant.
+  // These columns are additive and idempotent; do not delete historical data.
+  try {
+    const cols = db.prepare("DESCRIBE customer_replies").all().map(c => c.Field);
+    if (!cols.includes("tenant_id")) {
+      db.exec("ALTER TABLE customer_replies ADD COLUMN tenant_id BIGINT NOT NULL DEFAULT 1");
+    }
+    if (!cols.includes("channel_account_id")) {
+      db.exec("ALTER TABLE customer_replies ADD COLUMN channel_account_id VARCHAR(128) NULL");
+    }
+    if (!cols.includes("deleted_at")) {
+      db.exec("ALTER TABLE customer_replies ADD COLUMN deleted_at DATETIME NULL");
+    }
+    if (!cols.includes("deleted_by")) {
+      db.exec("ALTER TABLE customer_replies ADD COLUMN deleted_by VARCHAR(128) NULL");
+    }
+    db.exec("CREATE INDEX idx_customer_replies_tenant_phone_time ON customer_replies (tenant_id, from_phone(32), received_at)");
+  } catch (e) {
+    if (!/Duplicate key name|already exists/i.test(String(e.message))) {
+      throw new Error("Conversation ownership migration failed: " + e.message);
+    }
+  }
+
+  // Existing campaigns/templates must be tenant owned before unioning into inbox.
+  for (const table of ["campaigns", "templates"]) {
+    try {
+      const cols = db.prepare(`DESCRIBE ${table}`).all().map(c => c.Field);
+      if (!cols.includes("tenant_id")) {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN tenant_id BIGINT NOT NULL DEFAULT 1`);
+      }
+    } catch (e) {
+      throw new Error(`Tenant ownership migration failed for ${table}: ${e.message}`);
+    }
+  }
+
   // Ensure inventory_date is VARCHAR(32) on daily matrix tables for proper indexing
   try {
     db.exec("ALTER TABLE room_inventory_daily MODIFY COLUMN inventory_date VARCHAR(32) NOT NULL");

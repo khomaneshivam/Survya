@@ -451,6 +451,14 @@ router.get("/media/inbound/:mediaId", authenticateToken, async (req, res) => {
     }
 
     const cleanMediaId = path.basename(mediaId).replace(/\.[a-zA-Z0-9]+$/, "");
+    // Prove this tenant owns the media record before reading cached files.
+    const mediaOwner = db.prepare(`
+      SELECT id FROM customer_replies
+      WHERE tenant_id = ? AND deleted_at IS NULL
+        AND (media_url LIKE ? OR raw_payload LIKE ?)
+      LIMIT 1
+    `).get(req.user.tenant_id, `%/${cleanMediaId}%`, `%"id":"${cleanMediaId}"%`);
+    if (!mediaOwner) return res.status(404).json({ success: false, message: "Media not found." });
     const inboundDir = path.resolve(__dirname, "../../public/uploads/inbound");
     if (!fs.existsSync(inboundDir)) {
       fs.mkdirSync(inboundDir, { recursive: true });
@@ -489,6 +497,10 @@ router.get("/media/inbound/:mediaId", authenticateToken, async (req, res) => {
 // Direct inbox reply by phone/contact (Protected)
 router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async (req, res) => {
   try {
+    // Legacy direct-send uses platform credentials; no cross-tenant sends.
+    if (Number(req.user?.tenant_id) !== 1) return res.status(403).json({
+      success: false, message: "Tenant-owned channel messaging is required."
+    });
     const { to, message, replyId, mediaUrl, mediaId, mediaType: clientMediaType } = req.body || {};
     const text = message !== undefined ? String(message) : (req.body?.replyText !== undefined ? String(req.body.replyText) : "");
 
@@ -509,9 +521,9 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
     // Check if recipient conversation is an in-app Web Chat guest (virtual number 919000... or prior reply with source 'CHAT_LINK')
     const recentWebMessage = db.prepare(`
       SELECT id, source, link_id FROM customer_replies 
-      WHERE from_phone = ? AND (source = 'CHAT_LINK' OR from_phone LIKE '919000%')
+      WHERE tenant_id = ? AND deleted_at IS NULL AND from_phone = ? AND (source = 'CHAT_LINK' OR from_phone LIKE '919000%')
       ORDER BY id DESC LIMIT 1
-    `).get(targetPhone);
+    `).get(req.user.tenant_id, targetPhone);
 
     const isWebChat = Boolean(recentWebMessage || targetPhone.startsWith("919000"));
 
@@ -572,11 +584,15 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
     const replyUserId = req.user?.id || null;
     let existingGuestName = "Customer";
     try {
-      const prior = db.prepare("SELECT customer_name FROM customer_replies WHERE from_phone = ? AND customer_name NOT IN ('Customer', 'Demo Customer') AND customer_name IS NOT NULL ORDER BY id DESC LIMIT 1").get(targetPhone);
+      const prior = db.prepare("SELECT customer_name FROM customer_replies WHERE tenant_id = ? AND deleted_at IS NULL AND from_phone = ? AND customer_name NOT IN ('Customer', 'Demo Customer') AND customer_name IS NOT NULL ORDER BY id DESC LIMIT 1").get(req.user.tenant_id, targetPhone);
       if (prior?.customer_name) {
         existingGuestName = prior.customer_name;
       } else {
-        const recip = db.prepare("SELECT contact_name FROM campaign_recipients WHERE clean_phone = ? AND contact_name IS NOT NULL LIMIT 1").get(targetPhone);
+        const recip = db.prepare(`
+          SELECT cr.contact_name FROM campaign_recipients cr
+          JOIN campaigns c ON c.id = cr.campaign_id
+          WHERE c.tenant_id = ? AND cr.clean_phone = ? AND cr.contact_name IS NOT NULL LIMIT 1
+        `).get(req.user.tenant_id, targetPhone);
         if (recip?.contact_name) {
           existingGuestName = recip.contact_name;
         }
@@ -596,8 +612,8 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
         wa_message_id, from_phone, customer_name, message_type,
         message_body, reply_text, media_url, media_type, media_caption,
         reply_sent_at, reply_status, is_read, user_id, received_at,
-        source, link_id
-      ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'SENT', 1, ?, CURRENT_TIMESTAMP, ?, ?)
+        source, link_id, tenant_id
+      ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'SENT', 1, ?, CURRENT_TIMESTAMP, ?, ?, ?)
     `).run(
       assignedId,
       targetPhone,
@@ -609,7 +625,8 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
       text || null,
       replyUserId,
       replySource,
-      replyLinkId
+      replyLinkId,
+      req.user.tenant_id
     );
 
     try {
@@ -642,6 +659,7 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
 // Get Bot Pause / Takeover status for a contact
 router.get(["/inbox/bot-status/:phone", "/replies/bot-status/:phone"], authenticateToken, (req, res) => {
   try {
+    if (Number(req.user?.tenant_id) !== 1) return res.status(403).json({ success: false, message: "Legacy takeover controls unavailable for this workspace." });
     const phone = req.params.phone;
     const status = webhookService.getBotStatus(phone);
     return res.status(200).json({ success: true, data: status });
@@ -653,6 +671,7 @@ router.get(["/inbox/bot-status/:phone", "/replies/bot-status/:phone"], authentic
 // Set Bot Pause / Resume status for a contact
 router.post(["/inbox/bot-status/:phone", "/replies/bot-status/:phone", "/replies/bot-status"], authenticateToken, (req, res) => {
   try {
+    if (Number(req.user?.tenant_id) !== 1) return res.status(403).json({ success: false, message: "Legacy takeover controls unavailable for this workspace." });
     const phone = req.params.phone || req.body?.phone;
     const { paused, durationMinutes } = req.body || {};
     if (paused === false || paused === "false") {
