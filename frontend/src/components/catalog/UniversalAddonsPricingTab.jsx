@@ -651,3 +651,4 @@ export default function UniversalAddonsPricingTab({ token, selectedEntityId, sho
     </div>
   );
 }
+

@@ -72,6 +72,24 @@ function getPublicExperience(slug) {
       if (!formFieldsByScreen[f.screen_id]) {
         formFieldsByScreen[f.screen_id] = [];
       }
+
+      let parsedOptions = [];
+      try {
+        if (f.options_json) {
+          const rawOpts = typeof f.options_json === "string" ? JSON.parse(f.options_json) : f.options_json;
+          if (Array.isArray(rawOpts)) {
+            parsedOptions = rawOpts;
+          } else if (rawOpts && typeof rawOpts === "object" && (rawOpts.source || rawOpts.masterType || rawOpts.master_type)) {
+            const masterSource = rawOpts.source || rawOpts.masterType || rawOpts.master_type;
+            const masterDataService = require("../masters/masterDataService");
+            const resolved = masterDataService.resolveDynamicMasterOptions(exp.tenant_id || 1, masterSource, rawOpts.criteria || rawOpts.filters || {});
+            parsedOptions = resolved.options.map(o => ({ value: o.value, label: o.label, metadata: o.metadata }));
+          }
+        }
+      } catch (optErr) {
+        parsedOptions = [];
+      }
+
       formFieldsByScreen[f.screen_id].push({
         id: f.id,
         screenId: f.screen_id,
@@ -79,6 +97,7 @@ function getPublicExperience(slug) {
         label: f.label,
         inputType: f.input_type,
         placeholder: f.placeholder,
+        options: parsedOptions,
         validationRules: JSON.parse(f.validation_rules_json || "{}"),
         crmFieldMapping: f.crm_field_mapping,
         crmAttributeMapping: f.crm_field_mapping,

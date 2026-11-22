@@ -23,6 +23,7 @@ import {
   ArrowLeft,
   Sparkles,
   ExternalLink,
+  Database,
   RotateCcw,
   Smartphone
 } from 'lucide-react';
@@ -40,6 +41,7 @@ const InAppStudioPage = lazy(() => import('../pages/InAppStudioPage'));
 const AiAssistantPage = lazy(() => import('../pages/AiAssistantPage'));
 const ReportsPage = lazy(() => import('../pages/ReportsPage'));
 const CatalogInventoryPage = lazy(() => import('../pages/CatalogInventoryPage'));
+const MastersHubPage = lazy(() => import('../pages/MastersHubPage'));
 const InventoryCalendarPage = lazy(() => import('../pages/InventoryCalendarPage'));
 const SystemAdminPanel = lazy(() => import('../pages/SystemAdminPanel'));
 const PayoutsPage = lazy(() => import('../pages/PayoutsPage'));
@@ -218,6 +220,18 @@ export const PAGE_REGISTRY = {
     description: 'Manage dining dishes, beverages, room add-ons, pricing, photos, and instant 86-stock status toggles.',
     adminOnly: false,
     component: CatalogInventoryPage
+  },
+  masters: {
+    id: 'masters',
+    title: 'Universal Masters Hub',
+    module: 'Industry',
+    group: 'Industry Solutions',
+    badge: 'ERP',
+    badgeTone: 'sage',
+    icon: Database,
+    description: 'Universal business masters: categories, locations, staff/doctors, payment modes, GST slabs, units, and tags.',
+    adminOnly: false,
+    component: MastersHubPage
   },
   inventory: {
     id: 'inventory',

@@ -266,3 +266,4 @@ export default function IndustryBlueprintsModal({ isOpen, onClose, onBlueprintAp
     </div>
   );
 }
+

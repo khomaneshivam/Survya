@@ -81,6 +81,15 @@ function buildSystemCapabilitiesContext(tenantId = 1, propertyId = 1) {
     pricingRules = [];
   }
 
+  // 3b. Master Data Layer (Categories, Locations, Resources, Payment Modes)
+  let masterDataBundle = null;
+  try {
+    const masterDataService = require("../masters/masterDataService");
+    masterDataBundle = masterDataService.getMasterBundle(numericTenantId);
+  } catch (e) {
+    masterDataBundle = null;
+  }
+
   // 4. Dynamic CRM Pipelines & Custom Fields Schema
   let crmPipelines = [];
   try {
@@ -229,6 +238,18 @@ function buildSystemCapabilitiesContext(tenantId = 1, propertyId = 1) {
       }
     },
     {
+      type: "MASTER_PICKER",
+      description: "Presents dynamically resolved master options (categories, locations, resources/doctors/staff, payment modes) as WhatsApp quick-reply buttons (2-3) or interactive list menu (4-10) with auto-advance on single option",
+      handles: ["opt_<value>", "empty", "default"],
+      configSchema: {
+        masterType: "master_categories | master_locations | master_resources | master_payment_modes | master_status_tags | master_attributes",
+        promptText: "Please select an option:",
+        outputVariable: "selected_category",
+        filterCriteria: {},
+        autoAdvanceOnSingle: true
+      }
+    },
+    {
       type: "CATALOG_BOOKING",
       description: "Direct inventory lookup, quote calculation, and booking creation",
       handles: ["available", "unavailable"],
@@ -289,6 +310,7 @@ function buildSystemCapabilitiesContext(tenantId = 1, propertyId = 1) {
     catalogItems,
     addonGroups,
     pricingRules,
+    masters: masterDataBundle,
     crmPipelines,
     approvedTemplates,
     connectedPhoneNumbers,

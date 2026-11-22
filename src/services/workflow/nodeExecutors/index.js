@@ -15,6 +15,7 @@ const aiReplyExecutor = require('./aiReplyExecutor');
 const catalogBrowserExecutor = require('./catalogBrowserExecutor');
 const addonQuoteExecutor = require('./addonQuoteExecutor');
 const aiHybridExecutor = require('./aiHybridExecutor');
+const masterPickerExecutor = require('./masterPickerExecutor');
 
 const EXECUTORS = {
   // Triggers
@@ -36,6 +37,8 @@ const EXECUTORS = {
   AI_HYBRID_ASSIST: aiHybridExecutor,
   CATALOG_BROWSER: catalogBrowserExecutor,
   ADDON_UPSELL_AND_QUOTE: addonQuoteExecutor,
+  MASTER_PICKER: masterPickerExecutor,
+  DYNAMIC_MASTER_SELECTION: masterPickerExecutor,
 
   // Intake
   COLLECT_INPUT: intakeExecutor,

@@ -319,6 +319,10 @@ app.use(["/api/v1/admin/queue", "/api/admin/queue", "/api/queue"], jobQueueRoute
 const aiAssistantRoutes = require("./src/routes/aiAssistantRoutes");
 app.use(["/api/v1/ai", "/api/ai"], aiAssistantRoutes);
 
+// 4g. Universal Master Data Layer API (/api/v1/masters)
+const masterRoutes = require("./src/routes/masterRoutes");
+app.use(["/api/v1/masters", "/api/masters"], masterRoutes);
+
 // 5. API routes
 app.use("/api", apiRoutes);
 

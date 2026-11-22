@@ -319,3 +319,4 @@ export default function UniversalAvailabilityTab({ token, selectedEntityId, show
     </div>
   );
 }
+

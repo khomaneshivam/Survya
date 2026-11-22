@@ -131,6 +131,69 @@ const ENTITY_CONFIGS = {
     labelColumn: "title",
     secondaryColumn: "slug",
     displayName: "In-App Experience Studio"
+  },
+  master_domain_profiles: {
+    table: "master_domain_profiles",
+    primaryKey: "id",
+    labelColumn: "display_name",
+    secondaryColumn: "domain_key",
+    displayName: "Domain Profile"
+  },
+  master_locations: {
+    table: "master_locations",
+    primaryKey: "id",
+    labelColumn: "name",
+    secondaryColumn: "location_code",
+    displayName: "Master Location/Branch"
+  },
+  master_categories: {
+    table: "master_categories",
+    primaryKey: "id",
+    labelColumn: "name",
+    secondaryColumn: "category_code",
+    displayName: "Master Category"
+  },
+  master_units: {
+    table: "master_units",
+    primaryKey: "id",
+    labelColumn: "name",
+    secondaryColumn: "unit_code",
+    displayName: "Master Measurement Unit"
+  },
+  master_tax_slabs: {
+    table: "master_tax_slabs",
+    primaryKey: "id",
+    labelColumn: "title",
+    secondaryColumn: "slab_code",
+    displayName: "Master GST/Tax Slab"
+  },
+  master_attributes: {
+    table: "master_attributes",
+    primaryKey: "id",
+    labelColumn: "name",
+    secondaryColumn: "attribute_code",
+    displayName: "Master Dynamic Attribute"
+  },
+  master_resources: {
+    table: "master_resources",
+    primaryKey: "id",
+    labelColumn: "name",
+    secondaryColumn: "resource_code",
+    displayName: "Master Staff/Resource"
+  },
+  master_payment_modes: {
+    table: "master_payment_modes",
+    primaryKey: "id",
+    labelColumn: "name",
+    secondaryColumn: "mode_code",
+    displayName: "Master Payment Mode"
+  },
+  master_status_tags: {
+    table: "master_status_tags",
+    primaryKey: "id",
+    labelColumn: "tag_name",
+    secondaryColumn: "tag_code",
+    displayName: "Master Status Tag"
   }
 };
 
@@ -167,7 +230,26 @@ const ALIAS_MAP = {
   chat_link: "chat_links",
   link: "chat_links",
   inapp_experience: "inapp_experiences",
-  experience: "inapp_experiences"
+  experience: "inapp_experiences",
+  master_domain_profile: "master_domain_profiles",
+  domain_profile: "master_domain_profiles",
+  master_location: "master_locations",
+  location: "master_locations",
+  master_category: "master_categories",
+  category: "master_categories",
+  master_unit: "master_units",
+  unit: "master_units",
+  master_tax_slab: "master_tax_slabs",
+  tax_slab: "master_tax_slabs",
+  tax: "master_tax_slabs",
+  master_attribute: "master_attributes",
+  attribute: "master_attributes",
+  master_resource: "master_resources",
+  resource: "master_resources",
+  master_payment_mode: "master_payment_modes",
+  payment_mode: "master_payment_modes",
+  master_status_tag: "master_status_tags",
+  status_tag: "master_status_tags"
 };
 
 const IMMUTABLE_TABLES = [

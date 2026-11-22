@@ -23,6 +23,7 @@ import {
   UserCheck,
   Settings,
   Plug,
+  Database,
   Smartphone
 } from 'lucide-react';
 
@@ -57,6 +58,7 @@ export default function Sidebar({
     {
       title: 'Industry Solutions',
       items: [
+        { id: 'masters', label: 'Masters Hub', icon: Database, badge: 'ERP' },
         { id: 'catalog', label: 'Catalog & Menu', icon: Layers },
         { id: 'inventory', label: 'Hospitality', icon: BedDouble }
       ]

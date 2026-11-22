@@ -151,6 +151,40 @@ export default function NodePaletteSidebar({ onAddNode }) {
             }}
           />
         </div>
+
+        {/* Quick Master Nodes Shortcut Bar */}
+        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div style={{ fontSize: '0.66rem', fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            ⚡ Master Nodes
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+            {[
+              { label: 'Category', masterType: 'master_categories' },
+              { label: 'Location', masterType: 'master_locations' },
+              { label: 'Staff/Doctor', masterType: 'master_resources' },
+              { label: 'Payment', masterType: 'master_payment_modes' }
+            ].map(m => (
+              <button
+                key={m.masterType}
+                type="button"
+                onClick={() => onAddNode('MASTER_PICKER')}
+                style={{
+                  fontSize: '0.67rem',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  border: '1px solid #A7F3D0',
+                  background: '#ECFDF5',
+                  color: '#047857',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+                title={`Add dynamic ${m.label} picker node`}
+              >
+                + {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Categories & Nodes list */}

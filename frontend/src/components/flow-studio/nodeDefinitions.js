@@ -425,6 +425,28 @@ export const NODE_DEFINITIONS = [
     getOutputHandles: () => [
       { id: 'default', label: 'Next Step', type: 'source' }
     ]
+  },
+  {
+    type: 'MASTER_PICKER',
+    label: 'Master Data Picker',
+    category: 'MESSAGING',
+    icon: Database,
+    color: '#059669',
+    bg: '#D1FAE5',
+    badge: 'Master ERP',
+    desc: 'Dynamic WhatsApp buttons (2-3) or list menu (4-10) resolving live categories, branches, staff, or payment modes',
+    defaultConfig: {
+      masterType: 'master_categories',
+      promptText: 'Please select an option:',
+      outputVariable: 'selected_category',
+      autoAdvanceOnSingle: true,
+      maxButtons: 3,
+      listButtonTitle: 'Choose Option'
+    },
+    getOutputHandles: () => [
+      { id: 'default', label: 'Option Selected', type: 'source' },
+      { id: 'empty', label: 'No Options Found', type: 'source' }
+    ]
   }
 ];
 
