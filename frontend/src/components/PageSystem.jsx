@@ -1,4 +1,4 @@
-import React, { Component, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
+import React, { Component, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useAuth } from '../context/AuthContext';
 import usePageMeta from '../utils/usePageMeta';
 import {
@@ -20,9 +20,7 @@ import {
   Settings,
   AlertTriangle,
   ChevronRight,
-  ArrowLeft,
   Sparkles,
-  ExternalLink,
   Database,
   RotateCcw,
   Smartphone,
@@ -57,7 +55,7 @@ const LandingPage = lazy(() => import('../pages/LandingPage'));
  */
 function PageSkeleton({ title }) {
   return (
-    <div style={{ padding: '28px 24px', maxWidth: '1280px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+    <div role="status" aria-label={`Loading ${title || 'page'}`} style={{ padding: '28px 24px', maxWidth: '1280px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#EEEEF0', animation: 'shimmer 1.4s infinite linear' }} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -423,7 +421,6 @@ class PageErrorBoundary extends Component {
 export default function PageSystem({
   activeTab,
   setActiveTab,
-  sidebarCollapsed,
   mobileOpen
 }) {
   const { user, isAdmin } = useAuth();
