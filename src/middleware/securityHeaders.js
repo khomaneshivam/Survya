@@ -40,7 +40,7 @@ function securityHeaders(req, res, next) {
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' data: https: blob:",
     "media-src 'self' blob: https:",
-    "connect-src 'self' https://graph.facebook.com https://*.facebook.com https://*.loca.lt",
+    "connect-src 'self' https://graph.facebook.com https://*.facebook.com https://*.loca.lt https://fonts.googleapis.com https://fonts.gstatic.com",
     "frame-ancestors 'self'",
     "form-action 'self'",
     "base-uri 'self'",

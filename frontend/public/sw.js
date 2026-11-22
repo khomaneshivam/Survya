@@ -31,6 +31,11 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
+  // STRICT BYPASS: Only intercept same-origin requests; never intercept cross-origin font/CDN/API requests
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
   // STRICT BYPASS: Never intercept or cache API endpoints, Meta Webhooks, SSE streams, or dynamic uploads
   if (
     url.pathname.startsWith('/api') ||
@@ -57,12 +62,17 @@ self.addEventListener('fetch', (event) => {
         }
         return networkResponse;
       })
-      .catch(() => {
-        return caches.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) return cachedResponse;
-          if (event.request.headers.get('accept')?.includes('text/html')) {
-            return caches.match('/');
-          }
+      .catch(async () => {
+        const cachedResponse = await caches.match(event.request);
+        if (cachedResponse) return cachedResponse;
+        if (event.request.headers.get('accept')?.includes('text/html')) {
+          const rootCached = await caches.match('/');
+          if (rootCached) return rootCached;
+        }
+        return new Response('Offline or Network Error', {
+          status: 503,
+          statusText: 'Service Unavailable',
+          headers: { 'Content-Type': 'text/plain' }
         });
       })
   );

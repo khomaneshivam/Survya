@@ -597,21 +597,24 @@ export default function SystemAdminPanel({ onNavigate }) {
       key: 'is_default',
       header: 'Priority',
       align: 'center',
-      render: (v, phone) => (
-        v ? (
+      render: (v, phoneRow) => {
+        const phone = phoneRow || v || {};
+        const isDef = Boolean(phone.is_default ?? v);
+        return isDef ? (
           <Badge variant="primary">★ DEFAULT LINE</Badge>
         ) : (
           <Button variant="ghost" size="sm" onClick={() => handleSetDefaultPhone(phone.id)}>
             Set Default
           </Button>
-        )
-      )
+        );
+      }
     },
     {
       key: 'actions',
       header: 'Actions',
       align: 'right',
-      render: (_, phone) => {
+      render: (_, phoneRow) => {
+        const phone = phoneRow || _ || {};
         const isDefault = Boolean(phone.is_default);
         return (
           <div style={{ display: 'inline-flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
@@ -661,7 +664,10 @@ export default function SystemAdminPanel({ onNavigate }) {
       key: 'actor',
       header: 'Actor',
       sortable: true,
-      render: (_, log) => <span style={{ fontWeight: 600 }}>{log.user_name || log.user_id || 'System'}</span>
+      render: (_, logRow) => {
+        const log = logRow || _ || {};
+        return <span style={{ fontWeight: 600 }}>{log.user_name || log.user_id || 'System'}</span>;
+      }
     },
     {
       key: 'action',

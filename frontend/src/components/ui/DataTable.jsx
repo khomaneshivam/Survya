@@ -213,11 +213,24 @@ export default function DataTable({
                   {columns.map((col) => {
                     const isNumeric = col.numeric || col.align === 'right' || col.align === 'end';
                     const textAlign = col.align || (isNumeric ? 'right' : 'start');
-                    const rendered = col.render ? col.render(row) : row[col.key];
+                    const fieldKey = col.accessor || col.key;
+                    const hasField = Boolean(fieldKey && typeof fieldKey === 'string' && row && fieldKey in row);
+                    const cellValue = typeof fieldKey === 'function'
+                      ? fieldKey(row)
+                      : (hasField ? row[fieldKey] : undefined);
+
+                    let rendered;
+                    if (col.render) {
+                      // Pass (cellValue, row) when fieldKey is on row; if field is absent (e.g. Actions), pass (row, row) so both (row) and (_, row) signatures work!
+                      const firstArg = hasField ? cellValue : row;
+                      rendered = col.render(firstArg, row);
+                    } else {
+                      rendered = cellValue !== undefined && cellValue !== null ? cellValue : '—';
+                    }
 
                     return (
                       <td
-                        key={col.key}
+                        key={col.key || col.accessor || col.header || col.label}
                         data-label={col.label || col.header || ''}
                         style={{ textAlign, width: col.width }}
                         className={`${isNumeric ? 'tabular-nums ' : ''}${col.className || ''}`.trim()}

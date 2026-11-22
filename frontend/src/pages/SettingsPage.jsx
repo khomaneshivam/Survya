@@ -468,7 +468,7 @@ export default function SettingsPage() {
       key: 'created_at',
       header: 'Date',
       sortable: true,
-      render: (v) => v ? v.slice(0, 10) : '-'
+      render: (v) => v ? String(v).slice(0, 10) : '-'
     },
     {
       key: 'plan_code',
@@ -880,7 +880,7 @@ export default function SettingsPage() {
                       </div>
                       {billingData?.trialEndsAt && (
                         <div style={{ fontSize: '12px', color: 'var(--accent-coral)', marginTop: '2px' }}>
-                          7-Day Trial expires on: {billingData.trialEndsAt.slice(0, 10)}
+                          7-Day Trial expires on: {String(billingData.trialEndsAt).slice(0, 10)}
                         </div>
                       )}
                     </div>
