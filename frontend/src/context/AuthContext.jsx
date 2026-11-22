@@ -13,6 +13,7 @@ export function AuthProvider({ children }) {
   });
   const [loading, setLoading] = useState(Boolean(localStorage.getItem('token')));
   const [originalAdminToken, setOriginalAdminToken] = useState(() => localStorage.getItem('orig_admin_token') || null);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => localStorage.getItem('workspace_id') || null);
 
   const isImpersonating = Boolean(originalAdminToken);
 
@@ -25,21 +26,45 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  // Dynamic White-Label Branding injection
+  useEffect(() => {
+    const branding = user?.tenant?.branding_json;
+    if (branding && typeof branding === 'object') {
+      if (branding.primaryColor) {
+        document.documentElement.style.setProperty('--sarvya-blue', branding.primaryColor);
+        document.documentElement.style.setProperty('--brand-primary', branding.primaryColor);
+      }
+      if (branding.appName) {
+        document.title = `${branding.appName} — WhatsApp Automation`;
+      }
+    } else {
+      document.documentElement.style.removeProperty('--sarvya-blue');
+      document.documentElement.style.removeProperty('--brand-primary');
+      document.title = 'SARVYA — WhatsApp Automation Platform';
+    }
+  }, [user]);
+
   async function verifyAndFetchUser(tok = token) {
     if (!tok) {
       setLoading(false);
       return;
     }
     try {
-      const res = await fetch('/api/auth/me', {
-        headers: {
-          'Authorization': `Bearer ${tok}`
-        }
-      });
+      const headers = {
+        'Authorization': `Bearer ${tok}`
+      };
+      const wsId = localStorage.getItem('workspace_id');
+      if (wsId) {
+        headers['x-workspace-id'] = wsId;
+      }
+      const res = await fetch('/api/auth/me', { headers });
       const data = await res.json();
       if (data.success && data.user) {
         setUser(data.user);
         localStorage.setItem('user', JSON.stringify(data.user));
+        if (data.user.tenant_id) {
+          setActiveWorkspaceId(String(data.user.tenant_id));
+        }
       } else {
         logout();
       }
@@ -132,6 +157,18 @@ export function AuthProvider({ children }) {
     await verifyAndFetchUser(adminTok);
   }
 
+  // Switch active workspace in multi-tenant & agency white-label mode
+  async function switchWorkspace(workspaceId) {
+    if (!workspaceId) {
+      localStorage.removeItem('workspace_id');
+      setActiveWorkspaceId(null);
+    } else {
+      localStorage.setItem('workspace_id', String(workspaceId));
+      setActiveWorkspaceId(String(workspaceId));
+    }
+    await verifyAndFetchUser(token);
+  }
+
   const value = {
     user,
     token,
@@ -139,6 +176,8 @@ export function AuthProvider({ children }) {
     isAuthenticated: Boolean(token && user),
     isAdmin: user?.role === 'ADMIN',
     isImpersonating,
+    activeWorkspaceId,
+    switchWorkspace,
     login,
     register,
     logout,

@@ -1,0 +1,146 @@
+const express = require("express");
+const router = express.Router();
+const billingService = require("../services/billingService");
+const { authenticateToken, optionalAuth } = require("../middleware/authMiddleware");
+const { db } = require("../config/database");
+
+/**
+ * GET /plans
+ * List all available subscription tiers
+ */
+router.get("/plans", (req, res) => {
+  try {
+    const plans = billingService.getPlans();
+    return res.status(200).json({ success: true, data: plans });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * POST /webhook/razorpay
+ * Razorpay payment webhook endpoint (HMAC signature verification)
+ */
+router.post("/webhook/razorpay", async (req, res) => {
+  try {
+    const signature = req.headers["x-razorpay-signature"];
+    const result = await billingService.handleRazorpayWebhook(req.body, signature, req.rawBody);
+    return res.status(200).json(result);
+  } catch (err) {
+    console.error("[Razorpay Webhook Error]:", err.message);
+    return res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+// Authenticated billing routes
+router.use(authenticateToken);
+
+/**
+ * GET /subscription
+ * Returns active subscription status, usage counters and quotas
+ */
+router.get("/subscription", (req, res) => {
+  try {
+    const tenantId = req.user.tenant_id;
+    const tenant = db.prepare(`
+      SELECT id, name, plan_code, subscription_status, trial_ends_at,
+             quota_monthly_messages, quota_waba_lines, gstin, billing_address
+      FROM tenants
+      WHERE id = ? AND delete_status = 0
+    `).get(tenantId);
+
+    if (!tenant) {
+      return res.status(404).json({ success: false, message: "Workspace not found." });
+    }
+
+    const currentWabaLines = db.prepare(`
+      SELECT COUNT(*) as count FROM waba_phone_numbers
+      WHERE tenant_id = ? AND delete_status = 0
+    `).get(tenantId)?.count || 0;
+
+    // Count monthly messages dispatched
+    const monthlyMessages = db.prepare(`
+      SELECT COUNT(*) as count FROM whatsapp_messages
+      WHERE tenant_id = ? AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
+    `).get(tenantId)?.count || 0;
+
+    const latestSub = db.prepare(`
+      SELECT id, plan_code, billing_cycle, invoice_number, period_start, period_end, status
+      FROM tenant_subscriptions
+      WHERE tenant_id = ?
+      ORDER BY id DESC LIMIT 1
+    `).get(tenantId);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        tenantId,
+        tenantName: tenant.name,
+        planCode: tenant.plan_code,
+        subscriptionStatus: tenant.subscription_status,
+        trialEndsAt: tenant.trial_ends_at,
+        gstin: tenant.gstin,
+        billingAddress: tenant.billing_address,
+        usage: {
+          wabaLinesUsed: currentWabaLines,
+          wabaLinesLimit: tenant.quota_waba_lines,
+          messagesUsed: monthlyMessages,
+          messagesLimit: tenant.quota_monthly_messages
+        },
+        latestSubscription: latestSub || null
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * POST /checkout
+ * Prepares Razorpay order with SAC 998314 18% GST breakdown
+ */
+router.post("/checkout", (req, res) => {
+  try {
+    const { planCode, billingCycle, customerStateCode, gstin, billingAddress } = req.body || {};
+    const result = billingService.createCheckout({
+      tenantId: req.user.tenant_id,
+      planCode,
+      billingCycle,
+      customerStateCode,
+      gstin,
+      billingAddress
+    });
+    return res.status(200).json(result);
+  } catch (err) {
+    return res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * GET /invoices
+ * Lists past GST invoices for current tenant
+ */
+router.get("/invoices", (req, res) => {
+  try {
+    const invoices = billingService.getInvoices(req.user.tenant_id);
+    return res.status(200).json({ success: true, data: invoices });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * GET /invoices/:id/html
+ * Renders or downloads printable GST tax invoice
+ */
+router.get("/invoices/:id/html", (req, res) => {
+  try {
+    const html = billingService.getInvoiceHtml(req.params.id, req.user.tenant_id);
+    res.setHeader("Content-Type", "text/html");
+    return res.send(html);
+  } catch (err) {
+    return res.status(404).json({ success: false, message: err.message });
+  }
+});
+
+module.exports = router;

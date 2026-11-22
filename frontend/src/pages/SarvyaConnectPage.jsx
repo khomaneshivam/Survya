@@ -41,6 +41,7 @@ import {
 } from '../components/ui';
 import PhoneMockup from '../components/PhoneMockup';
 import TemplateBuilderModal from '../components/TemplateBuilderModal';
+import MetaEmbeddedSignupButton from '../components/MetaEmbeddedSignupButton';
 
 const STATUS_TONE = {
   APPROVED: 'green',
@@ -450,6 +451,7 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
         subtitle="Connect your registered WhatsApp number once, design & submit custom Meta templates, enforce 24h rules, and dispatch campaigns directly inside SARVYA."
         actions={
           <>
+            <MetaEmbeddedSignupButton onSuccess={() => { fetchAccounts(); fetchTemplates(); }} />
             <Button
               type="button"
               variant="secondary"
@@ -599,9 +601,12 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
                   title="No WhatsApp sender connected yet"
                   description="Connect your registered Meta Phone Number ID and WABA ID once to start creating templates and sending directly from SARVYA."
                   action={
-                    <Button type="button" variant="primary" icon={Plus} onClick={() => setConnectOpen(true)}>
-                      Connect WhatsApp Account
-                    </Button>
+                    <div className="flex gap-2 items-center flex-wrap justify-center">
+                      <MetaEmbeddedSignupButton onSuccess={() => { fetchAccounts(); fetchTemplates(); }} />
+                      <Button type="button" variant="secondary" icon={Plus} onClick={() => setConnectOpen(true)}>
+                        Manual Credentials
+                      </Button>
+                    </div>
                   }
                 />
               )}

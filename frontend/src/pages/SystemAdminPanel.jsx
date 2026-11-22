@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import AddPhoneNumberModal from '../components/AddPhoneNumberModal';
+import MetaEmbeddedSignupButton from '../components/MetaEmbeddedSignupButton';
 import JobQueueMonitor from '../components/admin/JobQueueMonitor';
 import AdminOverviewTab from '../components/admin/AdminOverviewTab';
 import AdminUsersCrudTab from '../components/admin/AdminUsersCrudTab';
@@ -673,9 +674,12 @@ export default function SystemAdminPanel({ onNavigate }) {
               title="Registered WhatsApp Business Accounts & Phone Numbers"
               icon={Smartphone}
               action={
-                <Button variant="primary" onClick={() => { setPhoneModalData(null); setShowPhoneModal(true); }}>
-                  <Plus size={14} /> Register WABA Number
-                </Button>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <MetaEmbeddedSignupButton onSuccess={() => fetchPhoneNumbers()} />
+                  <Button variant="secondary" onClick={() => { setPhoneModalData(null); setShowPhoneModal(true); }}>
+                    <Plus size={14} /> Manual Register
+                  </Button>
+                </div>
               }
             />
             <CardBody>

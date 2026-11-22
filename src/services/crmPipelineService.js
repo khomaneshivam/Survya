@@ -373,6 +373,7 @@ function deleteRecord(recordId, tenantId = 1) {
 }
 
 module.exports = {
+  ensureDefaultPipelines,
   listPipelines,
   getPipelineById,
   createPipeline,

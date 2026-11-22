@@ -864,4 +864,13 @@ router.use("/v1/inapp", require("./inappExperienceRoutes"));
 // Public Dynamic In-App Experience Runtime
 router.use(["/v1/public/x", "/public/x"], require("./publicInappRoutes"));
 
+// Meta Embedded Signup v4 with Coexistence Mode
+router.use(["/v1/channels/whatsapp/embedded-signup", "/channels/whatsapp/embedded-signup"], require("./embeddedSignupRoutes"));
+
+// Self-Serve Subscriptions, Razorpay Billing & GST Tax Invoices
+router.use(["/v1/billing", "/billing"], require("./billingRoutes"));
+
+// Agency White-Label & Multi-Workspace Switcher
+router.use(["/v1/agency", "/agency"], require("./agencyRoutes"));
+
 module.exports = router;

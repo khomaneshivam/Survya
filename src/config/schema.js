@@ -49,11 +49,13 @@ const TABLE_SCHEMAS = {
   "room_types": "CREATE TABLE IF NOT EXISTS `room_types` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `property_id` bigint NOT NULL DEFAULT '1',\n  `name` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `max_adults` bigint DEFAULT '2',\n  `max_children` bigint DEFAULT '2',\n  `base_rate` double DEFAULT '3500',\n  `description` longtext COLLATE utf8mb4_unicode_ci,\n  `active` bigint DEFAULT '1',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `room_code` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `room_size` double DEFAULT '350',\n  `size_unit` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT 'sq_ft',\n  `bed_type` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT '1 King Bed',\n  `bed_count` int DEFAULT '1',\n  `max_occupancy` int DEFAULT '3',\n  `standard_occupancy` int DEFAULT '2',\n  `extra_adult_capacity` int DEFAULT '1',\n  `extra_child_capacity` int DEFAULT '1',\n  `extra_adult_price` double DEFAULT '1200',\n  `extra_child_price` double DEFAULT '600',\n  `bathroom_count` int DEFAULT '1',\n  `view_type` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT 'Garden View',\n  `smoking_policy` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT 'NON_SMOKING',\n  `accessibility_info` text COLLATE utf8mb4_unicode_ci,\n  `amenities_json` text COLLATE utf8mb4_unicode_ci,\n  `primary_image_url` text COLLATE utf8mb4_unicode_ci,\n  `status` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT 'ACTIVE',\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "settings": "CREATE TABLE IF NOT EXISTS `settings` (\n  `key` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `value` longtext COLLATE utf8mb4_unicode_ci,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`key`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "templates": "CREATE TABLE IF NOT EXISTS `templates` (\n  `id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `name` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `meta_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `language` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'en',\n  `category` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'MARKETING',\n  `status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'APPROVED',\n  `parameter_format` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'POSITIONAL',\n  `body_text` longtext COLLATE utf8mb4_unicode_ci,\n  `variables` longtext COLLATE utf8mb4_unicode_ci,\n  `components` longtext COLLATE utf8mb4_unicode_ci,\n  `buttons` longtext COLLATE utf8mb4_unicode_ci,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `header_type` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'NONE',\n  `header_text` longtext COLLATE utf8mb4_unicode_ci,\n  `header_media_url` longtext COLLATE utf8mb4_unicode_ci,\n  `footer_text` longtext COLLATE utf8mb4_unicode_ci,\n  `rejection_reason` longtext COLLATE utf8mb4_unicode_ci,\n  `version` bigint DEFAULT '1',\n  `submitted_at` datetime DEFAULT NULL,\n  `approved_at` datetime DEFAULT NULL,\n  `user_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `tenant_id` bigint DEFAULT '1',\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-  "tenants": "CREATE TABLE IF NOT EXISTS `tenants` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `name` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `slug` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'ACTIVE',\n  `timezone` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'Asia/Kolkata',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "tenants": "CREATE TABLE IF NOT EXISTS `tenants` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `name` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `slug` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'ACTIVE',\n  `plan_code` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'TRIAL',\n  `subscription_status` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'TRIALING',\n  `trial_ends_at` datetime DEFAULT NULL,\n  `parent_agency_tenant_id` bigint DEFAULT NULL,\n  `branding_json` json DEFAULT NULL,\n  `gstin` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `billing_address` text COLLATE utf8mb4_unicode_ci,\n  `quota_monthly_messages` int NOT NULL DEFAULT '10000',\n  `quota_waba_lines` int NOT NULL DEFAULT '1',\n  `active_status` tinyint(1) NOT NULL DEFAULT '1',\n  `delete_status` tinyint(1) NOT NULL DEFAULT '0',\n  `deleted_at` datetime DEFAULT NULL,\n  `deleted_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `timezone` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'Asia/Kolkata',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "tenant_subscriptions": "CREATE TABLE IF NOT EXISTS `tenant_subscriptions` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL,\n  `plan_code` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `billing_cycle` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'MONTHLY',\n  `amount_inr` double NOT NULL DEFAULT '0',\n  `gst_inr` double NOT NULL DEFAULT '0',\n  `total_inr` double NOT NULL DEFAULT '0',\n  `razorpay_subscription_id` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `razorpay_payment_id` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `invoice_number` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `status` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'ACTIVE',\n  `period_start` datetime DEFAULT NULL,\n  `period_end` datetime DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_sub_tenant` (`tenant_id`, `status`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "tenant_user_memberships": "CREATE TABLE IF NOT EXISTS `tenant_user_memberships` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `user_id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `tenant_id` bigint NOT NULL,\n  `role` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'ADMIN',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uniq_user_tenant_membership` (`user_id`, `tenant_id`),\n  KEY `idx_membership_tenant` (`tenant_id`, `user_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "unified_order_items": "CREATE TABLE IF NOT EXISTS `unified_order_items` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `order_id` bigint NOT NULL,\n  `item_id` bigint NOT NULL,\n  `variant_id` bigint DEFAULT NULL,\n  `item_title` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `variant_title` longtext COLLATE utf8mb4_unicode_ci,\n  `quantity` bigint NOT NULL DEFAULT '1',\n  `unit_price` double NOT NULL,\n  `tax_amount` double DEFAULT '0',\n  `total_price` double NOT NULL,\n  `special_instructions` longtext COLLATE utf8mb4_unicode_ci,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "unified_orders": "CREATE TABLE IF NOT EXISTS `unified_orders` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `entity_id` bigint NOT NULL,\n  `order_number` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `domain` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `customer_name` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `customer_phone` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `customer_email` longtext COLLATE utf8mb4_unicode_ci,\n  `source` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'CHAT_LINK',\n  `link_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `check_in_date` longtext COLLATE utf8mb4_unicode_ci,\n  `check_out_date` longtext COLLATE utf8mb4_unicode_ci,\n  `table_number` longtext COLLATE utf8mb4_unicode_ci,\n  `appointment_slot` longtext COLLATE utf8mb4_unicode_ci,\n  `shipping_address_json` longtext COLLATE utf8mb4_unicode_ci,\n  `subtotal` double NOT NULL DEFAULT '0',\n  `tax_total` double NOT NULL DEFAULT '0',\n  `discount_total` double DEFAULT '0',\n  `grand_total` double NOT NULL DEFAULT '0',\n  `currency` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'INR',\n  `order_status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'PENDING',\n  `payment_status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'UNPAID',\n  `payment_method` longtext COLLATE utf8mb4_unicode_ci,\n  `payment_reference` longtext COLLATE utf8mb4_unicode_ci,\n  `notes` longtext COLLATE utf8mb4_unicode_ci,\n  `metadata_json` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT '{}',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "users": "CREATE TABLE IF NOT EXISTS `users` (\n  `id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `name` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `phone` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `password_hash` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `role` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'USER',\n  `status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'ACTIVE',\n  `assigned_phone_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `last_login_at` datetime DEFAULT NULL,\n  `tenant_id` bigint DEFAULT '1',\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-  "waba_phone_numbers": "CREATE TABLE IF NOT EXISTS `waba_phone_numbers` (\n  `id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `display_name` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `phone_number` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `phone_number_id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `waba_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `quality_rating` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'GREEN',\n  `status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'VERIFIED',\n  `is_default` bigint DEFAULT '0',\n  `registered_by` longtext COLLATE utf8mb4_unicode_ci,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `access_token` longtext COLLATE utf8mb4_unicode_ci,\n  `token_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'PERMANENT',\n  `last_verified_at` datetime DEFAULT NULL,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "waba_phone_numbers": "CREATE TABLE IF NOT EXISTS `waba_phone_numbers` (\n  `id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `display_name` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `phone_number` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `phone_number_id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `waba_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `quality_rating` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'GREEN',\n  `status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'VERIFIED',\n  `is_default` bigint DEFAULT '0',\n  `registered_by` longtext COLLATE utf8mb4_unicode_ci,\n  `access_token` longtext COLLATE utf8mb4_unicode_ci,\n  `access_token_enc` longtext COLLATE utf8mb4_unicode_ci,\n  `token_type` varchar(50) COLLATE utf8mb4_unicode_ci DEFAULT 'PERMANENT',\n  `coexistence_mode` tinyint(1) NOT NULL DEFAULT '0',\n  `embedded_signup_version` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'v4',\n  `last_verified_at` datetime DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "whatsapp_flows": "CREATE TABLE IF NOT EXISTS `whatsapp_flows` (\n  `id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `user_id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `name` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `description` longtext COLLATE utf8mb4_unicode_ci,\n  `meta_flow_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'DRAFT',\n  `categories` text COLLATE utf8mb4_unicode_ci,\n  `flow_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `json_version` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT '3.1',\n  `data_api_version` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT '3.0',\n  `endpoint_uri` longtext COLLATE utf8mb4_unicode_ci,\n  `preview_url` longtext COLLATE utf8mb4_unicode_ci,\n  `validation_errors` longtext COLLATE utf8mb4_unicode_ci,\n  `sync_status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'LOCAL',\n  `last_sync_at` datetime DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "whatsapp_messages": "CREATE TABLE IF NOT EXISTS `whatsapp_messages` (\n  `id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `tenant_id` bigint DEFAULT '1',\n  `user_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `phone_number_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `campaign_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `recipient_phone` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `direction` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'OUTBOUND',\n  `message_type` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `template_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `template_name` longtext COLLATE utf8mb4_unicode_ci,\n  `template_category` longtext COLLATE utf8mb4_unicode_ci,\n  `message_body` longtext COLLATE utf8mb4_unicode_ci,\n  `components_json` longtext COLLATE utf8mb4_unicode_ci,\n  `status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'SENT',\n  `meta_message_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `error_code` longtext COLLATE utf8mb4_unicode_ci,\n  `error_message` longtext COLLATE utf8mb4_unicode_ci,\n  `estimated_cost` double DEFAULT '0',\n  `currency` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'INR',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `delivered_at` datetime DEFAULT NULL,\n  `read_at` datetime DEFAULT NULL,\n  `failed_at` datetime DEFAULT NULL,\n  PRIMARY KEY (`id`),\n  KEY `idx_wa_messages_meta_id` (`meta_message_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "whatsapp_usage_ledger": "CREATE TABLE IF NOT EXISTS `whatsapp_usage_ledger` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint DEFAULT '1',\n  `user_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `phone_number_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `campaign_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `message_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `meta_message_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `recipient_phone` longtext COLLATE utf8mb4_unicode_ci,\n  `category` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'MARKETING',\n  `unit_cost` double DEFAULT '0',\n  `currency` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'INR',\n  `billing_status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'ESTIMATED',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
@@ -163,21 +165,72 @@ const INDEXES = [
   "CREATE INDEX idx_dpdp_req_status ON dpdp_data_requests (status)",
   "CREATE INDEX idx_ai_know_tenant ON ai_knowledge_sources (tenant_id, active_status, delete_status)",
   "CREATE INDEX idx_ai_logs_tenant ON ai_interaction_logs (tenant_id, created_at)",
-  "CREATE INDEX idx_ai_logs_phone ON ai_interaction_logs (sender_phone(32), created_at)"
+  "CREATE INDEX idx_ai_logs_phone ON ai_interaction_logs (sender_phone(32), created_at)",
+  "CREATE INDEX idx_tenants_agency ON tenants (parent_agency_tenant_id)",
+  "CREATE INDEX idx_sub_tenant ON tenant_subscriptions (tenant_id, status)",
+  "CREATE INDEX idx_membership_tenant ON tenant_user_memberships (tenant_id, user_id)",
+  "CREATE INDEX idx_waba_tenant ON waba_phone_numbers (tenant_id)"
 ];
 
 function runColumnMigrations(db) {
-  // Ensure waba_phone_numbers has access_token, token_type, last_verified_at
+  // Ensure waba_phone_numbers has tenant_id, access_token, access_token_enc, token_type, coexistence_mode, embedded_signup_version, last_verified_at
   try {
     const cols = db.prepare("DESCRIBE waba_phone_numbers").all().map(c => c.Field);
+    if (!cols.includes("tenant_id")) {
+      db.exec("ALTER TABLE waba_phone_numbers ADD COLUMN tenant_id BIGINT NOT NULL DEFAULT 1 AFTER id");
+    }
     if (!cols.includes("access_token")) {
       db.exec("ALTER TABLE waba_phone_numbers ADD COLUMN access_token LONGTEXT NULL");
+    }
+    if (!cols.includes("access_token_enc")) {
+      db.exec("ALTER TABLE waba_phone_numbers ADD COLUMN access_token_enc LONGTEXT NULL AFTER access_token");
     }
     if (!cols.includes("token_type")) {
       db.exec("ALTER TABLE waba_phone_numbers ADD COLUMN token_type VARCHAR(50) DEFAULT 'PERMANENT'");
     }
+    if (!cols.includes("coexistence_mode")) {
+      db.exec("ALTER TABLE waba_phone_numbers ADD COLUMN coexistence_mode TINYINT(1) NOT NULL DEFAULT 0 AFTER token_type");
+    }
+    if (!cols.includes("embedded_signup_version")) {
+      db.exec("ALTER TABLE waba_phone_numbers ADD COLUMN embedded_signup_version VARCHAR(16) NOT NULL DEFAULT 'v4' AFTER coexistence_mode");
+    }
     if (!cols.includes("last_verified_at")) {
       db.exec("ALTER TABLE waba_phone_numbers ADD COLUMN last_verified_at DATETIME NULL");
+    }
+  } catch (e) {}
+
+  // Ensure tenants has SaaS & agency white-label columns
+  try {
+    const tCols = db.prepare("DESCRIBE tenants").all().map(c => c.Field);
+    if (!tCols.includes("plan_code")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN plan_code VARCHAR(32) NOT NULL DEFAULT 'TRIAL' AFTER status");
+    }
+    if (!tCols.includes("subscription_status")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN subscription_status VARCHAR(32) NOT NULL DEFAULT 'TRIALING' AFTER plan_code");
+    }
+    if (!tCols.includes("trial_ends_at")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN trial_ends_at DATETIME NULL AFTER subscription_status");
+    }
+    if (!tCols.includes("parent_agency_tenant_id")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN parent_agency_tenant_id BIGINT NULL AFTER trial_ends_at");
+    }
+    if (!tCols.includes("branding_json")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN branding_json JSON NULL AFTER parent_agency_tenant_id");
+    }
+    if (!tCols.includes("gstin")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN gstin VARCHAR(32) NULL AFTER branding_json");
+    }
+    if (!tCols.includes("billing_address")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN billing_address TEXT NULL AFTER gstin");
+    }
+    if (!tCols.includes("quota_monthly_messages")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN quota_monthly_messages INT NOT NULL DEFAULT 10000 AFTER billing_address");
+    }
+    if (!tCols.includes("quota_waba_lines")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN quota_waba_lines INT NOT NULL DEFAULT 1 AFTER quota_monthly_messages");
+    }
+    if (!tCols.includes("updated_at")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
     }
   } catch (e) {}
 
@@ -238,9 +291,9 @@ function runColumnMigrations(db) {
     }
   } catch (e) {}
 
-  // Universal Soft Delete Columns Migration across 16 operational tables
+  // Universal Soft Delete Columns Migration across 17 operational tables
   const softDeleteTables = [
-    'users', 'waba_phone_numbers', 'conversation_flows', 'campaigns',
+    'tenants', 'users', 'waba_phone_numbers', 'conversation_flows', 'campaigns',
     'templates', 'contacts', 'enquiries', 'booking_enquiries', 'crm_pipelines',
     'crm_records', 'business_entities', 'catalog_items', 'room_types',
     'chat_links', 'inapp_experiences', 'ai_knowledge_sources'
@@ -870,6 +923,37 @@ function seedDefaults(db, config) {
     }
   } catch (schedErr) {
     console.warn("[Database] Notice on seeding system job schedules:", schedErr.message);
+  }
+
+  // 5. Default Tenant 1 SaaS Plan & Memberships
+  try {
+    const t1 = db.prepare("SELECT id, plan_code FROM tenants WHERE id = 1").get();
+    if (t1 && (!t1.plan_code || t1.plan_code === 'TRIAL')) {
+      db.prepare(`
+        UPDATE tenants SET
+          plan_code = 'ENTERPRISE',
+          subscription_status = 'ACTIVE',
+          quota_monthly_messages = 200000,
+          quota_waba_lines = 10
+        WHERE id = 1
+      `).run();
+    }
+
+    // Ensure all existing users are enrolled in tenant_user_memberships
+    const allUsers = db.prepare("SELECT id, role, tenant_id FROM users").all();
+    for (const u of allUsers) {
+      const tId = u.tenant_id || 1;
+      const memRole = u.role === 'ADMIN' ? 'OWNER' : 'ADMIN';
+      const exists = db.prepare("SELECT id FROM tenant_user_memberships WHERE user_id = ? AND tenant_id = ?").get(u.id, tId);
+      if (!exists) {
+        db.prepare(`
+          INSERT INTO tenant_user_memberships (user_id, tenant_id, role)
+          VALUES (?, ?, ?)
+        `).run(u.id, tId, memRole);
+      }
+    }
+  } catch (tenantMemErr) {
+    console.warn("[Database] Notice on seeding tenant memberships:", tenantMemErr.message);
   }
 }
 

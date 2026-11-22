@@ -5,6 +5,8 @@ const config = require("../config/env");
 const { db } = require("../config/database");
 const timeUtil = require("../utils/timeUtil");
 
+const crmPipelineService = require("../services/crmPipelineService");
+
 /**
  * Generates signed JWT session token
  */
@@ -13,7 +15,8 @@ function generateToken(user) {
     {
       userId: user.id,
       email: user.email,
-      role: user.role
+      role: user.role,
+      tenantId: user.tenant_id ? Number(user.tenant_id) : 1
     },
     config.JWT_SECRET,
     { expiresIn: "7d" }
@@ -21,7 +24,7 @@ function generateToken(user) {
 }
 
 /**
- * Register a new user account
+ * Register a new user account with dedicated multi-tenant workspace & 7-day trial
  */
 async function register(req, res) {
   try {
@@ -49,9 +52,9 @@ async function register(req, res) {
     const bootstrapToken = req.headers["x-admin-bootstrap-token"] || req.body?.adminBootstrapToken;
     const configuredBootstrapToken = process.env.ADMIN_BOOTSTRAP_TOKEN;
 
-    // Atomically check existing user and insert within SQLite transaction
-    let role = "USER";
+    let role = "ADMIN";
     let assignedPhoneId = null;
+    let tenantId = 1;
 
     db.exec("BEGIN IMMEDIATE TRANSACTION;");
     try {
@@ -67,20 +70,46 @@ async function register(req, res) {
       const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get().count;
       if (configuredBootstrapToken && bootstrapToken === configuredBootstrapToken) {
         role = "ADMIN";
+        tenantId = 1;
       } else if (userCount === 0) {
-        // The first registered user in the platform is always Master Administrator
+        // The first registered user in the platform is always Master Administrator on Tenant 1
         role = "ADMIN";
+        tenantId = 1;
       } else {
-        role = "USER";
+        // Self-serve SaaS: create a dedicated workspace with 7-day TRIAL
+        role = "ADMIN"; // Workspace admin
+        let baseSlug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        if (!baseSlug) baseSlug = "workspace";
+        let uniqueSlug = baseSlug;
+        let counter = 1;
+        while (db.prepare("SELECT id FROM tenants WHERE slug = ?").get(uniqueSlug)) {
+          uniqueSlug = `${baseSlug}-${counter}`;
+          counter++;
+        }
+
+        const insertTenant = db.prepare(`
+          INSERT INTO tenants (
+            name, slug, status, plan_code, subscription_status, trial_ends_at,
+            quota_monthly_messages, quota_waba_lines, timezone, created_at, updated_at
+          ) VALUES (?, ?, 'ACTIVE', 'TRIAL', 'TRIALING', DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 DAY), 1000, 1, 'Asia/Kolkata', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `).run(`${cleanName}'s Workspace`, uniqueSlug);
+
+        tenantId = Number(insertTenant.lastInsertRowid);
       }
 
       const defaultPhone = db.prepare("SELECT id FROM waba_phone_numbers WHERE is_default = 1 LIMIT 1").get();
       assignedPhoneId = defaultPhone ? defaultPhone.id : null;
 
       db.prepare(`
-        INSERT INTO users (id, name, email, phone, password_hash, role, status, assigned_phone_id)
-        VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
-      `).run(userId, cleanName, cleanEmail, cleanPhone, passwordHash, role, assignedPhoneId);
+        INSERT INTO users (id, name, email, phone, password_hash, role, status, assigned_phone_id, tenant_id)
+        VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+      `).run(userId, cleanName, cleanEmail, cleanPhone, passwordHash, role, assignedPhoneId, tenantId);
+
+      // Record owner membership in tenant_user_memberships
+      db.prepare(`
+        INSERT INTO tenant_user_memberships (user_id, tenant_id, role)
+        VALUES (?, ?, 'OWNER')
+      `).run(userId, tenantId);
 
       db.exec("COMMIT;");
     } catch (txErr) {
@@ -88,8 +117,17 @@ async function register(req, res) {
       throw txErr;
     }
 
+    // Seed default CRM pipelines for new workspace outside transaction
+    if (tenantId > 1) {
+      try {
+        crmPipelineService.ensureDefaultPipelines(tenantId);
+      } catch (pipeErr) {
+        console.warn("[Register] Notice seeding default CRM pipelines:", pipeErr.message);
+      }
+    }
+
     const newUser = db.prepare(`
-      SELECT id, name, email, phone, role, status, assigned_phone_id, created_at
+      SELECT id, name, email, phone, role, status, assigned_phone_id, tenant_id, created_at
       FROM users WHERE id = ?
     `).get(userId);
 
@@ -212,11 +250,30 @@ async function getMe(req, res) {
       `).get();
     }
 
+    // Fetch tenant details
+    const tenant = db.prepare(`
+      SELECT id, name, slug, status, plan_code, subscription_status, trial_ends_at,
+             parent_agency_tenant_id, branding_json, gstin, billing_address,
+             quota_monthly_messages, quota_waba_lines, timezone, created_at
+      FROM tenants
+      WHERE id = ? AND delete_status = 0
+    `).get(user.tenant_id || 1);
+
+    if (tenant && tenant.branding_json && typeof tenant.branding_json === "string") {
+      try {
+        tenant.branding_json = JSON.parse(tenant.branding_json);
+      } catch (e) {}
+    }
+
     return res.status(200).json({
       success: true,
       user: {
         ...user,
-        assignedPhone
+        assignedPhone,
+        tenant: tenant || null,
+        workspace_role: user.workspace_role || (user.role === "ADMIN" ? "OWNER" : "USER"),
+        is_switched_workspace: Boolean(user.is_switched_workspace),
+        original_tenant_id: user.original_tenant_id || user.tenant_id
       }
     });
   } catch (error) {

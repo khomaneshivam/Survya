@@ -45,6 +45,59 @@ function extractRequestToken(req) {
   return null;
 }
 
+function resolveWorkspaceAccess(user, req) {
+  if (!user) return user;
+  user.tenant_id = user.tenant_id ? Number(user.tenant_id) : 1;
+  user.original_tenant_id = user.tenant_id;
+
+  const requestedWorkspaceId = req.headers?.["x-workspace-id"] || req.headers?.["x-tenant-id"];
+  if (requestedWorkspaceId && String(requestedWorkspaceId).trim()) {
+    const targetTid = parseInt(String(requestedWorkspaceId).trim(), 10);
+    if (!isNaN(targetTid) && targetTid > 0) {
+      if (targetTid === user.tenant_id) {
+        // Same workspace
+      } else if (user.role === "ADMIN") {
+        const targetTenant = db.prepare("SELECT id, status, delete_status FROM tenants WHERE id = ?").get(targetTid);
+        if (targetTenant && targetTenant.delete_status === 0) {
+          user.tenant_id = targetTid;
+          user.is_switched_workspace = true;
+        }
+      } else {
+        const membership = db.prepare(`
+          SELECT role FROM tenant_user_memberships
+          WHERE user_id = ? AND tenant_id = ?
+        `).get(user.id, targetTid);
+
+        if (membership) {
+          user.tenant_id = targetTid;
+          user.workspace_role = membership.role;
+          user.is_switched_workspace = true;
+        } else {
+          const childTenant = db.prepare(`
+            SELECT t.id, t.parent_agency_tenant_id
+            FROM tenants t
+            WHERE t.id = ? AND t.delete_status = 0
+          `).get(targetTid);
+
+          if (childTenant && childTenant.parent_agency_tenant_id) {
+            const agencyMembership = db.prepare(`
+              SELECT role FROM tenant_user_memberships
+              WHERE user_id = ? AND tenant_id = ?
+            `).get(user.id, childTenant.parent_agency_tenant_id);
+
+            if (agencyMembership && ["OWNER", "ADMIN", "AGENCY_ADMIN"].includes(agencyMembership.role)) {
+              user.tenant_id = targetTid;
+              user.workspace_role = "AGENCY_ADMIN";
+              user.is_switched_workspace = true;
+            }
+          }
+        }
+      }
+    }
+  }
+  return user;
+}
+
 /**
  * Authenticates incoming request using JWT Bearer token in Authorization header,
  * cookie, or session context.
@@ -71,7 +124,7 @@ function authenticateToken(req, res, next) {
 
     // Always verify current user status and role against active database record
     const user = db.prepare(`
-      SELECT id, name, email, phone, role, status, assigned_phone_id, created_at
+      SELECT id, name, email, phone, role, status, assigned_phone_id, tenant_id, created_at
       FROM users
       WHERE id = ?
     `).get(uId);
@@ -90,7 +143,7 @@ function authenticateToken(req, res, next) {
       });
     }
 
-    req.user = user;
+    req.user = resolveWorkspaceAccess(user, req);
     return next();
   } catch (err) {
     const isExpired = err.name === "TokenExpiredError";
@@ -128,12 +181,12 @@ function authenticateStreamToken(req, res, next) {
       return res.status(401).json({ success: false, message: "Invalid stream token." });
     }
 
-    const user = db.prepare("SELECT id, name, email, role, status FROM users WHERE id = ?").get(uId);
+    const user = db.prepare("SELECT id, name, email, phone, role, status, tenant_id FROM users WHERE id = ?").get(uId);
     if (!user || user.status !== "ACTIVE") {
       return res.status(403).json({ success: false, message: "Unauthorized or suspended account." });
     }
 
-    req.user = user;
+    req.user = resolveWorkspaceAccess(user, req);
     return next();
   } catch (err) {
     return res.status(401).json({ success: false, message: "Invalid or expired stream token." });
@@ -184,12 +237,12 @@ function optionalAuth(req, res, next) {
     const uId = decoded?.userId || decoded?.id;
     if (uId) {
       const user = db.prepare(`
-        SELECT id, name, email, phone, role, status, assigned_phone_id
+        SELECT id, name, email, phone, role, status, assigned_phone_id, tenant_id
         FROM users
         WHERE id = ?
       `).get(uId);
       if (user && user.status === "ACTIVE") {
-        req.user = user;
+        req.user = resolveWorkspaceAccess(user, req);
       }
     }
   } catch (e) {
