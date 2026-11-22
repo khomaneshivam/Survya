@@ -42,6 +42,43 @@ jobs:
         run: |
           node --test tests/conversation_tenant_workflows.test.js tests/inbox_tenant_isolation.test.js tests/durable_webhook_ingress.test.js tests/schema_driven_workflow_input.test.js
 
+  full-backend-regression:
+    name: Full backend regression (MySQL 8.4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: whatsapp_bulk_db
+          MYSQL_ROOT_PASSWORD: integration_test_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pintegration_test_password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      NODE_ENV: test
+      DB_CLIENT: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_USER: root
+      DB_PASSWORD: integration_test_password
+      DB_NAME: whatsapp_bulk_db
+      JWT_SECRET: integration_test_jwt_secret_very_long_nonproduction
+      META_APP_SECRET: integration_test_meta_secret_only
+      VERIFY_WEBHOOK_SIGNATURE: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
+
   frontend-quality:
     name: Frontend lint and build
     runs-on: ubuntu-latest
