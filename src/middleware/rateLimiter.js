@@ -77,10 +77,14 @@ const uploadLimiter = new MemoryRateLimiter(60000, 30, "File upload rate limit r
 // 4. General API protection limiter: 300 requests / 60s per client
 const apiLimiter = new MemoryRateLimiter(60000, 300, "API rate limit exceeded. Please reduce request frequency.").middleware();
 
+// 5. Public runtime & customer chat endpoints limiter: 120 requests / 60s per IP
+const publicLimiter = new MemoryRateLimiter(60000, 120, "Too many requests to public endpoint. Please try again shortly.").middleware();
+
 module.exports = {
   authLimiter,
   broadcastLimiter,
   uploadLimiter,
   apiLimiter,
+  publicLimiter,
   MemoryRateLimiter
 };

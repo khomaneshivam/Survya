@@ -562,8 +562,8 @@ function navigateSession(slug, {
   const activeFromKey = fromScreenKey || session.current_screen_key;
   const fromScreen = screens.find(s => s.screenKey === activeFromKey);
 
-  // Validate dynamic form if fromScreen is DYNAMIC_FORM
-  if (fromScreen && fromScreen.screenType === "DYNAMIC_FORM") {
+  // Validate dynamic form if fromScreen is DYNAMIC_FORM or FORM
+  if (fromScreen && (fromScreen.screenType === "DYNAMIC_FORM" || fromScreen.screenType === "FORM")) {
     const fields = formFieldsByScreen[fromScreen.id] || [];
     if (fields.length > 0) {
       const submitted = formValues && typeof formValues === "object" ? formValues : {};
@@ -733,5 +733,20 @@ module.exports = {
   getPublicExperience,
   startOrResumeSession,
   getCatalogItems,
-  navigateSession
+  navigateSession,
+  startVisitorSession: (slugOrOpts, opts = {}) => {
+    if (typeof slugOrOpts === "object" && slugOrOpts !== null) {
+      return startOrResumeSession(slugOrOpts.slug, slugOrOpts);
+    }
+    return startOrResumeSession(slugOrOpts, opts);
+  },
+  submitScreenForm: async (slugOrOpts, opts = {}) => {
+    const params = (typeof slugOrOpts === "object" && slugOrOpts !== null) ? slugOrOpts : { slug: slugOrOpts, ...opts };
+    return navigateSession(params.slug, {
+      sessionToken: params.sessionToken,
+      fromScreenKey: params.screenKey || params.fromScreenKey,
+      action: "NEXT",
+      formValues: params.formData || params.formValues
+    });
+  }
 };

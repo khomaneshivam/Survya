@@ -490,6 +490,10 @@ class WebhookService {
   /**
    * Parses and processes incoming Webhook notification payload from Meta
    */
+  async processIncomingWebhook(payload) {
+    return this.processIncomingPayload(payload);
+  }
+
   async processIncomingPayload(payload) {
     if (!payload || typeof payload !== "object") {
       return { processed: 0, messages: 0, statuses: 0 };

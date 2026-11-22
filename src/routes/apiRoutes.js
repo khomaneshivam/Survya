@@ -846,6 +846,9 @@ router.get("/v1/whatsapp/usage", authenticateToken, sarvyaConnectController.getU
 router.get("/v1/webhooks/meta/whatsapp", webhookController.handleVerification);
 router.post("/v1/webhooks/meta/whatsapp", webhookController.handleIncomingEvent);
 
+// Meta Template Registry & Custom Builder
+router.use(require("./templateRoutes"));
+
 // Click-to-Chat Links & In-App Customer Messaging
 router.use(require("./chatLinkRoutes"));
 

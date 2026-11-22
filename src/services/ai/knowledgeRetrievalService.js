@@ -251,7 +251,7 @@ class KnowledgeRetrievalService {
     if (topMatches.length > 0) {
       const maxScore = topMatches[0].score;
       // Heuristic: a strong BM25 match with 2+ overlapping keywords typically reaches score >= 3.0
-      bestConfidence = Math.min(0.98, Number((maxScore / (maxScore + 2.0)).toFixed(2)));
+      bestConfidence = Math.min(0.98, Number((maxScore / (maxScore + 1.2)).toFixed(2)));
     }
 
     const contextText = topMatches

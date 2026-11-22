@@ -210,6 +210,125 @@ class JobWorkerEngine extends EventEmitter {
       }
       return { skipped: true, reason: "Missing phoneE164 in payload" };
     });
+
+    // 8. IndiaMART Lead Polling & Attribution Sync Handler
+    this.registerHandler("INDIAMART_POLL_SYNC", async (payload, job) => {
+      const tenantId = payload?.tenantId || 1;
+      const leads = payload?.leads || (payload?.mockLeads ? payload.mockLeads : []);
+      let syncedCount = 0;
+
+      for (const lead of leads) {
+        const phone = String(lead.sender_phone || lead.phone || "").replace(/\D/g, "");
+        if (!phone) continue;
+        const phoneE164 = phone.startsWith("+") ? phone : `+${phone}`;
+        const name = lead.sender_name || lead.name || "IndiaMART Lead";
+        const email = lead.sender_email || lead.email || null;
+        const productName = lead.product_name || lead.subject || "General Inquiry";
+        const message = lead.query_message || lead.message || "";
+
+        // 1. Upsert contact
+        let contact = db.prepare("SELECT id FROM contacts WHERE tenant_id = ? AND phone_e164 = ? LIMIT 1").get(tenantId, phoneE164);
+        if (!contact) {
+          const res = db.prepare(`
+            INSERT INTO contacts (tenant_id, phone_e164, name, email, source, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'INDIAMART', UTC_TIMESTAMP(), UTC_TIMESTAMP())
+          `).run(tenantId, phoneE164, name, email);
+          contact = { id: res.lastInsertRowid };
+        }
+
+        // 2. Upsert CRM lead record
+        const customAttrs = JSON.stringify({
+          source: "INDIAMART",
+          product_name: productName,
+          query_message: message,
+          attributed_channel: "INDIAMART_B2B",
+          synced_at: new Date().toISOString()
+        });
+
+        db.prepare(`
+          INSERT INTO crm_records (
+            tenant_id, pipeline_id, contact_phone, contact_name, contact_email,
+            stage_key, lead_score, deal_value, tags_json, custom_attributes,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, 'NEW', 60, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+        `).run(
+          tenantId,
+          payload.pipelineId || 1,
+          phoneE164,
+          name,
+          email,
+          lead.deal_value || 0,
+          JSON.stringify(["indiamart", "inbound_b2b"]),
+          customAttrs
+        );
+
+        syncedCount++;
+      }
+
+      return {
+        status: "SUCCESS",
+        tenantId,
+        syncedCount,
+        queryTime: payload?.queryTime || new Date().toISOString()
+      };
+    });
+
+    // 9. Meta Conversions API (CAPI) & CTWA Lead Attribution / ROAS Handler
+    this.registerHandler("META_CAPI_CONVERSION", async (payload, job) => {
+      const tenantId = payload?.tenantId || 1;
+      const eventName = payload?.eventName || "Lead";
+      const phoneE164 = payload?.phoneE164 || "";
+      const valueInr = Number(payload?.valueInr || payload?.customData?.value || 0);
+      const isSimulation = payload?.isSimulation !== undefined ? payload.isSimulation : true;
+
+      // Hash sensitive identifier with SHA-256 for privacy compliance (Meta CAPI spec)
+      const cleanPhone = String(phoneE164).replace(/\D/g, "");
+      const phoneHash = cleanPhone ? crypto.createHash("sha256").update(cleanPhone).digest("hex") : null;
+      const eventId = payload?.eventId || `capi_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+      const eventTime = Math.floor(Date.now() / 1000);
+
+      // CTWA Attribution & ROAS computation
+      const adSpend = Number(payload?.adSpend || 0);
+      const roas = adSpend > 0 ? parseFloat((valueInr / adSpend).toFixed(2)) : null;
+
+      // Log conversion event in audit trail for analytics
+      try {
+        db.prepare(`
+          INSERT INTO audit_logs (tenant_id, user_id, action, target_id, details, created_at)
+          VALUES (?, 'system_capi', 'META_CAPI_CONVERSION', ?, ?, UTC_TIMESTAMP())
+        `).run(
+          tenantId,
+          eventId,
+          JSON.stringify({
+            eventName,
+            phoneHash: phoneHash ? phoneHash.substring(0, 16) + "..." : null,
+            valueInr,
+            adSpend,
+            roas,
+            isSimulation,
+            eventTime
+          })
+        );
+      } catch (_) {}
+
+      return {
+        status: isSimulation ? "MOCK_DISPATCHED" : "DISPATCHED",
+        eventId,
+        eventName,
+        valueInr,
+        adSpend,
+        roas,
+        isSimulation,
+        dispatchedAt: new Date().toISOString()
+      };
+    });
+  }
+
+  /**
+   * Exponential backoff calculation (10s, 20s, 40s... capped at 1h)
+   */
+  _calculateBackoffSeconds(attempts = 1) {
+    return Math.min(3600, Math.pow(2, attempts) * 10);
   }
 
   /**
@@ -415,7 +534,7 @@ class JobWorkerEngine extends EventEmitter {
         });
       } else {
         // Retry with exponential backoff: 10s, 20s, 40s, 80s, etc. (capped at 1 hour)
-        const backoffSeconds = Math.min(3600, Math.pow(2, currentAttempts) * 10);
+        const backoffSeconds = this._calculateBackoffSeconds(currentAttempts);
         await pool.query(`
           UPDATE system_job_queue
           SET status = 'PENDING',

@@ -121,8 +121,12 @@ class TaskScopedAiAgentService {
   /**
    * Determine if input warrants an immediate human handoff
    */
-  checkHandoffIntent(userInput, agentConfig) {
+  checkHandoffIntent(userInput, agentConfigOrTenantId) {
     if (!userInput || typeof userInput !== 'string') return false;
+    let agentConfig = agentConfigOrTenantId;
+    if (typeof agentConfigOrTenantId === 'number' || (typeof agentConfigOrTenantId === 'string' && /^\d+$/.test(agentConfigOrTenantId))) {
+      agentConfig = this.getAgentConfig(Number(agentConfigOrTenantId) || 1);
+    }
     const lower = userInput.toLowerCase();
     const keywords = Array.isArray(agentConfig?.handoffKeywords) && agentConfig.handoffKeywords.length > 0
       ? agentConfig.handoffKeywords
@@ -161,12 +165,12 @@ class TaskScopedAiAgentService {
     const {
       tenantId = 1,
       senderPhone = 'anonymous',
-      userInput = '',
       inputType = 'TEXT',
       turnCount = 1,
       overridePrompt = null,
       isSimulation = false
     } = params;
+    const userInput = String(params.userInput || params.incomingText || params.text || '').trim();
 
     const db = getDb();
     const agentConfig = this.getAgentConfig(tenantId);

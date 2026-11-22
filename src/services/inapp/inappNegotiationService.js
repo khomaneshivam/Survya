@@ -73,6 +73,9 @@ function submitOffer(slug, {
     }
   }
 
+  if (baseUnitPrice <= 0 && arguments[1]?.basePrice) {
+    baseUnitPrice = Number(arguments[1].basePrice);
+  }
   if (baseUnitPrice <= 0) {
     baseUnitPrice = offer; // fallback if dynamic or custom item
   }
@@ -544,5 +547,24 @@ module.exports = {
   getNegotiation,
   respondToNegotiation,
   listNegotiations,
-  agentAction
+  agentAction,
+  createNegotiation: (slugOrOpts, opts = {}) => {
+    if (typeof slugOrOpts === "object" && slugOrOpts !== null) {
+      return submitOffer(slugOrOpts.slug, slugOrOpts);
+    }
+    return submitOffer(slugOrOpts, opts);
+  },
+  agentCounterOffer: (opts = {}) => {
+    const res = agentAction(opts.tenantId || 1, opts.negotiationId, {
+      action: "COUNTER",
+      counterPrice: opts.agentCounterPrice,
+      agentNote: opts.notes || opts.agentNote,
+      userId: opts.userId || "agent"
+    });
+    return {
+      ...res,
+      status: res.data?.status || "AGENT_COUNTERED",
+      agentCounterPrice: Number(res.data?.agent_counter_price) || opts.agentCounterPrice
+    };
+  }
 };

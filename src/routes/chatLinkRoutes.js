@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const chatLinkController = require("../controllers/chatLinkController");
 const { authenticateToken } = require("../middleware/authMiddleware");
+const { publicLimiter } = require("../middleware/rateLimiter");
 
 // Authenticated Chat Links Management
 router.get("/v1/chat-links", authenticateToken, chatLinkController.listLinks);
@@ -23,21 +24,21 @@ router.delete("/chat-links/:id", authenticateToken, chatLinkController.deleteLin
 router.get("/v1/chat-links/:id/qr", authenticateToken, chatLinkController.getQrCode);
 router.get("/chat-links/:id/qr", authenticateToken, chatLinkController.getQrCode);
 
-// Public Customer In-App Endpoints (No Auth)
-router.get("/v1/public/chat-links/:slug/gallery", chatLinkController.getPublicChatLinkGallery);
-router.get("/public/chat-links/:slug/gallery", chatLinkController.getPublicChatLinkGallery);
-router.get("/v1/public/chat-links/:slug", chatLinkController.getPublicLinkBySlug);
-router.get("/public/chat-links/:slug", chatLinkController.getPublicLinkBySlug);
-router.post("/v1/public/chat-links/:slug/start-chat", chatLinkController.startPublicChat);
-router.post("/public/chat-links/:slug/start-chat", chatLinkController.startPublicChat);
-router.get("/v1/public/chat-links/:slug/messages", chatLinkController.getPublicChatMessages);
-router.get("/public/chat-links/:slug/messages", chatLinkController.getPublicChatMessages);
-router.post("/v1/public/chat-links/:slug/send-message", chatLinkController.sendPublicChatMessage);
-router.post("/public/chat-links/:slug/send-message", chatLinkController.sendPublicChatMessage);
-router.post("/v1/public/chat-links/:slug/messages", chatLinkController.sendPublicChatMessage);
-router.post("/public/chat-links/:slug/messages", chatLinkController.sendPublicChatMessage);
-router.get("/v1/public/chat-links/:slug/qr", chatLinkController.getQrCode);
-router.get("/public/chat-links/:slug/qr", chatLinkController.getQrCode);
+// Public Customer In-App Endpoints (No Auth, Protected with publicLimiter)
+router.get("/v1/public/chat-links/:slug/gallery", publicLimiter, chatLinkController.getPublicChatLinkGallery);
+router.get("/public/chat-links/:slug/gallery", publicLimiter, chatLinkController.getPublicChatLinkGallery);
+router.get("/v1/public/chat-links/:slug", publicLimiter, chatLinkController.getPublicLinkBySlug);
+router.get("/public/chat-links/:slug", publicLimiter, chatLinkController.getPublicLinkBySlug);
+router.post("/v1/public/chat-links/:slug/start-chat", publicLimiter, chatLinkController.startPublicChat);
+router.post("/public/chat-links/:slug/start-chat", publicLimiter, chatLinkController.startPublicChat);
+router.get("/v1/public/chat-links/:slug/messages", publicLimiter, chatLinkController.getPublicChatMessages);
+router.get("/public/chat-links/:slug/messages", publicLimiter, chatLinkController.getPublicChatMessages);
+router.post("/v1/public/chat-links/:slug/send-message", publicLimiter, chatLinkController.sendPublicChatMessage);
+router.post("/public/chat-links/:slug/send-message", publicLimiter, chatLinkController.sendPublicChatMessage);
+router.post("/v1/public/chat-links/:slug/messages", publicLimiter, chatLinkController.sendPublicChatMessage);
+router.post("/public/chat-links/:slug/messages", publicLimiter, chatLinkController.sendPublicChatMessage);
+router.get("/v1/public/chat-links/:slug/qr", publicLimiter, chatLinkController.getQrCode);
+router.get("/public/chat-links/:slug/qr", publicLimiter, chatLinkController.getQrCode);
 
 module.exports = router;
 

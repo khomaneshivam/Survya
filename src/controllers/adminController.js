@@ -1241,7 +1241,7 @@ async function listRecycleBin(req, res) {
       limit: parseInt(limit, 10) || 100,
       offset: parseInt(offset, 10) || 0
     });
-    return res.status(200).json({ success: true, data: items });
+    return res.status(200).json({ success: true, data: { items, total: items.length }, items });
   } catch (error) {
     console.error("Admin listRecycleBin error:", error);
     return res.status(500).json({ success: false, message: error.message });

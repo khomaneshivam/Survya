@@ -1,10 +1,11 @@
 const express = require("express");
 const router = express.Router();
-const { authenticateToken } = require("../middleware/authMiddleware");
+const { authenticateToken, requireAdmin } = require("../middleware/authMiddleware");
 const jobQueueService = require("../services/queue/jobQueueService");
 
-// All admin queue routes require authenticated token and tenant context
+// All admin queue routes require authenticated token and admin privileges
 router.use(authenticateToken);
+router.use(requireAdmin);
 
 // 1. Queue Statistics & Telemetry
 router.get("/stats", (req, res) => {

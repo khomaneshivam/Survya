@@ -1077,6 +1077,11 @@ async function generateFlowFromPrompt({
   }, user);
 
   let finalFlow = createResult.flow;
+  if (finalFlow && createResult?.draftVersion) {
+    finalFlow.nodes_json = createResult.draftVersion.nodes_json;
+    finalFlow.edges_json = createResult.draftVersion.transitions_json;
+    finalFlow.transitions_json = createResult.draftVersion.transitions_json;
+  }
   let publishedVersion = null;
 
   // Auto-publish if requested and valid

@@ -20,7 +20,8 @@ async function recordConsent({
   phoneE164,
   waBsuid = null,
   purpose = "MARKETING",
-  status = "GRANTED",
+  status = null,
+  consentType = null,
   source = "WHATSAPP_CHAT",
   noticeVersion = "v1.0",
   ipAddress = null
@@ -36,10 +37,17 @@ async function recordConsent({
     throw new Error(`Invalid purpose '${purpose}'. Must be one of: ${validPurposes.join(", ")}`);
   }
 
+  let normStatus = "GRANTED";
+  if (status) {
+    normStatus = String(status).toUpperCase();
+  } else if (consentType) {
+    const normConsent = String(consentType).toUpperCase();
+    normStatus = (normConsent === "OPT_OUT" || normConsent === "REVOKE" || normConsent === "WITHDRAW") ? "WITHDRAWN" : "GRANTED";
+  }
+
   const validStatuses = ["GRANTED", "WITHDRAWN"];
-  const normStatus = String(status || "GRANTED").toUpperCase();
   if (!validStatuses.includes(normStatus)) {
-    throw new Error(`Invalid status '${status}'. Must be one of: ${validStatuses.join(", ")}`);
+    throw new Error(`Invalid status '${normStatus}'. Must be one of: ${validStatuses.join(", ")}`);
   }
 
   // 1. Insert into dpdp_consent_ledger
@@ -95,6 +103,7 @@ async function recordConsent({
   }
 
   return {
+    success: true,
     id: res.lastInsertRowid,
     phoneE164: cleanPhone,
     waBsuid,
@@ -195,6 +204,8 @@ async function exportDataSubjectPii(phoneE164, tenantId = 1) {
   return {
     success: true,
     dataSubject: cleanPhone,
+    phoneE164: String(phoneE164).startsWith("+") ? `+${cleanPhone}` : cleanPhone,
+    consentHistory,
     dpdpNoticeVersion: "v1.0",
     complianceAct: "Digital Personal Data Protection Act, 2023 (India)",
     exportedAt: new Date().toISOString(),
