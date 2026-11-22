@@ -69,6 +69,9 @@ router.post(["/flows/conversation-flows/:id/delete", "/:id/delete"], authenticat
 router.post(["/flows/conversation-flows/:id/rollback", "/:id/rollback"], authenticateToken, flowController.rollbackFlow);
 router.get(["/flows/conversation-flows/:id/versions", "/:id/versions"], authenticateToken, flowController.listVersions);
 router.get(["/flows/conversation-flows/:id/analytics", "/:id/analytics"], authenticateToken, flowController.getFlowAnalytics);
+router.get(["/flows/conversation-flows/:id/ai-optimize", "/:id/ai-optimize"], authenticateToken, flowController.getAiOptimizationRecommendations);
+router.post(["/flows/conversation-flows/:id/ai-optimize", "/:id/ai-optimize"], authenticateToken, flowController.getAiOptimizationRecommendations);
+router.post(["/flows/conversation-flows/:id/ai-optimize/apply", "/:id/ai-optimize/apply"], authenticateToken, flowController.applyAiOptimization);
 router.get(["/flows/conversation-flows/:id/executions", "/:id/executions"], authenticateToken, flowController.listFlowExecutions);
 
 // Global Executions & Audit Trace

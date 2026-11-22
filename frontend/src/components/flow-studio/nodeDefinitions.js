@@ -447,6 +447,28 @@ export const NODE_DEFINITIONS = [
       { id: 'default', label: 'Option Selected', type: 'source' },
       { id: 'empty', label: 'No Options Found', type: 'source' }
     ]
+  },
+  {
+    type: 'OPEN_INAPP_EXPERIENCE',
+    label: 'Interactive Web App (/x/)',
+    category: 'ACTIONS',
+    icon: Globe,
+    color: '#0284C7',
+    bg: '#E0F2FE',
+    badge: 'In-App /x/',
+    desc: 'Transitions WhatsApp customer into a personalized In-App Experience with pre-populated variables, then resumes on completion',
+    defaultConfig: {
+      experienceSlug: '',
+      messageText: 'Tap the button below to view all options, compare features & customize add-ons:',
+      buttonLabel: 'Open Interactive App 📱',
+      waitForCompletion: true,
+      carrySessionVars: ['selected_location_id', 'selected_category_id', 'guest_name', 'phone']
+    },
+    getOutputHandles: () => [
+      { id: 'completed', label: 'In-App Completed', type: 'source' },
+      { id: 'cancelled', label: 'User Cancelled', type: 'source' },
+      { id: 'default', label: 'Default / Continue', type: 'source' }
+    ]
   }
 ];
 
@@ -464,7 +486,9 @@ export const LEGACY_NODE_TYPE_MAP = {
   API_INTEGRATION: 'HTTP_WEBHOOK',
   DELAY: 'WAIT_DELAY',
   HANDOFF: 'HUMAN_HANDOFF',
-  END: 'END'
+  END: 'END',
+  INAPP_BRIDGE: 'OPEN_INAPP_EXPERIENCE',
+  INTERACTIVE_APP: 'OPEN_INAPP_EXPERIENCE'
 };
 
 /**

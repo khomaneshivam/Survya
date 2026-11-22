@@ -758,6 +758,20 @@ function navigateSession(slug, {
     session.id
   );
 
+  // If linked to a flow session and reaching terminal or checkout confirmation screen
+  const isCompletionScreen = nextScreenKey === "confirmation" || nextScreenKey === "thank_you" || action === "COMPLETE" || (formValues && formValues.checkout_complete);
+  if (isCompletionScreen && (session.flow_session_id || stateData.flow_session_id)) {
+    try {
+      syncInappCompletionToFlowSession(session.session_token, {
+        ...stateData,
+        ...formValues,
+        targetScreenKey: nextScreenKey
+      });
+    } catch (syncErr) {
+      console.warn("[inappRuntimeService] Auto-sync to flow session warning:", syncErr.message);
+    }
+  }
+
   return {
     success: true,
     currentScreenKey: nextScreenKey,
@@ -766,11 +780,233 @@ function navigateSession(slug, {
   };
 }
 
+/**
+ * Creates a linked In-App session from a WhatsApp flow session (Step 1 Bidirectional Bridge)
+ * Pre-populates customer identity and carried session variables so the customer never re-enters info.
+ */
+function createLinkedSession({
+  tenantId = 1,
+  experienceId = null,
+  slug = null,
+  flowSessionId = null,
+  customerPhone = null,
+  customerName = null,
+  carrySessionVars = [],
+  initialData = {},
+  entryScreenKey = null
+} = {}) {
+  const numericTenantId = Number(tenantId) || 1;
+
+  // 1. Resolve experience
+  let exp = null;
+  if (slug) {
+    exp = db.prepare(`
+      SELECT * FROM inapp_experiences
+      WHERE tenant_id = ? AND slug = ? AND delete_status = 0
+    `).get(numericTenantId, String(slug).trim());
+  } else if (experienceId) {
+    exp = db.prepare(`
+      SELECT * FROM inapp_experiences
+      WHERE tenant_id = ? AND id = ? AND delete_status = 0
+    `).get(numericTenantId, experienceId);
+  }
+
+  if (!exp) {
+    exp = db.prepare(`
+      SELECT * FROM inapp_experiences
+      WHERE tenant_id = ? AND delete_status = 0
+      ORDER BY (status = 'PUBLISHED') DESC, updated_at DESC, id ASC
+      LIMIT 1
+    `).get(numericTenantId);
+  }
+
+  if (!exp) {
+    // If no experience exists for this tenant, create a default published experience
+    const newSlug = `experience-${numericTenantId}-${crypto.randomBytes(3).toString("hex")}`;
+    const insertExp = db.prepare(`
+      INSERT INTO inapp_experiences (
+        tenant_id, name, slug, domain_type, status, entry_screen_key,
+        active_status, delete_status, created_at, updated_at
+      ) VALUES (
+        ?, 'Interactive Catalog & Order Experience', ?, 'RETAIL', 'PUBLISHED', 'welcome',
+        1, 0, UTC_TIMESTAMP(), UTC_TIMESTAMP()
+      )
+    `).run(numericTenantId, newSlug);
+
+    exp = db.prepare(`SELECT * FROM inapp_experiences WHERE id = ?`).get(insertExp.lastInsertRowid);
+  }
+
+  // 2. Prepare stateData carrying variables from flow session
+  const stateData = {
+    ...initialData,
+    flow_session_id: flowSessionId,
+    visitor_phone: customerPhone,
+    visitor_name: customerName,
+    phone: customerPhone,
+    name: customerName
+  };
+
+  if (Array.isArray(carrySessionVars)) {
+    for (const key of carrySessionVars) {
+      if (initialData[key] !== undefined) {
+        stateData[key] = initialData[key];
+      }
+    }
+  }
+
+  // 3. Generate secure session token
+  const sessionToken = `isess_${crypto.randomBytes(16).toString("hex")}`;
+  const targetEntryScreen = entryScreenKey || exp.entry_screen_key || "welcome";
+  const navigationStack = [targetEntryScreen];
+
+  const res = db.prepare(`
+    INSERT INTO inapp_sessions (
+      tenant_id, experience_id, flow_session_id, session_token,
+      visitor_phone, visitor_name, visitor_email, current_screen_key,
+      navigation_stack_json, state_data_json, status,
+      last_activity_at, expires_at, created_at, updated_at
+    ) VALUES (
+      ?, ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?, 'ACTIVE',
+      UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 24 HOUR),
+      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    )
+  `).run(
+    numericTenantId,
+    exp.id,
+    flowSessionId || null,
+    sessionToken,
+    customerPhone || null,
+    customerName || null,
+    initialData.email || null,
+    targetEntryScreen,
+    JSON.stringify(navigationStack),
+    JSON.stringify(stateData)
+  );
+
+  const baseUrl = process.env.PUBLIC_APP_URL || "";
+  const inappUrl = `${baseUrl}/x/${exp.slug}?s=${sessionToken}`;
+
+  return {
+    success: true,
+    sessionId: res.lastInsertRowid,
+    sessionToken,
+    inappUrl,
+    experience: exp,
+    entryScreenKey: targetEntryScreen,
+    stateData
+  };
+}
+
+/**
+ * Syncs in-app completion back to the linked WhatsApp flow session
+ */
+function syncInappCompletionToFlowSession(sessionToken, payload = {}) {
+  if (!sessionToken) {
+    return { success: false, reason: "sessionToken is required" };
+  }
+
+  const inappSession = db.prepare(`
+    SELECT * FROM inapp_sessions
+    WHERE session_token = ? AND delete_status = 0
+  `).get(sessionToken.trim());
+
+  if (!inappSession) {
+    return { success: false, reason: "In-app session not found" };
+  }
+
+  const flowSessionId = inappSession.flow_session_id || JSON.parse(inappSession.state_data_json || "{}").flow_session_id;
+  if (!flowSessionId) {
+    return { success: false, reason: "No linked flow session found" };
+  }
+
+  const flowSession = db.prepare(`
+    SELECT * FROM conversation_flow_sessions
+    WHERE id = ?
+  `).get(flowSessionId);
+
+  if (!flowSession) {
+    return { success: false, reason: `Flow session #${flowSessionId} not found` };
+  }
+
+  let existingCollected = {};
+  try {
+    existingCollected = JSON.parse(flowSession.collected_data_json || "{}");
+  } catch (_) {}
+
+  // Merge payload and in-app state into flow session collected data
+  const inappState = JSON.parse(inappSession.state_data_json || "{}");
+  const mergedCollected = {
+    ...existingCollected,
+    ...inappState,
+    ...payload,
+    inapp_completed: true,
+    inapp_session_token: sessionToken,
+    catalog_item_id: payload.catalogItemId || payload.selectedItemId || inappState.selectedItemId || existingCollected.catalog_item_id || null,
+    selected_item_id: payload.selectedItemId || payload.catalogItemId || inappState.selectedItemId || existingCollected.selected_item_id || null,
+    selected_addons: payload.addons || inappState.selectedAddons || existingCollected.selected_addons || [],
+    transaction_id: payload.transaction_id || payload.transactionId || existingCollected.transaction_id || null,
+    transaction_ref: payload.transaction_ref || payload.transactionRef || payload.referenceCode || payload.reference_code || existingCollected.transaction_ref || null,
+    negotiation_id: payload.negotiationId || payload.negotiation_id || inappState.negotiationId || null
+  };
+
+  // Find linked flow's next node
+  let advancedNodeId = flowSession.current_node_id;
+  try {
+    const flowVersion = db.prepare(`
+      SELECT v.transitions_json
+      FROM conversation_flow_versions v
+      JOIN conversation_flows f ON v.id = COALESCE(f.published_version_id, f.current_draft_version_id)
+      WHERE f.id = ?
+    `).get(flowSession.flow_id) || db.prepare(`SELECT transitions_json FROM conversation_flow_versions WHERE flow_id = ? ORDER BY version_number DESC LIMIT 1`).get(flowSession.flow_id);
+
+    if (flowVersion?.transitions_json) {
+      const transitions = JSON.parse(flowVersion.transitions_json);
+      const curId = flowSession.current_node_id;
+      const compTrans = transitions.find(t =>
+        (t.source === curId || t.sourceNodeId === curId || t.source_node_id === curId) &&
+        (t.handle === "completed" || t.sourceHandle === "completed")
+      ) || transitions.find(t =>
+        (t.source === curId || t.sourceNodeId === curId || t.source_node_id === curId)
+      );
+      if (compTrans) {
+        advancedNodeId = compTrans.target || compTrans.targetNodeId || compTrans.target_node_id;
+      }
+    }
+  } catch (_) {}
+
+  db.prepare(`
+    UPDATE conversation_flow_sessions
+    SET current_node_id = ?,
+        collected_data_json = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(
+    advancedNodeId,
+    JSON.stringify(mergedCollected),
+    flowSession.id
+  );
+
+  return {
+    success: true,
+    synced: true,
+    flowSessionId: flowSession.id,
+    previousNodeId: flowSession.current_node_id,
+    currentNodeId: advancedNodeId,
+    nextNodeId: advancedNodeId,
+    flowAdvanced: advancedNodeId !== flowSession.current_node_id,
+    collectedData: mergedCollected
+  };
+}
+
 module.exports = {
   getPublicExperience,
   startOrResumeSession,
   getCatalogItems,
   navigateSession,
+  createLinkedSession,
+  syncInappCompletionToFlowSession,
   startVisitorSession: (slugOrOpts, opts = {}) => {
     if (typeof slugOrOpts === "object" && slugOrOpts !== null) {
       return startOrResumeSession(slugOrOpts.slug, slugOrOpts);

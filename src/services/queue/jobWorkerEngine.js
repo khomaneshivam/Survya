@@ -425,6 +425,22 @@ class JobWorkerEngine extends EventEmitter {
       console.log(`[Worker] ⭐ Dispatched POST_FULFILLMENT_FEEDBACK for ${refCode} to ${txn.customer_phone} (Simulated safe)`);
       return { success: true, referenceCode: refCode, status: "FEEDBACK_SENT" };
     });
+
+    // 15. Flow Drop-Off Daily Rollup Handler
+    this.registerHandler("ROLLUP_FLOW_DROPOFFS", async (payload, job) => {
+      const flowAnalyticsService = require("../workflow/flowAnalyticsService");
+      const tenantId = payload?.tenantId || null;
+      const res = flowAnalyticsService.rollupFlowDropoffs(tenantId);
+      return res;
+    });
+
+    // 16. Maintenance: Prune Old Flow Events (>90 days)
+    this.registerHandler("PRUNE_OLD_EVENTS", async (payload, job) => {
+      const flowAnalyticsService = require("../workflow/flowAnalyticsService");
+      const thresholdDays = payload?.thresholdDays || 90;
+      const res = flowAnalyticsService.pruneOldEvents(thresholdDays);
+      return res;
+    });
   }
 
   /**

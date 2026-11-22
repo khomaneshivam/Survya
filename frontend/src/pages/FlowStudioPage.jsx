@@ -48,7 +48,8 @@ import {
   UtensilsCrossed,
   Home,
   GraduationCap,
-  Briefcase
+  Briefcase,
+  TrendingUp
 } from 'lucide-react';
 
 import FlowCanvas from '../components/flow-studio/FlowCanvas';
@@ -896,6 +897,27 @@ export default function FlowStudioPage() {
 
               <button
                 type="button"
+                onClick={() => setAnalyticsOpen(true)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '7px 12px',
+                  borderRadius: '6px',
+                  background: '#F0FDF4',
+                  border: '1px solid #BBF7D0',
+                  color: '#166534',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                <TrendingUp size={14} />
+                <span>Funnel &amp; AI Optimizer</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={handleSaveDraft}
                 disabled={savingDraft}
                 style={{
@@ -1107,6 +1129,21 @@ export default function FlowStudioPage() {
             >
               🤖 AI Copilot
             </button>
+            <button
+              type="button"
+              onClick={() => handleQuickAddMasterNode('OPEN_INAPP', 'Interactive Web App (/x/)', {
+                type: 'OPEN_INAPP_EXPERIENCE',
+                title: 'Interactive Web App (/x/)',
+                config: {
+                  messageText: 'Tap below to view all photos, customize add-ons & checkout in 1 tap:',
+                  buttonLabel: 'Open Interactive App 📱',
+                  waitForCompletion: true
+                }
+              })}
+              style={{ fontSize: '0.75rem', padding: '4px 9px', borderRadius: '4px', border: '1px solid #BAE6FD', background: '#F0F9FF', color: '#0369A1', fontWeight: 600, cursor: 'pointer' }}
+            >
+              🌐 Interactive App (/x/)
+            </button>
           </div>
 
           {/* MAIN EDITOR: Step Mode OR Visual Canvas Pro */}
@@ -1201,6 +1238,67 @@ export default function FlowStudioPage() {
             variables: currentVariables
           }}
         />
+      )}
+
+      {analyticsOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          zIndex: 1000
+        }}>
+          <div style={{
+            width: '880px',
+            maxWidth: '100%',
+            height: '100%',
+            background: '#F8FAFC',
+            overflowY: 'auto',
+            padding: '24px',
+            boxShadow: '-4px 0 24px rgba(0, 0, 0, 0.15)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #E2E8F0', paddingBottom: '16px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <TrendingUp size={20} color="#16A34A" /> Flow Funnel &amp; AI Optimizer
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#64748B' }}>
+                  Pre-aggregated O(1) drop-off telemetry &amp; 1-click conversion optimization
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAnalyticsOpen(false)}
+                style={{
+                  background: '#EDF2F7',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '6px 12px',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  fontSize: '0.85rem'
+                }}
+              >
+                ✕ Close
+              </button>
+            </div>
+            <FlowAnalyticsPanel
+              flowId={activeFlowId}
+              token={token}
+              onFlowUpdated={() => {
+                if (activeFlowId) loadFlowDetails(activeFlowId);
+                showToast('AI Optimization applied to flow draft!');
+              }}
+            />
+          </div>
+        </div>
       )}
     </div>
   );

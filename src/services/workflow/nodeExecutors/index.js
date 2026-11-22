@@ -16,6 +16,7 @@ const catalogBrowserExecutor = require('./catalogBrowserExecutor');
 const addonQuoteExecutor = require('./addonQuoteExecutor');
 const aiHybridExecutor = require('./aiHybridExecutor');
 const masterPickerExecutor = require('./masterPickerExecutor');
+const inappBridgeExecutor = require('./inappBridgeExecutor');
 
 const EXECUTORS = {
   // Triggers
@@ -39,6 +40,9 @@ const EXECUTORS = {
   ADDON_UPSELL_AND_QUOTE: addonQuoteExecutor,
   MASTER_PICKER: masterPickerExecutor,
   DYNAMIC_MASTER_SELECTION: masterPickerExecutor,
+  OPEN_INAPP_EXPERIENCE: inappBridgeExecutor,
+  INAPP_BRIDGE: inappBridgeExecutor,
+  INTERACTIVE_APP: inappBridgeExecutor,
 
   // Intake
   COLLECT_INPUT: intakeExecutor,

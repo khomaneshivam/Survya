@@ -5,9 +5,11 @@
  * CRM pipelines, and connected WhatsApp lines.
  */
 
-const { getSetting } = require("../../config/database");
+const { getSetting, getDb } = require("../../config/database");
 const { buildSystemCapabilitiesContext } = require("./aiFlowContextBuilder");
 const flowService = require("../conversationFlowService");
+const flowAnalyticsService = require("./flowAnalyticsService");
+const runtimeCache = require("./runtimeCache");
 const { SECTOR_BLUEPRINTS } = require("../universal/universalCatalogService");
 
 /**
@@ -2233,10 +2235,316 @@ function getAiCapabilities(tenantId = 1, propertyId = 1) {
   };
 }
 
+/**
+ * 1-Click AI Flow Optimizer
+ * Analyzes flow graph topology and 30-day funnel bottlenecks,
+ * then generates high-impact structured recommendations with safe graph patches.
+ */
+function optimizeFlow(tenantId = 1, flowId) {
+  const db = getDb();
+  const flow = db.prepare(`
+    SELECT f.id, f.name, f.category, v.nodes_json, v.transitions_json, v.variables_json
+    FROM conversation_flows f
+    LEFT JOIN conversation_flow_versions v ON v.id = COALESCE(f.current_draft_version_id, f.published_version_id)
+    WHERE f.id = ? AND f.tenant_id = ? AND f.delete_status = 0
+  `).get(flowId, tenantId);
+
+  if (!flow) {
+    throw new Error(`Flow #${flowId} not found`);
+  }
+
+  let nodes = [];
+  let transitions = [];
+  try {
+    nodes = flow.nodes_json ? JSON.parse(flow.nodes_json) : [];
+    transitions = flow.transitions_json ? JSON.parse(flow.transitions_json) : [];
+  } catch (_) {}
+
+  // Fetch 30-day funnel metrics
+  const funnel = flowAnalyticsService.getFlowFunnelAnalytics(tenantId, flowId, 30);
+  const recommendations = [];
+
+  // 1. Friction & Drop-Off Bottleneck Analyzer
+  if (funnel.bottleneckNode) {
+    const bNode = nodes.find(n => n.id === funnel.bottleneckNode.nodeId);
+    if (bNode) {
+      if (bNode.type === "COLLECT_INPUT" || bNode.type === "QUESTION") {
+        recommendations.push({
+          id: `rec_opt_input_${bNode.id}`,
+          category: "FRICTION_REDUCTION",
+          title: `Add Quick-Reply Buttons to "${bNode.title || bNode.id}"`,
+          description: `Users are abandoning at this step (${funnel.bottleneckNode.dropOffRate}% drop-off). Replacing free-text typing with structured quick-reply buttons will remove typing friction.`,
+          expectedImpact: "Reduces step abandonment by ~30%",
+          targetNodeId: bNode.id,
+          patchType: "UPDATE_NODE",
+          patch: {
+            nodeId: bNode.id,
+            config: {
+              ...(bNode.config || {}),
+              inputType: "BUTTON_SELECT",
+              suggestedOptions: ["Standard Option", "Express Option", "Custom Inquiry"]
+            }
+          }
+        });
+      } else if (bNode.type === "SEND_MESSAGE" || bNode.type === "MESSAGE") {
+        recommendations.push({
+          id: `rec_opt_btn_${bNode.id}`,
+          category: "CONVERSION_BOOST",
+          title: `Add Interactive CTA Buttons to "${bNode.title || bNode.id}"`,
+          description: `Message has high drop-off without clear interactive choices. Adding 2-3 instant CTA buttons guides the customer to the next action.`,
+          expectedImpact: "Boosts click-through to next step by ~45%",
+          targetNodeId: bNode.id,
+          patchType: "UPDATE_NODE",
+          patch: {
+            nodeId: bNode.id,
+            config: {
+              ...(bNode.config || {}),
+              options: [
+                { id: "opt_proceed", title: "View Catalog 🛍️" },
+                { id: "opt_speak_agent", title: "Chat with Agent 💬" }
+              ]
+            }
+          }
+        });
+      } else if (bNode.type === "CATALOG_BROWSER") {
+        recommendations.push({
+          id: `rec_opt_inapp_${bNode.id}`,
+          category: "HYBRID_INAPP",
+          title: `Upgrade Catalog Browser to Interactive Web App (/x/)`,
+          description: `WhatsApp list messages have strict 10-item limits. Upgrading to a visual In-App Experience gives customers photo galleries, add-on pickers, and 1-tap checkout.`,
+          expectedImpact: "Increases checkout completion by 2.4x",
+          targetNodeId: bNode.id,
+          patchType: "UPDATE_NODE",
+          patch: {
+            nodeId: bNode.id,
+            type: "OPEN_INAPP_EXPERIENCE",
+            title: "Interactive Web Catalog (/x/)",
+            config: {
+              messageText: "Tap below to view full high-res galleries, customize options, and checkout in 1 tap:",
+              buttonLabel: "Open Interactive Catalog 📱",
+              waitForCompletion: true
+            }
+          }
+        });
+      }
+    }
+  }
+
+  // 2. High Intake Form Fatigue (3+ sequential input steps)
+  const intakeNodes = nodes.filter(n => n.type === "COLLECT_INPUT" || n.type === "INPUT_COLLECTION");
+  if (intakeNodes.length >= 3) {
+    recommendations.push({
+      id: "rec_opt_consolidate_intake",
+      category: "HYBRID_INAPP",
+      title: "Consolidate 3+ Intake Questions into 1-Tap Form (/x/)",
+      description: "This flow asks 3 or more questions in sequence over WhatsApp, creating conversation fatigue. An In-App Experience (/x/) lets users complete all details on a clean mobile screen in under 30 seconds.",
+      expectedImpact: "Cuts drop-off rate by ~50%",
+      patchType: "INSERT_NODE",
+      patch: {
+        node: {
+          id: `node_inapp_intake_${Date.now()}`,
+          type: "OPEN_INAPP_EXPERIENCE",
+          title: "1-Tap In-App Intake Form",
+          config: {
+            messageText: "To save you time, please tap below to quickly confirm your preferences in 30 seconds:",
+            buttonLabel: "Complete Details 📋",
+            waitForCompletion: true
+          }
+        }
+      }
+    });
+  }
+
+  // 3. Upsell / Dynamic Quote Check
+  const hasCommerce = nodes.some(n => ["CATALOG_BROWSER", "CATALOG_BOOKING", "OPEN_INAPP_EXPERIENCE"].includes(n.type));
+  const hasAddons = nodes.some(n => n.type === "ADDON_UPSELL_AND_QUOTE");
+  if (hasCommerce && !hasAddons) {
+    recommendations.push({
+      id: "rec_opt_add_upsell",
+      category: "CONVERSION_BOOST",
+      title: "Inject Add-Ons & Dynamic Quotation Step",
+      description: "Flow converts orders without offering relevant extras or up-sells. Injecting an Add-On & Upsell step before confirmation increases average transaction value.",
+      expectedImpact: "+18-25% Average Order Value (AOV)",
+      patchType: "INSERT_NODE",
+      patch: {
+        node: {
+          id: `node_addon_upsell_${Date.now()}`,
+          type: "ADDON_UPSELL_AND_QUOTE",
+          title: "Add-Ons & Dynamic Quote",
+          config: {
+            title: "✨ Recommended Extras & Add-Ons",
+            allowAddons: true,
+            allowPromoCode: true
+          }
+        }
+      }
+    });
+  }
+
+  // 4. Meta Policy Jan 2026 Live Human Agent Fallback
+  const hasHandoff = nodes.some(n => n.type === "AGENT_HANDOFF" || n.type === "HANDOFF");
+  if (!hasHandoff) {
+    recommendations.push({
+      id: "rec_opt_add_handoff",
+      category: "FALLBACK_SAFETY",
+      title: "Add Human Agent Handoff Fallback",
+      description: "Flow has no fallback route to live human agents. In accordance with Meta Business Policy, customers asking for help should be routeable to staff.",
+      expectedImpact: "100% Meta Jan 2026 Policy Compliance & eliminates stranded inquiries",
+      patchType: "INSERT_NODE",
+      patch: {
+        node: {
+          id: `node_agent_handoff_${Date.now()}`,
+          type: "AGENT_HANDOFF",
+          title: "Front-Desk Specialist Handoff",
+          config: {
+            handoffMessage: "Connecting you with our support specialist right away. Please hold on!",
+            notifyDepartment: "Support"
+          }
+        }
+      }
+    });
+  }
+
+  // Fallback generic recommendation if flow is already high-performing
+  if (recommendations.length === 0) {
+    recommendations.push({
+      id: "rec_opt_hybrid_ai",
+      category: "CONVERSION_BOOST",
+      title: "Add AI Grounded Copilot (AI_HYBRID_ASSIST)",
+      description: "Add an AI Hybrid Assist node so customers who ask off-script questions get instant answers grounded in your live catalog without breaking their active session.",
+      expectedImpact: "Resolves 80% of off-script questions instantly",
+      patchType: "INSERT_NODE",
+      patch: {
+        node: {
+          id: `node_ai_copilot_${Date.now()}`,
+          type: "AI_HYBRID_ASSIST",
+          title: "AI Grounded Copilot",
+          config: {
+            resumePrompt: "👉 Please continue with your selection:"
+          }
+        }
+      }
+    });
+  }
+
+  return {
+    success: true,
+    flowId: Number(flowId),
+    flowName: flow.name,
+    kpis: funnel.kpis,
+    bottleneckNode: funnel.bottleneckNode,
+    recommendationsCount: recommendations.length,
+    recommendations
+  };
+}
+
+/**
+ * 1-Click Apply AI Optimization
+ * Applies structured patch to flow graph, runs hierarchical layout & validation,
+ * saves new draft, and invalidates runtime cache.
+ */
+function applyOptimization(tenantId = 1, flowId, { recommendationId, patch = {}, patchType, user = { username: "system_ai" } } = {}) {
+  const db = getDb();
+  const flow = db.prepare(`
+    SELECT f.*, v.nodes_json, v.transitions_json, v.variables_json
+    FROM conversation_flows f
+    LEFT JOIN conversation_flow_versions v ON v.id = COALESCE(f.current_draft_version_id, f.published_version_id)
+    WHERE f.id = ? AND f.tenant_id = ? AND f.delete_status = 0
+  `).get(flowId, tenantId);
+
+  if (!flow) {
+    throw new Error(`Flow #${flowId} not found`);
+  }
+
+  let nodes = [];
+  let transitions = [];
+  let variables = {};
+  try {
+    nodes = flow.nodes_json ? JSON.parse(flow.nodes_json) : [];
+    transitions = flow.transitions_json ? JSON.parse(flow.transitions_json) : [];
+    variables = flow.variables_json ? JSON.parse(flow.variables_json) : {};
+  } catch (_) {}
+
+  const effectivePatchType = patchType || patch.patchType || (patch.nodeId ? "UPDATE_NODE" : patch.node ? "INSERT_NODE" : "UPDATE_NODE");
+
+  if (effectivePatchType === "UPDATE_NODE" && patch.nodeId) {
+    const idx = nodes.findIndex(n => n.id === patch.nodeId);
+    if (idx >= 0) {
+      nodes[idx] = {
+        ...nodes[idx],
+        ...(patch.title ? { title: patch.title } : {}),
+        ...(patch.type ? { type: patch.type } : {}),
+        config: {
+          ...(nodes[idx].config || {}),
+          ...(patch.config || {})
+        }
+      };
+    }
+  } else if (effectivePatchType === "INSERT_NODE" && patch.node) {
+    const newNode = {
+      ...patch.node,
+      id: patch.node.id || `node_ai_${Date.now()}`
+    };
+    nodes.push(newNode);
+
+    // If targetNodeId is specified, connect newNode after targetNodeId
+    if (patch.targetNodeId) {
+      transitions.push({
+        id: `tr_${patch.targetNodeId}_to_${newNode.id}`,
+        source: patch.targetNodeId,
+        target: newNode.id,
+        handle: "default"
+      });
+    } else if (nodes.length > 1) {
+      // Connect after last node
+      const prevNode = nodes[nodes.length - 2];
+      transitions.push({
+        id: `tr_${prevNode.id}_to_${newNode.id}`,
+        source: prevNode.id,
+        target: newNode.id,
+        handle: "default"
+      });
+    }
+  } else if (effectivePatchType === "ADD_TRANSITION" && patch.transition) {
+    transitions.push(patch.transition);
+  }
+
+  // Filter out any self-loops or malformed transitions
+  transitions = transitions.filter(t => {
+    const src = t.source || t.from;
+    const tgt = t.target || t.to;
+    return src && tgt && src !== tgt;
+  });
+
+  // Re-layout and validate
+  const layoutedNodes = applyHierarchicalLayout(nodes, transitions);
+  const validationReport = flowService.validateFlowGraph(layoutedNodes, transitions, variables);
+
+  const saveResult = flowService.saveFlowDraft(flowId, {
+    nodes: layoutedNodes,
+    transitions,
+    variables,
+    changelog: `Applied AI Optimization: ${recommendationId || "1-Click Auto-Tuning"}`
+  }, user, tenantId);
+
+  // Invalidate runtime cache
+  runtimeCache.invalidateFlow(flowId);
+
+  return {
+    success: true,
+    recommendationId,
+    flow: saveResult.flow,
+    draftVersion: saveResult.draftVersion,
+    validationReport
+  };
+}
+
 module.exports = {
   applyHierarchicalLayout,
   synthesizeSmartLocalFlow,
   generateFlowFromPrompt,
   refineFlowWithAi,
-  getAiCapabilities
+  getAiCapabilities,
+  optimizeFlow,
+  applyOptimization
 };

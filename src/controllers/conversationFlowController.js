@@ -6,6 +6,7 @@
 const flowService = require("../services/conversationFlowService");
 const flowEngine = require("../services/conversationFlowEngine");
 const aiFlowGenerator = require("../services/workflow/aiFlowGeneratorService");
+const flowAnalyticsService = require("../services/workflow/flowAnalyticsService");
 
 async function getAiCapabilities(req, res) {
   try {
@@ -253,10 +254,52 @@ async function getFlowAnalytics(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const flowId = req.params.id;
-    const analytics = flowService.getFlowAnalytics(flowId, tenantId);
-    return res.json({ success: true, analytics });
+    const days = req.query.days || 30;
+    const legacyAnalytics = flowService.getFlowAnalytics(flowId, tenantId);
+    let funnelAnalytics = null;
+    try {
+      funnelAnalytics = flowAnalyticsService.getFlowFunnelAnalytics(tenantId, flowId, days);
+    } catch (_) {}
+
+    return res.json({
+      success: true,
+      analytics: {
+        ...legacyAnalytics,
+        ...(funnelAnalytics || {}),
+        funnel: funnelAnalytics
+      }
+    });
   } catch (err) {
     return res.status(404).json({ success: false, error: err.message });
+  }
+}
+
+async function getAiOptimizationRecommendations(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const flowId = req.params.id;
+    const result = aiFlowGenerator.optimizeFlow(tenantId, flowId);
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+async function applyAiOptimization(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const flowId = req.params.id;
+    const user = req.user || { id: "admin", name: "Administrator" };
+    const { recommendationId, patch, patchType } = req.body;
+    const result = aiFlowGenerator.applyOptimization(tenantId, flowId, {
+      recommendationId,
+      patch,
+      patchType,
+      user
+    });
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
   }
 }
 
@@ -439,5 +482,7 @@ module.exports = {
   refineFlowWithAi,
   getTriggerConflicts,
   assignFlowToLine,
-  setDefaultFlow
+  setDefaultFlow,
+  getAiOptimizationRecommendations,
+  applyAiOptimization
 };

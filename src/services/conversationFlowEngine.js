@@ -10,6 +10,7 @@ const enquiryService = require("./enquiryService");
 const { getNodeExecutor } = require("./workflow/nodeExecutors");
 const { evaluateRules } = require("./workflow/expressionEvaluator");
 const { parseMysqlUtcTimestamp } = require("../utils/timeUtil");
+const flowAnalyticsService = require("./workflow/flowAnalyticsService");
 
 /**
  * Canonical phone normalization: strip all non-digit characters.
@@ -221,6 +222,13 @@ function getActiveSession(tenantId = 1, senderPhone) {
           session.flow_version_id,
           session.current_node_id || "unknown",
           JSON.stringify({ reason: "INACTIVITY_TIMEOUT", timeoutMinutes, lastInteractionAt: session.last_interaction_at })
+        );
+        flowAnalyticsService.recordNodeEvent(
+          session.tenant_id || 1,
+          session.flow_id,
+          session.current_node_id || "unknown",
+          'DROPOFF',
+          { nodeType: 'SESSION_TIMEOUT' }
         );
       } catch (e) {}
 
@@ -1138,6 +1146,16 @@ async function processTurn({
     finalNodeId = node.id;
     executionLogs.push(`[Hop ${hops}] Executing [${node.type}] '${node.id}' (waiting=${isWaitingForThisNode})`);
 
+    if (!isInMemorySimulation && (flow || session)) {
+      flowAnalyticsService.recordNodeEvent(
+        tenantId,
+        session?.flow_id || flow?.id || 1,
+        node.id,
+        'ENTRY',
+        { nodeType: node.type }
+      );
+    }
+
     const executor = getNodeExecutor(node.type);
     const execRes = await executor.execute(node, {
       session: collectedData,
@@ -1220,6 +1238,13 @@ async function processTurn({
     if (execRes.action === "HANDOFF") {
       finalStatus = "PAUSED_AGENT_HANDOFF";
       if (!isInMemorySimulation && (flow || session)) {
+        flowAnalyticsService.recordNodeEvent(
+          tenantId,
+          session?.flow_id || flow?.id || 1,
+          node.id,
+          'HANDOFF',
+          { nodeType: node.type }
+        );
         session = upsertActiveSession({
           sessionId: session?.id,
           sessionKey,
@@ -1240,6 +1265,13 @@ async function processTurn({
     if (execRes.action === "COMPLETE") {
       finalStatus = "COMPLETED";
       if (!isInMemorySimulation && (flow || session)) {
+        flowAnalyticsService.recordNodeEvent(
+          tenantId,
+          session?.flow_id || flow?.id || 1,
+          node.id,
+          'COMPLETION',
+          { nodeType: node.type }
+        );
         session = upsertActiveSession({
           sessionId: session?.id,
           sessionKey,
@@ -1267,6 +1299,13 @@ async function processTurn({
     if (!nextNode) {
       finalStatus = "COMPLETED";
       if (!isInMemorySimulation && (flow || session)) {
+        flowAnalyticsService.recordNodeEvent(
+          tenantId,
+          session?.flow_id || flow?.id || 1,
+          node.id,
+          'COMPLETION',
+          { nodeType: node.type }
+        );
         session = upsertActiveSession({
           sessionId: session?.id,
           sessionKey,
@@ -1282,6 +1321,16 @@ async function processTurn({
         });
       }
       break;
+    }
+
+    if (!isInMemorySimulation && (flow || session)) {
+      flowAnalyticsService.recordNodeEvent(
+        tenantId,
+        session?.flow_id || flow?.id || 1,
+        node.id,
+        'COMPLETION',
+        { nodeType: node.type }
+      );
     }
 
     currentNode = nextNode;
