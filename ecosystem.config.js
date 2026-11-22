@@ -18,6 +18,7 @@ module.exports = {
     {
       name: "sarvya-worker",
       script: "worker.js",
+      exec_mode: "fork",
       instances: 1,
       autorestart: true,
       watch: false,

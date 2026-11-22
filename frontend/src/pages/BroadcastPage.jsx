@@ -757,12 +757,16 @@ export default function BroadcastPage() {
             }
             const recipientLabel = payload.lastRecipient || payload.name || payload.phone;
             if (recipientLabel) {
+              const isCooldown = payload.errorCode === '131049_COOLDOWN' || payload.errorCode === '131049';
               setStreamLogs(prev => [
                 {
                   time: new Date().toLocaleTimeString(),
+                  isCooldown,
                   text: isSent
                     ? `✅ Sent to ${recipientLabel} (${payload.metaMessageId || 'Meta Accepted'})`
-                    : `❌ Failed to ${recipientLabel}: ${payload.error || 'Dispatch error'}`
+                    : isCooldown
+                      ? `⚠️ Skipped ${recipientLabel}: 24h Meta Marketing Cap Active (Not Charged)`
+                      : `❌ Failed to ${recipientLabel}: ${payload.error || 'Dispatch error'}`
                 },
                 ...prev.slice(0, 50)
               ]);
@@ -2500,6 +2504,50 @@ export default function BroadcastPage() {
                 </div>
               </div>
 
+              {/* Cost Estimate with 18% GST Breakdown (Oct 2026 Tariffs) */}
+              {(() => {
+                const category = String(selectedTemplate?.category || 'MARKETING').toUpperCase();
+                const unitRate = (category === 'UTILITY' || category === 'AUTHENTICATION' || category === 'AUTH') ? 0.1150 : 0.8631;
+                const subtotal = totalTargetRecipients * unitRate;
+                const gst = (subtotal * 18.0) / 100;
+                const total = subtotal + gst;
+                return (
+                  <div style={{
+                    background: '#FFFFFF',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: '10px',
+                    padding: '16px 18px',
+                    marginBottom: '20px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#171719', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        Meta Tariff & Spend Estimate (India INR)
+                      </span>
+                      <span className="badge" style={{ background: '#EDE9FE', color: '#6D28D9', fontSize: '0.7rem', fontWeight: 700, padding: '2px 8px' }}>
+                        {category} • ₹{unitRate.toFixed(4)} / msg
+                      </span>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', textAlign: 'center' }}>
+                      <div style={{ background: '#F9FAFB', padding: '10px', borderRadius: '8px', border: '1px solid #E5E7EB' }}>
+                        <div style={{ fontSize: '0.68rem', color: '#6B7280', fontWeight: 600 }}>Subtotal ({totalTargetRecipients} msgs)</div>
+                        <div style={{ fontSize: '1rem', fontWeight: 700, color: '#111827', marginTop: '2px' }}>₹{subtotal.toFixed(2)}</div>
+                      </div>
+                      <div style={{ background: '#F9FAFB', padding: '10px', borderRadius: '8px', border: '1px solid #E5E7EB' }}>
+                        <div style={{ fontSize: '0.68rem', color: '#6B7280', fontWeight: 600 }}>GST (18.0%)</div>
+                        <div style={{ fontSize: '1rem', fontWeight: 700, color: '#B45309', marginTop: '2px' }}>₹{gst.toFixed(2)}</div>
+                      </div>
+                      <div style={{ background: '#ECFDF5', padding: '10px', borderRadius: '8px', border: '1px solid #A7F3D0' }}>
+                        <div style={{ fontSize: '0.68rem', color: '#047857', fontWeight: 700 }}>Total Estimated</div>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#065F46', marginTop: '2px' }}>₹{total.toFixed(2)}</div>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: '#9CA3AF', marginTop: '8px', textAlign: 'right' }}>
+                      * Billed only upon successful Meta delivery. Undelivered messages or Meta 131049 marketing caps are automatically waived (₹0).
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Scheduling Options */}
               <div style={{
                 background: '#FFFFFF',
@@ -2907,8 +2955,13 @@ export default function BroadcastPage() {
               marginBottom: '20px'
             }}>
               {streamLogs.map((log, idx) => (
-                <div key={idx} style={{ marginBottom: '4px', opacity: 0.9 }}>
-                  <span style={{ color: '#67676B', marginRight: '8px' }}>[{log.time}]</span>
+                <div key={idx} style={{ marginBottom: '4px', opacity: 0.9, display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <span style={{ color: '#67676B' }}>[{log.time}]</span>
+                  {log.isCooldown && (
+                    <span style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FCD34D', fontSize: '0.65rem', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
+                      Meta Marketing Cap (Not Charged)
+                    </span>
+                  )}
                   <span>{log.text}</span>
                 </div>
               ))}

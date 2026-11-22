@@ -159,18 +159,36 @@ class JobWorkerEngine extends EventEmitter {
       const broadcastEngine = require("../broadcastEngine");
       const timeUtil = require("../../utils/timeUtil");
 
+      let launched = 0;
+
+      if (payload?.campaignId) {
+        const campaign = db.prepare(`
+          SELECT id, name, scheduled_at, status 
+          FROM campaigns 
+          WHERE id = ?
+        `).get(payload.campaignId);
+
+        if (campaign && (campaign.status === 'SCHEDULED' || campaign.status === 'PAUSED' || campaign.status === 'DRAFT')) {
+          try {
+            await broadcastEngine.startCampaign(campaign.id, payload.overrideDelayMs, { overrideQuietHours: Boolean(payload.overrideQuietHours) });
+            launched++;
+          } catch (e) {
+            console.error(`[JobWorkerEngine] Targeted broadcast launch failed for campaign ${campaign.id}:`, e.message);
+          }
+        }
+      }
+
       const scheduledCampaigns = db.prepare(`
         SELECT id, name, scheduled_at, status 
         FROM campaigns 
         WHERE status = 'SCHEDULED' AND scheduled_at IS NOT NULL
       `).all();
 
-      let launched = 0;
       for (const campaign of scheduledCampaigns) {
         const schedDate = timeUtil.parseDateSmart(campaign.scheduled_at);
         if (schedDate && schedDate.getTime() <= Date.now()) {
           try {
-            await broadcastEngine.startCampaign(campaign.id);
+            await broadcastEngine.startCampaign(campaign.id, null, { overrideQuietHours: true });
             launched++;
           } catch (e) {
             console.error(`[JobWorkerEngine] Broadcast launch failed for campaign ${campaign.id}:`, e.message);

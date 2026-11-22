@@ -1109,7 +1109,11 @@ class WebhookService {
       if (newStatus === "FAILED" && Array.isArray(statusObj.errors) && statusObj.errors.length > 0) {
         const firstErr = statusObj.errors[0];
         waErrCode = String(firstErr.code || "");
-        waErrMsg = firstErr.message || firstErr.title || `Meta delivery error (${waErrCode})`;
+        if (waErrCode === "131049") {
+          waErrMsg = "Meta Marketing Cap (131049): Recipient reached WhatsApp's promo limit. Not billed — auto-paused for 24h.";
+        } else {
+          waErrMsg = firstErr.message || firstErr.title || `Meta delivery error (${waErrCode})`;
+        }
       }
 
       if (newStatus === "DELIVERED") {
@@ -1145,6 +1149,36 @@ class WebhookService {
         `).run(waErrCode, waErrMsg, eventTime, metaMessageId);
         updatedUnified = resWa.changes > 0;
         db.prepare(`UPDATE whatsapp_usage_ledger SET billing_status = 'WAIVED', unit_cost = 0 WHERE meta_message_id = ?`).run(metaMessageId);
+
+        if (waErrCode === "131049") {
+          const msgInfo = db.prepare(`SELECT tenant_id, recipient_phone, phone_number_id FROM whatsapp_messages WHERE meta_message_id = ?`).get(metaMessageId);
+          const phoneE164 = statusObj.recipient_id || msgInfo?.recipient_phone;
+          if (phoneE164) {
+            const cleanPhone = String(phoneE164).replace(/\D/g, "");
+            try {
+              db.prepare(`
+                INSERT INTO contact_marketing_cooldowns (
+                  tenant_id, phone_e164, phone_number_id, error_code, reason, cooldown_until, created_at, updated_at
+                ) VALUES (
+                  ?, ?, ?, '131049', ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 24 HOUR), UTC_TIMESTAMP(), UTC_TIMESTAMP()
+                )
+                ON DUPLICATE KEY UPDATE
+                  phone_number_id = COALESCE(VALUES(phone_number_id), phone_number_id),
+                  error_code = '131049',
+                  reason = VALUES(reason),
+                  cooldown_until = DATE_ADD(UTC_TIMESTAMP(), INTERVAL 24 HOUR),
+                  updated_at = UTC_TIMESTAMP()
+              `).run(
+                msgInfo?.tenant_id || 1,
+                cleanPhone,
+                msgInfo?.phone_number_id || null,
+                waErrMsg
+              );
+            } catch (cdErr) {
+              console.warn("[Webhook] Failed to insert contact_marketing_cooldowns:", cdErr.message);
+            }
+          }
+        }
       }
     } catch (waSyncErr) {}
 
@@ -1169,9 +1203,13 @@ class WebhookService {
     if (newStatus === "FAILED" && Array.isArray(statusObj.errors) && statusObj.errors.length > 0) {
       const err = statusObj.errors[0];
       errorCode = String(err.code || "");
-      errorMsg = err.message || err.title || `Meta delivery error (${errorCode})`;
-      if (err.error_data?.details) {
-        errorMsg += ` - ${err.error_data.details}`;
+      if (errorCode === "131049") {
+        errorMsg = "Meta Marketing Cap (131049): Recipient reached WhatsApp's promo limit. Not billed — auto-paused for 24h.";
+      } else {
+        errorMsg = err.message || err.title || `Meta delivery error (${errorCode})`;
+        if (err.error_data?.details) {
+          errorMsg += ` - ${err.error_data.details}`;
+        }
       }
     }
 
@@ -1212,6 +1250,37 @@ class WebhookService {
         SET status = 'FAILED', error_message = ?, error_code = ?, failed_at = COALESCE(failed_at, ?) 
         WHERE id = ?
       `).run(errorMsg, errorCode, eventTime, recipient.id);
+
+      if (errorCode === "131049") {
+        try {
+          const recRow = db.prepare("SELECT clean_phone, phone, campaign_id FROM campaign_recipients WHERE id = ?").get(recipient.id);
+          const campRow = recRow?.campaign_id ? db.prepare("SELECT tenant_id, phone_number_id FROM campaigns WHERE id = ?").get(recRow.campaign_id) : null;
+          const phoneE164 = statusObj.recipient_id || recRow?.clean_phone || recRow?.phone;
+          if (phoneE164) {
+            const cleanPhone = String(phoneE164).replace(/\D/g, "");
+            db.prepare(`
+              INSERT INTO contact_marketing_cooldowns (
+                tenant_id, phone_e164, phone_number_id, error_code, reason, cooldown_until, created_at, updated_at
+              ) VALUES (
+                ?, ?, ?, '131049', ?, DATE_ADD(UTC_TIMESTAMP(), INTERVAL 24 HOUR), UTC_TIMESTAMP(), UTC_TIMESTAMP()
+              )
+              ON DUPLICATE KEY UPDATE
+                phone_number_id = COALESCE(VALUES(phone_number_id), phone_number_id),
+                error_code = '131049',
+                reason = VALUES(reason),
+                cooldown_until = DATE_ADD(UTC_TIMESTAMP(), INTERVAL 24 HOUR),
+                updated_at = UTC_TIMESTAMP()
+            `).run(
+              campRow?.tenant_id || 1,
+              cleanPhone,
+              campRow?.phone_number_id || null,
+              errorMsg
+            );
+          }
+        } catch (cdErr) {
+          console.warn("[Webhook] Failed to insert contact_marketing_cooldowns for recipient:", cdErr.message);
+        }
+      }
 
       if (newStatus === "FAILED" && recipient.status !== "FAILED" && recipient.campaign_id) {
         try {

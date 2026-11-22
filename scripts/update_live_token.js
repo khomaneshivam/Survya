@@ -1,8 +1,14 @@
 const { setSetting, getSetting } = require('../src/config/database');
 const fs = require('fs');
 
-const liveToken = 'EAAVWCZCMBPqEBTB8JrdQ5fyMBELkFzkfd2VwWw6QGe6W8kiF8hi3dDX36OCekg3c1jxe5RD4IBCXIky5Mxfp5ezjOaaZBCzParx2KrNTw9GNdYXnBC3yGlF66iQ1p7i5wAkoZCjkiM0eiE4AfbGNysjnBZAhgxGOIGiHuhVHNbIBcdEieQW8lKoAbG4LsAZDZD';
-const livePhoneId = '1510764325447375';
+const liveToken = process.argv[2] || process.env.WHATSAPP_API_TOKEN;
+const livePhoneId = process.argv[3] || process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+if (!liveToken || !livePhoneId) {
+  console.error("Error: WHATSAPP_API_TOKEN and WHATSAPP_PHONE_NUMBER_ID must be provided.");
+  console.error("Usage: node scripts/update_live_token.js <WHATSAPP_API_TOKEN> <WHATSAPP_PHONE_NUMBER_ID>");
+  process.exit(1);
+}
 
 setSetting('WHATSAPP_API_TOKEN', liveToken);
 setSetting('WHATSAPP_PHONE_NUMBER_ID', livePhoneId);

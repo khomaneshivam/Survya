@@ -10,7 +10,11 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const DB_HOST = process.env.DB_HOST || 'localhost';
 const DB_PORT = parseInt(process.env.DB_PORT || '3306', 10);
 const DB_USER = process.env.DB_USER || 'root';
-const DB_PASSWORD = process.env.DB_PASSWORD || '@Shivam930738';
+const DB_PASSWORD = process.env.DB_PASSWORD;
+if (!DB_PASSWORD) {
+  console.error("Error: DB_PASSWORD environment variable is required.");
+  process.exit(1);
+}
 const DB_NAME = process.env.DB_NAME || 'whatsapp_bulk_db';
 
 function formatMySqlValue(val, mysqlType) {

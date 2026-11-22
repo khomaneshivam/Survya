@@ -124,8 +124,10 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
   // Usage & Billing Ledger State
   const [usageData, setUsageData] = useState({
     currency: 'INR',
-    rates: { MARKETING: 0.8, UTILITY: 0.12, AUTHENTICATION: 0.12, SERVICE: 0 },
-    totals: { messages: 0, estimatedSpend: 0 },
+    rates: { MARKETING: 0.8631, UTILITY: 0.1150, AUTHENTICATION: 0.1150, SERVICE: 0, SERVICE_OVERAGE: 0.1150, GST_PERCENT: 18.0 },
+    serviceFreeTier: { monthlyLimit: 1000, used: 0, remaining: 1000 },
+    gst: { subtotalInr: 0, gstInr: 0, totalInr: 0, gstPercent: 18.0 },
+    totals: { messages: 0, estimatedSpend: 0, subtotalInr: 0, gstInr: 0, totalInr: 0 },
     byCategory: [],
     ledger: [],
     recentMessages: []
@@ -427,7 +429,11 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
     {
       key: 'billing_status',
       header: 'State',
-      render: (row) => <Badge tone={row.billing_status === 'RECORDED' ? 'green' : row.billing_status === 'WAIVED' ? 'coral' : 'blue'}>{row.billing_status}</Badge>
+      render: (row) => (
+        <Badge tone={row.billing_status === 'RECORDED' ? 'green' : row.billing_status === 'WAIVED' ? 'amber' : 'blue'}>
+          {row.billing_status === 'WAIVED' ? 'WAIVED (₹0)' : row.billing_status}
+        </Badge>
+      )
     },
     {
       key: 'unit_cost',
@@ -961,18 +967,26 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
             <KpiCard
               label="Estimated Spend (INR)"
               value={`₹${Number(usageData.totals?.estimatedSpend || 0).toFixed(2)}`}
-              hint="Calculated using configured Meta conversation tariffs"
+              hint={usageData.totals?.gstInr ? `Subtotal ₹${Number(usageData.totals?.subtotalInr || 0).toFixed(2)} + 18% GST (₹${Number(usageData.totals?.gstInr || 0).toFixed(2)}) = ₹${Number(usageData.totals?.totalInr || 0).toFixed(2)}` : "Calculated using Oct 2026 Meta tariffs + 18% GST"}
               icon={IndianRupee}
               tone="green"
             />
             <Card>
               <CardBody className="space-y-1.5">
-                <span className="text-xs font-medium text-[var(--text-muted)]">Configured Unit Tariffs</span>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-medium text-[var(--text-muted)]">Oct 2026 Unit Tariffs (INR)</span>
+                  <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">+18% GST</span>
+                </div>
                 <div className="grid grid-cols-2 gap-1.5 text-xs pt-1">
-                  <span>Marketing: <strong>₹{usageData.rates?.MARKETING}</strong></span>
-                  <span>Utility: <strong>₹{usageData.rates?.UTILITY}</strong></span>
-                  <span>Auth: <strong>₹{usageData.rates?.AUTHENTICATION}</strong></span>
-                  <span>Service (24h): <strong>₹0.00</strong></span>
+                  <span>Marketing: <strong>₹{usageData.rates?.MARKETING || 0.8631}</strong></span>
+                  <span>Utility: <strong>₹{usageData.rates?.UTILITY || 0.1150}</strong></span>
+                  <span>Auth: <strong>₹{usageData.rates?.AUTHENTICATION || 0.1150}</strong></span>
+                  <span>
+                    Service: <strong>₹0.00</strong>{' '}
+                    <span className="text-[10px] text-green-700 font-semibold" title="First 1,000 monthly service replies per number are free">
+                      ({usageData.serviceFreeTier?.used || 0}/1,000 used)
+                    </span>
+                  </span>
                 </div>
               </CardBody>
             </Card>

@@ -30,6 +30,16 @@ import { formatIndianDateTime, formatIndianTime, formatIndianDate } from '../uti
 
 // Known Meta Cloud API error codes and human-readable diagnostic guidance
 const META_ERROR_GUIDE = {
+  131049: {
+    title: 'Meta Marketing Cap Reached',
+    desc: 'The recipient has reached WhatsApp\'s per-user marketing limit for this window. Meta waives the conversation charge for this message.',
+    action: 'Auto-paused for 24 hours. Message can be retried once the recipient\'s promotional limit resets, or send a UTILITY template instead.'
+  },
+  '131049_COOLDOWN': {
+    title: 'Marketing Cooldown Active (24h)',
+    desc: 'Skipped locally to protect your delivery budget because this recipient reached Meta\'s marketing threshold within the last 24 hours.',
+    action: 'No charge incurred. Retry after 24h or send an approved UTILITY / AUTHENTICATION template instead.'
+  },
   131026: {
     title: 'Phone Number Not on WhatsApp',
     desc: 'The recipient phone number is not registered on WhatsApp. Verify the number and country code.',
@@ -1263,15 +1273,23 @@ export default function ReportsPage() {
                         </td>
                         <td>
                           {item.error_message || item.error_code ? (
-                            <div style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {item.error_code && (
-                                <span className="badge" style={{ background: '#FDF0F0', color: '#9B2C2C', fontSize: '0.65rem', padding: '1px 5px', marginRight: '4px' }}>
-                                  #{item.error_code}
+                            <div style={{ maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {(String(item.error_code) === '131049' || String(item.error_code) === '131049_COOLDOWN') ? (
+                                <span className="badge" style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FCD34D', fontSize: '0.68rem', padding: '2px 6px', fontWeight: 700 }}>
+                                  Meta Marketing Cap (Not Charged — Retry in 24h)
                                 </span>
+                              ) : (
+                                <>
+                                  {item.error_code && (
+                                    <span className="badge" style={{ background: '#FDF0F0', color: '#9B2C2C', fontSize: '0.65rem', padding: '1px 5px', marginRight: '4px' }}>
+                                      #{item.error_code}
+                                    </span>
+                                  )}
+                                  <span style={{ color: '#9B2C2C', fontSize: '0.75rem' }}>
+                                    {item.error_message || item.error_reason}
+                                  </span>
+                                </>
                               )}
-                              <span style={{ color: '#9B2C2C', fontSize: '0.75rem' }}>
-                                {item.error_message || item.error_reason}
-                              </span>
                             </div>
                           ) : (
                             <span style={{ color: '#96969C', fontSize: '0.75rem' }}>—</span>
@@ -1567,20 +1585,27 @@ export default function ReportsPage() {
               {/* Diagnostic Error Box (if failed) */}
               {(selectedRecipient.error_code || selectedRecipient.error_message || selectedRecipient.error_reason) && (
                 <div style={{
-                  background: '#FDF0F0',
-                  border: '1px solid #FDB1AF',
+                  background: (String(selectedRecipient.error_code) === '131049' || String(selectedRecipient.error_code) === '131049_COOLDOWN') ? '#FFFBEB' : '#FDF0F0',
+                  border: (String(selectedRecipient.error_code) === '131049' || String(selectedRecipient.error_code) === '131049_COOLDOWN') ? '1px solid #FCD34D' : '1px solid #FDB1AF',
                   borderRadius: '10px',
                   padding: '14px 16px'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#9B2C2C', fontWeight: 800, fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: (String(selectedRecipient.error_code) === '131049' || String(selectedRecipient.error_code) === '131049_COOLDOWN') ? '#92400E' : '#9B2C2C', fontWeight: 800, fontSize: '0.85rem' }}>
                     <AlertTriangle size={16} />
                     <span>Meta Cloud Diagnostic: {META_ERROR_GUIDE[selectedRecipient.error_code]?.title || `Error #${selectedRecipient.error_code || 'General'}`}</span>
                   </div>
-                  <p style={{ fontSize: '0.8rem', color: '#9B2C2C', marginTop: '6px', lineHeight: 1.45 }}>
+                  {(String(selectedRecipient.error_code) === '131049' || String(selectedRecipient.error_code) === '131049_COOLDOWN') && (
+                    <div style={{ marginTop: '8px' }}>
+                      <span className="badge" style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FCD34D', fontSize: '0.72rem', padding: '3px 8px', fontWeight: 800 }}>
+                        Meta Marketing Cap (Not Charged — Retry in 24h)
+                      </span>
+                    </div>
+                  )}
+                  <p style={{ fontSize: '0.8rem', color: (String(selectedRecipient.error_code) === '131049' || String(selectedRecipient.error_code) === '131049_COOLDOWN') ? '#78350F' : '#9B2C2C', marginTop: '6px', lineHeight: 1.45 }}>
                     {META_ERROR_GUIDE[selectedRecipient.error_code]?.desc || selectedRecipient.error_message || selectedRecipient.error_reason}
                   </p>
                   {META_ERROR_GUIDE[selectedRecipient.error_code]?.action && (
-                    <div style={{ marginTop: '8px', padding: '8px 10px', background: '#FFFFFF', borderRadius: '6px', border: '1px solid #FCA5A5', fontSize: '0.75rem', color: '#7F1D1D' }}>
+                    <div style={{ marginTop: '8px', padding: '8px 10px', background: '#FFFFFF', borderRadius: '6px', border: (String(selectedRecipient.error_code) === '131049' || String(selectedRecipient.error_code) === '131049_COOLDOWN') ? '1px solid #FDE68A' : '1px solid #FCA5A5', fontSize: '0.75rem', color: (String(selectedRecipient.error_code) === '131049' || String(selectedRecipient.error_code) === '131049_COOLDOWN') ? '#92400E' : '#7F1D1D' }}>
                       <strong>Remediation:</strong> {META_ERROR_GUIDE[selectedRecipient.error_code].action}
                     </div>
                   )}

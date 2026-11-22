@@ -95,19 +95,13 @@ function isPhoneOptedOut(phone) {
   return { optedOut: false, reason: null };
 }
 
+const metaRateService = require("./billing/metaRateService");
+
 /**
  * Returns unit rate in INR based on configurable Meta conversation tariff settings.
  */
-function getCategoryUnitRate(category = "MARKETING") {
-  const cat = String(category || "MARKETING").toUpperCase();
-  if (cat === "SERVICE" || cat === "TEXT") return 0.0;
-  if (cat === "UTILITY") {
-    return parseFloat(getSetting("META_UTILITY_RATE_INR") || "0.12") || 0.12;
-  }
-  if (cat === "AUTHENTICATION") {
-    return parseFloat(getSetting("META_AUTH_RATE_INR") || getSetting("META_UTILITY_RATE_INR") || "0.12") || 0.12;
-  }
-  return parseFloat(getSetting("META_MARKETING_RATE_INR") || "0.80") || 0.80;
+function getCategoryUnitRate(category = "MARKETING", phoneNumberId = null) {
+  return metaRateService.calculateUnitRate(category, phoneNumberId);
 }
 
 /**

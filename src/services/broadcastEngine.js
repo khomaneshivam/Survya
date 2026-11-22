@@ -1,8 +1,56 @@
 const EventEmitter = require("events");
 const fs = require("fs");
 const path = require("path");
-const { db } = require("../config/database");
+const { db, getSetting } = require("../config/database");
 const metaWhatsAppService = require("./metaWhatsAppService");
+
+/**
+ * Checks if current time is within Indian Standard Time (IST) Quiet Hours: 21:00 - 09:00 IST.
+ */
+function isIstQuietHours() {
+  const quietEnabled = getSetting("BROADCAST_QUIET_HOURS_ENABLED");
+  if (quietEnabled === "false" || quietEnabled === false) return false;
+
+  const now = new Date();
+  const istFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    hour: "numeric",
+    hour12: false
+  });
+  const hour = parseInt(istFormatter.format(now), 10);
+  return hour >= 21 || hour < 9;
+}
+
+/**
+ * Computes next 09:00 AM IST in UTC format (YYYY-MM-DD HH:mm:ss).
+ * 09:00 AM IST = 03:30 AM UTC.
+ */
+function getNextIstMorning9AmUtc(refDate = null) {
+  const now = refDate || new Date();
+  const istFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false
+  });
+  const parts = istFormatter.formatToParts(now);
+  const partMap = {};
+  parts.forEach(p => { partMap[p.type] = p.value; });
+  const year = parseInt(partMap.year, 10);
+  const month = parseInt(partMap.month, 10);
+  const day = parseInt(partMap.day, 10);
+  const hour = parseInt(partMap.hour, 10);
+
+  if (hour >= 21) {
+    const d = new Date(Date.UTC(year, month - 1, day + 1, 3, 30, 0));
+    return d.toISOString().replace("T", " ").substring(0, 19);
+  } else {
+    const d = new Date(Date.UTC(year, month - 1, day, 3, 30, 0));
+    return d.toISOString().replace("T", " ").substring(0, 19);
+  }
+}
 
 class BroadcastEngine extends EventEmitter {
   constructor() {
@@ -362,7 +410,7 @@ class BroadcastEngine extends EventEmitter {
   /**
    * Starts or resumes a broadcast campaign
    */
-  async startCampaign(campaignId, overrideDelayMs = null) {
+  async startCampaign(campaignId, overrideDelayMs = null, options = {}) {
     const campaign = db.prepare("SELECT * FROM campaigns WHERE id = ?").get(campaignId);
     if (!campaign) {
       throw new Error(`Campaign '${campaignId}' not found.`);
@@ -370,6 +418,55 @@ class BroadcastEngine extends EventEmitter {
 
     if (this.activeJobs.has(campaignId) && this.activeJobs.get(campaignId).running) {
       throw new Error(`Campaign '${campaign.name}' is already currently running.`);
+    }
+
+    // Check IST Quiet Hours policy (21:00 - 09:00 IST) for MARKETING campaigns
+    let isMarketing = true;
+    if (campaign.message_type === "TEMPLATE") {
+      const tpl = db.prepare("SELECT category FROM templates WHERE name = ? OR meta_id = ? OR id = ? LIMIT 1").get(campaign.template_name, campaign.template_name, campaign.template_name);
+      const cat = String(tpl?.category || campaign.template_category || "MARKETING").toUpperCase();
+      if (cat === "UTILITY" || cat === "AUTHENTICATION" || cat === "AUTH") {
+        isMarketing = false;
+      }
+    }
+
+    if (isMarketing && isIstQuietHours() && !options?.overrideQuietHours) {
+      const next9AmUtc = getNextIstMorning9AmUtc();
+      db.prepare(`
+        UPDATE campaigns 
+        SET status = 'SCHEDULED', scheduled_at = ? 
+        WHERE id = ?
+      `).run(next9AmUtc, campaignId);
+
+      try {
+        const jobQueueService = require("./queue/jobQueueService");
+        jobQueueService.enqueueJob({
+          tenantId: campaign.tenant_id || 1,
+          queueName: "broadcasts",
+          jobType: "BROADCAST_DISPATCH",
+          payload: { campaignId, overrideDelayMs, overrideQuietHours: true },
+          runAt: next9AmUtc,
+          idempotencyKey: `broadcast_${campaignId}_${next9AmUtc}`
+        });
+      } catch (qErr) {
+        console.warn("[Broadcast] Failed to enqueue quiet hours broadcast job:", qErr.message);
+      }
+
+      this.emit("campaign:status", {
+        campaignId,
+        status: "SCHEDULED",
+        scheduledAt: next9AmUtc,
+        quietHours: true,
+        message: `IST Quiet Hours active (21:00-09:00 IST). Campaign scheduled for next 09:00 AM IST (${next9AmUtc} UTC).`
+      });
+
+      return {
+        success: true,
+        scheduled: true,
+        quietHours: true,
+        scheduledFor: next9AmUtc,
+        message: `Campaign scheduled for next 09:00 AM IST (${next9AmUtc} UTC) due to quiet hours policy.`
+      };
     }
 
     // Database-backed atomic claim to prevent double-launch races
@@ -538,11 +635,29 @@ class BroadcastEngine extends EventEmitter {
       SELECT id FROM contact_suppressions WHERE clean_phone = ? LIMIT 1
     `);
 
+    const checkMarketingCooldown = db.prepare(`
+      SELECT id, cooldown_until FROM contact_marketing_cooldowns 
+      WHERE phone_e164 = ? AND cooldown_until > UTC_TIMESTAMP() 
+      LIMIT 1
+    `);
+
+    let isMarketingCampaign = true;
+    if (campaign.message_type === "TEMPLATE") {
+      const tpl = db.prepare("SELECT category FROM templates WHERE name = ? OR meta_id = ? OR id = ? LIMIT 1").get(campaign.template_name, campaign.template_name, campaign.template_name);
+      const cat = String(tpl?.category || campaign.template_category || "MARKETING").toUpperCase();
+      if (cat === "UTILITY" || cat === "AUTHENTICATION" || cat === "AUTH") {
+        isMarketingCampaign = false;
+      }
+    }
+
     const fetchPendingBatch = db.prepare(`
       SELECT * FROM campaign_recipients 
       WHERE campaign_id = ? AND status = 'PENDING' 
       ORDER BY id ASC LIMIT 50
     `);
+
+    let attemptedInRun = 0;
+    let nonCapFailuresInRun = 0;
 
     try {
       while (jobState.running) {
@@ -591,6 +706,28 @@ class BroadcastEngine extends EventEmitter {
             continue;
           }
 
+          // Marketing cooldown check (Meta 131049) - only for MARKETING campaigns
+          if (isMarketingCampaign && checkMarketingCooldown.get(recipient.clean_phone)) {
+            updateRecipientFail.run("Skipped: 24h Meta 131049 marketing cooldown active", "131049_COOLDOWN", "", recipient.id);
+            incrementFailed.run(campaignId);
+            const curStats = db.prepare("SELECT sent_count, failed_count, valid_contacts, unknown_count FROM campaigns WHERE id = ?").get(campaignId);
+            this.emit("broadcast:progress", {
+              campaignId,
+              recipientId: recipient.id,
+              phone: recipient.clean_phone,
+              name: recipient.contact_name,
+              status: "FAILED",
+              error: "Skipped: 24h Meta 131049 marketing cooldown active",
+              errorCode: "131049_COOLDOWN",
+              sent: curStats?.sent_count || 0,
+              failed: curStats?.failed_count || 1,
+              unknown: curStats?.unknown_count || 0,
+              total: curStats?.valid_contacts || campaign.valid_contacts,
+              lastRecipient: recipient.contact_name || recipient.clean_phone
+            });
+            continue;
+          }
+
           let rowData = {};
           try {
             rowData = recipient.raw_data ? JSON.parse(recipient.raw_data) : {};
@@ -603,6 +740,7 @@ class BroadcastEngine extends EventEmitter {
           let renderedContent = "";
           let lastErr = null;
           let isSuccess = false;
+          attemptedInRun++;
 
           for (let attempt = 0; attempt < 2; attempt++) {
             try {
@@ -747,6 +885,10 @@ class BroadcastEngine extends EventEmitter {
             });
           } else {
             const errCode = String(lastErr?.metaCode || lastErr?.code || lastErr?.statusCode || "");
+            const isCapError = errCode === "131049" || errCode === "131049_COOLDOWN";
+            if (!isCapError) {
+              nonCapFailuresInRun++;
+            }
             console.warn(`[Broadcast] Message failed to ${recipient.clean_phone} (${errCode}):`, lastErr?.message);
             updateRecipientFail.run(lastErr?.message || "Failed to send", errCode || null, renderedContent, recipient.id);
             incrementFailed.run(campaignId);
@@ -766,6 +908,37 @@ class BroadcastEngine extends EventEmitter {
               total: curStats?.valid_contacts || campaign.valid_contacts,
               lastRecipient: recipient.contact_name || recipient.clean_phone
             });
+          }
+
+          // Error-Spike Auto-Pause: >= 10 attempted and > 25% non-cap failures
+          if (attemptedInRun >= 10 && (nonCapFailuresInRun / attemptedInRun) > 0.25) {
+            console.warn(`[Broadcast] Error spike: ${nonCapFailuresInRun}/${attemptedInRun} non-cap failures (>25%). Auto-pausing campaign ${campaignId}.`);
+            jobState.paused = true;
+            db.prepare("UPDATE campaigns SET status = 'PAUSED' WHERE id = ?").run(campaignId);
+            try {
+              db.prepare(`
+                INSERT INTO audit_logs (tenant_id, user_id, action, target_id, details, created_at)
+                VALUES (?, ?, 'CAMPAIGN_AUTO_PAUSED', ?, ?, CURRENT_TIMESTAMP)
+              `).run(
+                campaign.tenant_id || 1,
+                campaign.user_id ? String(campaign.user_id) : null,
+                String(campaignId),
+                JSON.stringify({
+                  reason: "High failure rate spike (>25% non-cap errors after 10+ attempts)",
+                  attempted: attemptedInRun,
+                  nonCapFailures: nonCapFailuresInRun,
+                  failureRate: `${((nonCapFailuresInRun / attemptedInRun) * 100).toFixed(1)}%`
+                })
+              );
+            } catch (auditErr) {}
+
+            this.emit("campaign:status", {
+              campaignId,
+              status: "PAUSED",
+              errorSpike: true,
+              message: `Campaign auto-paused due to error spike: ${nonCapFailuresInRun}/${attemptedInRun} failed (${((nonCapFailuresInRun / attemptedInRun) * 100).toFixed(1)}%).`
+            });
+            break;
           }
 
           // Throttle pacing to respect Meta Cloud API rate limits

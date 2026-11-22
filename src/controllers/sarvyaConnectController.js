@@ -5,6 +5,7 @@ const metaWhatsAppService = require("../services/metaWhatsAppService");
 const broadcastController = require("./broadcastController");
 const templateController = require("./templateController");
 const messagingService = require("../services/whatsappMessagingService");
+const metaRateService = require("../services/billing/metaRateService");
 
 /**
  * Normalizes a SQLite template row for API responses
@@ -896,11 +897,16 @@ async function getUsageAndBilling(req, res) {
       LIMIT 30
     `).all(...userParams);
 
+    const baseRates = metaRateService.getBaseRates();
+    const serviceUsedCount = metaRateService.getMonthlyServiceMessageCount(null, req.user?.tenant_id || 1);
+
     const rates = {
       MARKETING: messagingService.getCategoryUnitRate("MARKETING"),
       UTILITY: messagingService.getCategoryUnitRate("UTILITY"),
       AUTHENTICATION: messagingService.getCategoryUnitRate("AUTHENTICATION"),
-      SERVICE: 0
+      SERVICE: 0.0,
+      SERVICE_OVERAGE: baseRates.SERVICE_OVERAGE,
+      GST_PERCENT: baseRates.GST_PERCENT
     };
 
     const totals = byCategory.reduce((acc, row) => {
@@ -908,12 +914,24 @@ async function getUsageAndBilling(req, res) {
       acc.estimatedSpend += Number(row.total_cost || 0);
       return acc;
     }, { messages: 0, estimatedSpend: 0 });
-    totals.estimatedSpend = parseFloat(totals.estimatedSpend.toFixed(2));
+    totals.estimatedSpend = parseFloat(totals.estimatedSpend.toFixed(4));
+
+    const gstBreakdown = metaRateService.calculateGst(totals.estimatedSpend, baseRates.GST_PERCENT);
+    totals.subtotalInr = gstBreakdown.subtotalInr;
+    totals.gstPercent = gstBreakdown.gstPercent;
+    totals.gstInr = gstBreakdown.gstInr;
+    totals.totalInr = gstBreakdown.totalInr;
 
     return res.status(200).json({
       success: true,
       currency: "INR",
       rates,
+      serviceFreeTier: {
+        monthlyLimit: baseRates.FREE_SERVICE_LIMIT,
+        used: serviceUsedCount,
+        remaining: Math.max(0, baseRates.FREE_SERVICE_LIMIT - serviceUsedCount)
+      },
+      gst: gstBreakdown,
       totals,
       byCategory,
       ledger,

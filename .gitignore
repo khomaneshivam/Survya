@@ -10,4 +10,6 @@ uploads/
 ssl/
 .DS_Store
 repomix-output.xml
+repomix*.xml
+*.zip
 dist/

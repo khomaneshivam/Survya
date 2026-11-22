@@ -7,6 +7,7 @@ const broadcastEngine = require("../services/broadcastEngine");
 const { cleanPhone, sendTemplateMessage, sendTextMessage, getTemplateDetails } = require("../services/metaWhatsAppService");
 const timeUtil = require("../utils/timeUtil");
 const schedulerService = require("../services/schedulerService");
+const metaRateService = require("../services/billing/metaRateService");
 
 /**
  * Helper to check campaign ownership
@@ -28,19 +29,23 @@ function checkCampaignAccess(campaign, user) {
 }
 
 /**
- * Calculates estimated campaign cost based on configurable rates
+ * Calculates estimated campaign cost based on Oct 2026 Meta rates and 18% GST
  */
-function calculateCostEstimate(recipientCount, messageType = "TEMPLATE") {
-  const marketingRate = parseFloat(getSetting("META_MARKETING_RATE_INR") || "0.80");
-  const utilityRate = parseFloat(getSetting("META_UTILITY_RATE_INR") || "0.12");
-  const rate = messageType === "TEXT" ? 0.0 : marketingRate;
-  const estimatedTotal = parseFloat((recipientCount * rate).toFixed(2));
+function calculateCostEstimate(recipientCount, messageType = "TEMPLATE", templateCategory = "MARKETING") {
+  const rate = messageType === "TEXT" ? 0.0 : metaRateService.calculateUnitRate(templateCategory || "MARKETING");
+  const subtotalInr = parseFloat((recipientCount * rate).toFixed(2));
+  const gstDetails = metaRateService.calculateGst(subtotalInr, 18.0);
+
   return {
     perMessageRate: rate,
     currency: "INR",
     recipientCount,
-    estimatedTotal,
-    disclaimer: "Estimated cost based on current configurable Meta rate inputs; actual final invoice is determined by Meta."
+    subtotalInr: gstDetails.subtotalInr,
+    gstPercent: 18.0,
+    gstInr: gstDetails.gstInr,
+    totalInr: gstDetails.totalInr,
+    estimatedTotal: gstDetails.totalInr,
+    disclaimer: "Estimated cost based on official Meta India conversation tariffs + 18% GST; actual final invoice is determined by Meta."
   };
 }
 

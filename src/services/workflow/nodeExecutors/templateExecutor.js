@@ -1,5 +1,6 @@
 const { interpolateTemplate } = require('../expressionEvaluator');
 const { db } = require('../../../config/database');
+const metaRateService = require('../../billing/metaRateService');
 
 /**
  * 3. Send Template Node Executor (SEND_TEMPLATE)
@@ -65,11 +66,12 @@ async function execute(node, context) {
       ) VALUES (?, ?, ?, 'OUTBOUND', 'TEMPLATE', ?, ?, 'SENT', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `).run(msgId, tenantId, senderPhone, templateName, renderedBody);
 
+    const unitRate = metaRateService.calculateUnitRate('UTILITY', null, tenantId);
     db.prepare(`
       INSERT INTO whatsapp_usage_ledger (
         tenant_id, recipient_phone, category, unit_cost, currency, billing_status, created_at
-      ) VALUES (?, ?, 'UTILITY', 0.15, 'INR', 'BILLED', CURRENT_TIMESTAMP)
-    `).run(tenantId, senderPhone);
+      ) VALUES (?, ?, 'UTILITY', ?, 'INR', 'BILLED', CURRENT_TIMESTAMP)
+    `).run(tenantId, senderPhone, unitRate);
   } catch (dbErr) {
     // Non-fatal logging
   }
