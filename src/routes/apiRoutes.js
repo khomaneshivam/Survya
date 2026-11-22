@@ -37,6 +37,8 @@ router.post("/auth/profile", authenticateToken, authController.updateProfile);
 // 2. MASTER ADMIN & USER/PHONE MANAGEMENT
 // =========================================================================
 router.use("/admin", require("./adminRoutes"));
+router.use("/ai", require("./aiAssistantRoutes"));
+router.use("/v1/ai", require("./aiAssistantRoutes"));
 
 router.get("/admin/users", authenticateToken, requireAdmin, adminController.listUsers);
 router.get("/admin/users/:userId", authenticateToken, requireAdmin, adminController.getUserDetails);

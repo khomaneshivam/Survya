@@ -1958,6 +1958,38 @@ class WebhookService {
         }
       }
 
+      // 1a. Regional Voice Note Automatic Transcription (English / Hindi / Marathi / Hinglish)
+      if ((msgType === "audio" || replyRecord.message_type === "audio") && !replyRecord.voice_transcript) {
+        try {
+          const voiceTranscriptionService = require("./ai/voiceTranscriptionService");
+          const tRes = await voiceTranscriptionService.transcribeAudioMedia({
+            mediaId: replyRecord.media_url?.split("/").pop() || rawMsg?.audio?.id,
+            isSimulation: isSimulation || Boolean(rawMsg?.is_simulation),
+            sampleText: rawMsg?.audio?.sample_text || rawMsg?.sample_text || null
+          });
+          if (tRes && tRes.transcript) {
+            replyRecord.voice_transcript = tRes.transcript;
+            replyRecord.detected_language = tRes.detectedLanguage;
+            effectiveText = tRes.transcript;
+            db.prepare(`
+              UPDATE customer_replies 
+              SET voice_transcript = ?, detected_language = ? 
+              WHERE id = ?
+            `).run(tRes.transcript, tRes.detectedLanguage, replyRecord.id);
+
+            broadcastEngine.emit("webhook:reply_updated", {
+              ...replyRecord,
+              voice_transcript: tRes.transcript,
+              detected_language: tRes.detectedLanguage
+            });
+          }
+        } catch (tErr) {
+          console.warn("[Webhook Flow] Voice transcription note:", tErr.message);
+        }
+      } else if (replyRecord.voice_transcript) {
+        effectiveText = replyRecord.voice_transcript;
+      }
+
       // 1b. WhatsApp Flow Submission Handling (Customer completed a Flow Screen)
       const isFlowReply = (rawMsg?.type === "interactive" && rawMsg.interactive?.type === "nfm_reply") ||
                           Boolean(replyRecord.flow_response_id) ||
@@ -3389,6 +3421,76 @@ class WebhookService {
           replyText: flowRes.text,
           messageId: sentMessageId
         };
+      }
+
+      // 9b. Task-Scoped Grounded AI Knowledge Agent (Meta Policy Grounded RAG)
+      try {
+        const taskScopedAiAgentService = require("./ai/taskScopedAiAgentService");
+        const agentCfg = taskScopedAiAgentService.getAgentConfig(1);
+        if (agentCfg && agentCfg.enabled) {
+          console.log(`[Webhook Flow] Task-Scoped Knowledge AI Agent evaluating query for ${cleanPhone}: "${effectiveText}"`);
+          const aiResult = await taskScopedAiAgentService.generateReply({
+            tenantId: 1,
+            senderPhone: cleanPhone,
+            userInput: effectiveText,
+            inputType: replyRecord.message_type === "audio" ? "VOICE_NOTE" : "TEXT",
+            isSimulation: isSimulation
+          });
+
+          if (aiResult && aiResult.handled && aiResult.replyText) {
+            let sentRes = null;
+            try {
+              sentRes = await sendTextMessage({
+                to: cleanPhone,
+                body: aiResult.replyText,
+                customCredentials
+              });
+            } catch (aiSendErr) {
+              console.warn("[Webhook Flow] AI reply text send note:", aiSendErr.message);
+            }
+
+            const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+            const botReplyId = `bot_ai_${Date.now()}`;
+            try {
+              db.prepare(`
+                INSERT INTO customer_replies (
+                  wa_message_id, from_phone, customer_name, message_type,
+                  message_body, reply_text, reply_sent_at, reply_status,
+                  link_id, source, is_read, user_id, received_at
+                ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'AI_AGENT', 1, 'bot', ?)
+              `).run(
+                botReplyId, cleanPhone, replyRecord.customer_name || "Guest",
+                aiResult.replyText, aiResult.replyText, nowIso, replyRecord.link_id || null, nowIso
+              );
+              const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
+              broadcastEngine.emit("webhook:reply", savedBot);
+            } catch (e) {}
+
+            db.prepare(`
+              UPDATE customer_replies 
+              SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
+              WHERE id = ?
+            `).run(aiResult.replyText, nowIso, replyRecord.id);
+
+            broadcastEngine.emit("inbox:reply", {
+              replyId: replyRecord.id,
+              replyText: aiResult.replyText,
+              replyStatus: "AUTO_REPLIED",
+              confidence: aiResult.confidence
+            });
+
+            return {
+              success: true,
+              handledBy: "TASK_SCOPED_AI_AGENT",
+              replyText: aiResult.replyText,
+              confidence: aiResult.confidence,
+              handoff: aiResult.handoff,
+              messageId: sentRes?.messageId
+            };
+          }
+        }
+      } catch (aiAgentErr) {
+        console.warn("[Webhook Flow] Task-Scoped AI Agent note:", aiAgentErr.message);
       }
 
       // 10. Fallback: Standard Auto-Reply (if enabled in settings)

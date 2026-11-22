@@ -38,7 +38,10 @@ import {
   Lock,
   Code,
   SlidersHorizontal,
-  History
+  History,
+  Mic,
+  Languages,
+  Wand2
 } from 'lucide-react';
 import { formatIndianTime } from '../utils/indianTime';
 
@@ -410,7 +413,7 @@ function formatInboxMessage(r, allRecords = []) {
       if (mediaObj?.id) {
         rawMediaId = mediaObj.id;
         resolvedMediaUrl = `/api/media/inbound/${mediaObj.id}`;
-        resolvedMediaType = r.message_type || (raw.image ? 'image' : (raw.video ? 'video' : 'image'));
+        resolvedMediaType = r.message_type || (raw.image ? 'image' : (raw.video ? 'video' : (raw.audio ? 'audio' : 'image')));
         resolvedCaption = resolvedCaption || mediaObj.caption || mediaObj.filename || null;
       }
     } catch (e) {}
@@ -432,16 +435,18 @@ function formatInboxMessage(r, allRecords = []) {
       campaign_name: r.campaign_name || null
     });
   } else {
-    const isMediaMsg = Boolean(resolvedMediaUrl || rawMediaId || r.message_type === 'image' || r.message_type === 'video');
+    const isMediaMsg = Boolean(resolvedMediaUrl || rawMediaId || r.message_type === 'image' || r.message_type === 'video' || r.message_type === 'audio');
     if (incomingText || isMediaMsg) {
       msgs.push({
         id: r.id,
         from_phone: r.from_phone,
         text: incomingText,
         media_url: resolvedMediaUrl,
-        media_type: resolvedMediaType || (r.message_type === 'image' ? 'image' : null),
+        media_type: resolvedMediaType || (r.message_type === 'image' ? 'image' : (r.message_type === 'audio' ? 'audio' : null)),
         media_caption: resolvedCaption,
         media_id: rawMediaId,
+        voice_transcript: r.voice_transcript || null,
+        detected_language: r.detected_language || null,
         time: r.received_at,
         is_outbound: false,
         is_read: r.is_read
@@ -525,6 +530,100 @@ export default function InboxPage({ onNavigate }) {
   const [inappCounterFormOpen, setInappCounterFormOpen] = useState(false);
   const [inappCounterPrice, setInappCounterPrice] = useState('');
   const [inappCounterNote, setInappCounterNote] = useState('');
+
+  // AI Copilot States
+  const [copilotLoading, setCopilotLoading] = useState(false);
+  const [copilotDrafts, setCopilotDrafts] = useState(null);
+  const [copilotSummary, setCopilotSummary] = useState(null);
+  const [copilotNotice, setCopilotNotice] = useState(null);
+
+  const handleCopilotDraft = async () => {
+    if (!selectedConvo || !selectedConvo.messages) return;
+    setCopilotLoading(true);
+    setCopilotNotice(null);
+    try {
+      const res = await fetch('/api/v1/ai/copilot/draft-reply', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          phone: selectedConvo.phone,
+          customerName: selectedConvo.name,
+          messages: selectedConvo.messages
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Failed to draft AI reply');
+      setCopilotDrafts(data.suggestions || []);
+    } catch (err) {
+      setCopilotNotice(err.message);
+    } finally {
+      setCopilotLoading(false);
+    }
+  };
+
+  const handleCopilotTranslate = async (targetLang = 'en') => {
+    if (!selectedConvo || !selectedConvo.messages) return;
+    setCopilotLoading(true);
+    setCopilotNotice(null);
+    try {
+      const textToTranslate = replyText.trim() || 
+        ([...selectedConvo.messages].reverse().find(m => !m.is_outbound)?.text || '');
+      if (!textToTranslate) throw new Error('No text found to translate.');
+
+      const res = await fetch('/api/v1/ai/copilot/translate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          text: textToTranslate,
+          targetLanguage: targetLang
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Translation failed');
+      if (replyText.trim()) {
+        setReplyText(data.translatedText);
+      } else {
+        setCopilotNotice(`Translated (${data.targetLanguage}): "${data.translatedText}"`);
+      }
+    } catch (err) {
+      setCopilotNotice(err.message);
+    } finally {
+      setCopilotLoading(false);
+    }
+  };
+
+  const handleCopilotSummarize = async () => {
+    if (!selectedConvo || !selectedConvo.messages) return;
+    setCopilotLoading(true);
+    setCopilotNotice(null);
+    try {
+      const res = await fetch('/api/v1/ai/copilot/summarize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          phone: selectedConvo.phone,
+          customerName: selectedConvo.name,
+          messages: selectedConvo.messages
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Failed to summarize thread');
+      setCopilotSummary(data);
+    } catch (err) {
+      setCopilotNotice(err.message);
+    } finally {
+      setCopilotLoading(false);
+    }
+  };
 
   const fetchInappCommerceStatus = useCallback(async (phone) => {
     if (!phone) {
@@ -2977,7 +3076,8 @@ export default function InboxPage({ onNavigate }) {
                   const isOutbound = m.is_outbound;
                   const displayTime = m.time ? formatIndianTime(m.time) : '';
                   const isVideo = m.media_type === 'video' || (m.media_url && /\.(mp4|3gp|mov|webm)(\?.*)?$/i.test(m.media_url));
-                  const isImage = m.media_type === 'image' || (m.media_url && !isVideo) || Boolean(m.media_id);
+                  const isAudio = m.media_type === 'audio' || (m.media_url && /\.(ogg|mp3|wav|m4a|aac|opus)(\?.*)?$/i.test(m.media_url)) || Boolean(m.voice_transcript);
+                  const isImage = !isAudio && (m.media_type === 'image' || (m.media_url && !isVideo) || Boolean(m.media_id));
                   let msgText = m.text || m.message_body || m.message_text || '';
                   if (msgText && typeof msgText === 'string' && msgText.startsWith('📢 Broadcast:')) {
                     msgText = msgText.replace(/^📢 Broadcast:\s*/i, '');
@@ -2986,13 +3086,13 @@ export default function InboxPage({ onNavigate }) {
                   // Extract clean caption: strip generic placeholders
                   let cleanCaption = m.media_caption || '';
                   if (!cleanCaption && msgText) {
-                    if (!/^\[(image|photo|image received|video|video received)\]$/i.test(msgText.trim())) {
+                    if (!/^\[(image|photo|image received|video|video received|voice note|audio received)\]$/i.test(msgText.trim())) {
                       cleanCaption = msgText.replace(/^\[(image|photo)\]\s*/i, '').trim();
                     }
                   }
 
                   const imageSrcToUse = m.media_url || (m.media_id ? `/api/media/inbound/${m.media_id}` : null);
-                  const shouldShowTextBlock = !isImage && !isVideo && Boolean(msgText);
+                  const shouldShowTextBlock = !isImage && !isVideo && !isAudio && Boolean(msgText);
                   const hasCaption = Boolean(cleanCaption);
 
                   return (
@@ -3070,6 +3170,52 @@ export default function InboxPage({ onNavigate }) {
                           senderName={selectedConvo.name || selectedConvo.phone}
                           onOpenLightbox={setLightboxMedia}
                         />
+                      )}
+
+                      {/* Attached Media Display: Audio / Voice Note */}
+                      {isAudio && (
+                        <div style={{ marginBottom: '8px', minWidth: '220px', maxWidth: '320px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                            <Mic size={14} color="#7C3AED" />
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#7C3AED' }}>
+                              Voice Note
+                            </span>
+                            {m.detected_language && (
+                              <span style={{
+                                fontSize: '0.65rem',
+                                padding: '1px 5px',
+                                background: '#EDE9FE',
+                                color: '#6D28D9',
+                                borderRadius: '4px',
+                                fontWeight: 600,
+                                textTransform: 'uppercase'
+                              }}>
+                                {m.detected_language}
+                              </span>
+                            )}
+                          </div>
+                          {m.media_url && (
+                            <audio
+                              controls
+                              src={m.media_url}
+                              style={{ width: '100%', height: '36px', outline: 'none' }}
+                            />
+                          )}
+                          {m.voice_transcript && (
+                            <div style={{
+                              marginTop: '6px',
+                              padding: '8px 10px',
+                              background: '#F5F3FF',
+                              border: '1px solid #DDD6FE',
+                              borderRadius: '6px',
+                              fontSize: '0.8rem',
+                              color: '#4C1D95',
+                              lineHeight: 1.45
+                            }}>
+                              <span style={{ fontWeight: 600 }}>🎙️ Transcript:</span> {m.voice_transcript}
+                            </div>
+                          )}
+                        </div>
                       )}
 
                       {/* Preserved Formatted Text with Linebreaks and Spaces */}
@@ -3284,6 +3430,249 @@ export default function InboxPage({ onNavigate }) {
                   >
                     <X size={15} />
                   </button>
+                </div>
+              )}
+
+              {/* AI Copilot Action Toolbar & Banners */}
+              <div style={{
+                padding: '6px 16px',
+                background: '#F8FAFC',
+                borderTop: '1px solid var(--border-color)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={handleCopilotDraft}
+                    disabled={copilotLoading}
+                    style={{
+                      background: '#EDE9FE',
+                      border: '1px solid #DDD6FE',
+                      color: '#6D28D9',
+                      borderRadius: '6px',
+                      padding: '4px 8px',
+                      fontSize: '0.725rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Draft 2 grounded reply options grounded in room tariffs and catalog"
+                  >
+                    <Sparkles size={12} />
+                    {copilotLoading ? 'Thinking...' : 'Draft Reply (AI)'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCopilotTranslate('en')}
+                    disabled={copilotLoading}
+                    style={{
+                      background: '#EFF6FF',
+                      border: '1px solid #BFDBFE',
+                      color: '#1D4ED8',
+                      borderRadius: '6px',
+                      padding: '4px 8px',
+                      fontSize: '0.725rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Translate text to English"
+                  >
+                    <Languages size={12} />
+                    EN
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCopilotTranslate('hi')}
+                    disabled={copilotLoading}
+                    style={{
+                      background: '#EFF6FF',
+                      border: '1px solid #BFDBFE',
+                      color: '#1D4ED8',
+                      borderRadius: '6px',
+                      padding: '4px 8px',
+                      fontSize: '0.725rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Translate text to Hindi"
+                  >
+                    <Languages size={12} />
+                    HI (हिन्दी)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCopilotTranslate('mr')}
+                    disabled={copilotLoading}
+                    style={{
+                      background: '#EFF6FF',
+                      border: '1px solid #BFDBFE',
+                      color: '#1D4ED8',
+                      borderRadius: '6px',
+                      padding: '4px 8px',
+                      fontSize: '0.725rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Translate text to Marathi"
+                  >
+                    <Languages size={12} />
+                    MR (मराठी)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopilotSummarize}
+                    disabled={copilotLoading}
+                    style={{
+                      background: '#F1F5F9',
+                      border: '1px solid #CBD5E1',
+                      color: '#334155',
+                      borderRadius: '6px',
+                      padding: '4px 8px',
+                      fontSize: '0.725rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Summarize key points and sentiment of this customer thread"
+                  >
+                    <FileText size={12} />
+                    Summarize Thread
+                  </button>
+                </div>
+
+                {copilotNotice && (
+                  <div style={{
+                    fontSize: '0.725rem',
+                    color: '#6D28D9',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}>
+                    <span>{copilotNotice}</span>
+                    <button
+                      type="button"
+                      onClick={() => setCopilotNotice(null)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6D28D9' }}
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* AI Draft Suggestions Popover */}
+              {copilotDrafts && copilotDrafts.length > 0 && (
+                <div style={{
+                  padding: '10px 16px',
+                  background: '#F5F3FF',
+                  borderTop: '1px solid #DDD6FE',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6D28D9', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Sparkles size={12} /> Click to Insert AI Draft:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCopilotDrafts(null)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6D28D9' }}
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '8px' }}>
+                    {copilotDrafts.map((d) => (
+                      <div
+                        key={d.id}
+                        onClick={() => {
+                          setReplyText(d.text);
+                          setCopilotDrafts(null);
+                          if (textareaRef.current) textareaRef.current.focus();
+                        }}
+                        style={{
+                          background: '#FFFFFF',
+                          border: '1px solid #DDD6FE',
+                          borderRadius: '6px',
+                          padding: '8px 10px',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                        className="hover-card"
+                      >
+                        <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#7C3AED', marginBottom: '2px' }}>
+                          {d.label}
+                        </div>
+                        <div style={{ fontSize: '0.775rem', color: '#171719', lineHeight: 1.35 }}>
+                          {d.text}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* AI Thread Summary Card */}
+              {copilotSummary && (
+                <div style={{
+                  padding: '10px 16px',
+                  background: '#F8FAFC',
+                  borderTop: '1px solid #E2E8F0',
+                  fontSize: '0.8rem'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ fontWeight: 700, color: '#1E293B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <FileText size={13} /> Thread Executive Summary
+                      <span style={{
+                        fontSize: '0.65rem',
+                        padding: '1px 6px',
+                        background: copilotSummary.urgency === 'HIGH' ? '#FEE2E2' : '#F1F5F9',
+                        color: copilotSummary.urgency === 'HIGH' ? '#DC2626' : '#475569',
+                        borderRadius: '4px',
+                        fontWeight: 700
+                      }}>
+                        {copilotSummary.urgency} URGENCY
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCopilotSummary(null)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                  <ul style={{ margin: '0 0 6px 16px', padding: 0, color: '#334155', lineHeight: 1.4 }}>
+                    {copilotSummary.bullets?.map((b, i) => (
+                      <li key={i}>{b}</li>
+                    ))}
+                  </ul>
+                  {copilotSummary.nextAction && (
+                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#2563EB' }}>
+                      👉 Recommended Action: {copilotSummary.nextAction}
+                    </div>
+                  )}
                 </div>
               )}
 

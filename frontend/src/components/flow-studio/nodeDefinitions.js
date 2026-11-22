@@ -13,7 +13,9 @@ import {
   UserCheck,
   Layers,
   Hash,
-  Database
+  Database,
+  Bot,
+  Sparkles
 } from 'lucide-react';
 
 export const NODE_CATEGORIES = {
@@ -146,6 +148,26 @@ export const NODE_DEFINITIONS = [
     getOutputHandles: () => [
       { id: 'submitted', label: 'On Form Submitted', type: 'source', color: '#16A34A' },
       { id: 'fallback', label: 'Fallback Buttons', type: 'source', color: '#EA580C' }
+    ]
+  },
+  {
+    type: 'AI_KNOWLEDGE_REPLY',
+    label: 'AI Knowledge Reply',
+    category: 'MESSAGING',
+    icon: Sparkles,
+    color: '#8B5CF6',
+    bg: '#F5F3FF',
+    badge: 'Task AI',
+    desc: 'Grounded RAG responder using tenant knowledge & live catalog. Enforces Meta Jan 2026 AI Policy.',
+    defaultConfig: {
+      personaPrompt: 'You are SARVYA, an attentive and courteous guest relations assistant.',
+      queryVariable: '',
+      confidenceThreshold: 0.65,
+      saveResponseAs: 'ai_last_reply'
+    },
+    getOutputHandles: () => [
+      { id: 'replied', label: 'AI Replied', type: 'source', color: '#16A34A' },
+      { id: 'handoff', label: 'Human Handoff', type: 'source', color: '#DC2626' }
     ]
   },
 

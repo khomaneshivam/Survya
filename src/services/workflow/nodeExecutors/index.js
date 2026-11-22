@@ -11,6 +11,7 @@ const catalogBookingExecutor = require('./catalogBookingExecutor');
 const webhookExecutor = require('./webhookExecutor');
 const handoffExecutor = require('./handoffExecutor');
 const endExecutor = require('./endExecutor');
+const aiReplyExecutor = require('./aiReplyExecutor');
 
 const EXECUTORS = {
   // Triggers
@@ -27,6 +28,8 @@ const EXECUTORS = {
   PAYMENT: messageExecutor,
   SEND_TEMPLATE: templateExecutor,
   SEND_WHATSAPP_FLOW: whatsappFlowExecutor,
+  AI_KNOWLEDGE_REPLY: aiReplyExecutor,
+  AI_REPLY: aiReplyExecutor,
 
   // Intake
   COLLECT_INPUT: intakeExecutor,

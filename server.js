@@ -261,6 +261,10 @@ app.use(["/api/v1/public/x", "/v1/public/x", "/public/x"], publicInappRoutes);
 const jobQueueRoutes = require("./src/routes/jobQueueRoutes");
 app.use(["/api/v1/admin/queue", "/api/admin/queue", "/api/queue"], jobQueueRoutes);
 
+// 4f. Task-Scoped AI Agent & Inbox Copilot API (/api/v1/ai)
+const aiAssistantRoutes = require("./src/routes/aiAssistantRoutes");
+app.use(["/api/v1/ai", "/api/ai"], aiAssistantRoutes);
+
 // 5. API routes
 app.use("/api", apiRoutes);
 

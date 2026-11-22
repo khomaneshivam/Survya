@@ -27,6 +27,7 @@ initializeDatabase();
 
 module.exports = {
   db,
+  getDb: () => db,
   initializeDatabase,
   getSetting(key) {
     const row = db.prepare("SELECT value FROM settings WHERE `key` = ?").get(key);
