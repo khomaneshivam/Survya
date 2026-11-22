@@ -36,10 +36,11 @@ jobs:
           node --check src/routes/apiRoutes.js
           node --check src/services/conversationFlowEngine.js
           node --check src/services/conversationFlowService.js
+          node --check src/services/workflow/nodeExecutors/index.js
           node --check src/services/workflow/conversationContextResolver.js
       - name: Isolated regression tests (no database required)
         run: |
-          node --test tests/conversation_tenant_workflows.test.js tests/inbox_tenant_isolation.test.js tests/durable_webhook_ingress.test.js
+          node --test tests/conversation_tenant_workflows.test.js tests/inbox_tenant_isolation.test.js tests/durable_webhook_ingress.test.js tests/schema_driven_workflow_input.test.js
 
   frontend-quality:
     name: Frontend lint and build

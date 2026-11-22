@@ -17,6 +17,8 @@ import {
   Video
 } from 'lucide-react';
 import { validateFlowGraph } from './flowGraphValidator';
+import { getNodeDefinition } from './nodeDefinitions';
+import SchemaDrivenConfigFields from './SchemaDrivenConfigFields';
 
 const APPROVED_ACTIONS = [
   { id: 'HOSPITALITY_CHECK_AVAILABILITY', label: '🏨 Check Room Inventory Availability', desc: 'Validates sellable room counts between check-in and check-out dates' },
@@ -85,7 +87,7 @@ export default function NodeInspectorDrawer({
     // Upstream variables produced by nodes in this flow
     (nodes || []).forEach(n => {
       const c = n.config || {};
-      if ((n.type === 'COLLECT_INPUT' || n.type === 'INPUT_COLLECTION' || n.type === 'QUESTION') && (c.saveAs || c.variable)) {
+      if ((n.type === 'COLLECT_INPUT' || n.type === 'INPUT_COLLECTION' || n.type === 'QUESTION' || n.type === 'SCHEMA_INPUT') && (c.saveAs || c.variable)) {
         const varName = c.saveAs || c.variable;
         if (!list.some(item => item.key === varName)) {
           list.push({ key: varName, label: `Collected from "${n.title || n.id}"`, source: 'Step Input' });
@@ -124,6 +126,7 @@ export default function NodeInspectorDrawer({
   }, [node, nodes]);
 
   if (!node) return null;
+  const configFields = getNodeDefinition(node.type)?.configFields || [];
 
   const handleTitleChange = (val) => {
     onUpdateNode({ ...node, title: val });
@@ -387,6 +390,15 @@ export default function NodeInspectorDrawer({
       <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px' }}>
         {activeTab === 'config' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+            {/* Schema-driven no-code node config, built from descriptor metadata. */}
+            {configFields.length > 0 && (
+              <SchemaDrivenConfigFields
+                fields={configFields}
+                config={node.config || {}}
+                onChange={handleConfigChange}
+              />
+            )}
 
             {/* 1. TRIGGER NODES */}
             {isTrigger && (
