@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import IndustryBlueprintsModal from '../components/catalog/IndustryBlueprintsModal';
+import UniversalAvailabilityTab from '../components/catalog/UniversalAvailabilityTab';
+import UniversalAddonsPricingTab from '../components/catalog/UniversalAddonsPricingTab';
 import {
   Store,
   Plus,
@@ -53,6 +56,8 @@ export default function CatalogInventoryPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL'); // ALL | ACTIVE | SOLD_OUT
+  const [mainTab, setMainTab] = useState('items'); // 'items' | 'availability' | 'addons' | 'pricing'
+  const [showBlueprintsModal, setShowBlueprintsModal] = useState(false);
 
   // Modals & Drawers
   const [showItemModal, setShowItemModal] = useState(false);
@@ -438,6 +443,16 @@ export default function CatalogInventoryPage() {
 
           <button
             type="button"
+            className="sarvya-btn"
+            onClick={() => setShowBlueprintsModal(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#16A34A', color: '#fff', border: 'none', fontWeight: 600, padding: '7px 14px', borderRadius: '6px' }}
+          >
+            <Sparkles size={15} />
+            <span>⚡ Industry Blueprints</span>
+          </button>
+
+          <button
+            type="button"
             className="sarvya-btn sarvya-btn-secondary"
             onClick={() => setShowStarterModal(true)}
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
@@ -509,7 +524,92 @@ export default function CatalogInventoryPage() {
         </div>
       </div>
 
-      {/* Main Workspace Layout: Categories Sidebar + Items Table */}
+      {/* 4-Tab Navigation Bar */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '2px solid #E5E7EB', paddingBottom: '12px' }}>
+        <button
+          type="button"
+          onClick={() => setMainTab('items')}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '8px',
+            border: 'none',
+            fontSize: '0.86rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: mainTab === 'items' ? '#2563EB' : '#F1F5F9',
+            color: mainTab === 'items' ? '#FFFFFF' : '#475569'
+          }}
+        >
+          <ShoppingBag size={16} />
+          <span>Items & Multi-Image Gallery</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setMainTab('availability')}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '8px',
+            border: 'none',
+            fontSize: '0.86rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: mainTab === 'availability' ? '#2563EB' : '#F1F5F9',
+            color: mainTab === 'availability' ? '#FFFFFF' : '#475569'
+          }}
+        >
+          <Calendar size={16} />
+          <span>4-Mode Availability & Slots</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setMainTab('addons')}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '8px',
+            border: 'none',
+            fontSize: '0.86rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: mainTab === 'addons' ? '#2563EB' : '#F1F5F9',
+            color: mainTab === 'addons' ? '#FFFFFF' : '#475569'
+          }}
+        >
+          <Sparkles size={16} />
+          <span>Add-Ons & Upsells</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setMainTab('pricing')}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '8px',
+            border: 'none',
+            fontSize: '0.86rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: mainTab === 'pricing' ? '#2563EB' : '#F1F5F9',
+            color: mainTab === 'pricing' ? '#FFFFFF' : '#475569'
+          }}
+        >
+          <Layers size={16} />
+          <span>Dynamic Pricing & Promos</span>
+        </button>
+      </div>
+
+      {/* TAB 1: Items & Gallery */}
+      {mainTab === 'items' && (
       <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: '20px', alignItems: 'start' }}>
         {/* Categories Sidebar */}
         <div className="sarvya-card" style={{ padding: '16px' }}>
@@ -882,6 +982,36 @@ export default function CatalogInventoryPage() {
           )}
         </div>
       </div>
+      )}
+
+      {/* TAB 2: Availability & Slots */}
+      {mainTab === 'availability' && (
+        <UniversalAvailabilityTab
+          token={token}
+          selectedEntityId={selectedEntityId}
+          showToast={showToast}
+        />
+      )}
+
+      {/* TAB 3: Add-Ons & Upsells */}
+      {mainTab === 'addons' && (
+        <UniversalAddonsPricingTab
+          token={token}
+          selectedEntityId={selectedEntityId}
+          showToast={showToast}
+          activeSubView="addons"
+        />
+      )}
+
+      {/* TAB 4: Dynamic Pricing & Promos */}
+      {mainTab === 'pricing' && (
+        <UniversalAddonsPricingTab
+          token={token}
+          selectedEntityId={selectedEntityId}
+          showToast={showToast}
+          activeSubView="pricing"
+        />
+      )}
 
       {/* MODAL 1: Starter Pack Seeding */}
       {showStarterModal && (
@@ -1441,6 +1571,18 @@ export default function CatalogInventoryPage() {
           </div>
         </div>
       )}
+      {/* 8-Sector Industry Blueprints Modal */}
+      <IndustryBlueprintsModal
+        isOpen={showBlueprintsModal}
+        onClose={() => setShowBlueprintsModal(false)}
+        token={token}
+        onBlueprintApplied={() => {
+          fetchEntities();
+          if (selectedEntityId) {
+            fetchCatalogData(selectedEntityId);
+          }
+        }}
+      />
     </div>
   );
 }

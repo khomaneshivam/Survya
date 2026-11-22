@@ -368,6 +368,63 @@ export const NODE_DEFINITIONS = [
       farewellMessage: 'Thank you for connecting with us! Have a wonderful day.'
     },
     getOutputHandles: () => [] // Terminal node
+  },
+
+  // 7. UNIVERSAL COMMERCE & HYBRID AI NODES
+  {
+    type: 'CATALOG_BROWSER',
+    label: 'Universal Catalog Browser',
+    category: 'MESSAGING',
+    icon: Layers,
+    color: '#0284C7',
+    bg: '#E0F2FE',
+    badge: 'Catalog',
+    desc: 'Displays interactive WhatsApp lists/buttons of products, rooms, services, or dishes',
+    defaultConfig: {
+      title: '🛍️ Explore Our Offerings',
+      pageSize: 6,
+      categoryName: '',
+      inventoryMode: 'UNIT_STOCK'
+    },
+    getOutputHandles: () => [
+      { id: 'item_selected', label: 'Item Selected', type: 'source' },
+      { id: 'empty', label: 'Catalog Empty', type: 'source' },
+      { id: 'default', label: 'Fallback', type: 'source' }
+    ]
+  },
+  {
+    type: 'ADDON_UPSELL_AND_QUOTE',
+    label: 'Add-Ons & Dynamic Quote',
+    category: 'ACTIONS',
+    icon: Sparkles,
+    color: '#D97706',
+    bg: '#FEF3C7',
+    badge: 'Pricing & Add-ons',
+    desc: 'Offers extras/upsells, applies promo codes, and calculates itemized GST quotation',
+    defaultConfig: {
+      allowAddons: true,
+      allowPromoCode: true
+    },
+    getOutputHandles: () => [
+      { id: 'confirmed', label: 'Quote Confirmed', type: 'source' },
+      { id: 'default', label: 'Continue', type: 'source' }
+    ]
+  },
+  {
+    type: 'AI_HYBRID_ASSIST',
+    label: 'AI Hybrid Assist',
+    category: 'MESSAGING',
+    icon: Bot,
+    color: '#7C3AED',
+    bg: '#EDE9FE',
+    badge: 'Hybrid AI',
+    desc: 'Answers off-script customer questions grounded in live DB inventory without breaking active session',
+    defaultConfig: {
+      resumePrompt: "👉 Let's continue where we left off:"
+    },
+    getOutputHandles: () => [
+      { id: 'default', label: 'Next Step', type: 'source' }
+    ]
   }
 ];
 

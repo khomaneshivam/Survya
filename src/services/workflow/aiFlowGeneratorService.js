@@ -8,6 +8,7 @@
 const { getSetting } = require("../../config/database");
 const { buildSystemCapabilitiesContext } = require("./aiFlowContextBuilder");
 const flowService = require("../conversationFlowService");
+const { SECTOR_BLUEPRINTS } = require("../universal/universalCatalogService");
 
 /**
  * Automatically calculates visual layout positions for a node graph
@@ -310,6 +311,214 @@ function synthesizeSmartLocalFlow(prompt = "", systemContext = {}) {
     };
   }
 
+  // 4b. RETAIL & D2C E-COMMERCE CATALOG & CHECKOUT FLOW
+  if (p.includes("retail") || p.includes("ecom") || p.includes("shop") || p.includes("cloth") || p.includes("apparel") || p.includes("hoodie") || p.includes("store") || p.includes("product")) {
+    const bp = SECTOR_BLUEPRINTS.RETAIL_ECOM;
+    const triggerKeywords = ["shop", "catalog", "hoodie", "order", "clothes", "store", "buy"];
+    return {
+      name: "D2C Retail & Instant WhatsApp Catalog Order",
+      description: "Direct WhatsApp catalog browsing with variant selection, gift box/shipping add-ons, and instant order intake.",
+      category: "RETAIL_ECOM",
+      triggerKeywords,
+      suggestedCatalogItems: bp.items,
+      suggestedAddons: bp.addonGroups,
+      nodes: [
+        {
+          id: "trg_retail",
+          type: "TRIGGER_WHATSAPP",
+          title: "Retail Inbound Trigger",
+          config: { triggerType: "KEYWORD", keywords: triggerKeywords, matchType: "CONTAINS" }
+        },
+        {
+          id: "msg_retail_welcome",
+          type: "SEND_MESSAGE",
+          title: "Store Welcome",
+          config: {
+            text: `🛍️ Welcome to *${primaryEntity.name}*!\n\nBrowse our bestselling apparel collection with instant WhatsApp checkout.\n\nTap below to explore our live catalog:`,
+            options: [
+              { id: "opt_browse_catalog", title: "Browse Catalog" },
+              { id: "opt_talk_team", title: "Talk to Stylist" }
+            ]
+          }
+        },
+        {
+          id: "cat_retail_browser",
+          type: "CATALOG_BROWSER",
+          title: "Browse Products",
+          config: { title: "👗 Featured Streetwear & Apparel", pageSize: 6, inventoryMode: "UNIT_STOCK" }
+        },
+        {
+          id: "addon_retail_quote",
+          type: "ADDON_UPSELL_AND_QUOTE",
+          title: "Packaging & Delivery Upgrades",
+          config: { title: "🎁 Packaging & Express Shipping", allowAddons: true, allowPromoCode: true }
+        },
+        {
+          id: "crm_log_order",
+          type: "CRM_UPSERT",
+          title: "Log Retail Order",
+          config: { pipeline: leadPipeline.slug, stage: "NEW_LEAD", dealValue: 2499, leadScore: 70 }
+        },
+        {
+          id: "msg_retail_confirmed",
+          type: "SEND_MESSAGE",
+          title: "Order Placed",
+          config: { text: "🎉 *Order Placed Successfully!*\n\nOur team is packing your parcel with care. You will receive dispatch tracking updates on WhatsApp." }
+        },
+        { id: "end_retail", type: "END", title: "End Session" }
+      ],
+      transitions: [
+        { id: "tr1", source: "trg_retail", target: "msg_retail_welcome", sourceHandle: "default" },
+        { id: "tr2", source: "msg_retail_welcome", target: "cat_retail_browser", sourceHandle: "opt_browse_catalog" },
+        { id: "tr3", source: "msg_retail_welcome", target: "cat_retail_browser", sourceHandle: "default" },
+        { id: "tr4", source: "cat_retail_browser", target: "addon_retail_quote", sourceHandle: "item_selected" },
+        { id: "tr5", source: "cat_retail_browser", target: "addon_retail_quote", sourceHandle: "default" },
+        { id: "tr6", source: "addon_retail_quote", target: "crm_log_order", sourceHandle: "confirmed" },
+        { id: "tr7", source: "addon_retail_quote", target: "crm_log_order", sourceHandle: "default" },
+        { id: "tr8", source: "crm_log_order", target: "msg_retail_confirmed", sourceHandle: "success" },
+        { id: "tr9", source: "crm_log_order", target: "msg_retail_confirmed", sourceHandle: "failure" },
+        { id: "tr10", source: "msg_retail_confirmed", target: "end_retail", sourceHandle: "default" }
+      ],
+      variables: { selectedItemId: null, orderTotal: 0 }
+    };
+  }
+
+  // 4c. CLINIC & HEALTHCARE APPOINTMENT FLOW
+  if (p.includes("clinic") || p.includes("dental") || p.includes("health") || p.includes("doctor") || p.includes("teeth") || p.includes("consult") || p.includes("patient")) {
+    const bp = SECTOR_BLUEPRINTS.CLINIC_HEALTH;
+    const triggerKeywords = ["doctor", "dental", "appointment", "clinic", "teeth", "consult", "smile"];
+    return {
+      name: "Dental & Healthcare Slot Appointment Flow",
+      description: "Painless clinic consultation and procedure slot booking with preventive dental upgrades.",
+      category: "CLINIC_HEALTH",
+      triggerKeywords,
+      suggestedCatalogItems: bp.items,
+      suggestedAddons: bp.addonGroups,
+      nodes: [
+        {
+          id: "trg_clinic",
+          type: "TRIGGER_WHATSAPP",
+          title: "Clinic Trigger",
+          config: { triggerType: "KEYWORD", keywords: triggerKeywords, matchType: "CONTAINS" }
+        },
+        {
+          id: "msg_clinic_welcome",
+          type: "SEND_MESSAGE",
+          title: "Clinic Greeting",
+          config: {
+            text: `🏥 Welcome to *${primaryEntity.name}*!\n\nBook certified doctors, pain-free dental consultations, and digital scans on WhatsApp.\n\nSelect an option below:`,
+            options: [
+              { id: "opt_book_slot", title: "Book Appointment" },
+              { id: "opt_emergency", title: "Emergency Help" }
+            ]
+          }
+        },
+        {
+          id: "cat_clinic_services",
+          type: "CATALOG_BROWSER",
+          title: "Treatments & Consultations",
+          config: { title: "🦷 Dental & Medical Services", pageSize: 4, inventoryMode: "TIME_SLOT" }
+        },
+        {
+          id: "addon_clinic_quote",
+          type: "ADDON_UPSELL_AND_QUOTE",
+          title: "Preventive Care Upgrades",
+          config: { title: "🛡️ Preventive Care Upgrades", allowAddons: true, allowPromoCode: true }
+        },
+        {
+          id: "crm_clinic_lead",
+          type: "CRM_UPSERT",
+          title: "Log Patient Record",
+          config: { pipeline: bookingPipeline.slug, stage: "CONFIRMED", dealValue: 1500, leadScore: 90 }
+        },
+        {
+          id: "msg_clinic_confirmed",
+          type: "SEND_MESSAGE",
+          title: "Appointment Confirmed",
+          config: { text: "✅ *Your Appointment Is Booked!*\n\nOur clinic receptionist has reserved your slot. We will send you an SMS reminder before your visit." }
+        },
+        { id: "end_clinic", type: "END", title: "End Session" }
+      ],
+      transitions: [
+        { id: "tc1", source: "trg_clinic", target: "msg_clinic_welcome", sourceHandle: "default" },
+        { id: "tc2", source: "msg_clinic_welcome", target: "cat_clinic_services", sourceHandle: "opt_book_slot" },
+        { id: "tc3", source: "msg_clinic_welcome", target: "cat_clinic_services", sourceHandle: "default" },
+        { id: "tc4", source: "cat_clinic_services", target: "addon_clinic_quote", sourceHandle: "item_selected" },
+        { id: "tc5", source: "cat_clinic_services", target: "addon_clinic_quote", sourceHandle: "default" },
+        { id: "tc6", source: "addon_clinic_quote", target: "crm_clinic_lead", sourceHandle: "confirmed" },
+        { id: "tc7", source: "addon_clinic_quote", target: "crm_clinic_lead", sourceHandle: "default" },
+        { id: "tc8", source: "crm_clinic_lead", target: "msg_clinic_confirmed", sourceHandle: "success" },
+        { id: "tc9", source: "crm_clinic_lead", target: "msg_clinic_confirmed", sourceHandle: "failure" },
+        { id: "tc10", source: "msg_clinic_confirmed", target: "end_clinic", sourceHandle: "default" }
+      ],
+      variables: { slotId: null, patientName: "" }
+    };
+  }
+
+  // 4d. REAL ESTATE & LIVING PROPERTY TOUR FLOW
+  if (p.includes("real estate") || p.includes("property") || p.includes("flat") || p.includes("apartment") || p.includes("villa") || p.includes("realty") || p.includes("penthouse") || p.includes("site visit")) {
+    const bp = SECTOR_BLUEPRINTS.REAL_ESTATE;
+    const triggerKeywords = ["property", "flat", "apartment", "penthouse", "real estate", "visit", "brochure", "site visit"];
+    return {
+      name: "Luxury Realty Property Tour & Brochure Flow",
+      description: "Direct WhatsApp high-rise penthouses showcase, digital brochure delivery, and site visit scheduling.",
+      category: "REAL_ESTATE",
+      triggerKeywords,
+      suggestedCatalogItems: bp.items,
+      suggestedAddons: bp.addonGroups,
+      nodes: [
+        {
+          id: "trg_realty",
+          type: "TRIGGER_WHATSAPP",
+          title: "Realty Trigger",
+          config: { triggerType: "KEYWORD", keywords: triggerKeywords, matchType: "CONTAINS" }
+        },
+        {
+          id: "msg_realty_welcome",
+          type: "SEND_MESSAGE",
+          title: "Realty Showcase",
+          config: {
+            text: `🏢 Welcome to *${primaryEntity.name}*!\n\nExplore ultra-luxury 3 & 4 BHK residences and golf villas with panoramic city views.\n\nWhat would you like to do?`,
+            options: [
+              { id: "opt_view_projects", title: "View Residences" },
+              { id: "opt_book_tour", title: "Schedule Visit" }
+            ]
+          }
+        },
+        {
+          id: "cat_realty_browser",
+          type: "CATALOG_BROWSER",
+          title: "Featured Residences",
+          config: { title: "🏡 Featured Properties", pageSize: 4, inventoryMode: "QUOTE_SERVICE" }
+        },
+        {
+          id: "crm_realty_lead",
+          type: "CRM_UPSERT",
+          title: "Capture High-Net-Worth Lead",
+          config: { pipeline: b2bPipeline.slug, stage: "NEW_LEAD", dealValue: 20000000, leadScore: 85 }
+        },
+        {
+          id: "msg_realty_confirmed",
+          type: "SEND_MESSAGE",
+          title: "Tour Scheduled",
+          config: { text: "📑 *Digital Brochure & Site Visit Reserved!*\n\nOur Senior Relationship Director has received your details and will coordinate your private golf-cart site tour." }
+        },
+        { id: "end_realty", type: "END", title: "End Session" }
+      ],
+      transitions: [
+        { id: "tre1", source: "trg_realty", target: "msg_realty_welcome", sourceHandle: "default" },
+        { id: "tre2", source: "msg_realty_welcome", target: "cat_realty_browser", sourceHandle: "opt_view_projects" },
+        { id: "tre3", source: "msg_realty_welcome", target: "cat_realty_browser", sourceHandle: "default" },
+        { id: "tre4", source: "cat_realty_browser", target: "crm_realty_lead", sourceHandle: "item_selected" },
+        { id: "tre5", source: "cat_realty_browser", target: "crm_realty_lead", sourceHandle: "default" },
+        { id: "tre6", source: "crm_realty_lead", target: "msg_realty_confirmed", sourceHandle: "success" },
+        { id: "tre7", source: "crm_realty_lead", target: "msg_realty_confirmed", sourceHandle: "failure" },
+        { id: "tre8", source: "msg_realty_confirmed", target: "end_realty", sourceHandle: "default" }
+      ],
+      variables: { propertyInterest: "" }
+    };
+  }
+
   // 2. B2B SALES / QUALIFICATION / DEMO FLOW
   if (p.includes("b2b") || p.includes("sales") || p.includes("qualification") || p.includes("enterprise") || p.includes("demo") || p.includes("saas")) {
     const flowName = "B2B Sales Qualification & High-Value Demo Routing";
@@ -504,6 +713,214 @@ function synthesizeSmartLocalFlow(prompt = "", systemContext = {}) {
     };
   }
 
+  // 4b. RETAIL & D2C E-COMMERCE CATALOG & CHECKOUT FLOW
+  if (p.includes("retail") || p.includes("ecom") || p.includes("shop") || p.includes("cloth") || p.includes("apparel") || p.includes("hoodie") || p.includes("store") || p.includes("product")) {
+    const bp = SECTOR_BLUEPRINTS.RETAIL_ECOM;
+    const triggerKeywords = ["shop", "catalog", "hoodie", "order", "clothes", "store", "buy"];
+    return {
+      name: "D2C Retail & Instant WhatsApp Catalog Order",
+      description: "Direct WhatsApp catalog browsing with variant selection, gift box/shipping add-ons, and instant order intake.",
+      category: "RETAIL_ECOM",
+      triggerKeywords,
+      suggestedCatalogItems: bp.items,
+      suggestedAddons: bp.addonGroups,
+      nodes: [
+        {
+          id: "trg_retail",
+          type: "TRIGGER_WHATSAPP",
+          title: "Retail Inbound Trigger",
+          config: { triggerType: "KEYWORD", keywords: triggerKeywords, matchType: "CONTAINS" }
+        },
+        {
+          id: "msg_retail_welcome",
+          type: "SEND_MESSAGE",
+          title: "Store Welcome",
+          config: {
+            text: `🛍️ Welcome to *${primaryEntity.name}*!\n\nBrowse our bestselling apparel collection with instant WhatsApp checkout.\n\nTap below to explore our live catalog:`,
+            options: [
+              { id: "opt_browse_catalog", title: "Browse Catalog" },
+              { id: "opt_talk_team", title: "Talk to Stylist" }
+            ]
+          }
+        },
+        {
+          id: "cat_retail_browser",
+          type: "CATALOG_BROWSER",
+          title: "Browse Products",
+          config: { title: "👗 Featured Streetwear & Apparel", pageSize: 6, inventoryMode: "UNIT_STOCK" }
+        },
+        {
+          id: "addon_retail_quote",
+          type: "ADDON_UPSELL_AND_QUOTE",
+          title: "Packaging & Delivery Upgrades",
+          config: { title: "🎁 Packaging & Express Shipping", allowAddons: true, allowPromoCode: true }
+        },
+        {
+          id: "crm_log_order",
+          type: "CRM_UPSERT",
+          title: "Log Retail Order",
+          config: { pipeline: leadPipeline.slug, stage: "NEW_LEAD", dealValue: 2499, leadScore: 70 }
+        },
+        {
+          id: "msg_retail_confirmed",
+          type: "SEND_MESSAGE",
+          title: "Order Placed",
+          config: { text: "🎉 *Order Placed Successfully!*\n\nOur team is packing your parcel with care. You will receive dispatch tracking updates on WhatsApp." }
+        },
+        { id: "end_retail", type: "END", title: "End Session" }
+      ],
+      transitions: [
+        { id: "tr1", source: "trg_retail", target: "msg_retail_welcome", sourceHandle: "default" },
+        { id: "tr2", source: "msg_retail_welcome", target: "cat_retail_browser", sourceHandle: "opt_browse_catalog" },
+        { id: "tr3", source: "msg_retail_welcome", target: "cat_retail_browser", sourceHandle: "default" },
+        { id: "tr4", source: "cat_retail_browser", target: "addon_retail_quote", sourceHandle: "item_selected" },
+        { id: "tr5", source: "cat_retail_browser", target: "addon_retail_quote", sourceHandle: "default" },
+        { id: "tr6", source: "addon_retail_quote", target: "crm_log_order", sourceHandle: "confirmed" },
+        { id: "tr7", source: "addon_retail_quote", target: "crm_log_order", sourceHandle: "default" },
+        { id: "tr8", source: "crm_log_order", target: "msg_retail_confirmed", sourceHandle: "success" },
+        { id: "tr9", source: "crm_log_order", target: "msg_retail_confirmed", sourceHandle: "failure" },
+        { id: "tr10", source: "msg_retail_confirmed", target: "end_retail", sourceHandle: "default" }
+      ],
+      variables: { selectedItemId: null, orderTotal: 0 }
+    };
+  }
+
+  // 4c. CLINIC & HEALTHCARE APPOINTMENT FLOW
+  if (p.includes("clinic") || p.includes("dental") || p.includes("health") || p.includes("doctor") || p.includes("teeth") || p.includes("consult") || p.includes("patient")) {
+    const bp = SECTOR_BLUEPRINTS.CLINIC_HEALTH;
+    const triggerKeywords = ["doctor", "dental", "appointment", "clinic", "teeth", "consult", "smile"];
+    return {
+      name: "Dental & Healthcare Slot Appointment Flow",
+      description: "Painless clinic consultation and procedure slot booking with preventive dental upgrades.",
+      category: "CLINIC_HEALTH",
+      triggerKeywords,
+      suggestedCatalogItems: bp.items,
+      suggestedAddons: bp.addonGroups,
+      nodes: [
+        {
+          id: "trg_clinic",
+          type: "TRIGGER_WHATSAPP",
+          title: "Clinic Trigger",
+          config: { triggerType: "KEYWORD", keywords: triggerKeywords, matchType: "CONTAINS" }
+        },
+        {
+          id: "msg_clinic_welcome",
+          type: "SEND_MESSAGE",
+          title: "Clinic Greeting",
+          config: {
+            text: `🏥 Welcome to *${primaryEntity.name}*!\n\nBook certified doctors, pain-free dental consultations, and digital scans on WhatsApp.\n\nSelect an option below:`,
+            options: [
+              { id: "opt_book_slot", title: "Book Appointment" },
+              { id: "opt_emergency", title: "Emergency Help" }
+            ]
+          }
+        },
+        {
+          id: "cat_clinic_services",
+          type: "CATALOG_BROWSER",
+          title: "Treatments & Consultations",
+          config: { title: "🦷 Dental & Medical Services", pageSize: 4, inventoryMode: "TIME_SLOT" }
+        },
+        {
+          id: "addon_clinic_quote",
+          type: "ADDON_UPSELL_AND_QUOTE",
+          title: "Preventive Care Upgrades",
+          config: { title: "🛡️ Preventive Care Upgrades", allowAddons: true, allowPromoCode: true }
+        },
+        {
+          id: "crm_clinic_lead",
+          type: "CRM_UPSERT",
+          title: "Log Patient Record",
+          config: { pipeline: bookingPipeline.slug, stage: "CONFIRMED", dealValue: 1500, leadScore: 90 }
+        },
+        {
+          id: "msg_clinic_confirmed",
+          type: "SEND_MESSAGE",
+          title: "Appointment Confirmed",
+          config: { text: "✅ *Your Appointment Is Booked!*\n\nOur clinic receptionist has reserved your slot. We will send you an SMS reminder before your visit." }
+        },
+        { id: "end_clinic", type: "END", title: "End Session" }
+      ],
+      transitions: [
+        { id: "tc1", source: "trg_clinic", target: "msg_clinic_welcome", sourceHandle: "default" },
+        { id: "tc2", source: "msg_clinic_welcome", target: "cat_clinic_services", sourceHandle: "opt_book_slot" },
+        { id: "tc3", source: "msg_clinic_welcome", target: "cat_clinic_services", sourceHandle: "default" },
+        { id: "tc4", source: "cat_clinic_services", target: "addon_clinic_quote", sourceHandle: "item_selected" },
+        { id: "tc5", source: "cat_clinic_services", target: "addon_clinic_quote", sourceHandle: "default" },
+        { id: "tc6", source: "addon_clinic_quote", target: "crm_clinic_lead", sourceHandle: "confirmed" },
+        { id: "tc7", source: "addon_clinic_quote", target: "crm_clinic_lead", sourceHandle: "default" },
+        { id: "tc8", source: "crm_clinic_lead", target: "msg_clinic_confirmed", sourceHandle: "success" },
+        { id: "tc9", source: "crm_clinic_lead", target: "msg_clinic_confirmed", sourceHandle: "failure" },
+        { id: "tc10", source: "msg_clinic_confirmed", target: "end_clinic", sourceHandle: "default" }
+      ],
+      variables: { slotId: null, patientName: "" }
+    };
+  }
+
+  // 4d. REAL ESTATE & LIVING PROPERTY TOUR FLOW
+  if (p.includes("real estate") || p.includes("property") || p.includes("flat") || p.includes("apartment") || p.includes("villa") || p.includes("realty") || p.includes("penthouse") || p.includes("site visit")) {
+    const bp = SECTOR_BLUEPRINTS.REAL_ESTATE;
+    const triggerKeywords = ["property", "flat", "apartment", "penthouse", "real estate", "visit", "brochure", "site visit"];
+    return {
+      name: "Luxury Realty Property Tour & Brochure Flow",
+      description: "Direct WhatsApp high-rise penthouses showcase, digital brochure delivery, and site visit scheduling.",
+      category: "REAL_ESTATE",
+      triggerKeywords,
+      suggestedCatalogItems: bp.items,
+      suggestedAddons: bp.addonGroups,
+      nodes: [
+        {
+          id: "trg_realty",
+          type: "TRIGGER_WHATSAPP",
+          title: "Realty Trigger",
+          config: { triggerType: "KEYWORD", keywords: triggerKeywords, matchType: "CONTAINS" }
+        },
+        {
+          id: "msg_realty_welcome",
+          type: "SEND_MESSAGE",
+          title: "Realty Showcase",
+          config: {
+            text: `🏢 Welcome to *${primaryEntity.name}*!\n\nExplore ultra-luxury 3 & 4 BHK residences and golf villas with panoramic city views.\n\nWhat would you like to do?`,
+            options: [
+              { id: "opt_view_projects", title: "View Residences" },
+              { id: "opt_book_tour", title: "Schedule Visit" }
+            ]
+          }
+        },
+        {
+          id: "cat_realty_browser",
+          type: "CATALOG_BROWSER",
+          title: "Featured Residences",
+          config: { title: "🏡 Featured Properties", pageSize: 4, inventoryMode: "QUOTE_SERVICE" }
+        },
+        {
+          id: "crm_realty_lead",
+          type: "CRM_UPSERT",
+          title: "Capture High-Net-Worth Lead",
+          config: { pipeline: b2bPipeline.slug, stage: "NEW_LEAD", dealValue: 20000000, leadScore: 85 }
+        },
+        {
+          id: "msg_realty_confirmed",
+          type: "SEND_MESSAGE",
+          title: "Tour Scheduled",
+          config: { text: "📑 *Digital Brochure & Site Visit Reserved!*\n\nOur Senior Relationship Director has received your details and will coordinate your private golf-cart site tour." }
+        },
+        { id: "end_realty", type: "END", title: "End Session" }
+      ],
+      transitions: [
+        { id: "tre1", source: "trg_realty", target: "msg_realty_welcome", sourceHandle: "default" },
+        { id: "tre2", source: "msg_realty_welcome", target: "cat_realty_browser", sourceHandle: "opt_view_projects" },
+        { id: "tre3", source: "msg_realty_welcome", target: "cat_realty_browser", sourceHandle: "default" },
+        { id: "tre4", source: "cat_realty_browser", target: "crm_realty_lead", sourceHandle: "item_selected" },
+        { id: "tre5", source: "cat_realty_browser", target: "crm_realty_lead", sourceHandle: "default" },
+        { id: "tre6", source: "crm_realty_lead", target: "msg_realty_confirmed", sourceHandle: "success" },
+        { id: "tre7", source: "crm_realty_lead", target: "msg_realty_confirmed", sourceHandle: "failure" },
+        { id: "tre8", source: "msg_realty_confirmed", target: "end_realty", sourceHandle: "default" }
+      ],
+      variables: { propertyInterest: "" }
+    };
+  }
+
   // 3. LEAD GENERATION & 24H NURTURING DRIP
   if (p.includes("lead") || p.includes("nurture") || p.includes("drip") || p.includes("prospect") || p.includes("marketing")) {
     const flowName = "High-Converting Lead Gen & 24h Drip Campaign";
@@ -664,6 +1081,214 @@ function synthesizeSmartLocalFlow(prompt = "", systemContext = {}) {
     };
   }
 
+  // 4b. RETAIL & D2C E-COMMERCE CATALOG & CHECKOUT FLOW
+  if (p.includes("retail") || p.includes("ecom") || p.includes("shop") || p.includes("cloth") || p.includes("apparel") || p.includes("hoodie") || p.includes("store") || p.includes("product")) {
+    const bp = SECTOR_BLUEPRINTS.RETAIL_ECOM;
+    const triggerKeywords = ["shop", "catalog", "hoodie", "order", "clothes", "store", "buy"];
+    return {
+      name: "D2C Retail & Instant WhatsApp Catalog Order",
+      description: "Direct WhatsApp catalog browsing with variant selection, gift box/shipping add-ons, and instant order intake.",
+      category: "RETAIL_ECOM",
+      triggerKeywords,
+      suggestedCatalogItems: bp.items,
+      suggestedAddons: bp.addonGroups,
+      nodes: [
+        {
+          id: "trg_retail",
+          type: "TRIGGER_WHATSAPP",
+          title: "Retail Inbound Trigger",
+          config: { triggerType: "KEYWORD", keywords: triggerKeywords, matchType: "CONTAINS" }
+        },
+        {
+          id: "msg_retail_welcome",
+          type: "SEND_MESSAGE",
+          title: "Store Welcome",
+          config: {
+            text: `🛍️ Welcome to *${primaryEntity.name}*!\n\nBrowse our bestselling apparel collection with instant WhatsApp checkout.\n\nTap below to explore our live catalog:`,
+            options: [
+              { id: "opt_browse_catalog", title: "Browse Catalog" },
+              { id: "opt_talk_team", title: "Talk to Stylist" }
+            ]
+          }
+        },
+        {
+          id: "cat_retail_browser",
+          type: "CATALOG_BROWSER",
+          title: "Browse Products",
+          config: { title: "👗 Featured Streetwear & Apparel", pageSize: 6, inventoryMode: "UNIT_STOCK" }
+        },
+        {
+          id: "addon_retail_quote",
+          type: "ADDON_UPSELL_AND_QUOTE",
+          title: "Packaging & Delivery Upgrades",
+          config: { title: "🎁 Packaging & Express Shipping", allowAddons: true, allowPromoCode: true }
+        },
+        {
+          id: "crm_log_order",
+          type: "CRM_UPSERT",
+          title: "Log Retail Order",
+          config: { pipeline: leadPipeline.slug, stage: "NEW_LEAD", dealValue: 2499, leadScore: 70 }
+        },
+        {
+          id: "msg_retail_confirmed",
+          type: "SEND_MESSAGE",
+          title: "Order Placed",
+          config: { text: "🎉 *Order Placed Successfully!*\n\nOur team is packing your parcel with care. You will receive dispatch tracking updates on WhatsApp." }
+        },
+        { id: "end_retail", type: "END", title: "End Session" }
+      ],
+      transitions: [
+        { id: "tr1", source: "trg_retail", target: "msg_retail_welcome", sourceHandle: "default" },
+        { id: "tr2", source: "msg_retail_welcome", target: "cat_retail_browser", sourceHandle: "opt_browse_catalog" },
+        { id: "tr3", source: "msg_retail_welcome", target: "cat_retail_browser", sourceHandle: "default" },
+        { id: "tr4", source: "cat_retail_browser", target: "addon_retail_quote", sourceHandle: "item_selected" },
+        { id: "tr5", source: "cat_retail_browser", target: "addon_retail_quote", sourceHandle: "default" },
+        { id: "tr6", source: "addon_retail_quote", target: "crm_log_order", sourceHandle: "confirmed" },
+        { id: "tr7", source: "addon_retail_quote", target: "crm_log_order", sourceHandle: "default" },
+        { id: "tr8", source: "crm_log_order", target: "msg_retail_confirmed", sourceHandle: "success" },
+        { id: "tr9", source: "crm_log_order", target: "msg_retail_confirmed", sourceHandle: "failure" },
+        { id: "tr10", source: "msg_retail_confirmed", target: "end_retail", sourceHandle: "default" }
+      ],
+      variables: { selectedItemId: null, orderTotal: 0 }
+    };
+  }
+
+  // 4c. CLINIC & HEALTHCARE APPOINTMENT FLOW
+  if (p.includes("clinic") || p.includes("dental") || p.includes("health") || p.includes("doctor") || p.includes("teeth") || p.includes("consult") || p.includes("patient")) {
+    const bp = SECTOR_BLUEPRINTS.CLINIC_HEALTH;
+    const triggerKeywords = ["doctor", "dental", "appointment", "clinic", "teeth", "consult", "smile"];
+    return {
+      name: "Dental & Healthcare Slot Appointment Flow",
+      description: "Painless clinic consultation and procedure slot booking with preventive dental upgrades.",
+      category: "CLINIC_HEALTH",
+      triggerKeywords,
+      suggestedCatalogItems: bp.items,
+      suggestedAddons: bp.addonGroups,
+      nodes: [
+        {
+          id: "trg_clinic",
+          type: "TRIGGER_WHATSAPP",
+          title: "Clinic Trigger",
+          config: { triggerType: "KEYWORD", keywords: triggerKeywords, matchType: "CONTAINS" }
+        },
+        {
+          id: "msg_clinic_welcome",
+          type: "SEND_MESSAGE",
+          title: "Clinic Greeting",
+          config: {
+            text: `🏥 Welcome to *${primaryEntity.name}*!\n\nBook certified doctors, pain-free dental consultations, and digital scans on WhatsApp.\n\nSelect an option below:`,
+            options: [
+              { id: "opt_book_slot", title: "Book Appointment" },
+              { id: "opt_emergency", title: "Emergency Help" }
+            ]
+          }
+        },
+        {
+          id: "cat_clinic_services",
+          type: "CATALOG_BROWSER",
+          title: "Treatments & Consultations",
+          config: { title: "🦷 Dental & Medical Services", pageSize: 4, inventoryMode: "TIME_SLOT" }
+        },
+        {
+          id: "addon_clinic_quote",
+          type: "ADDON_UPSELL_AND_QUOTE",
+          title: "Preventive Care Upgrades",
+          config: { title: "🛡️ Preventive Care Upgrades", allowAddons: true, allowPromoCode: true }
+        },
+        {
+          id: "crm_clinic_lead",
+          type: "CRM_UPSERT",
+          title: "Log Patient Record",
+          config: { pipeline: bookingPipeline.slug, stage: "CONFIRMED", dealValue: 1500, leadScore: 90 }
+        },
+        {
+          id: "msg_clinic_confirmed",
+          type: "SEND_MESSAGE",
+          title: "Appointment Confirmed",
+          config: { text: "✅ *Your Appointment Is Booked!*\n\nOur clinic receptionist has reserved your slot. We will send you an SMS reminder before your visit." }
+        },
+        { id: "end_clinic", type: "END", title: "End Session" }
+      ],
+      transitions: [
+        { id: "tc1", source: "trg_clinic", target: "msg_clinic_welcome", sourceHandle: "default" },
+        { id: "tc2", source: "msg_clinic_welcome", target: "cat_clinic_services", sourceHandle: "opt_book_slot" },
+        { id: "tc3", source: "msg_clinic_welcome", target: "cat_clinic_services", sourceHandle: "default" },
+        { id: "tc4", source: "cat_clinic_services", target: "addon_clinic_quote", sourceHandle: "item_selected" },
+        { id: "tc5", source: "cat_clinic_services", target: "addon_clinic_quote", sourceHandle: "default" },
+        { id: "tc6", source: "addon_clinic_quote", target: "crm_clinic_lead", sourceHandle: "confirmed" },
+        { id: "tc7", source: "addon_clinic_quote", target: "crm_clinic_lead", sourceHandle: "default" },
+        { id: "tc8", source: "crm_clinic_lead", target: "msg_clinic_confirmed", sourceHandle: "success" },
+        { id: "tc9", source: "crm_clinic_lead", target: "msg_clinic_confirmed", sourceHandle: "failure" },
+        { id: "tc10", source: "msg_clinic_confirmed", target: "end_clinic", sourceHandle: "default" }
+      ],
+      variables: { slotId: null, patientName: "" }
+    };
+  }
+
+  // 4d. REAL ESTATE & LIVING PROPERTY TOUR FLOW
+  if (p.includes("real estate") || p.includes("property") || p.includes("flat") || p.includes("apartment") || p.includes("villa") || p.includes("realty") || p.includes("penthouse") || p.includes("site visit")) {
+    const bp = SECTOR_BLUEPRINTS.REAL_ESTATE;
+    const triggerKeywords = ["property", "flat", "apartment", "penthouse", "real estate", "visit", "brochure", "site visit"];
+    return {
+      name: "Luxury Realty Property Tour & Brochure Flow",
+      description: "Direct WhatsApp high-rise penthouses showcase, digital brochure delivery, and site visit scheduling.",
+      category: "REAL_ESTATE",
+      triggerKeywords,
+      suggestedCatalogItems: bp.items,
+      suggestedAddons: bp.addonGroups,
+      nodes: [
+        {
+          id: "trg_realty",
+          type: "TRIGGER_WHATSAPP",
+          title: "Realty Trigger",
+          config: { triggerType: "KEYWORD", keywords: triggerKeywords, matchType: "CONTAINS" }
+        },
+        {
+          id: "msg_realty_welcome",
+          type: "SEND_MESSAGE",
+          title: "Realty Showcase",
+          config: {
+            text: `🏢 Welcome to *${primaryEntity.name}*!\n\nExplore ultra-luxury 3 & 4 BHK residences and golf villas with panoramic city views.\n\nWhat would you like to do?`,
+            options: [
+              { id: "opt_view_projects", title: "View Residences" },
+              { id: "opt_book_tour", title: "Schedule Visit" }
+            ]
+          }
+        },
+        {
+          id: "cat_realty_browser",
+          type: "CATALOG_BROWSER",
+          title: "Featured Residences",
+          config: { title: "🏡 Featured Properties", pageSize: 4, inventoryMode: "QUOTE_SERVICE" }
+        },
+        {
+          id: "crm_realty_lead",
+          type: "CRM_UPSERT",
+          title: "Capture High-Net-Worth Lead",
+          config: { pipeline: b2bPipeline.slug, stage: "NEW_LEAD", dealValue: 20000000, leadScore: 85 }
+        },
+        {
+          id: "msg_realty_confirmed",
+          type: "SEND_MESSAGE",
+          title: "Tour Scheduled",
+          config: { text: "📑 *Digital Brochure & Site Visit Reserved!*\n\nOur Senior Relationship Director has received your details and will coordinate your private golf-cart site tour." }
+        },
+        { id: "end_realty", type: "END", title: "End Session" }
+      ],
+      transitions: [
+        { id: "tre1", source: "trg_realty", target: "msg_realty_welcome", sourceHandle: "default" },
+        { id: "tre2", source: "msg_realty_welcome", target: "cat_realty_browser", sourceHandle: "opt_view_projects" },
+        { id: "tre3", source: "msg_realty_welcome", target: "cat_realty_browser", sourceHandle: "default" },
+        { id: "tre4", source: "cat_realty_browser", target: "crm_realty_lead", sourceHandle: "item_selected" },
+        { id: "tre5", source: "cat_realty_browser", target: "crm_realty_lead", sourceHandle: "default" },
+        { id: "tre6", source: "crm_realty_lead", target: "msg_realty_confirmed", sourceHandle: "success" },
+        { id: "tre7", source: "crm_realty_lead", target: "msg_realty_confirmed", sourceHandle: "failure" },
+        { id: "tre8", source: "msg_realty_confirmed", target: "end_realty", sourceHandle: "default" }
+      ],
+      variables: { propertyInterest: "" }
+    };
+  }
+
   // 4. RESTAURANT / DINING / FOOD ORDER & UPI PAYMENT
   if (p.includes("food") || p.includes("dine") || p.includes("dining") || p.includes("restaurant") || p.includes("cafe") || p.includes("order") || p.includes("payment")) {
     const flowName = "Dining Table Order & UPI Direct Payment Flow";
@@ -784,6 +1409,214 @@ function synthesizeSmartLocalFlow(prompt = "", systemContext = {}) {
       nodes,
       transitions,
       variables
+    };
+  }
+
+  // 4b. RETAIL & D2C E-COMMERCE CATALOG & CHECKOUT FLOW
+  if (p.includes("retail") || p.includes("ecom") || p.includes("shop") || p.includes("cloth") || p.includes("apparel") || p.includes("hoodie") || p.includes("store") || p.includes("product")) {
+    const bp = SECTOR_BLUEPRINTS.RETAIL_ECOM;
+    const triggerKeywords = ["shop", "catalog", "hoodie", "order", "clothes", "store", "buy"];
+    return {
+      name: "D2C Retail & Instant WhatsApp Catalog Order",
+      description: "Direct WhatsApp catalog browsing with variant selection, gift box/shipping add-ons, and instant order intake.",
+      category: "RETAIL_ECOM",
+      triggerKeywords,
+      suggestedCatalogItems: bp.items,
+      suggestedAddons: bp.addonGroups,
+      nodes: [
+        {
+          id: "trg_retail",
+          type: "TRIGGER_WHATSAPP",
+          title: "Retail Inbound Trigger",
+          config: { triggerType: "KEYWORD", keywords: triggerKeywords, matchType: "CONTAINS" }
+        },
+        {
+          id: "msg_retail_welcome",
+          type: "SEND_MESSAGE",
+          title: "Store Welcome",
+          config: {
+            text: `🛍️ Welcome to *${primaryEntity.name}*!\n\nBrowse our bestselling apparel collection with instant WhatsApp checkout.\n\nTap below to explore our live catalog:`,
+            options: [
+              { id: "opt_browse_catalog", title: "Browse Catalog" },
+              { id: "opt_talk_team", title: "Talk to Stylist" }
+            ]
+          }
+        },
+        {
+          id: "cat_retail_browser",
+          type: "CATALOG_BROWSER",
+          title: "Browse Products",
+          config: { title: "👗 Featured Streetwear & Apparel", pageSize: 6, inventoryMode: "UNIT_STOCK" }
+        },
+        {
+          id: "addon_retail_quote",
+          type: "ADDON_UPSELL_AND_QUOTE",
+          title: "Packaging & Delivery Upgrades",
+          config: { title: "🎁 Packaging & Express Shipping", allowAddons: true, allowPromoCode: true }
+        },
+        {
+          id: "crm_log_order",
+          type: "CRM_UPSERT",
+          title: "Log Retail Order",
+          config: { pipeline: leadPipeline.slug, stage: "NEW_LEAD", dealValue: 2499, leadScore: 70 }
+        },
+        {
+          id: "msg_retail_confirmed",
+          type: "SEND_MESSAGE",
+          title: "Order Placed",
+          config: { text: "🎉 *Order Placed Successfully!*\n\nOur team is packing your parcel with care. You will receive dispatch tracking updates on WhatsApp." }
+        },
+        { id: "end_retail", type: "END", title: "End Session" }
+      ],
+      transitions: [
+        { id: "tr1", source: "trg_retail", target: "msg_retail_welcome", sourceHandle: "default" },
+        { id: "tr2", source: "msg_retail_welcome", target: "cat_retail_browser", sourceHandle: "opt_browse_catalog" },
+        { id: "tr3", source: "msg_retail_welcome", target: "cat_retail_browser", sourceHandle: "default" },
+        { id: "tr4", source: "cat_retail_browser", target: "addon_retail_quote", sourceHandle: "item_selected" },
+        { id: "tr5", source: "cat_retail_browser", target: "addon_retail_quote", sourceHandle: "default" },
+        { id: "tr6", source: "addon_retail_quote", target: "crm_log_order", sourceHandle: "confirmed" },
+        { id: "tr7", source: "addon_retail_quote", target: "crm_log_order", sourceHandle: "default" },
+        { id: "tr8", source: "crm_log_order", target: "msg_retail_confirmed", sourceHandle: "success" },
+        { id: "tr9", source: "crm_log_order", target: "msg_retail_confirmed", sourceHandle: "failure" },
+        { id: "tr10", source: "msg_retail_confirmed", target: "end_retail", sourceHandle: "default" }
+      ],
+      variables: { selectedItemId: null, orderTotal: 0 }
+    };
+  }
+
+  // 4c. CLINIC & HEALTHCARE APPOINTMENT FLOW
+  if (p.includes("clinic") || p.includes("dental") || p.includes("health") || p.includes("doctor") || p.includes("teeth") || p.includes("consult") || p.includes("patient")) {
+    const bp = SECTOR_BLUEPRINTS.CLINIC_HEALTH;
+    const triggerKeywords = ["doctor", "dental", "appointment", "clinic", "teeth", "consult", "smile"];
+    return {
+      name: "Dental & Healthcare Slot Appointment Flow",
+      description: "Painless clinic consultation and procedure slot booking with preventive dental upgrades.",
+      category: "CLINIC_HEALTH",
+      triggerKeywords,
+      suggestedCatalogItems: bp.items,
+      suggestedAddons: bp.addonGroups,
+      nodes: [
+        {
+          id: "trg_clinic",
+          type: "TRIGGER_WHATSAPP",
+          title: "Clinic Trigger",
+          config: { triggerType: "KEYWORD", keywords: triggerKeywords, matchType: "CONTAINS" }
+        },
+        {
+          id: "msg_clinic_welcome",
+          type: "SEND_MESSAGE",
+          title: "Clinic Greeting",
+          config: {
+            text: `🏥 Welcome to *${primaryEntity.name}*!\n\nBook certified doctors, pain-free dental consultations, and digital scans on WhatsApp.\n\nSelect an option below:`,
+            options: [
+              { id: "opt_book_slot", title: "Book Appointment" },
+              { id: "opt_emergency", title: "Emergency Help" }
+            ]
+          }
+        },
+        {
+          id: "cat_clinic_services",
+          type: "CATALOG_BROWSER",
+          title: "Treatments & Consultations",
+          config: { title: "🦷 Dental & Medical Services", pageSize: 4, inventoryMode: "TIME_SLOT" }
+        },
+        {
+          id: "addon_clinic_quote",
+          type: "ADDON_UPSELL_AND_QUOTE",
+          title: "Preventive Care Upgrades",
+          config: { title: "🛡️ Preventive Care Upgrades", allowAddons: true, allowPromoCode: true }
+        },
+        {
+          id: "crm_clinic_lead",
+          type: "CRM_UPSERT",
+          title: "Log Patient Record",
+          config: { pipeline: bookingPipeline.slug, stage: "CONFIRMED", dealValue: 1500, leadScore: 90 }
+        },
+        {
+          id: "msg_clinic_confirmed",
+          type: "SEND_MESSAGE",
+          title: "Appointment Confirmed",
+          config: { text: "✅ *Your Appointment Is Booked!*\n\nOur clinic receptionist has reserved your slot. We will send you an SMS reminder before your visit." }
+        },
+        { id: "end_clinic", type: "END", title: "End Session" }
+      ],
+      transitions: [
+        { id: "tc1", source: "trg_clinic", target: "msg_clinic_welcome", sourceHandle: "default" },
+        { id: "tc2", source: "msg_clinic_welcome", target: "cat_clinic_services", sourceHandle: "opt_book_slot" },
+        { id: "tc3", source: "msg_clinic_welcome", target: "cat_clinic_services", sourceHandle: "default" },
+        { id: "tc4", source: "cat_clinic_services", target: "addon_clinic_quote", sourceHandle: "item_selected" },
+        { id: "tc5", source: "cat_clinic_services", target: "addon_clinic_quote", sourceHandle: "default" },
+        { id: "tc6", source: "addon_clinic_quote", target: "crm_clinic_lead", sourceHandle: "confirmed" },
+        { id: "tc7", source: "addon_clinic_quote", target: "crm_clinic_lead", sourceHandle: "default" },
+        { id: "tc8", source: "crm_clinic_lead", target: "msg_clinic_confirmed", sourceHandle: "success" },
+        { id: "tc9", source: "crm_clinic_lead", target: "msg_clinic_confirmed", sourceHandle: "failure" },
+        { id: "tc10", source: "msg_clinic_confirmed", target: "end_clinic", sourceHandle: "default" }
+      ],
+      variables: { slotId: null, patientName: "" }
+    };
+  }
+
+  // 4d. REAL ESTATE & LIVING PROPERTY TOUR FLOW
+  if (p.includes("real estate") || p.includes("property") || p.includes("flat") || p.includes("apartment") || p.includes("villa") || p.includes("realty") || p.includes("penthouse") || p.includes("site visit")) {
+    const bp = SECTOR_BLUEPRINTS.REAL_ESTATE;
+    const triggerKeywords = ["property", "flat", "apartment", "penthouse", "real estate", "visit", "brochure", "site visit"];
+    return {
+      name: "Luxury Realty Property Tour & Brochure Flow",
+      description: "Direct WhatsApp high-rise penthouses showcase, digital brochure delivery, and site visit scheduling.",
+      category: "REAL_ESTATE",
+      triggerKeywords,
+      suggestedCatalogItems: bp.items,
+      suggestedAddons: bp.addonGroups,
+      nodes: [
+        {
+          id: "trg_realty",
+          type: "TRIGGER_WHATSAPP",
+          title: "Realty Trigger",
+          config: { triggerType: "KEYWORD", keywords: triggerKeywords, matchType: "CONTAINS" }
+        },
+        {
+          id: "msg_realty_welcome",
+          type: "SEND_MESSAGE",
+          title: "Realty Showcase",
+          config: {
+            text: `🏢 Welcome to *${primaryEntity.name}*!\n\nExplore ultra-luxury 3 & 4 BHK residences and golf villas with panoramic city views.\n\nWhat would you like to do?`,
+            options: [
+              { id: "opt_view_projects", title: "View Residences" },
+              { id: "opt_book_tour", title: "Schedule Visit" }
+            ]
+          }
+        },
+        {
+          id: "cat_realty_browser",
+          type: "CATALOG_BROWSER",
+          title: "Featured Residences",
+          config: { title: "🏡 Featured Properties", pageSize: 4, inventoryMode: "QUOTE_SERVICE" }
+        },
+        {
+          id: "crm_realty_lead",
+          type: "CRM_UPSERT",
+          title: "Capture High-Net-Worth Lead",
+          config: { pipeline: b2bPipeline.slug, stage: "NEW_LEAD", dealValue: 20000000, leadScore: 85 }
+        },
+        {
+          id: "msg_realty_confirmed",
+          type: "SEND_MESSAGE",
+          title: "Tour Scheduled",
+          config: { text: "📑 *Digital Brochure & Site Visit Reserved!*\n\nOur Senior Relationship Director has received your details and will coordinate your private golf-cart site tour." }
+        },
+        { id: "end_realty", type: "END", title: "End Session" }
+      ],
+      transitions: [
+        { id: "tre1", source: "trg_realty", target: "msg_realty_welcome", sourceHandle: "default" },
+        { id: "tre2", source: "msg_realty_welcome", target: "cat_realty_browser", sourceHandle: "opt_view_projects" },
+        { id: "tre3", source: "msg_realty_welcome", target: "cat_realty_browser", sourceHandle: "default" },
+        { id: "tre4", source: "cat_realty_browser", target: "crm_realty_lead", sourceHandle: "item_selected" },
+        { id: "tre5", source: "cat_realty_browser", target: "crm_realty_lead", sourceHandle: "default" },
+        { id: "tre6", source: "crm_realty_lead", target: "msg_realty_confirmed", sourceHandle: "success" },
+        { id: "tre7", source: "crm_realty_lead", target: "msg_realty_confirmed", sourceHandle: "failure" },
+        { id: "tre8", source: "msg_realty_confirmed", target: "end_realty", sourceHandle: "default" }
+      ],
+      variables: { propertyInterest: "" }
     };
   }
 
@@ -1106,6 +1939,8 @@ async function generateFlowFromPrompt({
     publishedVersion,
     validationReport,
     usedProvider,
+    suggestedCatalogItems: flowDraft.suggestedCatalogItems || [],
+    suggestedAddons: flowDraft.suggestedAddons || [],
     assignedPhone: assignedPhone ? {
       displayName: assignedPhone.display_name,
       phoneNumber: assignedPhone.phone_number,
@@ -1210,6 +2045,57 @@ async function refineFlowWithAi({
       position: { x: 350, y: 450 }
     };
     nodes.push(payNode);
+    modified = true;
+  }
+
+  // 4. ADD ADDON_UPSELL_AND_QUOTE NODE
+  if (p.includes("upsell") || p.includes("add-on") || p.includes("addon") || p.includes("quote") || p.includes("pricing") || p.includes("gst") || p.includes("tax")) {
+    const addonId = `addon_quote_ai_${Date.now()}`;
+    const addonNode = {
+      id: addonId,
+      type: "ADDON_UPSELL_AND_QUOTE",
+      title: "Add-Ons & Dynamic Quotation",
+      config: {
+        title: "✨ Signature Add-Ons & Summary",
+        allowAddons: true,
+        allowPromoCode: true
+      },
+      position: { x: 350, y: 480 }
+    };
+    nodes.push(addonNode);
+    modified = true;
+  }
+
+  // 5. ADD AI_HYBRID_ASSIST NODE
+  if (p.includes("hybrid") || p.includes("ai assistant") || p.includes("faq") || p.includes("copilot") || p.includes("answer question")) {
+    const aiId = `ai_hybrid_${Date.now()}`;
+    const aiNode = {
+      id: aiId,
+      type: "AI_HYBRID_ASSIST",
+      title: "AI Grounded Copilot",
+      config: {
+        resumePrompt: "👉 Let's continue where we left off:"
+      },
+      position: { x: 350, y: 520 }
+    };
+    nodes.push(aiNode);
+    modified = true;
+  }
+
+  // 6. ADD CATALOG_BROWSER NODE
+  if (p.includes("catalog") || p.includes("browse") || p.includes("products") || p.includes("dishes") || p.includes("items")) {
+    const catId = `cat_browser_ai_${Date.now()}`;
+    const catNode = {
+      id: catId,
+      type: "CATALOG_BROWSER",
+      title: "Universal Catalog Browser",
+      config: {
+        title: "🛍️ Featured Catalog",
+        pageSize: 6
+      },
+      position: { x: 350, y: 350 }
+    };
+    nodes.push(catNode);
     modified = true;
   }
 

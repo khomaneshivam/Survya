@@ -1,0 +1,321 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Calendar,
+  Clock,
+  Layers,
+  Plus,
+  RefreshCw,
+  AlertCircle,
+  CheckCircle2,
+  Lock,
+  Unlock,
+  Check
+} from 'lucide-react';
+
+export default function UniversalAvailabilityTab({ token, selectedEntityId, showToast }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [slots, setSlots] = useState([]);
+  const [showSlotModal, setShowSlotModal] = useState(false);
+  const [slotForm, setSlotForm] = useState({
+    slot_date: new Date().toISOString().split('T')[0],
+    start_time: '10:00:00',
+    end_time: '11:00:00',
+    total_capacity: 10,
+    catalog_item_id: ''
+  });
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const fetchItems = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/v1/universal/items?entityId=${selectedEntityId || ''}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setItems(data.items || []);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch items for availability:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [token, selectedEntityId]);
+
+  useEffect(() => {
+    fetchItems();
+  }, [fetchItems]);
+
+  const handleCreateSlot = async (e) => {
+    e.preventDefault();
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/v1/universal/availability/slots', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...slotForm,
+          entity_id: selectedEntityId || null,
+          catalog_item_id: slotForm.catalog_item_id || null
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to create slot');
+      }
+      showToast('Availability time slot added successfully!');
+      setShowSlotModal(false);
+      setSlots(prev => [...prev, data.slot]);
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {/* 4-Mode Availability Explanation Strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '14px' }}>
+          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+            <Layers size={15} color="#2563EB" />
+            <span>UNIT_STOCK Mode</span>
+          </div>
+          <div style={{ fontSize: '0.78rem', color: '#64748B', lineHeight: '1.4' }}>
+            For Retail, D2C, Food & Wholesale. Real-time balance: <code>(Stock - Reserved)</code>.
+          </div>
+        </div>
+
+        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '14px' }}>
+          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+            <Calendar size={15} color="#16A34A" />
+            <span>DATE_RANGE Mode</span>
+          </div>
+          <div style={{ fontSize: '0.78rem', color: '#64748B', lineHeight: '1.4' }}>
+            For Hospitality & Resorts. Multi-night checks across check-in and check-out dates.
+          </div>
+        </div>
+
+        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '14px' }}>
+          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+            <Clock size={15} color="#7C3AED" />
+            <span>TIME_SLOT Mode</span>
+          </div>
+          <div style={{ fontSize: '0.78rem', color: '#64748B', lineHeight: '1.4' }}>
+            For Dental Clinics, Spas & Salons. Capacity scheduler per hour with instant holds.
+          </div>
+        </div>
+
+        <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '14px' }}>
+          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#0F172A', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+            <Lock size={15} color="#D97706" />
+            <span>QUOTE_SERVICE Mode</span>
+          </div>
+          <div style={{ fontSize: '0.78rem', color: '#64748B', lineHeight: '1.4' }}>
+            For Real Estate & B2B. Instant lead capture with custom quotation & site visits.
+          </div>
+        </div>
+      </div>
+
+      {/* Real-Time Stock & Capacity Table */}
+      <div style={{ background: '#FFFFFF', border: '1px solid #E5E7EB', borderRadius: '12px', padding: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div>
+            <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#111827', margin: 0 }}>
+              Live Stock & Inventory Capacity
+            </h3>
+            <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#6B7280' }}>
+              Real-time available quantities deducting active 15-minute customer WhatsApp holds.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              type="button"
+              onClick={fetchItems}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', border: '1px solid #D1D5DB', background: '#fff', fontSize: '0.82rem', cursor: 'pointer' }}
+            >
+              <RefreshCw size={14} />
+              <span>Refresh</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSlotModal(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 14px', borderRadius: '6px', border: 'none', background: '#16A34A', color: '#fff', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
+            >
+              <Plus size={14} />
+              <span>Add Time Slot</span>
+            </button>
+          </div>
+        </div>
+
+        {loading ? (
+          <div style={{ padding: '32px', textAlign: 'center', color: '#6B7280', fontSize: '0.85rem' }}>
+            Loading inventory records...
+          </div>
+        ) : items.length === 0 ? (
+          <div style={{ padding: '32px', textAlign: 'center', color: '#6B7280', fontSize: '0.85rem' }}>
+            No catalog items found for this entity. Seed a blueprint or add items in Tab 1.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="sarvya-table" style={{ width: '100%', fontSize: '0.85rem' }}>
+              <thead>
+                <tr>
+                  <th>Item / Offering</th>
+                  <th>Category</th>
+                  <th>Inventory Mode</th>
+                  <th>Total Stock</th>
+                  <th>Reserved (Held)</th>
+                  <th>Available Balance</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(item => {
+                  const available = Math.max(0, (item.stock_qty || 0) - (item.reserved_qty || 0));
+                  return (
+                    <tr key={item.id}>
+                      <td style={{ fontWeight: 600, color: '#111827' }}>{item.title}</td>
+                      <td>{item.category_name || item.item_type || '-'}</td>
+                      <td>
+                        <span style={{
+                          padding: '3px 8px',
+                          borderRadius: '12px',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          background: item.inventory_mode === 'DATE_RANGE' ? '#DCFCE7' : (item.inventory_mode === 'TIME_SLOT' ? '#EDE9FE' : (item.inventory_mode === 'QUOTE_SERVICE' ? '#FEF3C7' : '#E0F2FE')),
+                          color: item.inventory_mode === 'DATE_RANGE' ? '#166534' : (item.inventory_mode === 'TIME_SLOT' ? '#5B21B6' : (item.inventory_mode === 'QUOTE_SERVICE' ? '#92400E' : '#0369A1'))
+                        }}>
+                          {item.inventory_mode || 'UNIT_STOCK'}
+                        </span>
+                      </td>
+                      <td>{item.track_inventory ? item.stock_qty : '∞ Infinite'}</td>
+                      <td style={{ color: item.reserved_qty > 0 ? '#D97706' : '#6B7280' }}>
+                        {item.reserved_qty || 0}
+                      </td>
+                      <td style={{ fontWeight: 700, color: available > 0 ? '#16A34A' : '#DC2626' }}>
+                        {item.track_inventory ? available : 'Available'}
+                      </td>
+                      <td>
+                        {item.is_sold_out ? (
+                          <span style={{ color: '#DC2626', fontWeight: 600 }}>Sold Out</span>
+                        ) : (
+                          <span style={{ color: '#16A34A', fontWeight: 600 }}>In Stock</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Add Slot Modal */}
+      {showSlotModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{ background: '#fff', borderRadius: '12px', maxWidth: '440px', width: '100%', padding: '24px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: '1.1rem', fontWeight: 700, color: '#111827' }}>
+              Add Availability Time Slot
+            </h3>
+            <form onSubmit={handleCreateSlot} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>Date</label>
+                <input
+                  type="date"
+                  value={slotForm.slot_date}
+                  onChange={e => setSlotForm({ ...slotForm, slot_date: e.target.value })}
+                  required
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #D1D5DB' }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>Start Time</label>
+                  <input
+                    type="time"
+                    value={slotForm.start_time.slice(0, 5)}
+                    onChange={e => setSlotForm({ ...slotForm, start_time: `${e.target.value}:00` })}
+                    required
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #D1D5DB' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>End Time</label>
+                  <input
+                    type="time"
+                    value={slotForm.end_time.slice(0, 5)}
+                    onChange={e => setSlotForm({ ...slotForm, end_time: `${e.target.value}:00` })}
+                    required
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #D1D5DB' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>Total Slot Capacity</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={slotForm.total_capacity}
+                  onChange={e => setSlotForm({ ...slotForm, total_capacity: Number(e.target.value) })}
+                  required
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #D1D5DB' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '4px' }}>Link to Service / Item (Optional)</label>
+                <select
+                  value={slotForm.catalog_item_id}
+                  onChange={e => setSlotForm({ ...slotForm, catalog_item_id: e.target.value })}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #D1D5DB' }}
+                >
+                  <option value="">All Services (Universal Slot)</option>
+                  {items.filter(i => i.inventory_mode === 'TIME_SLOT').map(i => (
+                    <option key={i.id} value={i.id}>{i.title}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowSlotModal(false)}
+                  style={{ padding: '8px 14px', borderRadius: '6px', border: '1px solid #D1D5DB', background: '#fff', fontSize: '0.82rem', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#16A34A', color: '#fff', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {actionLoading ? 'Saving...' : 'Save Slot'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

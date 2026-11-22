@@ -1,8 +1,56 @@
 const express = require("express");
 const router = express.Router();
 const catalogController = require("../controllers/catalogController");
+const universalCatalogController = require("../controllers/universalCatalogController");
 const unifiedOrderController = require("../controllers/unifiedOrderController");
 const { authenticateToken, optionalAuth } = require("../middleware/authMiddleware");
+
+// =========================================================================
+// UNIVERSAL MULTI-SECTOR COMMERCE & PRICING API
+// =========================================================================
+
+// Universal Catalog Items & Gallery
+router.get("/v1/universal/items", authenticateToken, universalCatalogController.listItems);
+router.post("/v1/universal/items", authenticateToken, universalCatalogController.createItem);
+router.get("/v1/universal/items/:id", authenticateToken, universalCatalogController.getItem);
+router.put("/v1/universal/items/:id", authenticateToken, universalCatalogController.updateItem);
+router.delete("/v1/universal/items/:id", authenticateToken, universalCatalogController.deleteItem);
+router.post("/v1/universal/items/:id/media", authenticateToken, universalCatalogController.addMedia);
+router.delete("/v1/universal/media/:mediaId", authenticateToken, universalCatalogController.deleteMedia);
+router.get("/v1/universal/search", authenticateToken, universalCatalogController.searchCatalog);
+
+// Add-On Groups & Add-Ons
+router.get("/v1/universal/addon-groups", authenticateToken, universalCatalogController.listAddonGroups);
+router.post("/v1/universal/addon-groups", authenticateToken, universalCatalogController.createAddonGroup);
+router.put("/v1/universal/addon-groups/:id", authenticateToken, universalCatalogController.updateAddonGroup);
+router.delete("/v1/universal/addon-groups/:id", authenticateToken, universalCatalogController.deleteAddonGroup);
+router.post("/v1/universal/addon-groups/:groupId/addons", authenticateToken, universalCatalogController.createAddon);
+router.put("/v1/universal/addons/:id", authenticateToken, universalCatalogController.updateAddon);
+router.delete("/v1/universal/addons/:id", authenticateToken, universalCatalogController.deleteAddon);
+
+// Dynamic Pricing Rules & Promos
+router.get("/v1/universal/pricing-rules", authenticateToken, universalCatalogController.listPricingRules);
+router.post("/v1/universal/pricing-rules", authenticateToken, universalCatalogController.createPricingRule);
+router.put("/v1/universal/pricing-rules/:id", authenticateToken, universalCatalogController.updatePricingRule);
+router.delete("/v1/universal/pricing-rules/:id", authenticateToken, universalCatalogController.deletePricingRule);
+
+// Availability, Slots & Atomic Inventory Holds
+router.get("/v1/universal/availability/check", authenticateToken, universalCatalogController.checkAvailability);
+router.post("/v1/universal/availability/slots", authenticateToken, universalCatalogController.createAvailabilitySlot);
+router.post("/v1/universal/holds", authenticateToken, universalCatalogController.createHold);
+router.post("/v1/universal/holds/:token/confirm", authenticateToken, universalCatalogController.confirmHold);
+router.post("/v1/universal/holds/:token/release", authenticateToken, universalCatalogController.releaseHold);
+
+// Dynamic Quotation Engine
+router.post("/v1/universal/pricing/quote", authenticateToken, universalCatalogController.calculateQuote);
+
+// 8 Industry Blueprints 1-Click Seeder
+router.get("/v1/universal/blueprints", authenticateToken, universalCatalogController.listBlueprints);
+router.post("/v1/universal/blueprints/seed", authenticateToken, universalCatalogController.seedBlueprint);
+
+// =========================================================================
+// ENTITIES & LEGACY COMMERCE ENDPOINTS
+// =========================================================================
 
 // Business Entities Management
 router.get("/v1/entities", authenticateToken, catalogController.listEntities);

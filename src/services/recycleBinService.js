@@ -90,6 +90,27 @@ const ENTITY_CONFIGS = {
     secondaryColumn: "slug",
     displayName: "Catalog Item"
   },
+  catalog_addon_groups: {
+    table: "catalog_addon_groups",
+    primaryKey: "id",
+    labelColumn: "title",
+    secondaryColumn: "code",
+    displayName: "Catalog Add-On Group"
+  },
+  catalog_addons: {
+    table: "catalog_addons",
+    primaryKey: "id",
+    labelColumn: "name",
+    secondaryColumn: "price_mode",
+    displayName: "Catalog Add-On"
+  },
+  catalog_pricing_rules: {
+    table: "catalog_pricing_rules",
+    primaryKey: "id",
+    labelColumn: "title",
+    secondaryColumn: "rule_type",
+    displayName: "Catalog Pricing Rule"
+  },
   room_types: {
     table: "room_types",
     primaryKey: "id",
@@ -135,6 +156,12 @@ const ALIAS_MAP = {
   entity: "business_entities",
   catalog_item: "catalog_items",
   item: "catalog_items",
+  catalog_addon_group: "catalog_addon_groups",
+  addon_group: "catalog_addon_groups",
+  catalog_addon: "catalog_addons",
+  addon: "catalog_addons",
+  catalog_pricing_rule: "catalog_pricing_rules",
+  pricing_rule: "catalog_pricing_rules",
   room_type: "room_types",
   room: "room_types",
   chat_link: "chat_links",

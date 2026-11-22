@@ -80,7 +80,13 @@ const TABLE_SCHEMAS = {
   "contact_marketing_cooldowns": "CREATE TABLE IF NOT EXISTS `contact_marketing_cooldowns` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` int NOT NULL DEFAULT '1',\n  `phone_e164` varchar(32) NOT NULL,\n  `phone_number_id` varchar(64) DEFAULT NULL,\n  `error_code` int NOT NULL DEFAULT '131049',\n  `reason` text DEFAULT NULL,\n  `cooldown_until` datetime NOT NULL,\n  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uk_cooldown_tenant_phone` (`tenant_id`, `phone_e164`),\n  KEY `idx_cooldown_until` (`tenant_id`, `cooldown_until`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "ai_knowledge_sources": "CREATE TABLE IF NOT EXISTS `ai_knowledge_sources` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `source_type` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'TEXT_FAQ',\n  `content_text` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `tags_json` json DEFAULT NULL,\n  `active_status` tinyint(1) NOT NULL DEFAULT '1',\n  `delete_status` tinyint(1) NOT NULL DEFAULT '0',\n  `deleted_at` datetime DEFAULT NULL,\n  `deleted_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_ai_know_tenant` (`tenant_id`, `active_status`, `delete_status`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "ai_agent_configs": "CREATE TABLE IF NOT EXISTS `ai_agent_configs` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL UNIQUE,\n  `enabled` tinyint(1) NOT NULL DEFAULT '0',\n  `business_persona` text COLLATE utf8mb4_unicode_ci,\n  `allowed_tasks_json` json DEFAULT NULL,\n  `supported_languages_json` json DEFAULT NULL,\n  `handoff_keywords_json` json DEFAULT NULL,\n  `confidence_threshold` double NOT NULL DEFAULT '0.65',\n  `max_ai_turns_before_handoff` int NOT NULL DEFAULT '8',\n  `voice_transcription_enabled` tinyint(1) NOT NULL DEFAULT '1',\n  `auto_sync_catalog` tinyint(1) NOT NULL DEFAULT '1',\n  `active_status` tinyint(1) NOT NULL DEFAULT '1',\n  `delete_status` tinyint(1) NOT NULL DEFAULT '0',\n  `deleted_at` datetime DEFAULT NULL,\n  `deleted_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uk_ai_agent_tenant` (`tenant_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-  "ai_interaction_logs": "CREATE TABLE IF NOT EXISTS `ai_interaction_logs` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `sender_phone` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `input_type` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'TEXT',\n  `user_input` text COLLATE utf8mb4_unicode_ci NOT NULL,\n  `detected_language` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'en',\n  `matched_sources_json` json DEFAULT NULL,\n  `ai_reply` text COLLATE utf8mb4_unicode_ci NOT NULL,\n  `confidence` double NOT NULL DEFAULT '1.0',\n  `triggered_handoff` tinyint(1) NOT NULL DEFAULT '0',\n  `latency_ms` int NOT NULL DEFAULT '0',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_ai_logs_tenant` (`tenant_id`, `created_at`),\n  KEY `idx_ai_logs_phone` (`sender_phone`(32), `created_at`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+  "ai_interaction_logs": "CREATE TABLE IF NOT EXISTS `ai_interaction_logs` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `sender_phone` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `input_type` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'TEXT',\n  `user_input` text COLLATE utf8mb4_unicode_ci NOT NULL,\n  `detected_language` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'en',\n  `matched_sources_json` json DEFAULT NULL,\n  `ai_reply` text COLLATE utf8mb4_unicode_ci NOT NULL,\n  `confidence` double NOT NULL DEFAULT '1.0',\n  `triggered_handoff` tinyint(1) NOT NULL DEFAULT '0',\n  `latency_ms` int NOT NULL DEFAULT '0',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_ai_logs_tenant` (`tenant_id`, `created_at`),\n  KEY `idx_ai_logs_phone` (`sender_phone`(32), `created_at`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "catalog_item_media": "CREATE TABLE IF NOT EXISTS `catalog_item_media` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `catalog_item_id` bigint NOT NULL,\n  `media_type` varchar(32) NOT NULL DEFAULT 'IMAGE',\n  `media_url` varchar(512) DEFAULT NULL,\n  `image_url` varchar(512) DEFAULT NULL,\n  `thumbnail_url` varchar(512) DEFAULT NULL,\n  `caption` varchar(200) DEFAULT NULL,\n  `is_primary` tinyint(1) DEFAULT '0',\n  `sort_order` int DEFAULT '0',\n  `display_order` int DEFAULT '0',\n  `meta_media_id` varchar(128) DEFAULT NULL,\n  `meta_media_expires_at` datetime DEFAULT NULL,\n  `file_size_kb` int DEFAULT NULL,\n  `active_status` tinyint(1) DEFAULT '1',\n  `delete_status` tinyint(1) DEFAULT '0',\n  `created_by` varchar(64) DEFAULT NULL,\n  `updated_by` varchar(64) DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_media_item` (`catalog_item_id`, `delete_status`, `is_primary`, `display_order`),\n  KEY `idx_media_tenant` (`tenant_id`, `catalog_item_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "catalog_availability_slots": "CREATE TABLE IF NOT EXISTS `catalog_availability_slots` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `entity_id` bigint DEFAULT NULL,\n  `catalog_item_id` bigint DEFAULT NULL,\n  `slot_date` date NOT NULL,\n  `slot_start` time DEFAULT NULL,\n  `slot_end` time DEFAULT NULL,\n  `start_time` time DEFAULT NULL,\n  `end_time` time DEFAULT NULL,\n  `total_capacity` int NOT NULL DEFAULT '1',\n  `booked_capacity` int NOT NULL DEFAULT '0',\n  `held_capacity` int NOT NULL DEFAULT '0',\n  `override_price` double DEFAULT NULL,\n  `is_blocked` tinyint(1) DEFAULT '0',\n  `is_active` tinyint(1) DEFAULT '1',\n  `active_status` tinyint(1) DEFAULT '1',\n  `delete_status` tinyint(1) DEFAULT '0',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uq_item_slot` (`tenant_id`, `catalog_item_id`, `slot_date`, `slot_start`),\n  KEY `idx_slot_lookup` (`tenant_id`, `catalog_item_id`, `slot_date`, `is_blocked`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "catalog_inventory_holds": "CREATE TABLE IF NOT EXISTS `catalog_inventory_holds` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `catalog_item_id` bigint NOT NULL,\n  `slot_id` bigint DEFAULT NULL,\n  `hold_token` varchar(128) DEFAULT NULL,\n  `session_ref` varchar(128) NOT NULL,\n  `hold_type` varchar(32) NOT NULL DEFAULT 'ITEM_STOCK',\n  `quantity` int NOT NULL DEFAULT '1',\n  `customer_phone` varchar(32) DEFAULT NULL,\n  `customer_name` varchar(128) DEFAULT NULL,\n  `slot_date` date DEFAULT NULL,\n  `slot_start` time DEFAULT NULL,\n  `check_in` date DEFAULT NULL,\n  `check_out` date DEFAULT NULL,\n  `status` varchar(24) DEFAULT 'HELD',\n  `expires_at` datetime NOT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_hold_expiry` (`status`, `expires_at`),\n  KEY `idx_hold_token` (`tenant_id`, `hold_token`),\n  KEY `idx_hold_session` (`session_ref`, `status`),\n  KEY `idx_hold_item` (`tenant_id`, `catalog_item_id`, `status`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "catalog_addon_groups": "CREATE TABLE IF NOT EXISTS `catalog_addon_groups` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `entity_id` bigint DEFAULT NULL,\n  `catalog_item_id` bigint DEFAULT NULL,\n  `title` varchar(128) DEFAULT NULL,\n  `name` varchar(128) NOT NULL,\n  `code` varchar(64) DEFAULT NULL,\n  `description` varchar(255) DEFAULT NULL,\n  `selection_type` varchar(32) NOT NULL DEFAULT 'MULTI_CHOICE',\n  `is_required` tinyint(1) DEFAULT '0',\n  `min_select` int DEFAULT '0',\n  `max_select` int DEFAULT '5',\n  `applies_to_category` varchar(100) DEFAULT NULL,\n  `applies_to_item_ids_json` json DEFAULT NULL,\n  `is_upsell_featured` tinyint(1) DEFAULT '1',\n  `sort_order` int DEFAULT '0',\n  `display_order` int DEFAULT '0',\n  `active_status` tinyint(1) DEFAULT '1',\n  `delete_status` tinyint(1) DEFAULT '0',\n  `created_by` varchar(64) DEFAULT NULL,\n  `updated_by` varchar(64) DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_addon_groups_tenant` (`tenant_id`, `delete_status`, `is_upsell_featured`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "catalog_addons": "CREATE TABLE IF NOT EXISTS `catalog_addons` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `group_id` bigint NOT NULL,\n  `name` varchar(128) NOT NULL,\n  `description` varchar(255) DEFAULT NULL,\n  `image_url` varchar(512) DEFAULT NULL,\n  `price` double NOT NULL DEFAULT '0',\n  `price_mode` varchar(32) NOT NULL DEFAULT 'FIXED',\n  `gst_percent` double DEFAULT '0',\n  `stock_qty` int DEFAULT NULL,\n  `is_default` tinyint(1) DEFAULT '0',\n  `max_quantity` int DEFAULT '10',\n  `is_available` tinyint(1) DEFAULT '1',\n  `sort_order` int DEFAULT '0',\n  `display_order` int DEFAULT '0',\n  `active_status` tinyint(1) DEFAULT '1',\n  `delete_status` tinyint(1) DEFAULT '0',\n  `created_by` varchar(64) DEFAULT NULL,\n  `updated_by` varchar(64) DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_addon_group` (`group_id`, `delete_status`, `is_available`, `display_order`),\n  KEY `idx_addons_tenant` (`tenant_id`, `delete_status`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "catalog_pricing_rules": "CREATE TABLE IF NOT EXISTS `catalog_pricing_rules` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `entity_id` bigint DEFAULT NULL,\n  `catalog_item_id` bigint DEFAULT NULL,\n  `applies_to_item_id` bigint DEFAULT NULL,\n  `applies_to_category` varchar(100) DEFAULT NULL,\n  `title` varchar(128) DEFAULT NULL,\n  `name` varchar(128) DEFAULT NULL,\n  `rule_type` varchar(32) NOT NULL,\n  `promo_code` varchar(40) DEFAULT NULL,\n  `discount_mode` varchar(32) DEFAULT 'PERCENTAGE',\n  `discount_value` double DEFAULT '0',\n  `min_qty` int DEFAULT '1',\n  `date_from` date DEFAULT NULL,\n  `date_to` date DEFAULT NULL,\n  `start_date` date DEFAULT NULL,\n  `end_date` date DEFAULT NULL,\n  `days_of_week_json` json DEFAULT NULL,\n  `criteria_json` json DEFAULT NULL,\n  `adjustment_type` varchar(32) DEFAULT NULL,\n  `adjustment_value` double DEFAULT NULL,\n  `priority` int DEFAULT '50',\n  `is_active` tinyint(1) DEFAULT '1',\n  `active_status` tinyint(1) DEFAULT '1',\n  `delete_status` tinyint(1) DEFAULT '0',\n  `created_by` varchar(64) DEFAULT NULL,\n  `updated_by` varchar(64) DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_pricing_rules_tenant` (`tenant_id`, `rule_type`, `delete_status`),\n  KEY `idx_pricing_promo` (`tenant_id`, `promo_code`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
 };
 
 const INDEXES = [
@@ -169,7 +175,14 @@ const INDEXES = [
   "CREATE INDEX idx_tenants_agency ON tenants (parent_agency_tenant_id)",
   "CREATE INDEX idx_sub_tenant ON tenant_subscriptions (tenant_id, status)",
   "CREATE INDEX idx_membership_tenant ON tenant_user_memberships (tenant_id, user_id)",
-  "CREATE INDEX idx_waba_tenant ON waba_phone_numbers (tenant_id)"
+  "CREATE INDEX idx_waba_tenant ON waba_phone_numbers (tenant_id)",
+  "CREATE INDEX idx_media_item ON catalog_item_media (catalog_item_id, delete_status, is_primary, display_order)",
+  "CREATE INDEX idx_slot_lookup ON catalog_availability_slots (tenant_id, catalog_item_id, slot_date, is_blocked)",
+  "CREATE INDEX idx_hold_expiry ON catalog_inventory_holds (status, expires_at)",
+  "CREATE INDEX idx_addon_group ON catalog_addons (group_id, delete_status, is_available, display_order)",
+  "CREATE INDEX idx_addon_groups_tenant ON catalog_addon_groups (tenant_id, delete_status, is_upsell_featured)",
+  "CREATE INDEX idx_pricing_rules_tenant ON catalog_pricing_rules (tenant_id, rule_type, delete_status)",
+  "CREATE INDEX idx_cat_fast_filter ON catalog_items (tenant_id, entity_id, delete_status, active_status, is_sold_out, base_price)"
 ];
 
 function runColumnMigrations(db) {
@@ -342,6 +355,89 @@ function runColumnMigrations(db) {
   // Ensure merchant_payout_beneficiaries account_number can store encrypted ciphertext
   try {
     db.exec("ALTER TABLE merchant_payout_beneficiaries MODIFY COLUMN account_number TEXT NOT NULL");
+  } catch (e) {}
+
+  // Ensure catalog_items has universal multi-sector columns
+  try {
+    const ciCols = db.prepare("DESCRIBE catalog_items").all().map(c => c.Field);
+    if (!ciCols.includes("inventory_mode")) db.exec("ALTER TABLE catalog_items ADD COLUMN inventory_mode VARCHAR(24) NOT NULL DEFAULT 'UNIT_STOCK'");
+    if (!ciCols.includes("category_name")) db.exec("ALTER TABLE catalog_items ADD COLUMN category_name VARCHAR(100) NULL");
+    if (!ciCols.includes("compare_at_price")) db.exec("ALTER TABLE catalog_items ADD COLUMN compare_at_price DOUBLE NULL");
+    if (!ciCols.includes("gst_percent")) db.exec("ALTER TABLE catalog_items ADD COLUMN gst_percent DOUBLE NOT NULL DEFAULT 0");
+    if (!ciCols.includes("currency")) db.exec("ALTER TABLE catalog_items ADD COLUMN currency VARCHAR(8) DEFAULT 'INR'");
+    if (!ciCols.includes("stock_qty")) db.exec("ALTER TABLE catalog_items ADD COLUMN stock_qty INT DEFAULT 0");
+    if (!ciCols.includes("reserved_qty")) db.exec("ALTER TABLE catalog_items ADD COLUMN reserved_qty INT DEFAULT 0");
+    if (!ciCols.includes("track_inventory")) db.exec("ALTER TABLE catalog_items ADD COLUMN track_inventory TINYINT(1) DEFAULT 1");
+    if (!ciCols.includes("is_sold_out")) db.exec("ALTER TABLE catalog_items ADD COLUMN is_sold_out TINYINT(1) DEFAULT 0");
+    if (!ciCols.includes("allow_rate_discussion")) db.exec("ALTER TABLE catalog_items ADD COLUMN allow_rate_discussion TINYINT(1) DEFAULT 0");
+    if (!ciCols.includes("auto_approve_min_price")) db.exec("ALTER TABLE catalog_items ADD COLUMN auto_approve_min_price DOUBLE NULL");
+    if (!ciCols.includes("hard_floor_price")) db.exec("ALTER TABLE catalog_items ADD COLUMN hard_floor_price DOUBLE NULL");
+    if (!ciCols.includes("variants_json")) db.exec("ALTER TABLE catalog_items ADD COLUMN variants_json JSON NULL");
+    if (!ciCols.includes("active_status")) db.exec("ALTER TABLE catalog_items ADD COLUMN active_status TINYINT(1) DEFAULT 1");
+    if (!ciCols.includes("delete_status")) db.exec("ALTER TABLE catalog_items ADD COLUMN delete_status TINYINT(1) DEFAULT 0");
+    if (!ciCols.includes("created_by")) db.exec("ALTER TABLE catalog_items ADD COLUMN created_by VARCHAR(64) NULL");
+    if (!ciCols.includes("updated_by")) db.exec("ALTER TABLE catalog_items ADD COLUMN updated_by VARCHAR(64) NULL");
+  } catch (e) {}
+
+  // Ensure catalog_item_media has universal multi-sector columns
+  try {
+    const cimCols = db.prepare("DESCRIBE catalog_item_media").all().map(c => c.Field);
+    if (!cimCols.includes("media_type")) db.exec("ALTER TABLE catalog_item_media ADD COLUMN media_type VARCHAR(32) NOT NULL DEFAULT 'IMAGE' AFTER catalog_item_id");
+    if (!cimCols.includes("media_url")) db.exec("ALTER TABLE catalog_item_media ADD COLUMN media_url VARCHAR(512) NULL AFTER media_type");
+    if (!cimCols.includes("sort_order")) db.exec("ALTER TABLE catalog_item_media ADD COLUMN sort_order INT DEFAULT 0 AFTER is_primary");
+  } catch (e) {}
+
+  // Ensure catalog_availability_slots has universal columns
+  try {
+    const casCols = db.prepare("DESCRIBE catalog_availability_slots").all().map(c => c.Field);
+    if (!casCols.includes("entity_id")) db.exec("ALTER TABLE catalog_availability_slots ADD COLUMN entity_id BIGINT NULL AFTER tenant_id");
+    if (!casCols.includes("start_time")) db.exec("ALTER TABLE catalog_availability_slots ADD COLUMN start_time TIME NULL AFTER slot_date");
+    if (!casCols.includes("end_time")) db.exec("ALTER TABLE catalog_availability_slots ADD COLUMN end_time TIME NULL AFTER start_time");
+    if (!casCols.includes("is_active")) db.exec("ALTER TABLE catalog_availability_slots ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 AFTER is_blocked");
+    db.exec("ALTER TABLE catalog_availability_slots MODIFY COLUMN catalog_item_id BIGINT NULL");
+  } catch (e) {}
+
+  // Ensure catalog_inventory_holds has hold_token, slot_id, hold_type, customer_phone, customer_name, updated_at
+  try {
+    const cihCols = db.prepare("DESCRIBE catalog_inventory_holds").all().map(c => c.Field);
+    if (!cihCols.includes("slot_id")) db.exec("ALTER TABLE catalog_inventory_holds ADD COLUMN slot_id BIGINT NULL AFTER catalog_item_id");
+    if (!cihCols.includes("hold_token")) db.exec("ALTER TABLE catalog_inventory_holds ADD COLUMN hold_token VARCHAR(128) NULL AFTER slot_id");
+    if (!cihCols.includes("hold_type")) db.exec("ALTER TABLE catalog_inventory_holds ADD COLUMN hold_type VARCHAR(32) NOT NULL DEFAULT 'ITEM_STOCK' AFTER hold_token");
+    if (!cihCols.includes("customer_phone")) db.exec("ALTER TABLE catalog_inventory_holds ADD COLUMN customer_phone VARCHAR(32) NULL AFTER quantity");
+    if (!cihCols.includes("customer_name")) db.exec("ALTER TABLE catalog_inventory_holds ADD COLUMN customer_name VARCHAR(128) NULL AFTER customer_phone");
+    if (!cihCols.includes("updated_at")) db.exec("ALTER TABLE catalog_inventory_holds ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+  } catch (e) {}
+
+  // Ensure catalog_addon_groups has entity_id, catalog_item_id, title, code, sort_order
+  try {
+    const cagCols = db.prepare("DESCRIBE catalog_addon_groups").all().map(c => c.Field);
+    if (!cagCols.includes("entity_id")) db.exec("ALTER TABLE catalog_addon_groups ADD COLUMN entity_id BIGINT NULL AFTER tenant_id");
+    if (!cagCols.includes("catalog_item_id")) db.exec("ALTER TABLE catalog_addon_groups ADD COLUMN catalog_item_id BIGINT NULL AFTER entity_id");
+    if (!cagCols.includes("title")) db.exec("ALTER TABLE catalog_addon_groups ADD COLUMN title VARCHAR(128) NULL AFTER name");
+    if (!cagCols.includes("code")) db.exec("ALTER TABLE catalog_addon_groups ADD COLUMN code VARCHAR(64) NULL AFTER title");
+    if (!cagCols.includes("sort_order")) db.exec("ALTER TABLE catalog_addon_groups ADD COLUMN sort_order INT DEFAULT 0 AFTER is_upsell_featured");
+  } catch (e) {}
+
+  // Ensure catalog_addons has is_default, max_quantity, sort_order
+  try {
+    const caCols = db.prepare("DESCRIBE catalog_addons").all().map(c => c.Field);
+    if (!caCols.includes("is_default")) db.exec("ALTER TABLE catalog_addons ADD COLUMN is_default TINYINT(1) DEFAULT 0 AFTER stock_qty");
+    if (!caCols.includes("max_quantity")) db.exec("ALTER TABLE catalog_addons ADD COLUMN max_quantity INT DEFAULT 10 AFTER is_default");
+    if (!caCols.includes("sort_order")) db.exec("ALTER TABLE catalog_addons ADD COLUMN sort_order INT DEFAULT 0 AFTER is_available");
+  } catch (e) {}
+
+  // Ensure catalog_pricing_rules has entity_id, catalog_item_id, title, discount_mode, discount_value, criteria_json, start_date, end_date, is_active
+  try {
+    const cprCols = db.prepare("DESCRIBE catalog_pricing_rules").all().map(c => c.Field);
+    if (!cprCols.includes("entity_id")) db.exec("ALTER TABLE catalog_pricing_rules ADD COLUMN entity_id BIGINT NULL AFTER tenant_id");
+    if (!cprCols.includes("catalog_item_id")) db.exec("ALTER TABLE catalog_pricing_rules ADD COLUMN catalog_item_id BIGINT NULL AFTER entity_id");
+    if (!cprCols.includes("title")) db.exec("ALTER TABLE catalog_pricing_rules ADD COLUMN title VARCHAR(128) NULL AFTER name");
+    if (!cprCols.includes("discount_mode")) db.exec("ALTER TABLE catalog_pricing_rules ADD COLUMN discount_mode VARCHAR(32) DEFAULT 'PERCENTAGE' AFTER rule_type");
+    if (!cprCols.includes("discount_value")) db.exec("ALTER TABLE catalog_pricing_rules ADD COLUMN discount_value DOUBLE DEFAULT 0 AFTER discount_mode");
+    if (!cprCols.includes("criteria_json")) db.exec("ALTER TABLE catalog_pricing_rules ADD COLUMN criteria_json JSON NULL AFTER days_of_week_json");
+    if (!cprCols.includes("start_date")) db.exec("ALTER TABLE catalog_pricing_rules ADD COLUMN start_date DATE NULL AFTER date_to");
+    if (!cprCols.includes("end_date")) db.exec("ALTER TABLE catalog_pricing_rules ADD COLUMN end_date DATE NULL AFTER start_date");
+    if (!cprCols.includes("is_active")) db.exec("ALTER TABLE catalog_pricing_rules ADD COLUMN is_active TINYINT(1) DEFAULT 1 AFTER priority");
   } catch (e) {}
 }
 

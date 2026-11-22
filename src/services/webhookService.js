@@ -2190,8 +2190,8 @@ class WebhookService {
       // STRICT ROUTING PRIORITY:
       // 1. Any active session ALWAYS resumes its active flow.
       // 2. Otherwise matched published flow trigger routes to that flow.
-      // 3. Otherwise if in studio mode and published flow exists, routes to default flow.
-      const shouldRunFlowEngine = Boolean(activeFlowSession || matchedTrigger || (isStudioMode && defaultPublishedFlow));
+      // 3. Otherwise if any published flow exists, routes to default published flow.
+      const shouldRunFlowEngine = Boolean(activeFlowSession || matchedTrigger || defaultPublishedFlow);
 
       if (shouldRunFlowEngine) {
         // Universal Deduplication check for initial or repeated generic greeting:

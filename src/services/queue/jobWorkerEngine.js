@@ -322,6 +322,14 @@ class JobWorkerEngine extends EventEmitter {
         dispatchedAt: new Date().toISOString()
       };
     });
+
+    // 10. Release Expired Inventory Holds Handler
+    this.registerHandler("RELEASE_EXPIRED_HOLDS", async (payload, job) => {
+      const universalAvailabilityService = require("../universal/universalAvailabilityService");
+      const tenantId = payload?.tenantId || null;
+      const result = universalAvailabilityService.releaseExpiredHolds(tenantId);
+      return result;
+    });
   }
 
   /**

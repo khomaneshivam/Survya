@@ -32,20 +32,36 @@ export default function AiFlowGeneratorModal({
 
   const QUICK_PROMPTS = [
     {
-      label: '🏖️ Resort Room Booking',
+      label: '🏖️ Resort Room Booking (Hospitality)',
       text: 'Create a luxury resort room booking flow that checks live room tariffs, collects check-in & check-out dates, logs the booking lead in CRM, and schedules a 1-hour follow-up reminder.'
     },
     {
-      label: '💼 B2B Sales Demo Qualification',
-      text: 'Build a B2B sales qualification workflow that collects company name, team size, and monthly budget, routes enterprise SQL deals to Account Executives, and sends self-serve starter links to smaller teams.'
+      label: '👗 D2C Fashion & Apparel (Retail)',
+      text: 'Create an e-commerce clothing catalog browsing flow that displays hoodies and shirts with sizes, offers gift packaging and express shipping add-ons, and records the order in CRM.'
     },
     {
-      label: '🎯 Lead Gen & 24h Nurturing Drip',
-      text: 'Build a high-converting lead generation flow that captures user requirements, sends an exclusive 15% discount coupon code, logs the lead in CRM, and delivers a compliant 24h follow-up message.'
+      label: '🦷 Dental & Healthcare (Clinic)',
+      text: 'Build a dental clinic appointment booking flow that presents teeth whitening and cleaning services, schedules consultation time slots, and offers preventive care upgrades.'
     },
     {
-      label: '🍕 Cafe Dining Order & UPI Payment',
-      text: 'Create an interactive dining menu order workflow for table service that takes food preferences, generates an instant UPI payment link, and notifies the kitchen.'
+      label: '🍕 Cafe Dining Order & UPI Payment (F&B)',
+      text: 'Create an interactive dining menu order workflow for table service that takes food preferences, adds extra cheese or dessert add-ons, generates an instant UPI payment link, and notifies the kitchen.'
+    },
+    {
+      label: '💆‍♀️ Spa & Salon Rejuvenation (Wellness)',
+      text: 'Create a luxury spa appointment flow that offers traditional Balinese massages and facials, books time slots, and upsells aromatherapy oils.'
+    },
+    {
+      label: '🏢 Penthouse & Property Tour (Real Estate)',
+      text: 'Build a premium realty lead flow that showcases 3 and 4 BHK residences, provides instant digital brochures, and schedules VIP site inspections.'
+    },
+    {
+      label: '🎓 Coding Bootcamp & Courses (Education)',
+      text: 'Create an ed-tech academy enrollment flow that provides full-stack syllabus details, offers 1-on-1 mentorship add-ons, and captures student registrations.'
+    },
+    {
+      label: '📦 Wholesale Packaging & Cartons (B2B)',
+      text: 'Build a B2B wholesale quotation flow for corrugated boxes that takes minimum order quantities, applies bulk volume discounts, and supports custom printing add-ons.'
     }
   ];
 
@@ -469,6 +485,13 @@ export default function AiFlowGeneratorModal({
                   </div>
                 </div>
               </div>
+
+              {generationResult?.suggestedCatalogItems?.length > 0 && (
+                <div style={{ marginTop: '12px', background: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: '8px', padding: '10px 14px', fontSize: '0.8rem', color: '#166534' }}>
+                  <span style={{ fontWeight: 700 }}>📦 Sector Catalog Scaffolding Available: </span>
+                  Includes {generationResult.suggestedCatalogItems.length} curated catalog items and {generationResult.suggestedAddons?.length || 0} add-on upsell groups. You can inspect or expand them anytime in the Catalog tab.
+                </div>
+              )}
 
               <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748B' }}>
                 Your generated workflow has been grounded with live catalog inventory and CRM pipelines, laid out hierarchically, and saved to your flows library.

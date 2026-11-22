@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const { db } = require("../../config/database");
+const { invalidateTriggers } = require("./runtimeCache");
 
 /**
  * Workflow Trigger Service
@@ -12,6 +13,7 @@ class WorkflowTriggerService {
    */
   syncFlowTriggers(tenantId = 1, flowId, nodes = [], phoneNumberId = undefined) {
     if (!flowId || !Array.isArray(nodes)) return;
+    invalidateTriggers(tenantId);
 
     let targetPhoneId = phoneNumberId;
     if (targetPhoneId === undefined) {
@@ -121,11 +123,92 @@ class WorkflowTriggerService {
    */
   deactivateFlowTriggers(tenantId = 1, flowId) {
     if (!flowId) return;
+    invalidateTriggers(tenantId);
     db.prepare(`
       UPDATE workflow_triggers
       SET active_status = 0, updated_at = NOW()
       WHERE tenant_id = ? AND flow_id = ?
     `).run(Number(tenantId) || 1, String(flowId));
+  }
+
+  /**
+   * Linear-time trigger conflict detection O(sum K_i).
+   * Identifies overlapping keywords across multiple published flows on identical or global phone lines.
+   */
+  detectTriggerConflicts(tenantId = 1) {
+    const numericTenantId = Number(tenantId) || 1;
+    const triggers = db.prepare(`
+      SELECT t.id, t.flow_id, t.phone_number_id, t.trigger_key, t.trigger_type,
+             t.match_config_json, t.priority, f.name as flow_name, f.status as flow_status
+      FROM workflow_triggers t
+      JOIN conversation_flows f ON f.id = t.flow_id
+      WHERE t.tenant_id = ? AND t.active_status = 1 AND t.delete_status = 0
+        AND f.status = 'PUBLISHED'
+      ORDER BY t.priority ASC, t.id ASC
+    `).all(numericTenantId);
+
+    const keywordIndex = new Map();
+
+    for (const trg of triggers) {
+      let config = {};
+      try {
+        config = JSON.parse(trg.match_config_json || "{}");
+      } catch (e) {
+        continue;
+      }
+
+      const keywords = Array.isArray(config.keywords) ? config.keywords : [];
+      const lineKey = trg.phone_number_id ? String(trg.phone_number_id) : "GLOBAL";
+
+      for (const kw of keywords) {
+        const cleanKw = String(kw || "").trim().toLowerCase();
+        if (!cleanKw) continue;
+
+        if (!keywordIndex.has(cleanKw)) {
+          keywordIndex.set(cleanKw, []);
+        }
+
+        keywordIndex.get(cleanKw).push({
+          triggerId: trg.id,
+          flowId: trg.flow_id,
+          flowName: trg.flow_name,
+          nodeId: config.nodeId,
+          phoneNumberId: trg.phone_number_id,
+          lineKey,
+          priority: trg.priority
+        });
+      }
+    }
+
+    const conflicts = [];
+    for (const [kw, entries] of keywordIndex.entries()) {
+      const flowIds = new Set(entries.map(e => e.flowId));
+      if (flowIds.size > 1) {
+        const hasGlobal = entries.some(e => e.lineKey === "GLOBAL");
+        const lines = new Set(entries.map(e => e.lineKey));
+
+        if (hasGlobal || lines.size < entries.length) {
+          conflicts.push({
+            keyword: kw,
+            competingFlowCount: flowIds.size,
+            flows: entries.map(e => ({
+              flowId: e.flowId,
+              flowName: e.flowName,
+              nodeId: e.nodeId,
+              phoneNumberId: e.phoneNumberId,
+              priority: e.priority
+            }))
+          });
+        }
+      }
+    }
+
+    return {
+      conflicts,
+      totalConflicts: conflicts.length,
+      evaluatedTriggersCount: triggers.length,
+      evaluatedAt: new Date().toISOString()
+    };
   }
 
   /**

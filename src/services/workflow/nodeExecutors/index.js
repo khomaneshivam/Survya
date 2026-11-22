@@ -12,6 +12,9 @@ const webhookExecutor = require('./webhookExecutor');
 const handoffExecutor = require('./handoffExecutor');
 const endExecutor = require('./endExecutor');
 const aiReplyExecutor = require('./aiReplyExecutor');
+const catalogBrowserExecutor = require('./catalogBrowserExecutor');
+const addonQuoteExecutor = require('./addonQuoteExecutor');
+const aiHybridExecutor = require('./aiHybridExecutor');
 
 const EXECUTORS = {
   // Triggers
@@ -19,7 +22,7 @@ const EXECUTORS = {
   TRIGGER_EVENT: triggerExecutor,
   START: triggerExecutor,
 
-  // Messaging
+  // Messaging & Browsing
   SEND_MESSAGE: messageExecutor,
   MESSAGE: messageExecutor,
   BUTTON_MENU: messageExecutor,
@@ -30,6 +33,9 @@ const EXECUTORS = {
   SEND_WHATSAPP_FLOW: whatsappFlowExecutor,
   AI_KNOWLEDGE_REPLY: aiReplyExecutor,
   AI_REPLY: aiReplyExecutor,
+  AI_HYBRID_ASSIST: aiHybridExecutor,
+  CATALOG_BROWSER: catalogBrowserExecutor,
+  ADDON_UPSELL_AND_QUOTE: addonQuoteExecutor,
 
   // Intake
   COLLECT_INPUT: intakeExecutor,

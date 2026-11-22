@@ -41,18 +41,44 @@ function buildSystemCapabilitiesContext(tenantId = 1, propertyId = 1) {
     roomTypes = [];
   }
 
-  // 3. Catalog Items (Dining, Services, Products)
+  // 3. Catalog Items (Universal across all sectors)
   let catalogItems = [];
   try {
     catalogItems = db.prepare(`
-      SELECT id, entity_id, item_type, title, slug, sku, base_price, tax_rate
+      SELECT id, entity_id, item_type, title, slug, sku, base_price, compare_at_price, gst_percent, inventory_mode, category_name
       FROM catalog_items
-      WHERE tenant_id = ? AND is_active = 1
+      WHERE tenant_id = ? AND is_active = 1 AND delete_status = 0
       ORDER BY sort_order ASC, id ASC
       LIMIT 30
     `).all(numericTenantId);
   } catch (e) {
     catalogItems = [];
+  }
+
+  // 3b. Add-On Groups & Pricing Rules
+  let addonGroups = [];
+  try {
+    addonGroups = db.prepare(`
+      SELECT g.id, g.title, g.code, g.selection_type,
+             (SELECT COUNT(*) FROM catalog_addons a WHERE a.group_id = g.id AND a.delete_status = 0) as addon_count
+      FROM catalog_addon_groups g
+      WHERE g.tenant_id = ? AND g.delete_status = 0
+      LIMIT 10
+    `).all(numericTenantId);
+  } catch (e) {
+    addonGroups = [];
+  }
+
+  let pricingRules = [];
+  try {
+    pricingRules = db.prepare(`
+      SELECT id, title, rule_type, discount_mode, discount_value, promo_code
+      FROM catalog_pricing_rules
+      WHERE tenant_id = ? AND is_active = 1 AND delete_status = 0
+      LIMIT 10
+    `).all(numericTenantId);
+  } catch (e) {
+    pricingRules = [];
   }
 
   // 4. Dynamic CRM Pipelines & Custom Fields Schema
@@ -261,6 +287,8 @@ function buildSystemCapabilitiesContext(tenantId = 1, propertyId = 1) {
     businessEntities,
     roomTypes,
     catalogItems,
+    addonGroups,
+    pricingRules,
     crmPipelines,
     approvedTemplates,
     connectedPhoneNumbers,

@@ -57,6 +57,7 @@ import MessageTemplatesStudio from '../components/flow-studio/MessageTemplatesSt
 import FlowAnalyticsPanel from '../components/flow-studio/FlowAnalyticsPanel';
 import FlowExecutionsModal from '../components/flow-studio/FlowExecutionsModal';
 import AiFlowGeneratorModal from '../components/flow-studio/AiFlowGeneratorModal';
+import IndustryBlueprintsModal from '../components/catalog/IndustryBlueprintsModal';
 import HospitalityImageUploadModule from '../components/HospitalityImageUploadModule';
 
 function TabSaveFooter({ hasUnsavedChanges, saving, onSave }) {
@@ -192,6 +193,8 @@ export default function AutoReplyBotPage({ onNavigate }) {
   const [validationModalOpen, setValidationModalOpen] = useState(false);
   const [builderDesignerView, setBuilderDesignerView] = useState('STEPS'); // 'STEPS' | 'CANVAS'
   const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [showBlueprintsModal, setShowBlueprintsModal] = useState(false);
+  const [triggerConflicts, setTriggerConflicts] = useState([]);
   const [aiRefinePrompt, setAiRefinePrompt] = useState('');
   const [refiningWithAi, setRefiningWithAi] = useState(false);
   const [connectedLines, setConnectedLines] = useState([]);
@@ -354,6 +357,12 @@ export default function AutoReplyBotPage({ onNavigate }) {
       fetch('/api/flows/ai/capabilities', { headers }).then(r => r.json()).then(caps => {
         if (caps.success && caps.capabilities?.connectedLines) {
           setConnectedLines(caps.capabilities.connectedLines);
+        }
+      }).catch(() => {});
+
+      fetch('/api/flows/trigger-conflicts', { headers }).then(r => r.json()).then(conf => {
+        if (conf.success && Array.isArray(conf.conflicts)) {
+          setTriggerConflicts(conf.conflicts);
         }
       }).catch(() => {});
     } catch (err) {
@@ -1061,6 +1070,28 @@ export default function AutoReplyBotPage({ onNavigate }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button
             type="button"
+            onClick={() => setShowBlueprintsModal(true)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              borderRadius: '8px',
+              background: '#16A34A',
+              color: '#FFFFFF',
+              border: 'none',
+              fontSize: '0.84rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(22,163,74,0.2)'
+            }}
+          >
+            <Sparkles size={15} />
+            <span>⚡ Industry Blueprints</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleToggleMasterBot}
             disabled={saving}
             className="btn btn-secondary"
@@ -1120,6 +1151,39 @@ export default function AutoReplyBotPage({ onNavigate }) {
           )}
         </div>
       </div>
+
+      {/* Live Trigger Conflict Banner */}
+      {triggerConflicts.length > 0 && (
+        <div style={{
+          background: '#FEF3C7',
+          border: '1.5px solid #F59E0B',
+          borderRadius: '10px',
+          padding: '14px 18px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '12px',
+          color: '#92400E',
+          boxShadow: '0 2px 4px rgba(245,158,11,0.1)'
+        }}>
+          <AlertTriangle size={20} color="#D97706" style={{ marginTop: '2px', flexShrink: 0 }} />
+          <div style={{ flex: 1, fontSize: '0.84rem' }}>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: '2px' }}>
+              ⚠️ Overlapping Trigger Conflict Detected ({triggerConflicts.length} keywords)
+            </div>
+            <div style={{ color: '#78350F', lineHeight: '1.4' }}>
+              Multiple published flows are competing for the exact same inbound keyword trigger on identical WhatsApp lines:
+            </div>
+            <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {triggerConflicts.map((c, i) => (
+                <span key={i} style={{ background: '#FDE68A', padding: '3px 8px', borderRadius: '4px', fontSize: '0.78rem', fontWeight: 600, border: '1px solid #FCD34D' }}>
+                  "{c.keyword}": {c.flows.map(f => `${f.flowName} (#${f.flowId})`).join(' vs ')}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Save Success Alert Banner */}
       {saveSuccess && (
@@ -4596,6 +4660,16 @@ export default function AutoReplyBotPage({ onNavigate }) {
           </div>
         </div>
       )}
+
+      {/* 8-Sector Industry Blueprints Modal */}
+      <IndustryBlueprintsModal
+        isOpen={showBlueprintsModal}
+        onClose={() => setShowBlueprintsModal(false)}
+        token={token}
+        onBlueprintApplied={() => {
+          loadData();
+        }}
+      />
     </div>
   );
 }

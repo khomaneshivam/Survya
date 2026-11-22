@@ -59,6 +59,17 @@ async function refineFlowWithAi(req, res) {
   }
 }
 
+async function getTriggerConflicts(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const workflowTriggerService = require("../services/workflow/workflowTriggerService");
+    const result = workflowTriggerService.detectTriggerConflicts(tenantId);
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
 async function assignFlowToLine(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
@@ -426,6 +437,7 @@ module.exports = {
   getAiCapabilities,
   generateFlowWithAi,
   refineFlowWithAi,
+  getTriggerConflicts,
   assignFlowToLine,
   setDefaultFlow
 };

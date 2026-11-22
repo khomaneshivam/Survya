@@ -21,6 +21,10 @@ router.post("/flows/ai/generate", authenticateToken, flowController.generateFlow
 // Prompt-based conversational refiner
 router.post("/flows/ai/refine", authenticateToken, flowController.refineFlowWithAi);
 router.post("/flows/conversation-flows/:id/refine", authenticateToken, flowController.refineFlowWithAi);
+router.post("/flows/:id/ai-refine", authenticateToken, flowController.refineFlowWithAi);
+
+// Linear-time trigger conflict detection across lines & flows
+router.get("/flows/trigger-conflicts", authenticateToken, flowController.getTriggerConflicts);
 
 // Direct WhatsApp Business Phone Line Assignment
 router.patch("/flows/conversation-flows/:id/assign-line", authenticateToken, flowController.assignFlowToLine);
