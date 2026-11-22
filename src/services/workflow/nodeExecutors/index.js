@@ -69,6 +69,7 @@ const EXECUTORS = {
 
   // Terminal
   HUMAN_HANDOFF: handoffExecutor,
+  AGENT_HANDOFF: handoffExecutor,
   HANDOFF: handoffExecutor,
   END: endExecutor
 };
@@ -78,12 +79,26 @@ const EXECUTORS = {
  * Falls back to messageExecutor or generic continuation if unknown.
  */
 function getNodeExecutor(nodeType) {
-  if (!nodeType) return messageExecutor;
-  const upper = String(nodeType).toUpperCase();
-  return EXECUTORS[upper] || messageExecutor;
+  const type = String(nodeType || '').trim().toUpperCase();
+  if (!Object.prototype.hasOwnProperty.call(EXECUTORS, type)) {
+    const error = new Error(`Unsupported workflow node type: ${type || '(empty)'}`);
+    error.code = 'UNSUPPORTED_WORKFLOW_NODE';
+    throw error;
+  }
+  return EXECUTORS[type];
+}
+
+function registerNodeExecutor(nodeType, executor) {
+  const type = String(nodeType || '').trim().toUpperCase();
+  if (!/^[A-Z][A-Z0-9_]{1,63}$/.test(type)) throw new TypeError('Invalid node type');
+  if (!executor || typeof executor.execute !== 'function') throw new TypeError('Invalid executor');
+  if (Object.prototype.hasOwnProperty.call(EXECUTORS, type)) throw new Error('Already registered');
+  EXECUTORS[type] = executor;
+  return type;
 }
 
 module.exports = {
   EXECUTORS,
-  getNodeExecutor
+  getNodeExecutor,
+  registerNodeExecutor
 };

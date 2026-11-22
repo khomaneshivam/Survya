@@ -172,20 +172,30 @@ function resolveNextNodeId(node, handle = "default", transitions = [], collected
  * If the session has exceeded the inactivity timeout window, it is silently marked EXPIRED
  * and an analytics event is recorded, returning null so a fresh journey begins.
  */
-function getActiveSession(tenantId = 1, senderPhone) {
+function getActiveSession(tenantId = 1, senderPhone, channelAccountId = null, channel = "WHATSAPP") {
   const normPhone = normalizePhone(senderPhone);
   if (!normPhone) return null;
   try {
-    const session = db.prepare(`
-      SELECT s.*, f.status as flow_status, f.name as flow_name
-      FROM conversation_flow_sessions s
-      JOIN conversation_flows f ON s.flow_id = f.id
-      WHERE (s.sender_phone = ? OR s.sender_phone = ? OR s.sender_phone = ?)
-        AND s.tenant_id = ?
-        AND s.session_status = 'ACTIVE'
-      ORDER BY s.id DESC
-      LIMIT 1
-    `).get(normPhone, senderPhone, `+${normPhone}`, tenantId);
+    // Scope active sessions by receiving account to prevent cross-line resumes.
+    const scopedKey = channelAccountId
+      ? `${channel}:${normPhone}:${tenantId}:${String(channelAccountId).trim()}`
+      : null;
+    const session = scopedKey
+      ? db.prepare(`
+        SELECT s.*, f.status as flow_status, f.name as flow_name
+        FROM conversation_flow_sessions s
+        JOIN conversation_flows f ON s.flow_id = f.id
+        WHERE s.tenant_id = ? AND s.session_key = ? AND s.session_status = 'ACTIVE'
+        ORDER BY s.id DESC LIMIT 1
+      `).get(tenantId, scopedKey)
+      : db.prepare(`
+        SELECT s.*, f.status as flow_status, f.name as flow_name
+        FROM conversation_flow_sessions s
+        JOIN conversation_flows f ON s.flow_id = f.id
+        WHERE (s.sender_phone = ? OR s.sender_phone = ? OR s.sender_phone = ?)
+          AND s.tenant_id = ? AND s.channel = ? AND s.session_status = 'ACTIVE'
+        ORDER BY s.id DESC LIMIT 1
+      `).get(normPhone, senderPhone, `+${normPhone}`, tenantId, channel);
 
     if (!session) return null;
 
@@ -908,22 +918,23 @@ async function processTurn({
   const effectivePhoneNumberId = phoneNumberId || context.phoneNumberId || null;
 
   const normalizedPhone = String(senderPhone || "").replace(/\D/g, "");
-  const sessionKey = `${channel}:${normalizedPhone}:${tenantId}`;
+  const accountScope = effectivePhoneNumberId ? `:${String(effectivePhoneNumberId).trim()}` : "";
+  const sessionKey = `${channel}:${normalizedPhone}:${tenantId}${accountScope}`;
   const executionLogs = [];
 
   // Fetch property details for variable interpolation
-  let configuredBusinessName = "Hotel Green Vally";
+  let configuredBusinessName = Number(tenantId) === 1 ? "Hotel Green Vally" : "Business";
   try {
     const { getSetting } = require("../config/database");
-    configuredBusinessName = getSetting("BOT_BUSINESS_NAME") || "Hotel Green Vally";
+    configuredBusinessName = Number(tenantId) === 1 ? (getSetting("BOT_BUSINESS_NAME") || "Hotel Green Vally") : "Business";
   } catch (e) {}
 
-  const prop = db.prepare("SELECT id, name, city, phone FROM properties WHERE id = ?").get(propertyId) || {
+  const prop = db.prepare("SELECT id, name, city, phone FROM properties WHERE id = ? AND tenant_id = ?").get(propertyId, tenantId) || {
     id: 1,
     name: configuredBusinessName,
     city: "Alibaug, Maharashtra"
   };
-  if (configuredBusinessName && configuredBusinessName !== "KonkanTrip Beach Resort & Spa") {
+  if (Number(tenantId) === 1 && configuredBusinessName && configuredBusinessName !== "KonkanTrip Beach Resort & Spa") {
     prop.name = configuredBusinessName;
   }
 
@@ -948,7 +959,7 @@ async function processTurn({
     }
   } else {
     // 1. Check for active session in DB with strict expiration check against UTC_TIMESTAMP()
-    session = getActiveSession(tenantId, normalizedPhone);
+    session = getActiveSession(tenantId, normalizedPhone, effectivePhoneNumberId, channel);
 
     if (session) {
       isResuming = true;
