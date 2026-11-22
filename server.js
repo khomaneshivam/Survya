@@ -413,6 +413,16 @@ ${xmlEntries}
 
 // 6. SPA fallback
 app.get("*", (req, res) => {
+  // If request is for an asset, script, style, image, or font that doesn't exist, NEVER return index.html!
+  // Return 404 so browsers fail cleanly and client-side chunk recovery can trigger.
+  if (
+    req.path.startsWith("/assets/") ||
+    /\.(js|mjs|css|map|wasm|json|png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|eot)$/i.test(req.path)
+  ) {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    return res.status(404).type("text/plain").send("Asset not found");
+  }
+
   if (!req.path.startsWith("/api") && !req.path.startsWith("/webhook") && !req.path.startsWith("/webhooks") && !req.path.startsWith("/uploads") && !req.path.startsWith("/flows")) {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     if (fs.existsSync(path.join(distPath, "index.html"))) {

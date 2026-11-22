@@ -1,5 +1,5 @@
 // SARVYA Mobile PWA Network-First Service Worker
-const CACHE_NAME = 'sarvya-cache-v1';
+const CACHE_NAME = 'sarvya-cache-v2';
 const PRECACHE_ASSETS = [
   '/',
   '/favicon.svg',
@@ -28,6 +28,12 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING' || event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
@@ -50,7 +56,57 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-first strategy for app navigation & static assets
+  // 1. Static hashed assets (/assets/): Network first, fall back to matching asset cache; NEVER return HTML on 404
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200 && response.type === 'basic') {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cached = await caches.match(event.request);
+          if (cached) return cached;
+          return new Response('Asset not found or network offline', {
+            status: 404,
+            statusText: 'Not Found',
+            headers: { 'Content-Type': 'text/plain' }
+          });
+        })
+    );
+    return;
+  }
+
+  // 2. HTML navigation requests: Always fetch fresh from network with no-cache so latest build hashes are retrieved
+  if (event.request.mode === 'navigate' || event.request.headers.get('accept')?.includes('text/html')) {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-cache' })
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+            const responseToCache = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseToCache);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          const cachedResponse = await caches.match(event.request) || await caches.match('/');
+          if (cachedResponse) return cachedResponse;
+          return new Response('Offline or Network Error', {
+            status: 503,
+            statusText: 'Service Unavailable',
+            headers: { 'Content-Type': 'text/plain' }
+          });
+        })
+    );
+    return;
+  }
+
+  // 3. General static files (favicon, manifest, etc.)
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
@@ -65,10 +121,6 @@ self.addEventListener('fetch', (event) => {
       .catch(async () => {
         const cachedResponse = await caches.match(event.request);
         if (cachedResponse) return cachedResponse;
-        if (event.request.headers.get('accept')?.includes('text/html')) {
-          const rootCached = await caches.match('/');
-          if (rootCached) return rootCached;
-        }
         return new Response('Offline or Network Error', {
           status: 503,
           statusText: 'Service Unavailable',
@@ -77,4 +129,3 @@ self.addEventListener('fetch', (event) => {
       })
   );
 });
-

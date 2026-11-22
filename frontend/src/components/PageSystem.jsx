@@ -1,6 +1,7 @@
-import React, { Component, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
+import React, { Component, useEffect, useMemo, useCallback, Suspense } from 'react';
 import { useAuth } from '../context/AuthContext';
 import usePageMeta from '../utils/usePageMeta';
+import lazyWithRetry from '../utils/lazyWithRetry';
 import {
   LayoutDashboard,
   Users,
@@ -29,28 +30,28 @@ import {
   Receipt
 } from 'lucide-react';
 
-// Code-split dynamic page imports (lazy loaded chunks)
-const DashboardPage = lazy(() => import('../pages/DashboardPage'));
-const EnquiriesPage = lazy(() => import('../pages/EnquiriesPage'));
-const FlowsPage = lazy(() => import('../pages/FlowsPage'));
-const AutomationPage = lazy(() => import('../pages/AutomationPage'));
-const InboxPage = lazy(() => import('../pages/InboxPage'));
-const AutoReplyBotPage = lazy(() => import('../pages/AutoReplyBotPage'));
-const BroadcastPage = lazy(() => import('../pages/BroadcastPage'));
-const FlowStudioPage = lazy(() => import('../pages/FlowStudioPage'));
-const ChatLinksPage = lazy(() => import('../pages/ChatLinksPage'));
-const InAppStudioPage = lazy(() => import('../pages/InAppStudioPage'));
-const AiAssistantPage = lazy(() => import('../pages/AiAssistantPage'));
-const ReportsPage = lazy(() => import('../pages/ReportsPage'));
-const CatalogInventoryPage = lazy(() => import('../pages/CatalogInventoryPage'));
-const BookingsOrdersPage = lazy(() => import('../pages/BookingsOrdersPage'));
-const MastersHubPage = lazy(() => import('../pages/MastersHubPage'));
-const InventoryCalendarPage = lazy(() => import('../pages/InventoryCalendarPage'));
-const SystemAdminPanel = lazy(() => import('../pages/SystemAdminPanel'));
-const PayoutsPage = lazy(() => import('../pages/PayoutsPage'));
-const SarvyaConnectPage = lazy(() => import('../pages/SarvyaConnectPage'));
-const SettingsPage = lazy(() => import('../pages/SettingsPage'));
-const LandingPage = lazy(() => import('../pages/LandingPage'));
+// Code-split dynamic page imports with deployment chunk-mismatch auto-recovery
+const DashboardPage = lazyWithRetry(() => import('../pages/DashboardPage'));
+const EnquiriesPage = lazyWithRetry(() => import('../pages/EnquiriesPage'));
+const FlowsPage = lazyWithRetry(() => import('../pages/FlowsPage'));
+const AutomationPage = lazyWithRetry(() => import('../pages/AutomationPage'));
+const InboxPage = lazyWithRetry(() => import('../pages/InboxPage'));
+const AutoReplyBotPage = lazyWithRetry(() => import('../pages/AutoReplyBotPage'));
+const BroadcastPage = lazyWithRetry(() => import('../pages/BroadcastPage'));
+const FlowStudioPage = lazyWithRetry(() => import('../pages/FlowStudioPage'));
+const ChatLinksPage = lazyWithRetry(() => import('../pages/ChatLinksPage'));
+const InAppStudioPage = lazyWithRetry(() => import('../pages/InAppStudioPage'));
+const AiAssistantPage = lazyWithRetry(() => import('../pages/AiAssistantPage'));
+const ReportsPage = lazyWithRetry(() => import('../pages/ReportsPage'));
+const CatalogInventoryPage = lazyWithRetry(() => import('../pages/CatalogInventoryPage'));
+const BookingsOrdersPage = lazyWithRetry(() => import('../pages/BookingsOrdersPage'));
+const MastersHubPage = lazyWithRetry(() => import('../pages/MastersHubPage'));
+const InventoryCalendarPage = lazyWithRetry(() => import('../pages/InventoryCalendarPage'));
+const SystemAdminPanel = lazyWithRetry(() => import('../pages/SystemAdminPanel'));
+const PayoutsPage = lazyWithRetry(() => import('../pages/PayoutsPage'));
+const SarvyaConnectPage = lazyWithRetry(() => import('../pages/SarvyaConnectPage'));
+const SettingsPage = lazyWithRetry(() => import('../pages/SettingsPage'));
+const LandingPage = lazyWithRetry(() => import('../pages/LandingPage'));
 
 /**
  * Loading Skeleton Fallback for Lazy-Loaded Pages
@@ -359,6 +360,14 @@ class PageErrorBoundary extends Component {
 
   render() {
     if (this.state.hasError) {
+      const isChunkError =
+        this.state.error?.name === 'ChunkLoadError' ||
+        this.state.error?.message?.includes('Failed to fetch dynamically imported module') ||
+        this.state.error?.message?.includes('Expected a JavaScript-or-Wasm module script') ||
+        this.state.error?.message?.includes('error loading dynamically imported module') ||
+        this.state.error?.message?.includes('Loading chunk') ||
+        this.state.error?.message?.includes('Failed to load module script');
+
       return (
         <div style={{
           padding: '60px 24px',
@@ -366,39 +375,47 @@ class PageErrorBoundary extends Component {
           margin: '40px auto',
           background: '#FFFFFF',
           borderRadius: '14px',
-          border: '1px solid #FDB1AF',
-          boxShadow: '0 8px 24px rgba(153, 47, 45, 0.08)',
+          border: isChunkError ? '1px solid #C3D1AC' : '1px solid #FDB1AF',
+          boxShadow: isChunkError ? '0 8px 24px rgba(47, 82, 25, 0.08)' : '0 8px 24px rgba(153, 47, 45, 0.08)',
           textAlign: 'center'
         }}>
           <div style={{
             width: '54px',
             height: '54px',
             borderRadius: '50%',
-            background: '#FEF2F2',
-            color: '#DC2626',
+            background: isChunkError ? '#F3F6EE' : '#FEF2F2',
+            color: isChunkError ? '#2F5219' : '#DC2626',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 16px auto',
-            boxShadow: '0 2px 8px rgba(220, 38, 38, 0.15)'
+            boxShadow: isChunkError ? '0 2px 8px rgba(47, 82, 25, 0.15)' : '0 2px 8px rgba(220, 38, 38, 0.15)'
           }}>
-            <AlertTriangle size={26} />
+            {isChunkError ? <Sparkles size={26} /> : <AlertTriangle size={26} />}
           </div>
           <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: '0 0 8px 0', color: '#171719' }}>
-            Unable to display "{this.props.pageTitle || this.props.tabId}"
+            {isChunkError ? 'New Release Available' : `Unable to display "${this.props.pageTitle || this.props.tabId}"`}
           </h2>
           <p style={{ fontSize: '0.86rem', color: '#67676B', margin: '0 0 24px 0', lineHeight: 1.5 }}>
-            {this.state.error?.message || 'An unexpected rendering error occurred while loading this view.'}
+            {isChunkError
+              ? 'A fresh update of SARVYA was deployed. Please reload the page to load the latest components.'
+              : (this.state.error?.message || 'An unexpected rendering error occurred while loading this view.')}
           </p>
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
             <button
               type="button"
-              onClick={() => this.setState({ hasError: false, error: null })}
+              onClick={() => {
+                if (isChunkError) {
+                  window.location.reload();
+                } else {
+                  this.setState({ hasError: false, error: null });
+                }
+              }}
               className="btn btn-primary"
               style={{ gap: '6px', fontSize: '0.84rem', background: '#2F5219', borderColor: '#2F5219' }}
             >
               <RotateCcw size={15} />
-              <span>Retry This View</span>
+              <span>{isChunkError ? 'Reload Latest Version' : 'Retry This View'}</span>
             </button>
             <button
               type="button"
