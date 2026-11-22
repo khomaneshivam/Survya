@@ -29,6 +29,8 @@ jobs:
       - name: Check modified backend modules
         run: |
           node --check src/services/webhookService.js
+          node --check src/services/queue/jobWorkerEngine.js
+          node --check server.js
           node --check src/controllers/webhookController.js
           node --check src/config/schema.js
           node --check src/routes/apiRoutes.js
@@ -37,7 +39,7 @@ jobs:
           node --check src/services/workflow/conversationContextResolver.js
       - name: Isolated regression tests (no database required)
         run: |
-          node --test tests/conversation_tenant_workflows.test.js tests/inbox_tenant_isolation.test.js
+          node --test tests/conversation_tenant_workflows.test.js tests/inbox_tenant_isolation.test.js tests/durable_webhook_ingress.test.js
 
   frontend-quality:
     name: Frontend lint and build

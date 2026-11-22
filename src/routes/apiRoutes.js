@@ -470,7 +470,7 @@ router.get("/media/inbound/:mediaId", authenticateToken, async (req, res) => {
       if (files.length > 0) {
         const filePath = path.resolve(inboundDir, files[0]);
         if (filePath.startsWith(inboundDir) && fs.existsSync(filePath)) {
-          res.setHeader("Cache-Control", "public, max-age=604800, immutable");
+          res.setHeader("Cache-Control", "private, no-store");
           return res.sendFile(filePath);
         }
       }
@@ -482,7 +482,7 @@ router.get("/media/inbound/:mediaId", authenticateToken, async (req, res) => {
     if (downloadRes?.localPath) {
       const resolvedPath = path.resolve(downloadRes.localPath);
       if (resolvedPath.startsWith(inboundDir) && fs.existsSync(resolvedPath)) {
-        res.setHeader("Cache-Control", "public, max-age=604800, immutable");
+        res.setHeader("Cache-Control", "private, no-store");
         return res.sendFile(resolvedPath);
       }
     }

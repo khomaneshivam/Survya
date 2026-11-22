@@ -20,7 +20,7 @@
 2. **Legacy sender restriction:** `POST /api/inbox/reply` is blocked for non-tenant-1 workspaces until the tenant-owned channel-account sender can replace global Meta credentials. This is deliberate fail-closed behavior.
 3. **Legacy settings:** Global bot controls remain tenant-1 only. Build tenant-specific automation settings before opening them to other tenants.
 4. **Broadcast history hiding:** Soft-hiding `customer_replies` does not archive independently stored `campaign_recipients`. Implement a thread/archive model before treating this endpoint as a complete conversation archive.
-5. **Webhook durability:** Inbound handler still acknowledges Meta before durably enqueuing processing. Current message record deduplication does not provide exactly-once delivery. Use transactional inbox/outbox and worker retries as the next reliability increment.
+5. **Webhook durability:** Verified Meta payloads are now persisted to a retryable MySQL job queue before HTTP 200; a dedicated webhook worker is started and drained during server shutdown. **Outbound auto-replies remain asynchronous side effects without a transactional outbox**, so crash recovery and exactly-once delivery remain release blockers.
 6. **Distributed controls:** Pause state and per-phone sequencing still use in-process maps; must move to durable state and per-thread locks before horizontal scaling.
 7. **Privacy:** Soft-hide is not DPDP erasure. Preserve an auditable erasure path with appropriate legal retention exceptions.
 
@@ -45,3 +45,23 @@
 - Monitoring, SLOs, structured traces, rate limits, billing enforcement, backup restoration tests, security review and load testing.
 
 **Branch:** `review/conversation-tenant-foundation` — **PR:** #1.
+
+## Iteration 3: Durable inbound and private media
+
+- Persist inbound Meta webhook JSON to `system_job_queue` before acknowledging it.
+- Deduplicate identical payload retries by SHA-256 digest of original request bytes.
+- Return HTTP 503 when the queue is unavailable so Meta retries.
+- Register `META_WEBHOOK_INGEST` worker and start a dedicated `webhook` queue worker with the HTTP server.
+- Propagate per-message database failures from inbound batch processing into job retry.
+- Enforce tenant ownership on `/uploads/inbound/*` before Express serves public static files.
+- Mark private inbound-media responses `Cache-Control: private, no-store`.
+- Add durable-ingress regression tests.
+
+### Operational constraints before rollout
+
+- Confirm the MySQL job worker successfully obtains connections and polls `webhook` jobs on the staging machine.
+- Verify Meta retries produce the same idempotency digest and do not trigger unintended duplicate customer replies.
+- Test worker crash while ingesting, and verify pending jobs are retried or dead-lettered.
+- Update media previews to use authenticated requests or secure session cookies; anonymous direct image links are intentionally blocked.
+- Move message sending to an idempotent outbox; Meta message send itself cannot be assumed exactly-once.
+- Validate full repository tests and frontend build on a disposable staging environment.

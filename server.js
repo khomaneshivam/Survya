@@ -9,6 +9,8 @@ const zlib = require("zlib");
 const config = require("./src/config/env");
 require("./src/config/database"); // Initializes local SQLite DB
 const schedulerService = require("./src/services/schedulerService");
+const { JobWorkerEngine } = require("./src/services/queue/jobWorkerEngine");
+const webhookWorker = new JobWorkerEngine({ queueName: "webhook", pollIntervalMs: 1000 });
 const apiRoutes = require("./src/routes/apiRoutes");
 const webhookController = require("./src/controllers/webhookController");
 const securityHeaders = require("./src/middleware/securityHeaders");
@@ -168,6 +170,32 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 const distPath = path.join(__dirname, "frontend", "dist");
 const publicPath = path.join(__dirname, "public");
 
+// Private inbound media must never be served by Express static without tenant
+// authentication and an ownership lookup. This gate runs before publicPath.
+const { authenticateToken } = require("./src/middleware/authMiddleware");
+app.use("/uploads/inbound", authenticateToken, (req, res, next) => {
+  const filename = path.basename(req.path || "").replace(/^\//, "");
+  const mediaId = filename.replace(/\.[a-zA-Z0-9]+$/, "");
+  if (!/^[a-zA-Z0-9_.-]+$/.test(mediaId)) {
+    return res.status(400).json({ success: false, message: "Invalid media ID." });
+  }
+  try {
+    const { db } = require("./src/config/database");
+    const permitted = db.prepare(`
+      SELECT id FROM customer_replies
+      WHERE tenant_id = ? AND deleted_at IS NULL
+        AND (media_url LIKE ? OR raw_payload LIKE ?)
+      LIMIT 1
+    `).get(req.user.tenant_id, `%/${mediaId}%`, `%"id":"${mediaId}"%`);
+    if (!permitted) return res.status(404).json({ success: false, message: "Media not found." });
+    res.setHeader("Cache-Control", "private, no-store");
+    next();
+  } catch (e) {
+    console.error("[Media Security] Ownership check failed:", e.message);
+    return res.status(503).json({ success: false, message: "Media access temporarily unavailable." });
+  }
+});
+
 // Static files (Modern React SPA build or fallback) with HTTP cache headers
 const setCustomCacheHeaders = (res, filePath) => {
   const normalized = filePath.replace(/\\/g, "/");
@@ -230,7 +258,7 @@ app.get("/uploads/inbound/:filename", async (req, res, next) => {
       const { downloadAndSaveInboundMedia } = require("./src/services/metaWhatsAppService");
       const downloadRes = await downloadAndSaveInboundMedia(rawId);
       if (downloadRes?.localPath && fs.existsSync(downloadRes.localPath)) {
-        res.setHeader("Cache-Control", "public, max-age=604800, immutable");
+        res.setHeader("Cache-Control", "private, no-store");
         return res.sendFile(downloadRes.localPath);
       }
     }
@@ -446,6 +474,8 @@ if (require.main === module) {
   server = app.listen(PORT, HOST, () => {
     // Start background campaign scheduler
     schedulerService.initScheduler();
+    // Dedicated worker: only durable webhook ingestion, never unrelated jobs.
+    webhookWorker.start();
 
     // Auto-subscribe Meta Webhooks for WABA if credentials are valid
     try {
@@ -476,15 +506,15 @@ if (require.main === module) {
     isShuttingDown = true;
     console.log(`\n[Server] Received ${signal}. Initiating graceful shutdown...`);
 
-    // Safety timeout: exit cleanly within 4 seconds so PM2 does not issue SIGKILL
+    // Safety timeout: exit cleanly after in-flight webhook processing gets a shutdown window
     const forceExitTimer = setTimeout(() => {
-      console.warn("[Server] Graceful shutdown timeout (4s) reached. Forcing clean exit.");
+      console.warn("[Server] Graceful shutdown timeout (10s) reached. Forcing clean exit.");
       try {
         const { db } = require("./src/config/database");
         if (db && typeof db.close === "function") db.close();
       } catch (e) {}
       process.exit(0);
-    }, 4000);
+    }, 10000);
     if (forceExitTimer.unref) forceExitTimer.unref();
 
     // 1. Clear all background scheduler timers
@@ -502,7 +532,8 @@ if (require.main === module) {
         }
       } catch (e) {}
 
-      server.close((err) => {
+      server.close(async (err) => {
+        try { await webhookWorker.stop(); } catch (e) { console.warn("[Server] Webhook worker shutdown warning:", e.message); }
         if (err) {
           console.warn("[Server] Error closing HTTP server:", err.message);
         } else {
