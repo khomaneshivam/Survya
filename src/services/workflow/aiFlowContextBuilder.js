@@ -133,14 +133,22 @@ function buildSystemCapabilitiesContext(tenantId = 1, propertyId = 1) {
     approvedTemplates = [];
   }
 
-  // 6. Connected WhatsApp Business Phone Lines
+  // 6. Connected WhatsApp Business Phone Lines (Deduplicated by phone_number_id)
   let connectedPhoneNumbers = [];
   try {
-    connectedPhoneNumbers = db.prepare(`
+    const rawPhones = db.prepare(`
       SELECT id, display_name, phone_number, phone_number_id, quality_rating, status, is_default
       FROM waba_phone_numbers
+      WHERE delete_status = 0
       ORDER BY is_default DESC, id ASC
     `).all();
+    const seenPhoneIds = new Set();
+    connectedPhoneNumbers = rawPhones.filter(p => {
+      const pid = p.phone_number_id || p.id;
+      if (!pid || seenPhoneIds.has(pid)) return false;
+      seenPhoneIds.add(pid);
+      return true;
+    });
   } catch (e) {
     connectedPhoneNumbers = [];
   }

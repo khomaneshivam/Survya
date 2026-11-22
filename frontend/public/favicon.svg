@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sarvyaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="60%" stop-color="#1D4ED8" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.25" />
+    </filter>
+  </defs>
+  <!-- Background with smooth rounded squircle -->
+  <rect width="512" height="512" rx="128" fill="url(#sarvyaGrad)" />
+  <!-- WhatsApp / Communication Bubble Badge -->
+  <g filter="url(#shadow)">
+    <path d="M256 100 C170 100 100 170 100 256 C100 286 108 314 124 338 L104 412 L180 392 C203 404 229 412 256 412 C342 412 412 342 412 256 C412 170 342 100 256 100 Z" fill="#FFFFFF" fill-opacity="0.2" />
+    <!-- Modern Lightning / Automation Zap Monogram -->
+    <path d="M280 130 L180 270 L250 270 L230 382 L332 242 L262 242 Z" fill="#FFFFFF" />
+  </g>
+</svg>

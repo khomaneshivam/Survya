@@ -630,7 +630,7 @@ export default function BookingsOrdersPage() {
       }}>
         <DataTable
           columns={transactionColumns}
-          data={filteredTransactions}
+          data={transactions}
           density="compact"
           pageSize={10}
           loading={loading && transactions.length === 0}

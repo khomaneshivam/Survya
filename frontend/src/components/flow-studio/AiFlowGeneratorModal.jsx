@@ -406,8 +406,8 @@ export default function AiFlowGeneratorModal({
                     }}
                   >
                     <option value="">All Connected Lines (Global Fallback)</option>
-                    {capabilities?.connectedLines?.map(line => (
-                      <option key={line.phoneNumberId} value={line.phoneNumberId}>
+                    {capabilities?.connectedLines?.map((line, idx) => (
+                      <option key={`${line.phoneNumberId || line.id || 'line'}_${idx}`} value={line.phoneNumberId}>
                         {line.displayName} ({line.phoneNumber}) {line.isDefault ? '— Default Line' : ''}
                       </option>
                     ))}

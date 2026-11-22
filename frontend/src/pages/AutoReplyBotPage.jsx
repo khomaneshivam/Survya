@@ -1713,8 +1713,8 @@ export default function AutoReplyBotPage({ onNavigate }) {
                       }}
                     >
                       <option value="">All Lines (Global)</option>
-                      {connectedLines.map(line => (
-                        <option key={line.phoneNumberId} value={line.phoneNumberId}>
+                      {connectedLines.map((line, idx) => (
+                        <option key={`${line.phoneNumberId || line.id || 'line'}_${idx}`} value={line.phoneNumberId}>
                           {line.displayName} ({line.phoneNumber})
                         </option>
                       ))}

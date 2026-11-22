@@ -344,9 +344,9 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
                   No channels connected to this workspace.
                 </div>
               ) : (
-                phoneNumbers.map((line) => (
+                phoneNumbers.map((line, idx) => (
                   <button
-                    key={line.id}
+                    key={line.id ? `${line.id}_${idx}` : `line_${idx}`}
                     type="button"
                     className="sarvya-menu-item"
                     onClick={() => switchDefaultLine(line.id)}
