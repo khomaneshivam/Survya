@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import usePageMeta from '../utils/usePageMeta';
 import ExperienceShell from '../components/inapp-runtime/ExperienceShell';
 import HeroWelcomeScreen from '../components/inapp-runtime/HeroWelcomeScreen';
 import CatalogExplorerScreen from '../components/inapp-runtime/CatalogExplorerScreen';
@@ -42,17 +43,11 @@ export default function PublicExperiencePage({
   const [serverFieldErrors, setServerFieldErrors] = useState({});
 
   // SEO: Ensure search engines do not index customer runtime links
-  useEffect(() => {
-    if (typeof document !== 'undefined') {
-      let meta = document.querySelector('meta[name="robots"]');
-      if (!meta) {
-        meta = document.createElement('meta');
-        meta.name = 'robots';
-        document.head.appendChild(meta);
-      }
-      meta.content = 'noindex, nofollow';
-    }
-  }, []);
+  usePageMeta({
+    title: experience?.title || 'Experience',
+    description: experience?.description || 'Interactive WhatsApp Multi-Screen Experience',
+    noindex: true
+  });
 
   // 1. Fetch Experience Definition & Catalog
   const loadExperienceData = useCallback(async () => {

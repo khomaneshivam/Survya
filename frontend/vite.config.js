@@ -19,6 +19,9 @@ export default defineConfig({
           if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
             return 'vendor-react';
           }
+          if (id.includes('node_modules/@xyflow') || id.includes('node_modules/reactflow')) {
+            return 'vendor-xyflow';
+          }
           if (id.includes('node_modules/lucide-react')) {
             return 'vendor-icons';
           }

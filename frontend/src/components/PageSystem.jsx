@@ -1,5 +1,6 @@
-import React, { Component, useEffect, useMemo, useCallback } from 'react';
+import React, { Component, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useAuth } from '../context/AuthContext';
+import usePageMeta from '../utils/usePageMeta';
 import {
   LayoutDashboard,
   Users,
@@ -26,25 +27,48 @@ import {
   Smartphone
 } from 'lucide-react';
 
-// Lazy or direct import of all pages
-import DashboardPage from '../pages/DashboardPage';
-import EnquiriesPage from '../pages/EnquiriesPage';
-import FlowsPage from '../pages/FlowsPage';
-import AutomationPage from '../pages/AutomationPage';
-import InboxPage from '../pages/InboxPage';
-import AutoReplyBotPage from '../pages/AutoReplyBotPage';
-import BroadcastPage from '../pages/BroadcastPage';
-import ChatLinksPage from '../pages/ChatLinksPage';
-import InAppStudioPage from '../pages/InAppStudioPage';
-import AiAssistantPage from '../pages/AiAssistantPage';
-import ReportsPage from '../pages/ReportsPage';
-import CatalogInventoryPage from '../pages/CatalogInventoryPage';
-import InventoryCalendarPage from '../pages/InventoryCalendarPage';
-import SystemAdminPanel from '../pages/SystemAdminPanel';
-import PayoutsPage from '../pages/PayoutsPage';
-import SarvyaConnectPage from '../pages/SarvyaConnectPage';
-import SettingsPage from '../pages/SettingsPage';
-import LandingPage from '../pages/LandingPage';
+// Code-split dynamic page imports (lazy loaded chunks)
+const DashboardPage = lazy(() => import('../pages/DashboardPage'));
+const EnquiriesPage = lazy(() => import('../pages/EnquiriesPage'));
+const FlowsPage = lazy(() => import('../pages/FlowsPage'));
+const AutomationPage = lazy(() => import('../pages/AutomationPage'));
+const InboxPage = lazy(() => import('../pages/InboxPage'));
+const AutoReplyBotPage = lazy(() => import('../pages/AutoReplyBotPage'));
+const BroadcastPage = lazy(() => import('../pages/BroadcastPage'));
+const ChatLinksPage = lazy(() => import('../pages/ChatLinksPage'));
+const InAppStudioPage = lazy(() => import('../pages/InAppStudioPage'));
+const AiAssistantPage = lazy(() => import('../pages/AiAssistantPage'));
+const ReportsPage = lazy(() => import('../pages/ReportsPage'));
+const CatalogInventoryPage = lazy(() => import('../pages/CatalogInventoryPage'));
+const InventoryCalendarPage = lazy(() => import('../pages/InventoryCalendarPage'));
+const SystemAdminPanel = lazy(() => import('../pages/SystemAdminPanel'));
+const PayoutsPage = lazy(() => import('../pages/PayoutsPage'));
+const SarvyaConnectPage = lazy(() => import('../pages/SarvyaConnectPage'));
+const SettingsPage = lazy(() => import('../pages/SettingsPage'));
+const LandingPage = lazy(() => import('../pages/LandingPage'));
+
+/**
+ * Loading Skeleton Fallback for Lazy-Loaded Pages
+ */
+function PageSkeleton({ title }) {
+  return (
+    <div style={{ padding: '28px 24px', maxWidth: '1280px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#EEEEF0', animation: 'shimmer 1.4s infinite linear' }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ width: '200px', height: '22px', borderRadius: '4px', background: '#EEEEF0', animation: 'shimmer 1.4s infinite linear' }} />
+          <div style={{ width: '300px', height: '14px', borderRadius: '4px', background: '#F5F5F7', animation: 'shimmer 1.4s infinite linear' }} />
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginTop: '8px' }}>
+        {[1, 2, 3, 4].map(n => (
+          <div key={n} style={{ height: '110px', borderRadius: '10px', background: '#FAFAFB', border: '1px solid #EEEEF0', animation: 'shimmer 1.4s infinite linear' }} />
+        ))}
+      </div>
+      <div style={{ height: '340px', borderRadius: '12px', background: '#FAFAFB', border: '1px solid #EEEEF0', marginTop: '10px', animation: 'shimmer 1.4s infinite linear' }} />
+    </div>
+  );
+}
 
 /**
  * Master Page System Registry
@@ -375,6 +399,13 @@ export default function PageSystem({
     return PAGE_REGISTRY.dashboard;
   }, [activeTab, isAdmin]);
 
+  // Update document metadata & noindex for authenticated app tabs
+  usePageMeta({
+    title: activePage ? activePage.title : 'Overview',
+    description: activePage ? activePage.description : 'Zero-Markup WhatsApp Business API CRM & Automation',
+    noindex: true
+  });
+
   // Sibling Tabs in the same group/module for quick contextual switching
   const siblingTabs = useMemo(() => {
     if (!activePage) return [];
@@ -498,13 +529,15 @@ export default function PageSystem({
       {/* Main Viewport Wrapped in Per-Page Error Boundary */}
       <div style={{ flex: 1, position: 'relative' }}>
         <PageErrorBoundary tabId={activePage.id} pageTitle={activePage.title} onNavigate={handleNavigate}>
-          <ActiveComponent
-            onNavigate={handleNavigate}
-            setActiveTab={handleNavigate}
-            activeTab={activeTab}
-            currentUser={user}
-            isAdmin={isAdmin}
-          />
+          <Suspense fallback={<PageSkeleton title={activePage.title} />}>
+            <ActiveComponent
+              onNavigate={handleNavigate}
+              setActiveTab={handleNavigate}
+              activeTab={activeTab}
+              currentUser={user}
+              isAdmin={isAdmin}
+            />
+          </Suspense>
         </PageErrorBoundary>
       </div>
     </div>

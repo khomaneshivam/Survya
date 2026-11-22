@@ -1,0 +1,20 @@
+{
+  "name": "SARVYA — Zero-Markup WhatsApp CRM & Automation",
+  "short_name": "SARVYA",
+  "description": "Zero-markup WhatsApp Business API CRM, AI Flow Builder & Shared Team Inbox",
+  "start_url": "/inbox",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#FFFFFF",
+  "theme_color": "#2563eb",
+  "categories": ["business", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -5,6 +5,7 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
+const zlib = require("zlib");
 const config = require("./src/config/env");
 require("./src/config/database"); // Initializes local SQLite DB
 const schedulerService = require("./src/services/schedulerService");
@@ -19,6 +20,48 @@ app.disable("x-powered-by");
 
 // Apply enterprise HTTP security headers (OWASP compliant)
 app.use(securityHeaders);
+
+// Response compression middleware (gzip & brotli via built-in Node zlib)
+app.use((req, res, next) => {
+  // Never compress SSE streams, audio/video downloads, or incoming webhooks
+  if (
+    req.path.includes("/stream") ||
+    req.path.includes("/events") ||
+    req.path.startsWith("/webhook") ||
+    req.path.startsWith("/api/webhook")
+  ) {
+    return next();
+  }
+  const acceptEncoding = req.headers["accept-encoding"] || "";
+  const originalSend = res.send;
+  res.send = function (body) {
+    if (!body || res.headersSent) return originalSend.call(this, body);
+    const isString = typeof body === "string";
+    const isBuffer = Buffer.isBuffer(body);
+    if (!isString && !isBuffer) return originalSend.call(this, body);
+
+    const buffer = isBuffer ? body : Buffer.from(body);
+    if (buffer.length < 1024) return originalSend.call(this, body);
+
+    if (acceptEncoding.includes("br") && zlib.brotliCompressSync) {
+      try {
+        const compressed = zlib.brotliCompressSync(buffer);
+        res.setHeader("Content-Encoding", "br");
+        res.removeHeader("Content-Length");
+        return originalSend.call(this, compressed);
+      } catch (e) {}
+    } else if (acceptEncoding.includes("gzip")) {
+      try {
+        const compressed = zlib.gzipSync(buffer);
+        res.setHeader("Content-Encoding", "gzip");
+        res.removeHeader("Content-Length");
+        return originalSend.call(this, compressed);
+      } catch (e) {}
+    }
+    return originalSend.call(this, body);
+  };
+  next();
+});
 
 // 1. CORS Configuration: In production, enforce trusted origin policy
 function normalizeOrigin(originStr) {
@@ -125,11 +168,22 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 const distPath = path.join(__dirname, "frontend", "dist");
 const publicPath = path.join(__dirname, "public");
 
-// Static files (Modern React SPA build or fallback)
+// Static files (Modern React SPA build or fallback) with HTTP cache headers
+const setCustomCacheHeaders = (res, filePath) => {
+  const normalized = filePath.replace(/\\/g, "/");
+  if (normalized.includes("/assets/")) {
+    // Vite hashed static assets (JS, CSS, images) - immutable 1 year cache
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  } else if (normalized.endsWith(".html") || normalized.endsWith("manifest.webmanifest") || normalized.endsWith("sw.js")) {
+    // HTML, manifest, and service worker must revalidate
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  }
+};
+
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
+  app.use(express.static(distPath, { setHeaders: setCustomCacheHeaders }));
 }
-app.use(express.static(publicPath));
+app.use(express.static(publicPath, { setHeaders: setCustomCacheHeaders }));
 
 const uploadsPath = path.join(__dirname, "public", "uploads");
 const inboundUploadsPath = path.join(uploadsPath, "inbound");
@@ -268,9 +322,81 @@ app.use(["/api/v1/ai", "/api/ai"], aiAssistantRoutes);
 // 5. API routes
 app.use("/api", apiRoutes);
 
+// 5b. Technical SEO: robots.txt
+app.get("/robots.txt", (req, res) => {
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const host = req.headers["x-forwarded-host"] || req.get("host") || "sarvya.com";
+  const baseUrl = (process.env.PUBLIC_APP_URL || `${protocol}://${host}`).replace(/\/+$/, "");
+
+  const robotsTxt = [
+    "User-agent: *",
+    "Allow: /",
+    "Allow: /pricing",
+    "Allow: /solutions",
+    "Allow: /solutions/*",
+    "Allow: /privacy",
+    "Allow: /terms",
+    "Disallow: /api/",
+    "Disallow: /admin",
+    "Disallow: /admin/",
+    "Disallow: /dashboard",
+    "Disallow: /dashboard/",
+    "Disallow: /c/",
+    "Disallow: /x/",
+    "Disallow: /uploads/",
+    "Disallow: /flows/",
+    "",
+    `Sitemap: ${baseUrl}/sitemap.xml`
+  ].join("\n");
+
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.send(robotsTxt);
+});
+
+// 5c. Technical SEO: sitemap.xml
+app.get("/sitemap.xml", (req, res) => {
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+  const host = req.headers["x-forwarded-host"] || req.get("host") || "sarvya.com";
+  const baseUrl = (process.env.PUBLIC_APP_URL || `${protocol}://${host}`).replace(/\/+$/, "");
+  const today = new Date().toISOString().split("T")[0];
+
+  const routes = [
+    { path: "/", priority: "1.0", changefreq: "weekly" },
+    { path: "/pricing", priority: "0.9", changefreq: "weekly" },
+    { path: "/solutions/hospitality", priority: "0.8", changefreq: "monthly" },
+    { path: "/solutions/b2b-sales", priority: "0.8", changefreq: "monthly" },
+    { path: "/solutions/clinics", priority: "0.8", changefreq: "monthly" },
+    { path: "/solutions/d2c", priority: "0.8", changefreq: "monthly" },
+    { path: "/privacy", priority: "0.5", changefreq: "monthly" },
+    { path: "/terms", priority: "0.5", changefreq: "monthly" }
+  ];
+
+  const xmlEntries = routes
+    .map(
+      (r) => `  <url>
+    <loc>${baseUrl}${r.path}</loc>
+    <lastmod>${today}</lastmod>
+    <changefreq>${r.changefreq}</changefreq>
+    <priority>${r.priority}</priority>
+  </url>`
+    )
+    .join("\n");
+
+  const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${xmlEntries}
+</urlset>`;
+
+  res.setHeader("Content-Type", "application/xml; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.send(sitemapXml);
+});
+
 // 6. SPA fallback
 app.get("*", (req, res) => {
   if (!req.path.startsWith("/api") && !req.path.startsWith("/webhook") && !req.path.startsWith("/webhooks") && !req.path.startsWith("/uploads") && !req.path.startsWith("/flows")) {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     if (fs.existsSync(path.join(distPath, "index.html"))) {
       res.sendFile(path.join(distPath, "index.html"));
     } else {

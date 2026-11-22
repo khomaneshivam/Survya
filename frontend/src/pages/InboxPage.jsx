@@ -41,7 +41,9 @@ import {
   History,
   Mic,
   Languages,
-  Wand2
+  Wand2,
+  Bell,
+  BellRing
 } from 'lucide-react';
 import { formatIndianTime } from '../utils/indianTime';
 
@@ -522,6 +524,23 @@ export default function InboxPage({ onNavigate }) {
   // Real-time Bot Pause / Takeover status for active contact
   const [selectedBotStatus, setSelectedBotStatus] = useState({ isPaused: false, remainingMinutes: 0 });
   const [togglingBot, setTogglingBot] = useState(false);
+
+  // Browser Notification API for backgrounded inbound messages
+  const [notificationPerm, setNotificationPerm] = useState(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission;
+    }
+    return 'default';
+  });
+
+  const handleRequestNotificationPerm = async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      try {
+        const res = await Notification.requestPermission();
+        setNotificationPerm(res);
+      } catch (_) {}
+    }
+  };
 
   // In-App Experience Rate Negotiation & Callback Action States
   const [inappActiveNegotiation, setInappActiveNegotiation] = useState(null);
@@ -1423,6 +1442,21 @@ export default function InboxPage({ onNavigate }) {
               fetchBotStatus(selectedConvo.phone);
               fetchInappCommerceStatus(selectedConvo.phone);
             }
+            // Trigger browser desktop/mobile push notification if tab is backgrounded
+            if (type === 'REPLY' && typeof window !== 'undefined' && 'Notification' in window) {
+              if (Notification.permission === 'granted' && (document.hidden || !document.hasFocus())) {
+                try {
+                  const sender = payload.sender_name || payload.from_phone || 'WhatsApp Guest';
+                  const snippet = payload.text || 'Sent a new WhatsApp message';
+                  new Notification(`New WhatsApp Message from ${sender}`, {
+                    body: snippet.substring(0, 120),
+                    icon: '/favicon.svg',
+                    badge: '/favicon.svg',
+                    tag: `sarvya-reply-${payload.from_phone || Date.now()}`
+                  });
+                } catch (_) {}
+              }
+            }
           }
         } catch (e) {}
       };
@@ -2085,6 +2119,26 @@ export default function InboxPage({ onNavigate }) {
               </span>
             )}
           </button>
+
+          {/* Browser Desktop/Mobile Push Notification Toggle */}
+          {typeof window !== 'undefined' && 'Notification' in window && (
+            <button
+              type="button"
+              onClick={handleRequestNotificationPerm}
+              className="btn btn-secondary"
+              style={{
+                gap: '6px',
+                fontSize: '0.825rem',
+                border: notificationPerm === 'granted' ? '1px solid #C3D1AC' : '1px solid #D4D4D9',
+                background: notificationPerm === 'granted' ? '#F3F6EE' : '#FFFFFF',
+                color: notificationPerm === 'granted' ? '#2F5219' : '#67676B'
+              }}
+              title={notificationPerm === 'granted' ? 'Push Notifications Active for Inbound Messages' : 'Enable Desktop/Mobile Push Notifications'}
+            >
+              {notificationPerm === 'granted' ? <BellRing size={14} color="#2F5219" /> : <Bell size={14} />}
+              <span>{notificationPerm === 'granted' ? 'Alerts On' : 'Enable Alerts'}</span>
+            </button>
+          )}
 
           <button 
             type="button"
@@ -3685,7 +3739,10 @@ export default function InboxPage({ onNavigate }) {
                   display: 'flex',
                   gap: '10px',
                   background: '#FFFFFF',
-                  alignItems: 'flex-end'
+                  alignItems: 'flex-end',
+                  position: 'sticky',
+                  bottom: 0,
+                  zIndex: 10
                 }}
               >
                 {/* Hidden File Picker */}

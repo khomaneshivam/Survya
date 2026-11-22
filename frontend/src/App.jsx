@@ -1,14 +1,50 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import ImpersonationBanner from './components/ImpersonationBanner';
 import PageSystem from './components/PageSystem';
-import PublicChatLandingPage from './pages/PublicChatLandingPage';
-import PublicExperiencePage from './pages/PublicExperiencePage';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import LandingPage from './pages/LandingPage';
+
+// Lazy-loaded route chunks
+const PublicChatLandingPage = lazy(() => import('./pages/PublicChatLandingPage'));
+const PublicExperiencePage = lazy(() => import('./pages/PublicExperiencePage'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const RegisterPage = lazy(() => import('./pages/RegisterPage'));
+const LandingPage = lazy(() => import('./pages/LandingPage'));
+
+function FullPageLoader() {
+  return (
+    <div style={{
+      minHeight: '100dvh',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '12px',
+      background: 'var(--bg-app)',
+      color: 'var(--text-secondary)'
+    }}>
+      <div style={{
+        width: '40px',
+        height: '40px',
+        borderRadius: '10px',
+        background: 'var(--sarvya-blue)',
+        color: '#FFFFFF',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: 'var(--font-display)',
+        fontWeight: 800,
+        fontSize: '18px'
+      }}>
+        S
+      </div>
+      <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
+        Loading SARVYA Workspace...
+      </div>
+    </div>
+  );
+}
 import {
   LayoutDashboard,
   Users,
@@ -170,72 +206,56 @@ function AppContent() {
   const chatMatch = currentPath.match(/^\/(?:c|chat)\/([a-zA-Z0-9_-]+)/);
   if (chatMatch) {
     const slug = chatMatch[1];
-    return <PublicChatLandingPage slug={slug} />;
+    return (
+      <Suspense fallback={<FullPageLoader />}>
+        <PublicChatLandingPage slug={slug} />
+      </Suspense>
+    );
   }
 
   // Intercept public in-app multi-screen experiences (/x/:slug) without requiring login
   const expMatch = currentPath.match(/^\/x\/([a-zA-Z0-9_-]+)/);
   if (expMatch) {
     const slug = expMatch[1];
-    return <PublicExperiencePage slug={slug} />;
+    return (
+      <Suspense fallback={<FullPageLoader />}>
+        <PublicExperiencePage slug={slug} />
+      </Suspense>
+    );
   }
 
   if (loading) {
-    return (
-      <div style={{
-        minHeight: '100dvh',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: '12px',
-        background: 'var(--bg-app)',
-        color: 'var(--text-secondary)'
-      }}>
-        <div style={{
-          width: '40px',
-          height: '40px',
-          borderRadius: '10px',
-          background: 'var(--sarvya-blue)',
-          color: '#FFFFFF',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontFamily: 'var(--font-display)',
-          fontWeight: 800,
-          fontSize: '18px'
-        }}>
-          S
-        </div>
-        <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
-          Loading SARVYA Workspace...
-        </div>
-      </div>
-    );
+    return <FullPageLoader />;
   }
 
   if (!isAuthenticated) {
     if (authView === 'landing') {
       return (
-        <LandingPage
-          onGetStarted={() => setAuthView('register')}
-          onSignIn={() => setAuthView('login')}
-        />
+        <Suspense fallback={<FullPageLoader />}>
+          <LandingPage
+            onGetStarted={() => setAuthView('register')}
+            onSignIn={() => setAuthView('login')}
+          />
+        </Suspense>
       );
     }
     if (authView === 'register') {
       return (
-        <RegisterPage
-          onSwitchToLogin={() => setAuthView('login')}
-          onBackToLanding={() => setAuthView('landing')}
-        />
+        <Suspense fallback={<FullPageLoader />}>
+          <RegisterPage
+            onSwitchToLogin={() => setAuthView('login')}
+            onBackToLanding={() => setAuthView('landing')}
+          />
+        </Suspense>
       );
     }
     return (
-      <LoginPage
-        onSwitchToRegister={() => setAuthView('register')}
-        onBackToLanding={() => setAuthView('landing')}
-      />
+      <Suspense fallback={<FullPageLoader />}>
+        <LoginPage
+          onSwitchToRegister={() => setAuthView('register')}
+          onBackToLanding={() => setAuthView('landing')}
+        />
+      </Suspense>
     );
   }
 

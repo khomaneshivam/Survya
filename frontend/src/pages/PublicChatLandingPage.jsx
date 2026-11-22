@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import usePageMeta from '../utils/usePageMeta';
 import {
   ArrowDown,
   ArrowRight,
@@ -534,6 +535,13 @@ export default function PublicChatLandingPage({ slug }) {
   const [loading, setLoading] = useState(true);
   const [linkData, setLinkData] = useState(null);
   const [error, setError] = useState('');
+
+  // SEO: Private customer chat links must never be indexed by search engines
+  usePageMeta({
+    title: linkData?.title || 'Direct Chat',
+    description: linkData?.welcome_message || 'WhatsApp Direct Chat Link',
+    noindex: true
+  });
 
   // Customer identity and session state
   const [customerName, setCustomerName] = useState(() => {
