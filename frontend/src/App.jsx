@@ -1,16 +1,17 @@
-import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import ImpersonationBanner from './components/ImpersonationBanner';
 import PageSystem from './components/PageSystem';
+import lazyWithRetry from './utils/lazyWithRetry';
 
-// Lazy-loaded route chunks
-const PublicChatLandingPage = lazy(() => import('./pages/PublicChatLandingPage'));
-const PublicExperiencePage = lazy(() => import('./pages/PublicExperiencePage'));
-const LoginPage = lazy(() => import('./pages/LoginPage'));
-const RegisterPage = lazy(() => import('./pages/RegisterPage'));
-const LandingPage = lazy(() => import('./pages/LandingPage'));
+// Lazy-loaded route chunks with deployment chunk-mismatch auto-recovery
+const PublicChatLandingPage = lazyWithRetry(() => import('./pages/PublicChatLandingPage'));
+const PublicExperiencePage = lazyWithRetry(() => import('./pages/PublicExperiencePage'));
+const LoginPage = lazyWithRetry(() => import('./pages/LoginPage'));
+const RegisterPage = lazyWithRetry(() => import('./pages/RegisterPage'));
+const LandingPage = lazyWithRetry(() => import('./pages/LandingPage'));
 
 function FullPageLoader() {
   return (
