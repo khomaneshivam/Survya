@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -22,23 +22,32 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const displayTitle = template?.title || template?.name || 'Automation';
+
   // Flow naming & trigger
-  const [flowName, setFlowName] = useState(`${template.name} (My Workspace)`);
-  const [triggerKeyword, setTriggerKeyword] = useState(template.metadata_json?.defaultTrigger || 'BOOK');
+  const [flowName, setFlowName] = useState(`${displayTitle} (${new Date().toLocaleDateString('en-GB')})`);
+  const [triggerKeyword, setTriggerKeyword] = useState(() => {
+    if (template.industry === 'HOSPITALITY') return 'STAY';
+    if (template.industry === 'B2B_SAAS' || template.industry === 'B2B') return 'DEMO';
+    return 'HELLO';
+  });
 
   // Config values & bindings
-  const configSchema = typeof template.config_schema_json === 'string'
-    ? (() => { try { return JSON.parse(template.config_schema_json); } catch { return {}; } })()
-    : (template.config_schema_json || {});
+  const configSchema = useMemo(() => {
+    const raw = template.configSchema || template.config_schema_json || template.currentVersion?.configSchema || {};
+    return typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : raw;
+  }, [template]);
 
-  const requiredBindings = typeof template.required_bindings_json === 'string'
-    ? (() => { try { return JSON.parse(template.required_bindings_json); } catch { return []; } })()
-    : (template.required_bindings_json || []);
+  const requiredBindings = useMemo(() => {
+    const raw = template.requiredBindings || template.required_bindings_json || template.currentVersion?.requiredBindings || [];
+    return typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return []; } })() : raw;
+  }, [template]);
 
   const [configValues, setConfigValues] = useState(() => {
     const defaults = {};
-    Object.entries(configSchema.properties || {}).forEach(([k, prop]) => {
-      if (prop.default !== undefined) {
+    const props = configSchema.properties || configSchema;
+    Object.entries(props || {}).forEach(([k, prop]) => {
+      if (prop && prop.default !== undefined) {
         defaults[k] = prop.default;
       }
     });
@@ -48,18 +57,29 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
   const [bindingValues, setBindingValues] = useState({});
   const [simulationTested, setSimulationTested] = useState(false);
 
+  // Group schema properties into Step 1 (Identity/Branding) vs Step 4 (Rules/Policies)
+  const allSchemaKeys = useMemo(() => {
+    const props = configSchema.properties || configSchema;
+    return Object.keys(props).filter(k => !['type', 'required', 'properties', 'title', 'description'].includes(k) || props[k]?.type);
+  }, [configSchema]);
+
+  const step1Keys = useMemo(() => {
+    const brandKeys = allSchemaKeys.filter(k => k.startsWith('business.') || k.includes('name') || k.includes('greeting') || k.includes('phone') || k.includes('email'));
+    return brandKeys.length > 0 ? brandKeys : allSchemaKeys.slice(0, 3);
+  }, [allSchemaKeys]);
+
+  const step4Keys = useMemo(() => {
+    const customKeys = allSchemaKeys.filter(k => !step1Keys.includes(k));
+    return customKeys.length > 0 ? customKeys : allSchemaKeys;
+  }, [allSchemaKeys, step1Keys]);
+
   const steps = [
-    { number: 1, title: 'Business Identity', desc: 'Brand & contact info' },
+    { number: 1, title: 'Business Profile', desc: 'Brand & contact info' },
     { number: 2, title: 'Connections', desc: 'WhatsApp & catalog' },
     { number: 3, title: 'Trigger & Naming', desc: 'Keyword routing' },
-    { number: 4, title: 'Customization', desc: 'Pricing & policies' },
+    { number: 4, title: 'Customization', desc: 'Tariffs & policies' },
     { number: 5, title: 'Test & Activate', desc: 'Sandbox & launch' }
   ];
-
-  // Validation
-  const requiredFields = configSchema.required || [];
-  const missingConfigFields = requiredFields.filter(f => !configValues[f]);
-  const isConfigValid = missingConfigFields.length === 0;
 
   const handleNext = () => {
     setError(null);
@@ -79,12 +99,17 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
     setLoading(true);
     setError(null);
     try {
+      const formattedBindings = Object.entries(bindingValues).map(([key, target_resource_id]) => ({
+        key,
+        target_resource_id: String(target_resource_id)
+      }));
+
       const payload = {
-        flowName,
-        triggerKeyword,
+        customFlowName: flowName,
+        triggerKeyword: triggerKeyword.trim().toUpperCase(),
         configValues,
-        bindings: bindingValues,
-        activateNow: true
+        bindings: formattedBindings,
+        activateImmediately: true
       };
 
       const res = await automationApi.installTemplate(template.id || template.template_key, payload);
@@ -113,11 +138,11 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
             <span>Cancel Setup</span>
           </button>
           <h2 className="text-lg font-bold text-slate-900 tracking-tight">
-            Setting up: {template.name}
+            Setting up: {displayTitle}
           </h2>
         </div>
 
-        <div className="text-xs font-mono text-slate-400">
+        <div className="text-xs font-mono text-slate-400 font-semibold bg-slate-100 px-2.5 py-1 rounded-md">
           Step {step} of 5
         </div>
       </div>
@@ -132,13 +157,13 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
             <button
               key={s.number}
               onClick={() => setStep(s.number)}
-              className={`p-2 rounded-lg text-left transition-all ${
+              className={`p-2.5 rounded-lg text-left transition-all ${
                 isCurrent
                   ? 'bg-white shadow-xs border border-slate-200'
                   : 'hover:bg-slate-200/50'
               }`}
             >
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <span
                   className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${
                     isPast
@@ -154,7 +179,7 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
                   {s.title}
                 </span>
               </div>
-              <span className="text-[10px] text-slate-400 block truncate ml-6">
+              <span className="text-[10px] text-slate-400 block truncate ml-7 mt-0.5">
                 {s.desc}
               </span>
             </button>
@@ -169,27 +194,30 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
             {step === 1 && (
               <div>
-                <h3 className="text-sm font-bold text-slate-900 mb-1">
-                  1. Business Identity & Branding
+                <h3 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
+                  <Building2 size={16} className="text-emerald-600" />
+                  <span>1. Business Profile & Branding</span>
                 </h3>
                 <p className="text-xs text-slate-500 mb-4">
-                  These values are dynamically inserted into guest messages, quotations, and booking confirmations.
+                  These values are dynamically resolved into greetings, quotes, and acknowledgments during chat execution.
                 </p>
                 <ConfigurationForm
                   schema={configSchema}
                   values={configValues}
                   onChange={setConfigValues}
+                  filterKeys={step1Keys}
                 />
               </div>
             )}
 
             {step === 2 && (
               <div>
-                <h3 className="text-sm font-bold text-slate-900 mb-1">
-                  2. Connect Workspace Resources
+                <h3 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
+                  <Phone size={16} className="text-blue-600" />
+                  <span>2. Connect Workspace Resources</span>
                 </h3>
                 <p className="text-xs text-slate-500 mb-4">
-                  Select the WhatsApp Business line and property or catalog to attach to this automation.
+                  Select your verified WhatsApp phone line and bind target catalogs, properties, or pipelines.
                 </p>
                 <ResourceBindingPicker
                   requiredBindings={requiredBindings}
@@ -202,11 +230,12 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
             {step === 3 && (
               <div className="space-y-4">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900 mb-1">
-                    3. Trigger & Naming
+                  <h3 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
+                    <Sparkles size={16} className="text-amber-600" />
+                    <span>3. Trigger Routing & Naming</span>
                   </h3>
                   <p className="text-xs text-slate-500 mb-4">
-                    Give this automation a recognizable name and assign the trigger keyword that starts the journey.
+                    Assign a human-readable name for your dashboard and configure the trigger keyword that launches the flow.
                   </p>
                 </div>
 
@@ -226,8 +255,8 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
                     type="text"
                     value={triggerKeyword}
                     onChange={(e) => setTriggerKeyword(e.target.value.toUpperCase())}
-                    placeholder="e.g. BOOK, STAY, MENU"
-                    className="w-full text-xs font-mono font-semibold px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    placeholder="e.g. BOOK, STAY, DEMO, HI"
+                    className="w-full text-xs font-mono font-semibold px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 uppercase"
                   />
                   <span className="text-[11px] text-slate-400">
                     When an incoming WhatsApp customer texts this keyword, this automation activates immediately.
@@ -238,16 +267,18 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
 
             {step === 4 && (
               <div>
-                <h3 className="text-sm font-bold text-slate-900 mb-1">
-                  4. Fine-Tune Customizations & Rules
+                <h3 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
+                  <Sliders size={16} className="text-purple-600" />
+                  <span>4. Fine-Tune Operational Rules & Customization</span>
                 </h3>
                 <p className="text-xs text-slate-500 mb-4">
-                  Review and customize optional policies, cancellation rules, and default operational hours.
+                  Review and customize operational hours, check-in policies, and threshold values exposed by this template.
                 </p>
                 <ConfigurationForm
                   schema={configSchema}
                   values={configValues}
                   onChange={setConfigValues}
+                  filterKeys={step4Keys}
                 />
               </div>
             )}
@@ -255,41 +286,44 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
             {step === 5 && (
               <div className="space-y-4">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900 mb-1">
-                    5. Ready to Activate
+                  <h3 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
+                    <CheckCircle2 size={16} className="text-emerald-600" />
+                    <span>5. Pre-flight Validation & Activation</span>
                   </h3>
-                  <p className="text-xs text-slate-500 mb-3">
-                    Review the pre-flight checklist. Test conversation turns in the live sandbox on the right.
+                  <p className="text-xs text-slate-500 mb-2">
+                    Review your setup checklist and test turns in the simulator before taking the flow live.
                   </p>
                 </div>
 
                 <PublishChecklist
-                  configValid={isConfigValid}
-                  bindingsValid={true}
-                  graphValid={true}
-                  simulationDone={simulationTested}
-                  missingFields={missingConfigFields}
-                  onFixStep={(targetStep) => setStep(targetStep)}
+                  config={configValues}
+                  bindings={bindingValues}
+                  requiredBindings={requiredBindings}
+                  flowName={flowName}
+                  simulationTested={simulationTested}
+                  onFixStep={(stepNum) => setStep(stepNum)}
                 />
-
-                {error && (
-                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs font-medium">
-                    {error}
-                  </div>
-                )}
               </div>
             )}
 
-            {/* Bottom Nav Buttons */}
-            <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+            {/* Error Message */}
+            {error && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700">
+                {error}
+              </div>
+            )}
+
+            {/* Step Navigation Actions */}
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={handleBack}
                 disabled={step === 1 || loading}
+                className="text-xs py-1.5"
               >
                 <ArrowLeft size={13} className="mr-1" />
-                <span>Back</span>
+                <span>Previous Step</span>
               </Button>
 
               {step < 5 ? (
@@ -297,6 +331,7 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
                   variant="primary"
                   size="sm"
                   onClick={handleNext}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs py-1.5 font-semibold"
                 >
                   <span>Continue</span>
                   <ArrowRight size={13} className="ml-1" />
@@ -307,33 +342,32 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
                   size="sm"
                   loading={loading}
                   onClick={handleActivate}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 font-semibold"
                 >
                   <Play size={13} className="mr-1" />
-                  <span>Activate Automation</span>
+                  <span>Activate Live Automation</span>
                 </Button>
               )}
             </div>
           </div>
         </div>
 
-        {/* Right Sandbox Preview Area (5 cols on lg) */}
-        <div className="lg:col-span-5">
-          <div className="sticky top-20 space-y-2">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+        {/* Right Sandbox Chat Simulator (5 cols on lg) */}
+        <div className="lg:col-span-5 space-y-4">
+          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+            <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-100">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                 <Smartphone size={14} className="text-emerald-600" />
-                <span>Live Interactive Preview</span>
+                <span>Live WhatsApp Simulation</span>
               </span>
-              <span className="text-[10px] font-mono text-slate-400">
-                Safe In-Memory Sandbox
+              <span className="text-[10px] bg-slate-100 text-slate-500 font-mono px-2 py-0.5 rounded font-bold">
+                100% Mock Sandbox
               </span>
             </div>
-
             <SimulationPanel
-              templateKey={template.template_key}
+              template={template}
               configValues={configValues}
-              onResetContext={() => setSimulationTested(true)}
+              onTestInteraction={() => setSimulationTested(true)}
             />
           </div>
         </div>
@@ -341,4 +375,3 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
     </div>
   );
 }
-

@@ -12,7 +12,15 @@ import {
   ChevronRight
 } from 'lucide-react';
 
-export function SimulationPanel({ flowId, templateKey, configValues = {}, onResetContext }) {
+export function SimulationPanel({ 
+  flowId, 
+  template,
+  templateKey: propTemplateKey, 
+  configValues = {}, 
+  onResetContext,
+  onTestInteraction 
+}) {
+  const templateKey = propTemplateKey || template?.template_key || template?.id;
   const [messages, setMessages] = useState([
     {
       id: 'welcome',
@@ -99,6 +107,9 @@ export function SimulationPanel({ flowId, templateKey, configValues = {}, onRese
 
         if (res.updatedContext) {
           setSessionContext(res.updatedContext);
+        }
+        if (onTestInteraction) {
+          onTestInteraction();
         }
       } else {
         setMessages((prev) => [

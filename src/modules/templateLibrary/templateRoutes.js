@@ -13,6 +13,7 @@ router.use(authenticateToken);
 
 // Catalog Discovery & Inspection
 router.get("/admin/all", requireAdmin, (req, res) => templateController.listAllForAdmin(req, res));
+router.get("/resources", (req, res) => templateController.getResources(req, res));
 router.get("/", (req, res) => templateController.listCatalog(req, res));
 router.get("/:id", (req, res) => templateController.getTemplate(req, res));
 

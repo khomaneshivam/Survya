@@ -47,6 +47,20 @@ class TemplateController {
   }
 
   /**
+   * GET /api/v1/template-library/resources
+   * Get tenant-owned resources for binding dropdowns
+   */
+  async getResources(req, res) {
+    try {
+      const tenantId = req.user?.tenantId || 1;
+      const resources = templateBindingService.getAvailableTenantResources(tenantId);
+      res.json({ success: true, resources });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  /**
    * GET /api/v1/template-library/:id
    * Get template details, configuration schema, and tenant resources
    */

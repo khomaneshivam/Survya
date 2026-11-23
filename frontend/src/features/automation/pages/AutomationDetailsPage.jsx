@@ -125,17 +125,14 @@ export function AutomationDetailsPage({
     }
   };
 
-  const template = installation?.template || null;
-  const configSchema = template?.config_schema_json
-    ? (typeof template.config_schema_json === 'string'
-        ? JSON.parse(template.config_schema_json)
-        : template.config_schema_json)
+  const rawSchema = installation?.config_schema_json || installation?.template?.config_schema_json;
+  const configSchema = rawSchema
+    ? (typeof rawSchema === 'string' ? JSON.parse(rawSchema) : rawSchema)
     : {};
 
-  const requiredBindings = template?.required_bindings_json
-    ? (typeof template.required_bindings_json === 'string'
-        ? JSON.parse(template.required_bindings_json)
-        : template.required_bindings_json)
+  const rawBindings = installation?.required_bindings_json || installation?.template?.required_bindings_json;
+  const requiredBindings = rawBindings
+    ? (typeof rawBindings === 'string' ? JSON.parse(rawBindings) : rawBindings)
     : [];
 
   if (loading) {

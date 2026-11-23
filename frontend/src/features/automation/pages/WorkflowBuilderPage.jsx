@@ -159,7 +159,7 @@ export function WorkflowBuilderPage({ flowId, onBack, onSaved }) {
   const isFlowActive = (flow?.status || '').toUpperCase() === 'ACTIVE' || (flow?.status || '').toUpperCase() === 'PUBLISHED';
 
   return (
-    <div className="flex flex-col h-[calc(100vh-60px)] bg-slate-50">
+    <div className="flex flex-col h-[calc(100vh-140px)] min-h-[640px] bg-slate-50">
       {/* Top Builder Action Bar */}
       <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between gap-3 flex-shrink-0 z-20">
         <div className="flex items-center gap-3">

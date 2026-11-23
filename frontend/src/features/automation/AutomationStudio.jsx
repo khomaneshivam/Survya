@@ -58,7 +58,7 @@ export default function AutomationStudio({ defaultView = 'my-automations', initi
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 flex flex-col font-sans">
+    <div className="min-h-[750px] flex flex-col font-sans bg-slate-50/50">
       {/* Studio Header (shown for top-level pages) */}
       {isTopLevelView && (
         <AutomationStudioHeader

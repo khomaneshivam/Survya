@@ -1,32 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { fetchWithAuth } from '../../../utils/apiAuth';
-import { Phone, Building2, Kanban, Layers, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Phone, Building2, Kanban, Layers, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
+import { automationApi } from '../api/automationApi';
 
 export function ResourceBindingPicker({ requiredBindings = [], values = {}, onChange }) {
-  const [properties, setProperties] = useState([]);
-  const [lines, setLines] = useState([]);
-  const [categories, setCategories] = useState([]);
+  const [resources, setResources] = useState({
+    whatsappLines: [],
+    properties: [],
+    catalogCategories: [],
+    crmPipelines: []
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadTenantResources() {
       setLoading(true);
       try {
-        const [propsRes, linesRes, catRes] = await Promise.all([
-          fetchWithAuth('/api/properties').catch(() => ({ json: () => ({ success: false }) })),
-          fetchWithAuth('/api/lines').catch(() => ({ json: () => ({ success: false }) })),
-          fetchWithAuth('/api/catalog/categories').catch(() => ({ json: () => ({ success: false }) }))
-        ]);
-
-        const propsData = await propsRes.json().catch(() => ({}));
-        const linesData = await linesRes.json().catch(() => ({}));
-        const catData = await catRes.json().catch(() => ({}));
-
-        if (propsData?.properties) setProperties(propsData.properties);
-        if (linesData?.lines) setLines(linesData.lines);
-        if (catData?.categories) setCategories(catData.categories);
-      } catch {
-        // Fallback gracefully
+        const res = await automationApi.getTenantResources();
+        if (res && res.success && res.resources) {
+          setResources(res.resources);
+        }
+      } catch (err) {
+        console.warn('Failed to load tenant resources for binding picker:', err);
       } finally {
         setLoading(false);
       }
@@ -60,6 +54,8 @@ export function ResourceBindingPicker({ requiredBindings = [], values = {}, onCh
     );
   }
 
+  const { whatsappLines = [], properties = [], catalogCategories = [], crmPipelines = [] } = resources;
+
   return (
     <div className="space-y-3">
       {requiredBindings.map((binding) => {
@@ -70,14 +66,14 @@ export function ResourceBindingPicker({ requiredBindings = [], values = {}, onCh
         const selectedValue = values[key] || '';
 
         return (
-          <div key={key} className="p-3 bg-white border border-slate-200 rounded-lg">
+          <div key={key} className="p-3 bg-white border border-slate-200 rounded-lg shadow-2xs">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 {getBindingIcon(type)}
                 <span className="text-xs font-semibold text-slate-800">{label}</span>
                 {isRequired && <span className="text-rose-500 text-xs font-bold">*</span>}
               </div>
-              <span className="text-[10px] uppercase font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+              <span className="text-[10px] uppercase font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
                 {type}
               </span>
             </div>
@@ -87,12 +83,12 @@ export function ResourceBindingPicker({ requiredBindings = [], values = {}, onCh
               <select
                 value={selectedValue}
                 onChange={(e) => handleSelect(key, e.target.value)}
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 text-slate-700 focus:bg-white focus:border-blue-500 focus:outline-none"
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 text-slate-700 focus:bg-white focus:border-emerald-500 focus:outline-none"
               >
                 <option value="">Select Property / Branch...</option>
                 {properties.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} {p.code ? `(${p.code})` : ''}
+                  <option key={p.id} value={String(p.id)}>
+                    {p.name} {p.city ? `(${p.city})` : ''}
                   </option>
                 ))}
                 {properties.length === 0 && (
@@ -103,32 +99,48 @@ export function ResourceBindingPicker({ requiredBindings = [], values = {}, onCh
               <select
                 value={selectedValue}
                 onChange={(e) => handleSelect(key, e.target.value)}
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 text-slate-700 focus:bg-white focus:border-blue-500 focus:outline-none"
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 text-slate-700 focus:bg-white focus:border-emerald-500 focus:outline-none font-mono"
               >
-                <option value="">Select WhatsApp Phone Number...</option>
-                {lines.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.display_phone_number || l.phone_number_id} ({l.verified_name || 'Active Line'})
+                <option value="">Select WhatsApp Phone Line...</option>
+                {whatsappLines.map((l) => (
+                  <option key={l.phone_number_id} value={String(l.phone_number_id || l.phone_number)}>
+                    {l.display_name || l.phone_number} ({l.phone_number || l.phone_number_id})
                   </option>
                 ))}
-                {lines.length === 0 && (
-                  <option value="default">Default WhatsApp Business Line</option>
+                {whatsappLines.length === 0 && (
+                  <option value="919307382030">Primary WhatsApp Line (+91 93073 82030)</option>
+                )}
+              </select>
+            ) : type === 'CRM_PIPELINE' ? (
+              <select
+                value={selectedValue}
+                onChange={(e) => handleSelect(key, e.target.value)}
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 text-slate-700 focus:bg-white focus:border-emerald-500 focus:outline-none"
+              >
+                <option value="">Select CRM Sales Pipeline...</option>
+                {crmPipelines.map((pipe) => (
+                  <option key={pipe.id} value={pipe.slug || String(pipe.id)}>
+                    {pipe.name} ({pipe.slug || pipe.industry_type || 'Sales'})
+                  </option>
+                ))}
+                {crmPipelines.length === 0 && (
+                  <option value="b2b-sales-pipeline">B2B Sales Pipeline (Default)</option>
                 )}
               </select>
             ) : type === 'CATALOG_CATEGORY' ? (
               <select
                 value={selectedValue}
                 onChange={(e) => handleSelect(key, e.target.value)}
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 text-slate-700 focus:bg-white focus:border-blue-500 focus:outline-none"
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 text-slate-700 focus:bg-white focus:border-emerald-500 focus:outline-none"
               >
                 <option value="">Select Catalog Category...</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
+                {catalogCategories.map((c) => (
+                  <option key={c.id} value={String(c.id)}>
                     {c.name}
                   </option>
                 ))}
-                {categories.length === 0 && (
-                  <option value="default">All Live Catalog Categories</option>
+                {catalogCategories.length === 0 && (
+                  <option value="1">All Live Catalog Categories</option>
                 )}
               </select>
             ) : (
@@ -137,7 +149,7 @@ export function ResourceBindingPicker({ requiredBindings = [], values = {}, onCh
                 placeholder={`Enter ${label} identifier...`}
                 value={selectedValue}
                 onChange={(e) => handleSelect(key, e.target.value)}
-                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 text-slate-700 focus:bg-white focus:border-blue-500 focus:outline-none"
+                className="w-full text-xs bg-slate-50 border border-slate-200 rounded-md px-2.5 py-1.5 text-slate-700 focus:bg-white focus:border-emerald-500 focus:outline-none"
               />
             )}
           </div>
@@ -146,4 +158,3 @@ export function ResourceBindingPicker({ requiredBindings = [], values = {}, onCh
     </div>
   );
 }
-

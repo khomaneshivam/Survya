@@ -25,6 +25,11 @@ export const automationApi = {
     return res.json();
   },
 
+  async getTenantResources() {
+    const res = await fetchWithAuth('/api/v1/template-library/resources');
+    return res.json();
+  },
+
   async installTemplate(templateIdOrKey, payload) {
     const res = await fetchWithAuth(`/api/v1/template-library/${templateIdOrKey}/install`, {
       method: 'POST',

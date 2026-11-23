@@ -3,14 +3,45 @@ import { CheckCircle2, AlertTriangle, XCircle, ArrowRight } from 'lucide-react';
 import { Button } from '../../../components/ui/Primitives';
 
 export function PublishChecklist({
-  configValid = true,
-  bindingsValid = true,
-  graphValid = true,
-  simulationDone = false,
-  missingFields = [],
-  missingBindings = [],
+  configValid: directConfigValid,
+  bindingsValid: directBindingsValid,
+  graphValid: directGraphValid,
+  simulationDone: directSimulationDone,
+  missingFields: directMissingFields,
+  missingBindings: directMissingBindings,
+  config = {},
+  configValues,
+  bindings = {},
+  bindingValues,
+  requiredBindings = [],
+  flowName = '',
+  simulationTested = false,
   onFixStep
 }) {
+  const effectiveConfig = configValues || config || {};
+  const effectiveBindings = bindingValues || bindings || {};
+
+  // Compute missing required bindings
+  const computedMissingBindings = (requiredBindings || [])
+    .filter(req => {
+      const k = req.key || req.resource_type;
+      return !effectiveBindings[k];
+    })
+    .map(req => req.label || req.key || req.resource_type);
+
+  const missingBindings = directMissingBindings !== undefined ? directMissingBindings : computedMissingBindings;
+  const bindingsValid = directBindingsValid !== undefined ? directBindingsValid : missingBindings.length === 0;
+
+  // Compute config validity
+  const missingFields = directMissingFields || [];
+  const configValid = directConfigValid !== undefined ? directConfigValid : missingFields.length === 0;
+
+  // Graph validity
+  const graphValid = directGraphValid !== undefined ? directGraphValid : Boolean(flowName);
+
+  // Simulation status
+  const simulationDone = directSimulationDone !== undefined ? directSimulationDone : simulationTested;
+
   const allReady = configValid && bindingsValid && graphValid;
 
   const checks = [

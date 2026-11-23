@@ -638,16 +638,20 @@ export default function AutomationPage() {
   ], []);
 
   return (
-    <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '28px 24px' }}>
+    <div style={{ 
+      maxWidth: subTab === 'STUDIO' ? '100%' : '1440px', 
+      margin: '0 auto', 
+      padding: subTab === 'STUDIO' ? '16px 20px 32px' : '28px 24px' 
+    }}>
       {/* Top Module Sub-Navigation Switcher */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: '24px',
-        padding: '6px 8px',
+        marginBottom: subTab === 'STUDIO' ? '16px' : '24px',
+        padding: '8px 12px',
         background: '#FFFFFF',
-        borderRadius: '10px',
+        borderRadius: '12px',
         border: '1px solid #E5E5E8',
         boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
         flexWrap: 'wrap',
@@ -703,7 +707,7 @@ export default function AutomationPage() {
       </div>
 
       {subTab === 'STUDIO' ? (
-        <div style={{ marginTop: '-20px' }}>
+        <div style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid #E2E8F0', background: '#FFFFFF', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
           <AutomationStudio />
         </div>
       ) : (
