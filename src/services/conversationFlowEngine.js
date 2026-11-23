@@ -944,6 +944,8 @@ async function processTurn({
   let nodes = [];
   let transitions = [];
   let collectedData = {};
+  // Tracks existing session turns. Without this declaration resumed executions throw.
+  let isResuming = false;
 
   if (flowOverride) {
     if (simulationState) {

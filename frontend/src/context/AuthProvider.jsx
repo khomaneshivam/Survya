@@ -1,6 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-
-const AuthContext = createContext(null);
+import React, { useState, useEffect, useEffectEvent } from 'react';
+import AuthContext from './AuthStore';
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem('token') || null);
@@ -8,7 +7,7 @@ export function AuthProvider({ children }) {
     try {
       const saved = localStorage.getItem('user');
       if (saved) return JSON.parse(saved);
-    } catch (e) {}
+    } catch {}
     return null;
   });
   const [loading, setLoading] = useState(Boolean(localStorage.getItem('token')));
@@ -17,13 +16,15 @@ export function AuthProvider({ children }) {
 
   const isImpersonating = Boolean(originalAdminToken);
 
+  // This Effect Event can access the latest auth state without retriggering
+  // initial session validation whenever the user object changes.
+  const verifyOnMount = useEffectEvent((savedToken) => {
+    void verifyAndFetchUser(savedToken);
+  });
+
   useEffect(() => {
     const savedToken = localStorage.getItem('token');
-    if (savedToken) {
-      verifyAndFetchUser(savedToken);
-    } else {
-      setLoading(false);
-    }
+    if (savedToken) verifyOnMount(savedToken);
   }, []);
 
   // Dynamic White-Label Branding injection
@@ -68,7 +69,7 @@ export function AuthProvider({ children }) {
       } else {
         logout();
       }
-    } catch (err) {
+    } catch {
       if (!user) logout();
     } finally {
       setLoading(false);
@@ -189,10 +190,3 @@ export function AuthProvider({ children }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-}

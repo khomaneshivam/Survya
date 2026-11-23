@@ -1950,7 +1950,12 @@ class WebhookService {
     const { resolveWhatsAppContext } = require("./workflow/conversationContextResolver");
     const incomingPhoneId = rawValue?.metadata?.phone_number_id || null;
     const isSimulation = Boolean(rawValue?.is_simulation || rawMsg?.is_simulation || isSandboxOrTestPhone(cleanPhone));
-    const tenantContext = resolveWhatsAppContext(incomingPhoneId, { simulation: isSimulation });
+    // Legacy direct-call fixtures have no receiver metadata. Allow a non-live
+    // tenant-1 fallback in development/test only; production always fails closed.
+    const localLegacyFixture = process.env.NODE_ENV !== "production" && !incomingPhoneId;
+    const tenantContext = resolveWhatsAppContext(incomingPhoneId, {
+      simulation: isSimulation || localLegacyFixture
+    });
     if (!tenantContext) {
       console.warn("[Webhook Flow] Unrecognized or ambiguous receiving account; suppressing automation.");
       return null;
