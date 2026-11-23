@@ -62,114 +62,249 @@ export function TemplateDetailsPage({ template, onStartSetup, onBack }) {
   const configFieldsCount = Object.keys(schemaProps).filter(k => !['type', 'required', 'properties', 'title', 'description'].includes(k) || schemaProps[k]?.type).length;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div style={{ padding: '24px 24px 48px', maxWidth: '1080px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Back button */}
-      <button
-        onClick={onBack}
-        className="text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1 transition-colors"
-      >
-        <ArrowLeft size={13} />
-        <span>Back to Template Library</span>
-      </button>
+      <div>
+        <button
+          type="button"
+          onClick={onBack}
+          style={{
+            fontSize: '12px',
+            fontWeight: 600,
+            color: '#67676B',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: 0
+          }}
+        >
+          <ArrowLeft size={13} />
+          <span>Back to Template Library</span>
+        </button>
+      </div>
 
       {/* Main Hero Card */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
-          <div className="flex items-start gap-4">
-            <div className="w-14 h-14 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 flex-shrink-0">
+      <div style={{
+        background: '#FFFFFF',
+        border: '1px solid #E5E5E8',
+        borderRadius: '12px',
+        padding: '24px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '20px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
+            <div style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '12px',
+              background: '#EDF4E6',
+              border: '1px solid #C3D1AC',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#2F5219',
+              flexShrink: 0
+            }}>
               <Bot size={28} />
             </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2 flex-wrap">
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
                 <Badge tone="blue" dot>
                   {industry || 'GENERAL'}
                 </Badge>
-                <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider bg-slate-100 px-2 py-0.5 rounded">
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 500,
+                  color: '#67676B',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  background: '#EEEEF0',
+                  padding: '2px 8px',
+                  borderRadius: '4px'
+                }}>
                   {category || 'Standard'}
                 </span>
-                <span className="text-xs font-mono text-slate-400 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded">
+                <span style={{
+                  fontSize: '11px',
+                  fontFamily: 'monospace',
+                  color: '#67676B',
+                  background: '#F5F5F6',
+                  border: '1px solid #E5E5E8',
+                  padding: '2px 8px',
+                  borderRadius: '4px'
+                }}>
                   v{displayVersion}
                 </span>
               </div>
-              <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+              <h1 style={{ fontSize: '20px', fontWeight: 700, color: '#171719', letterSpacing: '-0.015em', margin: '0 0 6px 0' }}>
                 {displayTitle}
               </h1>
-              <p className="text-xs text-slate-500 max-w-2xl leading-relaxed">
+              <p style={{ fontSize: '12.5px', color: '#67676B', margin: 0, maxWidth: '640px', lineHeight: 1.5 }}>
                 {description}
               </p>
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-shrink-0">
-            <Button
-              variant="primary"
-              size="md"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs py-2 px-4"
+          <div>
+            <button
+              type="button"
               onClick={() => onStartSetup && onStartSetup(template)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '9px 20px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: 600,
+                color: '#FFFFFF',
+                background: '#2F5219',
+                border: '1px solid #2F5219',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(47,82,25,0.2)'
+              }}
             >
               <span>Use This Template</span>
-              <ArrowRight size={14} className="ml-1.5" />
-            </Button>
+              <ArrowRight size={14} />
+            </button>
           </div>
         </div>
 
         {/* Quick Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-slate-100 text-xs">
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: '16px',
+          marginTop: '20px',
+          paddingTop: '20px',
+          borderTop: '1px solid #F0F0F2'
+        }}>
           <div>
-            <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-semibold">Configurable Fields</span>
-            <span className="font-bold text-slate-800 text-sm">{configFieldsCount} Dynamic Fields</span>
+            <span style={{ color: '#96969C', display: 'block', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+              Configurable Fields
+            </span>
+            <span style={{ fontWeight: 700, color: '#171719', fontSize: '14px', marginTop: '2px', display: 'block' }}>
+              {configFieldsCount} Dynamic Fields
+            </span>
           </div>
           <div>
-            <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-semibold">Required Connections</span>
-            <span className="font-bold text-slate-800 text-sm">{requiredBindings.length} Resource Bindings</span>
+            <span style={{ color: '#96969C', display: 'block', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+              Required Connections
+            </span>
+            <span style={{ fontWeight: 700, color: '#171719', fontSize: '14px', marginTop: '2px', display: 'block' }}>
+              {requiredBindings.length} Resource Bindings
+            </span>
           </div>
           <div>
-            <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-semibold">Deployment Time</span>
-            <span className="font-bold text-slate-800 text-sm">~3 Minutes</span>
+            <span style={{ color: '#96969C', display: 'block', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+              Deployment Time
+            </span>
+            <span style={{ fontWeight: 700, color: '#171719', fontSize: '14px', marginTop: '2px', display: 'block' }}>
+              ~3 Minutes
+            </span>
           </div>
           <div>
-            <span className="text-slate-400 block text-[11px] uppercase tracking-wider font-semibold">Safety Level</span>
-            <span className="font-bold text-emerald-600 text-sm">Sandbox Verified</span>
+            <span style={{ color: '#96969C', display: 'block', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+              Safety Level
+            </span>
+            <span style={{ fontWeight: 700, color: '#2F5219', fontSize: '14px', marginTop: '2px', display: 'block' }}>
+              Sandbox Verified
+            </span>
           </div>
         </div>
       </div>
 
       {/* Two Column Details */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+        gap: '20px'
+      }}>
         {/* Left: Included Capabilities */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
-          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-            <Sparkles size={14} className="text-emerald-600" />
+        <div style={{
+          background: '#FFFFFF',
+          border: '1px solid #E5E5E8',
+          borderRadius: '12px',
+          padding: '20px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+        }}>
+          <h3 style={{
+            fontSize: '12px',
+            fontWeight: 700,
+            color: '#171719',
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            margin: '0 0 14px 0'
+          }}>
+            <Sparkles size={14} color="#2F5219" />
             <span>Built-in Workflow Capabilities</span>
           </h3>
-          <div className="space-y-2.5">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {capabilities.map((cap, i) => (
-              <div key={i} className="flex items-start gap-2.5 text-xs text-slate-700">
-                <CheckCircle2 size={14} className="text-emerald-600 flex-shrink-0 mt-0.5" />
-                <span className="leading-relaxed">{cap}</span>
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '12.5px', color: '#3A3A3E' }}>
+                <CheckCircle2 size={14} color="#4C7A2B" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <span style={{ lineHeight: 1.4 }}>{cap}</span>
               </div>
             ))}
           </div>
         </div>
 
         {/* Right: Required Bindings & Resources */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
-          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-            <Layers size={14} className="text-blue-600" />
+        <div style={{
+          background: '#FFFFFF',
+          border: '1px solid #E5E5E8',
+          borderRadius: '12px',
+          padding: '20px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+        }}>
+          <h3 style={{
+            fontSize: '12px',
+            fontWeight: 700,
+            color: '#171719',
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            margin: '0 0 14px 0'
+          }}>
+            <Layers size={14} color="#2876B8" />
             <span>Required Workspace Resources</span>
           </h3>
           {requiredBindings.length === 0 ? (
-            <p className="text-xs text-slate-500">
+            <p style={{ fontSize: '12px', color: '#67676B', margin: 0 }}>
               This blueprint runs standalone without external master catalog dependencies.
             </p>
           ) : (
-            <div className="space-y-2.5">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {requiredBindings.map((b, i) => (
-                <div key={i} className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold text-slate-800">{b.label || b.key}</span>
-                  </div>
-                  <span className="text-[10px] font-mono uppercase bg-white border border-slate-200 text-slate-600 px-2 py-0.5 rounded">
+                <div key={i} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 14px',
+                  background: '#F5F5F6',
+                  border: '1px solid #E5E5E8',
+                  borderRadius: '8px',
+                  fontSize: '12px'
+                }}>
+                  <span style={{ fontWeight: 600, color: '#171719' }}>{b.label || b.key}</span>
+                  <span style={{
+                    fontSize: '10px',
+                    fontFamily: 'monospace',
+                    textTransform: 'uppercase',
+                    background: '#FFFFFF',
+                    border: '1px solid #E5E5E8',
+                    color: '#67676B',
+                    padding: '2px 8px',
+                    borderRadius: '4px'
+                  }}>
                     {b.type}
                   </span>
                 </div>

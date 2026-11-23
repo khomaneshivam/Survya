@@ -32,77 +32,126 @@ export function TemplateLibraryPage({
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div style={{ padding: '24px 24px 48px', maxWidth: '1440px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Top Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-slate-200">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', paddingBottom: '16px', borderBottom: '1px solid #E5E5E8', flexWrap: 'wrap' }}>
         <div>
           {onBackToAutomations && (
             <button
+              type="button"
               onClick={onBackToAutomations}
-              className="text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1 mb-2 transition-colors"
+              style={{
+                fontSize: '12px',
+                fontWeight: 600,
+                color: '#67676B',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                marginBottom: '8px',
+                padding: 0
+              }}
             >
               <ArrowLeft size={13} />
               <span>Back to My Automations</span>
             </button>
           )}
-          <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+          <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#171719', letterSpacing: '-0.015em', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>Universal Template Library</span>
-            <span className="text-xs font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+            <span style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              color: '#2F5219',
+              background: '#EDF4E6',
+              border: '1px solid #C3D1AC',
+              padding: '2px 8px',
+              borderRadius: '999px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}>
               <Sparkles size={11} />
               Production Verified
             </span>
           </h2>
-          <p className="text-xs text-slate-500 mt-1">
+          <p style={{ fontSize: '12px', color: '#67676B', margin: '4px 0 0 0' }}>
             Pre-built, battle-tested conversational workflows. Install once, configure your branding, and go live in minutes.
           </p>
         </div>
 
         {/* Search */}
-        <div className="relative w-full md:w-72">
-          <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+        <div style={{ position: 'relative', width: '280px' }}>
+          <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#96969C', pointerEvents: 'none' }} />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search templates or capabilities..."
-            className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500 transition-colors"
+            style={{
+              width: '100%',
+              padding: '8px 12px 8px 34px',
+              fontSize: '12px',
+              background: '#FFFFFF',
+              border: '1px solid #E5E5E8',
+              borderRadius: '8px',
+              color: '#171719',
+              outline: 'none',
+              boxSizing: 'border-box'
+            }}
           />
         </div>
       </div>
 
       {/* Industry Filter Pills */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-        {industries.map((ind) => (
-          <button
-            key={ind}
-            onClick={() => setIndustry(ind)}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-all whitespace-nowrap ${
-              industry === ind
-                ? 'bg-slate-900 text-white shadow-xs font-semibold'
-                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-            }`}
-          >
-            {industryLabels[ind] || ind}
-          </button>
-        ))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+        {industries.map((ind) => {
+          const isActive = industry === ind;
+          return (
+            <button
+              key={ind}
+              type="button"
+              onClick={() => setIndustry(ind)}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: isActive ? 600 : 500,
+                color: isActive ? '#FFFFFF' : '#67676B',
+                background: isActive ? '#171719' : '#FFFFFF',
+                border: isActive ? '1px solid #171719' : '1px solid #E5E5E8',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'all 120ms ease'
+              }}
+            >
+              {industryLabels[ind] || ind}
+            </button>
+          );
+        })}
       </div>
 
       {/* Grid of Templates */}
       {loading ? (
-        <div className="py-16 text-center text-xs text-slate-400">
-          <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+        <div style={{ padding: '64px 20px', textAlign: 'center', color: '#67676B', fontSize: '12px' }}>
+          <div style={{ width: '24px', height: '24px', border: '2px solid #2876B8', borderTopColor: 'transparent', borderRadius: '50%', margin: '0 auto 8px', animation: 'spin 0.6s linear infinite' }} />
           <span>Loading catalog templates...</span>
         </div>
       ) : templates.length === 0 ? (
-        <div className="py-14 text-center bg-white border border-slate-200 rounded-xl p-6 max-w-md mx-auto space-y-2">
-          <Layers size={24} className="mx-auto text-slate-400" />
-          <h4 className="text-sm font-semibold text-slate-800">No templates found</h4>
-          <p className="text-xs text-slate-500">
+        <div style={{ padding: '56px 20px', textAlign: 'center', background: '#FFFFFF', border: '1px solid #E5E5E8', borderRadius: '12px', maxWidth: '440px', margin: '0 auto' }}>
+          <Layers size={28} style={{ color: '#96969C', margin: '0 auto 8px' }} />
+          <h4 style={{ fontSize: '14px', fontWeight: 600, color: '#171719', margin: '0 0 4px 0' }}>No templates found</h4>
+          <p style={{ fontSize: '12px', color: '#67676B', margin: 0 }}>
             Try clearing your search term or switching the industry filter.
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+          gap: '20px'
+        }}>
           {templates.map((tpl) => (
             <TemplateCard
               key={tpl.id || tpl.template_key}

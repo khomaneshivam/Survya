@@ -28,51 +28,111 @@ export function AutomationStudioHeader({
   ];
 
   return (
-    <div className="bg-white border-b border-slate-200 px-6 py-3.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 sticky top-0 z-20 shadow-xs">
+    <div className="studio-header" style={{
+      background: '#FFFFFF',
+      borderBottom: '1px solid #E5E5E8',
+      padding: '12px 24px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '16px',
+      position: 'sticky',
+      top: 0,
+      zIndex: 20,
+      boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+      flexWrap: 'wrap'
+    }}>
       {/* Left: Title & Sub-tabs */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
+      <div className="studio-header-left" style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+        <div className="studio-title-block">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h1 style={{ fontSize: '16px', fontWeight: 700, color: '#171719', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span>Automation Studio</span>
             </h1>
-            <span className="text-[11px] font-mono font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+            <span className="studio-pill-badge" style={{
+              fontSize: '11px',
+              fontFamily: 'monospace',
+              fontWeight: 600,
+              color: '#2F5219',
+              background: '#EDF4E6',
+              border: '1px solid #C3D1AC',
+              padding: '2px 8px',
+              borderRadius: '999px'
+            }}>
               Enterprise Hub
             </span>
           </div>
-          <p className="text-xs text-slate-500 hidden sm:block mt-0.5">
-            Centralized conversational templates, tenant installations & visual workflows.
+          <p style={{ fontSize: '12px', color: '#67676B', margin: '2px 0 0 0' }}>
+            Centralized conversational templates, tenant installations &amp; visual workflows.
           </p>
         </div>
 
         {/* Sub-Navigation Tabs */}
-        <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200/80">
+        <div className="studio-nav-tabs" style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          background: '#EEEEF0',
+          padding: '3px',
+          borderRadius: '8px',
+          border: '1px solid #E5E5E8',
+          gap: '3px'
+        }}>
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeView === tab.id;
             return (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => onViewChange(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  isActive
-                    ? 'bg-white text-slate-900 shadow-xs font-semibold'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
-                }`}
+                className={`studio-nav-tab-btn ${isActive ? 'is-active' : ''}`}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: isActive ? 600 : 500,
+                  color: isActive ? '#171719' : '#67676B',
+                  background: isActive ? '#FFFFFF' : 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none'
+                }}
               >
-                <Icon size={14} className={isActive ? 'text-emerald-600' : 'text-slate-500'} />
+                <Icon size={14} color={isActive ? '#2F5219' : '#67676B'} />
                 <span>{tab.label}</span>
                 {tab.count !== undefined && (
                   <span
-                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                      isActive ? 'bg-slate-100 text-slate-800' : 'bg-slate-200/80 text-slate-600'
-                    }`}
+                    className="tab-count"
+                    style={{
+                      fontSize: '10px',
+                      padding: '1px 6px',
+                      borderRadius: '999px',
+                      fontFamily: 'monospace',
+                      fontWeight: 600,
+                      background: isActive ? '#EDF4E6' : '#E5E5E8',
+                      color: isActive ? '#2F5219' : '#3A3A3E'
+                    }}
                   >
                     {tab.count}
                   </span>
                 )}
                 {tab.badge && (
-                  <span className="text-[9px] bg-purple-100 text-purple-700 font-bold px-1 rounded uppercase tracking-wider">
+                  <span
+                    className="tab-admin-badge"
+                    style={{
+                      fontSize: '9px',
+                      background: '#FCF2FE',
+                      color: '#7A2E83',
+                      border: '1px solid #EFB0F6',
+                      fontWeight: 700,
+                      padding: '1px 5px',
+                      borderRadius: '4px',
+                      textTransform: 'uppercase'
+                    }}
+                  >
                     {tab.badge}
                   </span>
                 )}
@@ -83,25 +143,49 @@ export function AutomationStudioHeader({
       </div>
 
       {/* Right: Actions */}
-      <div className="flex items-center gap-2">
+      <div className="studio-header-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <button
+          type="button"
           onClick={onRefresh}
           disabled={loading}
           title="Refresh Data"
-          className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
+          className="studio-icon-btn"
+          style={{
+            padding: '7px',
+            borderRadius: '8px',
+            border: '1px solid #E5E5E8',
+            background: '#FFFFFF',
+            cursor: 'pointer',
+            color: '#67676B',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
         >
-          <RefreshCw size={14} className={loading ? 'animate-spin text-emerald-600' : ''} />
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} color={loading ? '#2876B8' : '#67676B'} />
         </button>
 
-        <Button
-          variant="primary"
-          size="sm"
-          className="text-xs py-1.5 font-semibold"
+        <button
+          type="button"
           onClick={onNewAutomation}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '7px 16px',
+            borderRadius: '8px',
+            fontSize: '12.5px',
+            fontWeight: 600,
+            color: '#FFFFFF',
+            background: '#2F5219',
+            border: '1px solid #2F5219',
+            cursor: 'pointer',
+            boxShadow: '0 1px 3px rgba(47,82,25,0.2)'
+          }}
         >
-          <Plus size={14} className="mr-1" />
+          <Plus size={14} />
           <span>New Automation</span>
-        </Button>
+        </button>
       </div>
     </div>
   );

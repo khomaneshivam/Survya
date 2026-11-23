@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import './automation.css';
 import { useAuth } from '../../context/AuthContext';
 import { useAutomations } from './hooks/useAutomations';
 import { AutomationStudioHeader } from './components/AutomationStudioHeader';
@@ -58,7 +59,7 @@ export default function AutomationStudio({ defaultView = 'my-automations', initi
   };
 
   return (
-    <div className="min-h-[750px] flex flex-col font-sans bg-slate-50/50">
+    <div className="studio-root" style={{ minHeight: '720px', display: 'flex', flexDirection: 'column', background: '#FAFAFB' }}>
       {/* Studio Header (shown for top-level pages) */}
       {isTopLevelView && (
         <AutomationStudioHeader

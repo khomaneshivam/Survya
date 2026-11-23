@@ -126,29 +126,58 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div style={{ padding: '24px 24px 48px', maxWidth: '1280px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Top Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '12px', borderBottom: '1px solid #E5E5E8' }}>
         <div>
           <button
+            type="button"
             onClick={onCancel}
-            className="text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1 mb-1 transition-colors"
+            style={{
+              fontSize: '12px',
+              fontWeight: 600,
+              color: '#67676B',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              marginBottom: '6px',
+              padding: 0
+            }}
           >
             <ArrowLeft size={13} />
             <span>Cancel Setup</span>
           </button>
-          <h2 className="text-lg font-bold text-slate-900 tracking-tight">
+          <h2 style={{ fontSize: '18px', fontWeight: 700, color: '#171719', letterSpacing: '-0.015em', margin: 0 }}>
             Setting up: {displayTitle}
           </h2>
         </div>
 
-        <div className="text-xs font-mono text-slate-400 font-semibold bg-slate-100 px-2.5 py-1 rounded-md">
+        <div style={{
+          fontSize: '11px',
+          fontFamily: 'monospace',
+          color: '#67676B',
+          fontWeight: 600,
+          background: '#EEEEF0',
+          padding: '4px 10px',
+          borderRadius: '6px'
+        }}>
           Step {step} of 5
         </div>
       </div>
 
       {/* Step Stepper Header */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+        gap: '8px',
+        background: '#EEEEF0',
+        padding: '6px',
+        borderRadius: '12px',
+        border: '1px solid #E5E5E8'
+      }}>
         {steps.map((s) => {
           const isCurrent = step === s.number;
           const isPast = step > s.number;
@@ -156,30 +185,39 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
           return (
             <button
               key={s.number}
+              type="button"
               onClick={() => setStep(s.number)}
-              className={`p-2.5 rounded-lg text-left transition-all ${
-                isCurrent
-                  ? 'bg-white shadow-xs border border-slate-200'
-                  : 'hover:bg-slate-200/50'
-              }`}
+              style={{
+                padding: '10px 12px',
+                borderRadius: '8px',
+                textAlign: 'left',
+                background: isCurrent ? '#FFFFFF' : 'transparent',
+                border: isCurrent ? '1px solid #E5E5E8' : '1px solid transparent',
+                boxShadow: isCurrent ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+                cursor: 'pointer',
+                transition: 'all 120ms ease'
+              }}
             >
-              <div className="flex items-center gap-2">
-                <span
-                  className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${
-                    isPast
-                      ? 'bg-emerald-500 text-white'
-                      : isCurrent
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-300 text-slate-600'
-                  }`}
-                >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  color: '#FFFFFF',
+                  background: isPast ? '#2F5219' : isCurrent ? '#171719' : '#96969C'
+                }}>
                   {isPast ? '✓' : s.number}
                 </span>
-                <span className="text-xs font-semibold text-slate-800 truncate">
+                <span style={{ fontSize: '12px', fontWeight: 600, color: '#171719', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {s.title}
                 </span>
               </div>
-              <span className="text-[10px] text-slate-400 block truncate ml-7 mt-0.5">
+              <span style={{ fontSize: '10px', color: '#96969C', display: 'block', marginLeft: '28px', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {s.desc}
               </span>
             </button>
@@ -188,10 +226,20 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
       </div>
 
       {/* Main Step Body */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Form Area (7 cols on lg) */}
-        <div className="lg:col-span-7 space-y-4">
-          <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-4">
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+        gap: '24px'
+      }}>
+        {/* Left Form Area */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{
+            background: '#FFFFFF',
+            border: '1px solid #E5E5E8',
+            borderRadius: '12px',
+            padding: '24px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+          }}>
             {step === 1 && (
               <div>
                 <h3 className="text-sm font-bold text-slate-900 mb-1 flex items-center gap-2">
@@ -352,15 +400,21 @@ export function TemplateSetupPage({ template, onComplete, onCancel }) {
           </div>
         </div>
 
-        {/* Right Sandbox Chat Simulator (5 cols on lg) */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
-            <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-100">
-              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                <Smartphone size={14} className="text-emerald-600" />
+        {/* Right Sandbox Chat Simulator */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{
+            background: '#FFFFFF',
+            border: '1px solid #E5E5E8',
+            borderRadius: '12px',
+            padding: '20px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '10px', marginBottom: '14px', borderBottom: '1px solid #F0F0F2' }}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: '#171719', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Smartphone size={14} color="#2F5219" />
                 <span>Live WhatsApp Simulation</span>
               </span>
-              <span className="text-[10px] bg-slate-100 text-slate-500 font-mono px-2 py-0.5 rounded font-bold">
+              <span style={{ fontSize: '10px', background: '#F5F5F6', border: '1px solid #E5E5E8', color: '#67676B', fontFamily: 'monospace', padding: '2px 8px', borderRadius: '4px', fontWeight: 700 }}>
                 100% Mock Sandbox
               </span>
             </div>
