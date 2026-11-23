@@ -495,6 +495,20 @@ function updateFlow(flowId, data, user = { id: "admin", name: "Administrator" },
   const targetPhoneId = phone_number_id !== undefined
     ? ((!phone_number_id || phone_number_id === "ALL" || phone_number_id === "null") ? null : String(phone_number_id).trim())
     : flow.phone_number_id;
+  const originalKeywords = flow.trigger_keywords_json ? JSON.parse(flow.trigger_keywords_json) : [];
+  const normalizedKeywords = Array.isArray(trigger_keywords) ? trigger_keywords : [];
+  const activationScopeChanged = targetPhoneId !== flow.phone_number_id ||
+    trigger_type !== flow.trigger_type ||
+    JSON.stringify(normalizedKeywords) !== JSON.stringify(originalKeywords) ||
+    Number(property_id || 0) !== Number(flow.property_id || 0) ||
+    Boolean(is_default) !== Boolean(flow.is_default) ||
+    Number(priority || 0) !== Number(flow.priority || 0);
+
+  if (Number(flow.approval_required) && flow.status === "PUBLISHED" && activationScopeChanged) {
+    const error = new Error("Pause this governed flow before changing its line, trigger, priority, property, or default routing. Then complete a new approval sequence and publish the reviewed draft.");
+    error.code = "FLOW_REVIEW_REQUIRED";
+    throw error;
+  }
 
   // If this flow is being set as default, clear default on other flows with same category & tenant
   if (is_default) {
@@ -516,7 +530,7 @@ function updateFlow(flowId, data, user = { id: "admin", name: "Administrator" },
     description || "",
     category,
     trigger_type,
-    JSON.stringify(Array.isArray(trigger_keywords) ? trigger_keywords : []),
+    JSON.stringify(normalizedKeywords),
     property_id || null,
     targetPhoneId,
     is_default ? 1 : 0,
@@ -525,6 +539,19 @@ function updateFlow(flowId, data, user = { id: "admin", name: "Administrator" },
     flowId,
     tenantId
   );
+
+  const metadataChanged = String(name).trim() !== String(flow.name || "") ||
+    String(description || "") !== String(flow.description || "") ||
+    category !== flow.category ||
+    activationScopeChanged;
+  if (metadataChanged) {
+    flowApprovalService.invalidateApprovalWorkflow(
+      flowId,
+      tenantId,
+      user,
+      "Flow metadata or activation scope changed. Re-review requirements before continuing."
+    );
+  }
 
   // If line changed and flow is published, re-sync active triggers
   if (flow.status === "PUBLISHED" && targetPhoneId !== flow.phone_number_id) {
@@ -566,6 +593,14 @@ function saveFlowDraft(flowId, data, user = { id: "admin", name: "Administrator"
     draftVersion = db.prepare("SELECT * FROM conversation_flow_versions WHERE id = ?").get(flow.current_draft_version_id);
   }
 
+  const serializedNodes = JSON.stringify(nodes);
+  const serializedTransitions = JSON.stringify(normalizedTransitions);
+  const serializedVariables = JSON.stringify(variables);
+  const graphChanged = !draftVersion || draftVersion.status === "PUBLISHED" || draftVersion.status === "ARCHIVED" ||
+    draftVersion.nodes_json !== serializedNodes ||
+    draftVersion.transitions_json !== serializedTransitions ||
+    (draftVersion.variables_json || "{}") !== serializedVariables;
+
   // If current draft version is already published or missing, create a new DRAFT version
   if (!draftVersion || draftVersion.status === "PUBLISHED" || draftVersion.status === "ARCHIVED") {
     const maxVerRow = db.prepare("SELECT MAX(version_number) as max_ver FROM conversation_flow_versions WHERE flow_id = ?").get(flowId);
@@ -579,9 +614,9 @@ function saveFlowDraft(flowId, data, user = { id: "admin", name: "Administrator"
     `).run(
       flowId,
       nextVer,
-      JSON.stringify(nodes),
-      JSON.stringify(normalizedTransitions),
-      JSON.stringify(variables),
+      serializedNodes,
+      serializedTransitions,
+      serializedVariables,
       JSON.stringify(validationReport),
       changelog
     );
@@ -601,9 +636,9 @@ function saveFlowDraft(flowId, data, user = { id: "admin", name: "Administrator"
           validation_report_json = ?, changelog = ?
       WHERE id = ?
     `).run(
-      JSON.stringify(nodes),
-      JSON.stringify(normalizedTransitions),
-      JSON.stringify(variables),
+      serializedNodes,
+      serializedTransitions,
+      serializedVariables,
       JSON.stringify(validationReport),
       changelog,
       draftVersion.id
@@ -616,7 +651,14 @@ function saveFlowDraft(flowId, data, user = { id: "admin", name: "Administrator"
     `).run(user.name || user.id || "admin", flowId);
   }
 
-  flowApprovalService.invalidateDesignApprovals(flowId, tenantId, user);
+  if (graphChanged) {
+    flowApprovalService.invalidateApprovalWorkflow(
+      flowId,
+      tenantId,
+      user,
+      "The draft graph changed. Re-review requirements, API readiness, design, simulation, and publish approval."
+    );
+  }
   logAudit(tenantId, user.id, "SAVE_FLOW_DRAFT", flowId, { nodeCount: nodes.length, isValid: validationReport.isValid });
   invalidateFlow(flowId);
 
@@ -719,6 +761,12 @@ function assignFlowToLine(flowId, phoneNumberId, user = { id: "admin", name: "Ad
   const flow = current.flow;
   const targetPhoneId = (!phoneNumberId || phoneNumberId === "ALL" || phoneNumberId === "null") ? null : String(phoneNumberId).trim();
 
+  if (Number(flow.approval_required) && flow.status === "PUBLISHED" && targetPhoneId !== flow.phone_number_id) {
+    const error = new Error("Pause this governed flow before changing its WhatsApp line. Complete a new approval sequence before publishing the staged change.");
+    error.code = "FLOW_REVIEW_REQUIRED";
+    throw error;
+  }
+
   let assignedPhone = null;
   if (targetPhoneId) {
     assignedPhone = db.prepare("SELECT * FROM waba_phone_numbers WHERE phone_number_id = ? AND tenant_id = ?").get(targetPhoneId, tenantId);
@@ -732,6 +780,15 @@ function assignFlowToLine(flowId, phoneNumberId, user = { id: "admin", name: "Ad
     SET phone_number_id = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND tenant_id = ?
   `).run(targetPhoneId, user.name || user.id || "admin", flowId, tenantId);
+
+  if (targetPhoneId !== flow.phone_number_id) {
+    flowApprovalService.invalidateApprovalWorkflow(
+      flowId,
+      tenantId,
+      user,
+      "The WhatsApp line assignment changed. Re-review the activation scope before continuing."
+    );
+  }
 
   // If the flow is already published, immediately re-sync triggers with the targetPhoneId
   if (flow.status === "PUBLISHED") {
@@ -762,6 +819,20 @@ function assignFlowToLine(flowId, phoneNumberId, user = { id: "admin", name: "Ad
 function setDefaultFlow(flowId, user = { id: "admin", name: "Administrator" }, tenantId = 1) {
   const flow = db.prepare("SELECT * FROM conversation_flows WHERE id = ? AND tenant_id = ?").get(flowId, tenantId);
   if (!flow) throw new Error(`Conversation flow #${flowId} not found.`);
+
+  // This shortcut changes live routing for the selected flow and the current
+  // default. It must not bypass the approval reset enforced by updateFlow.
+  const governedPublishedDefault = db.prepare(`
+    SELECT id FROM conversation_flows
+    WHERE tenant_id = ? AND is_default = 1 AND approval_required = 1
+      AND status = 'PUBLISHED' AND id != ?
+    LIMIT 1
+  `).get(tenantId, flowId);
+  if ((Number(flow.approval_required) && flow.status === "PUBLISHED" && !flow.is_default) || governedPublishedDefault) {
+    const error = new Error("Pause the governed live flow, change its default routing in the reviewed draft, then complete a new approval sequence before publishing.");
+    error.code = "FLOW_REVIEW_REQUIRED";
+    throw error;
+  }
 
   db.prepare("UPDATE conversation_flows SET is_default = 0 WHERE tenant_id = ?").run(tenantId);
   db.prepare("UPDATE conversation_flows SET is_default = 1, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(
@@ -858,6 +929,13 @@ function deleteFlow(flowId, user = { id: "admin", name: "Administrator" }, tenan
   try {
     db.prepare("DELETE FROM conversation_flow_events WHERE flow_id = ?").run(flowId);
     db.prepare("DELETE FROM conversation_flow_sessions WHERE flow_id = ?").run(flowId);
+    db.prepare("DELETE FROM flow_approval_requests WHERE flow_id = ? AND tenant_id = ?").run(flowId, tenantId);
+  } catch (e) {}
+
+  // Invalidate every public capability token before the flow is removed. The
+  // revoked records retain a minimal lifecycle trail without exposing a draft.
+  try {
+    db.prepare("UPDATE flow_preview_links SET status = 'REVOKED', revoked_at = UTC_TIMESTAMP() WHERE flow_id = ? AND tenant_id = ? AND status = 'ACTIVE'").run(flowId, tenantId);
   } catch (e) {}
 
   // 3. Delete versions
@@ -1180,7 +1258,7 @@ function duplicateFlow(flowId, data = {}, user = { id: "admin", name: "Administr
   }
 
   const newName = data.name || `${flow.name} (Copy)`;
-  return createFlow({
+  const duplicate = createFlow({
     tenant_id: tenantId,
     property_id: flow.property_id || 1,
     name: newName,
@@ -1190,10 +1268,21 @@ function duplicateFlow(flowId, data = {}, user = { id: "admin", name: "Administr
     trigger_keywords: flow.trigger_keywords,
     is_default: 0,
     priority: flow.priority,
+    approval_required: Boolean(flow.approval_required),
     initialNodes: version.nodes,
     initialTransitions: version.transitions,
     initialVariables: version.variables
   }, user);
+
+  if (Number(flow.approval_required)) {
+    flowApprovalService.initializeApprovalWorkflow({
+      flowId: duplicate.flow.id,
+      tenantId,
+      user,
+      requirementsSummary: `Review the copied flow requirements before design begins: ${String(newName).slice(0, 500)}`
+    });
+  }
+  return duplicate;
 }
 
 /**

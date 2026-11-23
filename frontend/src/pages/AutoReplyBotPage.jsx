@@ -58,6 +58,7 @@ import FlowAnalyticsPanel from '../components/flow-studio/FlowAnalyticsPanel';
 import FlowExecutionsModal from '../components/flow-studio/FlowExecutionsModal';
 import AiFlowGeneratorModal from '../components/flow-studio/AiFlowGeneratorModal';
 import FlowApprovalPanel from '../components/flow-studio/FlowApprovalPanel';
+import FlowPreviewLinksPanel from '../components/flow-studio/FlowPreviewLinksPanel';
 import IndustryBlueprintsModal from '../components/catalog/IndustryBlueprintsModal';
 import HospitalityImageUploadModule from '../components/HospitalityImageUploadModule';
 import { DataTable, HelpTip } from '../components/ui';
@@ -2010,6 +2011,13 @@ export default function AutoReplyBotPage({ onNavigate }) {
               token={token}
               compact
               onChanged={() => loadFlowDetails(activeFlowId)}
+            />
+          )}
+
+          {activeFlowId && isAdmin && (
+            <FlowPreviewLinksPanel
+              flowId={activeFlowId}
+              token={token}
             />
           )}
 

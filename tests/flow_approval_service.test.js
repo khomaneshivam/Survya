@@ -48,6 +48,11 @@ function createApprovalDb() {
               return state.approvals.find(item => Number(item.id) === Number(params[0]));
             }
             const [flowId, tenantId, stage] = params;
+            if (query.startsWith("select id") && !query.includes("stage = 'publish'")) {
+              return state.approvals
+                .filter(item => String(item.flow_id) === String(flowId) && Number(item.tenant_id) === Number(tenantId))
+                .at(-1) || undefined;
+            }
             if (query.includes("stage = 'publish' and status = 'approved'")) {
               return latest(flowId, tenantId, "PUBLISH", "APPROVED") || undefined;
             }
@@ -87,6 +92,16 @@ function createApprovalDb() {
             };
             state.approvals.push(approval);
             return { lastInsertRowid: approval.id };
+          }
+
+          if (query.startsWith("update flow_approval_requests set status = 'superseded'")) {
+            const [flowId, tenantId] = params;
+            state.approvals.forEach((approval) => {
+              if (String(approval.flow_id) === String(flowId) && Number(approval.tenant_id) === Number(tenantId) && ["PENDING", "APPROVED", "CHANGES_REQUESTED"].includes(approval.status)) {
+                approval.status = "SUPERSEDED";
+              }
+            });
+            return { changes: 1 };
           }
 
           if (query.startsWith("update flow_approval_requests set status")) {
@@ -172,7 +187,8 @@ test("approval-controlled flows advance stages in order and require final publis
     assert.equal(state.flow.approval_state, "API_READINESS_PENDING");
 
     outcome = service.decideApproval({
-      flowId: "flow-1", tenantId: 1, user: admin, stage: "API_READINESS", decision: "APPROVED"
+      flowId: "flow-1", tenantId: 1, user: admin, stage: "API_READINESS", decision: "APPROVED",
+      note: "Reviewed the mocked API contract and failure handling."
     });
     assert.equal(outcome.nextStage, "FLOW_DESIGN");
 
@@ -182,7 +198,8 @@ test("approval-controlled flows advance stages in order and require final publis
     assert.equal(outcome.nextStage, "SIMULATION");
 
     outcome = service.decideApproval({
-      flowId: "flow-1", tenantId: 1, user: admin, stage: "SIMULATION", decision: "APPROVED"
+      flowId: "flow-1", tenantId: 1, user: admin, stage: "SIMULATION", decision: "APPROVED",
+      note: "Completed a mock-only dry run of expected and fallback paths."
     });
     assert.equal(outcome.nextStage, "PUBLISH");
 
@@ -192,11 +209,39 @@ test("approval-controlled flows advance stages in order and require final publis
     );
 
     outcome = service.decideApproval({
-      flowId: "flow-1", tenantId: 1, user: admin, stage: "PUBLISH", decision: "APPROVED"
+      flowId: "flow-1", tenantId: 1, user: admin, stage: "PUBLISH", decision: "APPROVED",
+      note: "Confirmed the unchanged draft and final activation scope."
     });
     assert.equal(outcome.nextStage, null);
     assert.equal(outcome.approvalState, "PUBLISH_APPROVED");
     assert.equal(service.assertPublishApproved("flow-1", 1), true);
+  } finally {
+    restore();
+  }
+});
+
+test("draft changes supersede every prior gate and restart at requirements", () => {
+  const { db, state } = createApprovalDb();
+  const { service, restore } = loadApprovalService(db);
+  const admin = { id: "admin-1", name: "Administrator" };
+
+  try {
+    service.initializeApprovalWorkflow({ flowId: "flow-1", tenantId: 1, user: admin });
+    service.decideApproval({
+      flowId: "flow-1", tenantId: 1, user: admin, stage: "REQUIREMENTS", decision: "APPROVED"
+    });
+
+    const restarted = service.invalidateApprovalWorkflow(
+      "flow-1",
+      1,
+      admin,
+      "The draft graph changed."
+    );
+
+    assert.equal(restarted.stage, "REQUIREMENTS");
+    assert.equal(restarted.status, "PENDING");
+    assert.equal(state.flow.approval_state, "REQUIREMENTS_PENDING");
+    assert.equal(state.approvals.filter(item => item.status === "SUPERSEDED").length, 2);
   } finally {
     restore();
   }

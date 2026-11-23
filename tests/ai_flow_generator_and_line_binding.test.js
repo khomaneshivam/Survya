@@ -7,6 +7,13 @@
  */
 
 const { test, describe, before, after } = require('node:test');
+
+// This legacy suite reads and mutates a configured database and may use a
+// configured AI provider. It is deliberately opt-in so the default test run
+// (and all agent verification) remains completely offline and mock-only.
+if (process.env.RUN_DATABASE_INTEGRATION_TESTS !== 'true') {
+  test('database integration suite is opt-in', { skip: 'Run only in an explicitly approved isolated test environment.' }, () => {});
+} else {
 const assert = require('node:assert/strict');
 const { db } = require('../src/config/database');
 const { buildSystemCapabilitiesContext } = require('../src/services/workflow/aiFlowContextBuilder');
@@ -30,6 +37,7 @@ describe('AI Flow Architect & WhatsApp Line Binding', () => {
         flowId,
         stage,
         decision: 'APPROVED',
+        note: `Offline review completed for ${stage}.`,
         user: TEST_USER,
         tenantId: 1
       });
@@ -305,3 +313,4 @@ describe('AI Flow Architect & WhatsApp Line Binding', () => {
     assert.ok(turnResult.replyText.toLowerCase().includes('welcome') || turnResult.replyText.toLowerCase().includes('cafe') || turnResult.replyText.toLowerCase().includes('table'), 'Reply must contain cafe greeting or table prompt');
   });
 });
+}

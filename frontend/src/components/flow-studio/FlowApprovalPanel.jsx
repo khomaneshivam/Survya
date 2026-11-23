@@ -83,6 +83,13 @@ export default function FlowApprovalPanel({ flowId, token, onChanged, compact = 
   }
 
   async function decide(stage, decision) {
+    const noteRequired = decision === 'CHANGES_REQUESTED' || ['API_READINESS', 'SIMULATION', 'PUBLISH'].includes(stage);
+    if (noteRequired && !note.trim()) {
+      setError(decision === 'CHANGES_REQUESTED'
+        ? 'Add a note so the requested changes are actionable.'
+        : 'Add a brief attestation of the evidence you reviewed before approving this gate.');
+      return;
+    }
     setActingStage(stage);
     setError(null);
     try {
@@ -157,7 +164,7 @@ export default function FlowApprovalPanel({ flowId, token, onChanged, compact = 
               </div>
               {isPending && (
                 <div style={{ marginTop: '10px', paddingLeft: '27px', display: 'flex', flexWrap: 'wrap', gap: '7px', alignItems: 'center' }}>
-                  <input value={note} onChange={(event) => setNote(event.target.value)} maxLength={5000} placeholder="Optional decision note" style={{ flex: '1 1 190px', minWidth: 0, border: '1px solid #CBD5E1', borderRadius: '6px', padding: '6px 8px', fontSize: '0.76rem' }} />
+                  <input value={note} onChange={(event) => setNote(event.target.value)} maxLength={5000} placeholder={['API_READINESS', 'SIMULATION', 'PUBLISH'].includes(stage) ? 'Required: evidence reviewed' : 'Decision note (required for requested changes)'} style={{ flex: '1 1 190px', minWidth: 0, border: '1px solid #CBD5E1', borderRadius: '6px', padding: '6px 8px', fontSize: '0.76rem' }} />
                   <button type="button" onClick={() => decide(stage, 'CHANGES_REQUESTED')} disabled={Boolean(actingStage)} style={{ border: '1px solid #FCA5A5', borderRadius: '6px', padding: '6px 9px', background: '#FFFFFF', color: '#B91C1C', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer' }}><MessageSquareWarning size={13} /> Request changes</button>
                   <button type="button" onClick={() => decide(stage, 'APPROVED')} disabled={Boolean(actingStage)} style={{ border: 0, borderRadius: '6px', padding: '6px 9px', background: '#166534', color: '#FFFFFF', fontSize: '0.76rem', fontWeight: 700, cursor: 'pointer' }}>{actingStage === stage ? 'Saving…' : 'Approve stage'}</button>
                 </div>

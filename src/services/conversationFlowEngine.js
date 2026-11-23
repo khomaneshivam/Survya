@@ -1196,8 +1196,11 @@ async function processTurn({
     flowOverride = null
   } = context;
 
-  // Distinguish pure in-memory simulator (canvas testing) from real/mock webhook flow execution
-  const isInMemorySimulation = Boolean(simulationState);
+  // A caller that marks a turn as simulated must never fall back to the
+  // production routing/session/executor path. `simulationState` is retained
+  // for backwards compatibility, but `isSimulation` is the authoritative
+  // fail-closed safety boundary.
+  const isInMemorySimulation = Boolean(isSimulation || simulationState);
 
   const effectivePhoneNumberId = phoneNumberId || context.phoneNumberId || null;
 
@@ -1206,20 +1209,26 @@ async function processTurn({
   const sessionKey = `${channel}:${normalizedPhone}:${tenantId}${accountScope}`;
   const executionLogs = [];
 
-  // Fetch property details for variable interpolation
-  let configuredBusinessName = Number(tenantId) === 1 ? "Hotel Green Vally" : "Business";
-  try {
-    const { getSetting } = require("../config/database");
-    configuredBusinessName = Number(tenantId) === 1 ? (getSetting("BOT_BUSINESS_NAME") || "Hotel Green Vally") : "Business";
-  } catch (e) {}
-
-  const prop = db.prepare("SELECT id, name, city, phone FROM properties WHERE id = ? AND tenant_id = ?").get(propertyId, tenantId) || {
+  // Simulation does not read tenant configuration or a property record. A
+  // stable local placeholder keeps the preview deterministic and avoids any
+  // dependency on production data.
+  let configuredBusinessName = "Business";
+  let prop = {
     id: 1,
     name: configuredBusinessName,
     city: "Alibaug, Maharashtra"
   };
-  if (Number(tenantId) === 1 && configuredBusinessName && configuredBusinessName !== "KonkanTrip Beach Resort & Spa") {
-    prop.name = configuredBusinessName;
+  if (!isInMemorySimulation) {
+    configuredBusinessName = Number(tenantId) === 1 ? "Hotel Green Vally" : "Business";
+    try {
+      const { getSetting } = require("../config/database");
+      configuredBusinessName = Number(tenantId) === 1 ? (getSetting("BOT_BUSINESS_NAME") || "Hotel Green Vally") : "Business";
+    } catch (e) {}
+
+    prop = db.prepare("SELECT id, name, city, phone FROM properties WHERE id = ? AND tenant_id = ?").get(propertyId, tenantId) || prop;
+    if (Number(tenantId) === 1 && configuredBusinessName && configuredBusinessName !== "KonkanTrip Beach Resort & Spa") {
+      prop.name = configuredBusinessName;
+    }
   }
 
   let session = null;
@@ -1230,6 +1239,13 @@ async function processTurn({
   let collectedData = {};
   // Tracks existing session turns. Without this declaration resumed executions throw.
   let isResuming = false;
+
+  if (isInMemorySimulation && !flowOverride) {
+    return {
+      handled: false,
+      reason: "Simulation requires an explicit in-memory flow graph."
+    };
+  }
 
   if (flowOverride) {
     if (simulationState) {
@@ -1453,13 +1469,13 @@ async function processTurn({
       );
     }
 
-    const executor = getNodeExecutor(node.type);
-    const execRes = await executor.execute(node, {
+    const executionContext = {
       session: collectedData,
       userInput: isWaitingForThisNode ? userInput : "",
       userPayload: isWaitingForThisNode ? userPayload : null,
       variableContext,
-      dryRun: Boolean(isSimulation),
+      dryRun: isInMemorySimulation,
+      isSimulation: isInMemorySimulation,
       fastForward: Boolean(context.fastForward),
       tenantId,
       propertyId,
@@ -1467,7 +1483,12 @@ async function processTurn({
       senderPhone: normalizedPhone,
       flowId: session?.flow_id || flow?.id || 1,
       isWaitingForThisNode
-    });
+    };
+    // The pure simulator intentionally does not resolve a production node
+    // executor. This blocks all side-effecting integrations by construction.
+    const execRes = isInMemorySimulation
+      ? executePureSimulationNode(node, executionContext)
+      : await getNodeExecutor(node.type).execute(node, executionContext);
 
     // Key invariant: isWaitingForThisNode is only true for the initial resumed node in Turn 2+
     isWaitingForThisNode = false;

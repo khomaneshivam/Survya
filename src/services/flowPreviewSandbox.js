@@ -21,6 +21,14 @@ const SAFE_CONFIG_TEXT_KEYS = [
   "operator", "value", "matchMode", "conditionMatch", "defaultTargetNodeId",
   "targetNodeId", "queryVariable", "action", "description"
 ];
+const EXTERNAL_OR_PRIVILEGED_NODE_TYPES = new Set([
+  "HTTP_WEBHOOK", "API_INTEGRATION", "CRM_UPSERT", "CATALOG_BOOKING",
+  "BUSINESS_ACTION", "TRANSACTION", "BOOKING", "QUOTATION", "SEND_TEMPLATE",
+  "SEND_WHATSAPP_FLOW", "AI_KNOWLEDGE_REPLY", "AI_REPLY", "AI_HYBRID",
+  "AI_HYBRID_ASSIST", "INAPP_BRIDGE", "OPEN_INAPP_EXPERIENCE",
+  "ADDON_UPSELL_AND_QUOTE", "CATALOG_BROWSER", "MASTER_PICKER",
+  "DYNAMIC_MASTER_SELECTION", "INTERACTIVE_APP"
+]);
 
 function text(value, maxLength = 1000) {
   if (value === null || value === undefined) return "";
@@ -89,27 +97,32 @@ function sanitizeNode(rawNode, index) {
 
   const rawConfig = readNodeConfig(raw);
   const config = {};
-  for (const key of SAFE_CONFIG_TEXT_KEYS) {
-    if (rawConfig[key] === undefined || rawConfig[key] === null) continue;
-    const value = sanitizePrimitive(rawConfig[key], key === "text" || key === "messageText" || key === "prompt" ? 4000 : 800);
-    if (value !== "") config[key] = value;
+  // Integrations and privileged nodes are represented only by their visible
+  // title/type. Their configuration can contain endpoints, IDs, credentials,
+  // business data, or executable settings and is never public preview data.
+  if (!EXTERNAL_OR_PRIVILEGED_NODE_TYPES.has(type)) {
+    for (const key of SAFE_CONFIG_TEXT_KEYS) {
+      if (rawConfig[key] === undefined || rawConfig[key] === null) continue;
+      const value = sanitizePrimitive(rawConfig[key], key === "text" || key === "messageText" || key === "prompt" ? 4000 : 800);
+      if (value !== "") config[key] = value;
+    }
   }
 
-  if (Array.isArray(rawConfig.options)) {
+  if (!EXTERNAL_OR_PRIVILEGED_NODE_TYPES.has(type) && Array.isArray(rawConfig.options)) {
     config.options = rawConfig.options
       .slice(0, 20)
       .map(sanitizeOption)
       .filter(Boolean);
   }
 
-  if (Array.isArray(rawConfig.rules)) {
+  if (!EXTERNAL_OR_PRIVILEGED_NODE_TYPES.has(type) && Array.isArray(rawConfig.rules)) {
     config.rules = rawConfig.rules
       .slice(0, 30)
       .map(sanitizeRule)
       .filter(Boolean);
   }
 
-  const maxRetries = finiteNumber(rawConfig.maxRetries, null, 0, 10);
+  const maxRetries = EXTERNAL_OR_PRIVILEGED_NODE_TYPES.has(type) ? null : finiteNumber(rawConfig.maxRetries, null, 0, 10);
   if (maxRetries !== null) config.maxRetries = Math.round(maxRetries);
 
   const node = {

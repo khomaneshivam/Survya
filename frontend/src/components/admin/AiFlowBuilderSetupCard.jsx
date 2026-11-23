@@ -84,6 +84,10 @@ export default function AiFlowBuilderSetupCard({ token, onSuccess, onError }) {
     return () => { active = false; };
   }, [token]);
 
+  function updateRules(nextRules) {
+    setConfig((current) => ({ ...current, rules: { ...current.rules, ...nextRules } }));
+  }
+
   function handleProviderChange(provider) {
     setConfig((current) => ({
       ...current,

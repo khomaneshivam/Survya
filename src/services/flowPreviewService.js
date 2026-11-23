@@ -148,7 +148,7 @@ function adminPreviewRecord(row, token = null) {
     lastAccessedAt: apiDate(row.last_accessed_at),
     revokedAt: apiDate(row.revoked_at),
     browserOnly: true,
-    tokenAvailableOnlyAtCreation: !token
+    tokenAvailableOnlyAtCreation: true
   };
 
   if (token) {
@@ -172,13 +172,13 @@ function createPreviewLink({ flowId, tenantId = 1, user = null, title, expiresIn
   const { flow, graph } = draftSnapshotForFlow(flowId, normalizedTenantId);
   const expiryHours = normalizeExpiryHours(expiresInHours);
   const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000);
-  const id = generatePreviewId();
   const previewTitle = normalizeTitle(title, graph.title);
   const createdBy = String(user?.id || user?.name || "").slice(0, 64) || null;
 
   // A link token is stored only as a SHA-256 hash. It is returned once on
   // creation to an authenticated administrator and cannot be recovered later.
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    const id = generatePreviewId();
     const token = generateOpaqueToken();
     const tokenHash = stableTokenHash(token);
     try {
@@ -305,13 +305,9 @@ function activePreviewForToken(token) {
   const normalizedToken = assertPreviewToken(token);
   const tokenHash = stableTokenHash(normalizedToken);
 
-  // Expiration is checked by MySQL's UTC clock, avoiding server timezone skew.
-  db.prepare(`
-    UPDATE flow_preview_links
-    SET status = 'EXPIRED'
-    WHERE token_hash = ? AND status = 'ACTIVE' AND expires_at <= UTC_TIMESTAMP()
-  `).run(tokenHash);
-
+  // This public lookup is intentionally read-only. Expiration is evaluated in
+  // the query itself rather than written back here, so previewing can never
+  // mutate production data or establish any server-side simulator state.
   const row = db.prepare(`
     SELECT p.id, p.flow_id, p.flow_version_id, p.title, p.graph_json, p.expires_at
     FROM flow_preview_links p
@@ -344,9 +340,6 @@ function activePreviewForToken(token) {
     });
   }
 
-  db.prepare(`
-    UPDATE flow_preview_links SET last_accessed_at = UTC_TIMESTAMP() WHERE id = ?
-  `).run(row.id);
   return { row, graph };
 }
 

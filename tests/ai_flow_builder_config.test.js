@@ -84,10 +84,10 @@ test("AI flow builder setup persists approved rules but cannot enable unsafe fla
       model: "gpt-4o-mini",
       apiKey: "new-secret-key",
       rules: {
-        requireStepApproval: true,
-        requireApiReview: true,
-        requireMockTests: true,
-        requireSandboxPreview: true,
+        requireStepApproval: false,
+        requireApiReview: false,
+        requireMockTests: false,
+        requireSandboxPreview: false,
         allowAutoPublish: true,
         allowRuntimeCodeChanges: true,
         instructions: "Collect dates before creating a booking lead."
@@ -102,6 +102,10 @@ test("AI flow builder setup persists approved rules but cannot enable unsafe fla
   assert.equal(storedSettings.get("OPENAI_API_KEY"), "new-secret-key");
   assert.equal(res.body.data.rules.allowAutoPublish, false);
   assert.equal(res.body.data.rules.allowRuntimeCodeChanges, false);
+  assert.equal(res.body.data.rules.requireStepApproval, true);
+  assert.equal(res.body.data.rules.requireApiReview, true);
+  assert.equal(res.body.data.rules.requireMockTests, true);
+  assert.equal(res.body.data.rules.requireSandboxPreview, true);
   assert.equal(JSON.stringify(res.body).includes("new-secret-key"), false);
   assert.equal(auditRows.length, 1);
 });

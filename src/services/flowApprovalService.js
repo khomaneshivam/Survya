@@ -8,6 +8,34 @@ const APPROVAL_STAGES = [
   "PUBLISH"
 ];
 
+const DEFAULT_STAGE_CHECKLISTS = Object.freeze({
+  REQUIREMENTS: [
+    "Business objective, audience, trigger, and exit conditions are explicit.",
+    "Customer data collection is necessary and appropriate.",
+    "Human-handoff and escalation expectations are defined."
+  ],
+  API_READINESS: [
+    "Every required API or integration has an approved contract and owner.",
+    "Secrets, allowlists, timeouts, failures, and mock responses were reviewed.",
+    "Missing integrations are recorded as gaps and are not activated by this draft."
+  ],
+  FLOW_DESIGN: [
+    "Messages, choices, validation, branches, and fallbacks match the approved requirements.",
+    "Data variables and external-action placeholders were reviewed for privacy and safety.",
+    "The reviewed canvas is the draft that will be simulated."
+  ],
+  SIMULATION: [
+    "A mock-only test or browser-only dry run was completed for the reviewed draft.",
+    "Expected paths, validation failures, and fallback/handoff paths were checked.",
+    "No WhatsApp message, Meta request, AI request, webhook, CRM write, or live integration was run."
+  ],
+  PUBLISH: [
+    "All previous approvals apply to the current unchanged draft.",
+    "The intended line, trigger, and activation scope were reviewed.",
+    "Activation is an explicit administrator action and is not performed by AI."
+  ]
+});
+
 function parseApproval(row) {
   if (!row) return null;
   let checklist = [];
@@ -78,9 +106,12 @@ function requestApproval({ flowId, stage, summary = "", checklist = [], user, te
   `).get(flowId, tenantId, normalizedStage);
   if (existing) return parseApproval(existing);
 
-  const safeChecklist = Array.isArray(checklist)
+  const requestedChecklist = Array.isArray(checklist)
     ? checklist.slice(0, 25).map(item => String(item).slice(0, 500))
     : [];
+  const safeChecklist = requestedChecklist.length > 0
+    ? requestedChecklist
+    : (DEFAULT_STAGE_CHECKLISTS[normalizedStage] || []);
   const result = db.prepare(`
     INSERT INTO flow_approval_requests (
       tenant_id, flow_id, stage, status, summary, checklist_json, requested_by, requested_at, updated_at
@@ -123,8 +154,15 @@ function initializeApprovalWorkflow({ flowId, user, tenantId = 1, requirementsSu
 function decideApproval({ flowId, stage, decision, note = "", user, tenantId = 1 }) {
   const normalizedStage = assertStage(stage);
   const normalizedDecision = String(decision || "").trim().toUpperCase();
+  const normalizedNote = String(note || "").trim().slice(0, 5000);
   if (!["APPROVED", "CHANGES_REQUESTED"].includes(normalizedDecision)) {
     throw new Error("Decision must be APPROVED or CHANGES_REQUESTED.");
+  }
+  if (normalizedDecision === "CHANGES_REQUESTED" && !normalizedNote) {
+    throw new Error("A decision note is required when requesting changes.");
+  }
+  if (normalizedDecision === "APPROVED" && ["API_READINESS", "SIMULATION", "PUBLISH"].includes(normalizedStage) && !normalizedNote) {
+    throw new Error(`${normalizedStage.replace(/_/g, " ")} approval requires an attestation note describing the evidence reviewed.`);
   }
 
   assertFlow(flowId, tenantId);
@@ -135,11 +173,14 @@ function decideApproval({ flowId, stage, decision, note = "", user, tenantId = 1
   `).get(flowId, tenantId, normalizedStage);
   if (!pending) throw new Error(`No pending ${normalizedStage} approval request exists.`);
 
-  db.prepare(`
+  const updateResult = db.prepare(`
     UPDATE flow_approval_requests
     SET status = ?, reviewed_by = ?, decision_note = ?, decided_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(normalizedDecision, user?.id || user?.name || null, String(note || "").slice(0, 5000), pending.id);
+    WHERE id = ? AND status = 'PENDING'
+  `).run(normalizedDecision, user?.id || user?.name || null, normalizedNote, pending.id);
+  if (!Number(updateResult?.changes || 0)) {
+    throw new Error("This approval was already decided by another administrator. Refresh the review history and try again.");
+  }
 
   let nextStage = null;
   if (normalizedDecision === "APPROVED") {
@@ -169,7 +210,7 @@ function decideApproval({ flowId, stage, decision, note = "", user, tenantId = 1
   logAudit(tenantId, user?.id, "DECIDE_FLOW_APPROVAL", flowId, {
     stage: normalizedStage,
     decision: normalizedDecision,
-    note
+    note: normalizedNote
   });
 
   return {
@@ -195,48 +236,56 @@ function assertPublishApproved(flowId, tenantId = 1) {
   return true;
 }
 
-function invalidateDesignApprovals(flowId, tenantId = 1, user = null) {
+function invalidateApprovalWorkflow(flowId, tenantId = 1, user = null, reason = "The reviewed draft changed. Re-review the business requirements before continuing.") {
   const flow = assertFlow(flowId, tenantId);
-  if (!Number(flow.approval_required)) return;
+  if (!Number(flow.approval_required)) return null;
 
-  const designReviewStarted = db.prepare(`
+  const existingApproval = db.prepare(`
     SELECT id FROM flow_approval_requests
     WHERE flow_id = ? AND tenant_id = ?
-      AND stage IN ('FLOW_DESIGN', 'SIMULATION', 'PUBLISH')
     ORDER BY id DESC LIMIT 1
   `).get(flowId, tenantId);
-  // Requirements and API readiness must be completed in order. Saving an early
-  // draft must not skip directly to the design-approval stage.
-  if (!designReviewStarted) return;
+  if (!existingApproval) return null;
 
   db.prepare(`
     UPDATE flow_approval_requests
     SET status = 'SUPERSEDED', updated_at = CURRENT_TIMESTAMP
     WHERE flow_id = ? AND tenant_id = ?
-      AND stage IN ('FLOW_DESIGN', 'SIMULATION', 'PUBLISH')
-      AND status IN ('PENDING', 'APPROVED')
+      AND status IN ('PENDING', 'APPROVED', 'CHANGES_REQUESTED')
   `).run(flowId, tenantId);
   db.prepare(`
     UPDATE conversation_flows
-    SET approval_state = 'FLOW_DESIGN_PENDING', updated_at = CURRENT_TIMESTAMP
+    SET approval_state = 'REQUIREMENTS_PENDING', updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND tenant_id = ?
   `).run(flowId, tenantId);
-  requestApproval({
+  const approval = requestApproval({
     flowId,
     tenantId,
     user,
-    stage: "FLOW_DESIGN",
-    summary: "The draft changed after review. Re-approve the updated flow design.",
-    checklist: ["Review changed nodes, transitions, messages, and API actions."]
+    stage: "REQUIREMENTS",
+    summary: String(reason || "The reviewed draft changed. Re-review the business requirements before continuing.").slice(0, 5000)
   });
+  logAudit(tenantId, user?.id, "INVALIDATE_FLOW_APPROVALS", flowId, { reason: approval.summary });
+  return approval;
+}
+
+function invalidateDesignApprovals(flowId, tenantId = 1, user = null) {
+  return invalidateApprovalWorkflow(
+    flowId,
+    tenantId,
+    user,
+    "The draft changed after review. Re-review requirements, integrations, design, simulation, and publish approval."
+  );
 }
 
 module.exports = {
   APPROVAL_STAGES,
+  DEFAULT_STAGE_CHECKLISTS,
   listApprovals,
   requestApproval,
   initializeApprovalWorkflow,
   decideApproval,
   assertPublishApproved,
+  invalidateApprovalWorkflow,
   invalidateDesignApprovals
 };

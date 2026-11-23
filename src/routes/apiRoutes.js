@@ -359,6 +359,9 @@ router.delete("/templates/:templateId", authenticateToken, requireAdmin, templat
 // =========================================================================
 // 6.4. CONVERSATION FLOW & AUTOMATION STUDIO MODULE
 // =========================================================================
+// Browser-only, expiring preview links must be registered before the generic
+// `/flows/:id` handlers in the conversation flow router.
+router.use(require("./flowPreviewRoutes"));
 router.use(require("./conversationFlowRoutes"));
 
 // Dynamic CRM Pipelines & Records Module
