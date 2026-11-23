@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const adminController = require("../controllers/adminController");
+const aiFlowBuilderConfigController = require("../controllers/aiFlowBuilderConfigController");
 const { authenticateToken, requireAdmin } = require("../middleware/authMiddleware");
 
 // User Management (Admin Only)
@@ -17,6 +18,10 @@ router.post("/users/:userId/claim-history", authenticateToken, requireAdmin, adm
 router.get("/unassigned-summary", authenticateToken, requireAdmin, adminController.getUnassignedSummary);
 router.post("/impersonate/:userId", authenticateToken, requireAdmin, adminController.impersonateUser);
 router.get("/overview", authenticateToken, requireAdmin, adminController.getSystemOverview);
+
+// AI Flow Builder configuration is platform-wide and must never disclose credentials.
+router.get("/ai-flow-config", authenticateToken, requireAdmin, aiFlowBuilderConfigController.getAiFlowBuilderConfig);
+router.put("/ai-flow-config", authenticateToken, requireAdmin, aiFlowBuilderConfigController.updateAiFlowBuilderConfig);
 
 // Recycle Bin (Universal Soft/Hard Delete Recovery)
 router.get("/recycle-bin", authenticateToken, requireAdmin, adminController.listRecycleBin);

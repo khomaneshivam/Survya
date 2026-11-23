@@ -12,6 +12,7 @@ const { db } = require('../src/config/database');
 const { buildSystemCapabilitiesContext } = require('../src/services/workflow/aiFlowContextBuilder');
 const aiFlowGenerator = require('../src/services/workflow/aiFlowGeneratorService');
 const flowService = require('../src/services/conversationFlowService');
+const flowApprovalService = require('../src/services/flowApprovalService');
 const workflowTriggerService = require('../src/services/workflow/workflowTriggerService');
 const flowEngine = require('../src/services/conversationFlowEngine');
 
@@ -20,6 +21,20 @@ describe('AI Flow Architect & WhatsApp Line Binding', () => {
   const LINE_A = '1510764325447375';
   const LINE_B = '999888777666555';
   let createdFlowIds = [];
+
+  function approveAllFlowStages(flowId) {
+    const flow = flowService.getFlowById(flowId, 1).flow;
+    if (!Number(flow.approval_required)) return;
+    for (const stage of flowApprovalService.APPROVAL_STAGES) {
+      flowApprovalService.decideApproval({
+        flowId,
+        stage,
+        decision: 'APPROVED',
+        user: TEST_USER,
+        tenantId: 1
+      });
+    }
+  }
 
   before(() => {
     // Clean up any stale triggers/flows from prior test runs on test lines or test flow names
@@ -48,6 +63,7 @@ describe('AI Flow Architect & WhatsApp Line Binding', () => {
       try {
         db.prepare('DELETE FROM conversation_flow_events WHERE flow_id = ?').run(id);
         db.prepare('DELETE FROM conversation_flow_sessions WHERE flow_id = ?').run(id);
+        db.prepare('DELETE FROM flow_approval_requests WHERE flow_id = ?').run(id);
         db.prepare('DELETE FROM conversation_flow_versions WHERE flow_id = ?').run(id);
         db.prepare('DELETE FROM workflow_triggers WHERE flow_id = ?').run(id);
         db.prepare('DELETE FROM conversation_flows WHERE id = ?').run(id);
@@ -70,7 +86,7 @@ describe('AI Flow Architect & WhatsApp Line Binding', () => {
     assert.ok(context.canonicalNodes.length >= 12, 'Must define all canonical modern node types');
   });
 
-  test('2. Prompt-to-Workflow Generator creates, positions, validates and binds Booking Flow to Line A', async () => {
+  test('2. Prompt-to-Workflow Generator creates a reviewable draft and binds Booking Flow to Line A', async () => {
     const result = await aiFlowGenerator.generateFlowFromPrompt({
       prompt: 'Resort room booking flow with live tariff check and instant reservation hold',
       tenantId: 1,
@@ -86,8 +102,8 @@ describe('AI Flow Architect & WhatsApp Line Binding', () => {
 
     // Verify line assignment
     assert.equal(result.flow.phone_number_id, LINE_A, 'Flow must be bound to Line A');
-    assert.equal(result.flow.status, 'PUBLISHED', 'Flow must be published when autoPublish is true');
-    assert.ok(result.publishedVersion, 'Published version must exist');
+    assert.equal(result.flow.status, 'DRAFT', 'AI generation must always create a draft for review');
+    assert.equal(result.publishedVersion, null, 'AI generation must never auto-publish a flow');
     assert.ok(result.validationReport.isValid, 'Generated flow must be valid');
 
     // Verify nodes & layout
@@ -100,9 +116,9 @@ describe('AI Flow Architect & WhatsApp Line Binding', () => {
     assert.ok(nodes.some(n => n.type === 'WAIT_DELAY'), 'Must have WAIT_DELAY node');
     assert.ok(nodes.every(n => n.position && typeof n.position.x === 'number' && typeof n.position.y === 'number'), 'All nodes must have layout coordinates');
 
-    // Verify trigger was registered in workflow_triggers with line binding
+    // Draft generation must not activate an inbound trigger.
     const triggerRow = db.prepare('SELECT * FROM workflow_triggers WHERE flow_id = ? AND phone_number_id = ?').get(result.flow.id, LINE_A);
-    assert.ok(triggerRow, 'workflow_triggers must have trigger bound to LINE_A');
+    assert.equal(triggerRow, undefined, 'Draft flow must not register an inbound trigger');
   });
 
   test('3. B2B Sales Prompt creates valid CRM-wired qualification flow', async () => {
@@ -111,7 +127,6 @@ describe('AI Flow Architect & WhatsApp Line Binding', () => {
       tenantId: 1,
       propertyId: 1,
       phoneNumberId: null, // Global
-      autoPublish: true,
       user: TEST_USER
     });
 
@@ -244,7 +259,8 @@ describe('AI Flow Architect & WhatsApp Line Binding', () => {
   });
 
   test('7. End-to-end simulated turn on Line A executes safely without live message dispatch', async () => {
-    // Generate and publish a dining order flow on Line A
+    // Generate a dining order flow as a draft, then explicitly publish it for
+    // this in-memory routing test only. No WhatsApp API call is made.
     const gen = await aiFlowGenerator.generateFlowFromPrompt({
       prompt: 'beach cafe dining table order with instant UPI payment link',
       phoneNumberId: LINE_A,
@@ -252,6 +268,9 @@ describe('AI Flow Architect & WhatsApp Line Binding', () => {
       user: TEST_USER
     });
     createdFlowIds.push(gen.flow.id);
+    assert.equal(gen.flow.status, 'DRAFT', 'Generator must not auto-publish even when asked');
+    approveAllFlowStages(gen.flow.id);
+    flowService.publishFlow(gen.flow.id, TEST_USER);
 
     const senderPhone = '919876543299';
 

@@ -6,6 +6,7 @@
 const crypto = require("crypto");
 const { db } = require("../config/database");
 const { invalidateFlow, invalidateTriggers } = require("./workflow/runtimeCache");
+const flowApprovalService = require("./flowApprovalService");
 
 /**
  * Audit log helper
@@ -338,6 +339,7 @@ function createFlow(data, user = { id: "admin", name: "Administrator" }) {
     trigger_keywords = [],
     is_default = 0,
     priority = 10,
+    approval_required = false,
     initialNodes = null,
     initialTransitions = null,
     initialVariables = null
@@ -353,9 +355,9 @@ function createFlow(data, user = { id: "admin", name: "Administrator" }) {
   const insertFlow = db.prepare(`
     INSERT INTO conversation_flows (
       uuid, tenant_id, property_id, phone_number_id, name, description, category,
-      trigger_type, trigger_keywords_json, status, is_default, priority,
+      trigger_type, trigger_keywords_json, status, approval_required, approval_state, is_default, priority,
       created_by, updated_by, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `);
 
   const res = insertFlow.run(
@@ -368,6 +370,8 @@ function createFlow(data, user = { id: "admin", name: "Administrator" }) {
     category,
     trigger_type,
     JSON.stringify(Array.isArray(trigger_keywords) ? trigger_keywords : []),
+    approval_required ? 1 : 0,
+    approval_required ? "REQUIREMENTS_PENDING" : "NOT_REQUIRED",
     is_default ? 1 : 0,
     Number(priority || 10),
     user.name || user.id || "admin",
@@ -593,6 +597,7 @@ function saveFlowDraft(flowId, data, user = { id: "admin", name: "Administrator"
     `).run(user.name || user.id || "admin", flowId);
   }
 
+  flowApprovalService.invalidateDesignApprovals(flowId, tenantId, user);
   logAudit(tenantId, user.id, "SAVE_FLOW_DRAFT", flowId, { nodeCount: nodes.length, isValid: validationReport.isValid });
   invalidateFlow(flowId);
 
@@ -632,6 +637,8 @@ function publishFlow(flowId, user = { id: "admin", name: "Administrator" }, tena
   if (!draftVersion) {
     throw new Error("No draft version available to publish.");
   }
+
+  flowApprovalService.assertPublishApproved(flowId, tenantId);
 
   // Validate prior to publishing
   const report = validateFlowGraph(draftVersion.nodes, draftVersion.transitions, draftVersion.variables);

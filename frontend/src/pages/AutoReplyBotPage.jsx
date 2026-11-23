@@ -57,6 +57,7 @@ import MessageTemplatesStudio from '../components/flow-studio/MessageTemplatesSt
 import FlowAnalyticsPanel from '../components/flow-studio/FlowAnalyticsPanel';
 import FlowExecutionsModal from '../components/flow-studio/FlowExecutionsModal';
 import AiFlowGeneratorModal from '../components/flow-studio/AiFlowGeneratorModal';
+import FlowApprovalPanel from '../components/flow-studio/FlowApprovalPanel';
 import IndustryBlueprintsModal from '../components/catalog/IndustryBlueprintsModal';
 import HospitalityImageUploadModule from '../components/HospitalityImageUploadModule';
 import { DataTable, HelpTip } from '../components/ui';
@@ -421,23 +422,16 @@ export default function AutoReplyBotPage({ onNavigate }) {
   }, [studioMode, activeFlowId, handleSaveFlowDraft]);
 
   const handlePublishFlow = async () => {
-    if (!activeFlowId) return;
+    if (!activeFlowId || !isAdmin) return;
+    if (hasFlowUnsavedChanges) {
+      showStudioToast('Save the draft, then complete the refreshed approval gates before activation.', 'error');
+      return;
+    }
     setPublishing(true);
     try {
       const headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
-      // 1. Save draft first
-      await fetch(`/api/flows/conversation-flows/${activeFlowId}/draft`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          nodes: currentNodes,
-          transitions: currentTransitions,
-          variables: currentVariables,
-          changelog: 'Pre-publish auto snapshot'
-        })
-      });
-
-      // 2. Publish flow
+      // A draft change invalidates downstream approvals, so activation must use
+      // the already reviewed snapshot without silently saving another revision.
       const res = await fetch(`/api/flows/conversation-flows/${activeFlowId}/publish`, {
         method: 'POST',
         headers
@@ -446,7 +440,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
       if (data.success) {
         setHasFlowUnsavedChanges(false);
         setLastSavedTime(new Date());
-        showStudioToast('🎉 Flow published to live WhatsApp line successfully!');
+        showStudioToast('Flow activated after final approval.');
         loadFlowDetails(activeFlowId);
         loadData();
       } else {
@@ -1260,7 +1254,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
         </div>
       </div>
 
-      {/* Live Trigger Conflict Banner */}
+      {/* Active trigger conflict banner */}
       {triggerConflicts.length > 0 && (
         <div style={{
           background: '#FEF3C7',
@@ -1545,7 +1539,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
                 >
                   {flowsList.map(f => (
                     <option key={f.id} value={f.id}>
-                      {f.status === 'PUBLISHED' ? '🟢' : '🟡'} {f.name} ({f.status === 'PUBLISHED' ? 'Live' : 'Draft'}{f.phone_number_id ? ' • Line' : ''})
+                      {f.status === 'PUBLISHED' ? '🟢' : '🟡'} {f.name} ({f.status === 'PUBLISHED' ? 'Published' : 'Draft'}{f.phone_number_id ? ' • Line' : ''})
                     </option>
                   ))}
                 </select>
@@ -1700,6 +1694,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
                     <select
                       value={activeFlow.phone_number_id || ''}
                       onChange={e => handleAssignLine(activeFlow.id, e.target.value)}
+                      disabled={!isAdmin}
                       title="Bind flow to a specific WhatsApp Business phone number line"
                       style={{
                         padding: '4px 10px',
@@ -1709,7 +1704,8 @@ export default function AutoReplyBotPage({ onNavigate }) {
                         border: '1px solid #CBD5E1',
                         background: activeFlow.phone_number_id ? '#F0FDF4' : '#FFFFFF',
                         color: activeFlow.phone_number_id ? '#166534' : '#334155',
-                        cursor: 'pointer'
+                        cursor: isAdmin ? 'pointer' : 'not-allowed',
+                        opacity: isAdmin ? 1 : 0.65
                       }}
                     >
                       <option value="">All Lines (Global)</option>
@@ -1813,7 +1809,9 @@ export default function AutoReplyBotPage({ onNavigate }) {
                 {/* AI Generate */}
                 <button
                   type="button"
-                  onClick={() => setAiModalOpen(true)}
+                  onClick={() => isAdmin && setAiModalOpen(true)}
+                  disabled={!isAdmin}
+                  title={isAdmin ? 'Create a reviewable draft with AI' : 'Only administrators can create or change AI flows.'}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -1825,12 +1823,13 @@ export default function AutoReplyBotPage({ onNavigate }) {
                     border: '1px solid #86EFAC',
                     background: 'linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%)',
                     color: '#166534',
-                    cursor: 'pointer',
+                    cursor: isAdmin ? 'pointer' : 'not-allowed',
+                    opacity: isAdmin ? 1 : 0.55,
                     boxShadow: '0 1px 3px rgba(34, 197, 94, 0.2)'
                   }}
                 >
                   <Sparkles size={13} color="#15803D" />
-                  <span>✨ Generate with AI</span>
+                  <span>Create with AI</span>
                 </button>
 
                 {/* Blueprints */}
@@ -1972,11 +1971,16 @@ export default function AutoReplyBotPage({ onNavigate }) {
                   <span>{savingDraft ? 'Saving...' : hasFlowUnsavedChanges ? 'Save Draft *' : 'Save Draft'}</span>
                 </button>
 
-                {/* Publish to Live Button */}
+                {/* Final activation remains unavailable until the audited review gates pass. */}
                 <button
                   type="button"
                   onClick={handlePublishFlow}
-                  disabled={publishing}
+                  disabled={publishing || hasFlowUnsavedChanges || !isAdmin || activeFlow?.approval_state !== 'PUBLISH_APPROVED'}
+                  title={hasFlowUnsavedChanges
+                    ? 'Save the draft and complete the refreshed review gates first.'
+                    : activeFlow?.approval_state === 'PUBLISH_APPROVED'
+                    ? 'Activate this approved flow'
+                    : 'Complete the approval gates before activation.'}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -1988,16 +1992,26 @@ export default function AutoReplyBotPage({ onNavigate }) {
                     border: 'none',
                     background: '#2F5219',
                     color: '#FFFFFF',
-                    cursor: 'pointer',
+                    cursor: publishing || hasFlowUnsavedChanges || !isAdmin || activeFlow?.approval_state !== 'PUBLISH_APPROVED' ? 'not-allowed' : 'pointer',
+                    opacity: publishing || hasFlowUnsavedChanges || !isAdmin || activeFlow?.approval_state !== 'PUBLISH_APPROVED' ? 0.55 : 1,
                     boxShadow: '0 2px 6px rgba(47,82,25,0.25)'
                   }}
                 >
                   {publishing ? <RotateCcw size={14} className="spin" /> : <Play size={14} />}
-                  <span>{publishing ? 'Publishing...' : 'Publish to Live'}</span>
+                  <span>{publishing ? 'Activating...' : hasFlowUnsavedChanges ? 'Save and re-review' : activeFlow?.approval_state === 'PUBLISH_APPROVED' ? 'Activate approved flow' : 'Awaiting approval'}</span>
                 </button>
               </div>
             </div>
           </div>
+
+          {activeFlowId && isAdmin && (
+            <FlowApprovalPanel
+              flowId={activeFlowId}
+              token={token}
+              compact
+              onChanged={() => loadFlowDetails(activeFlowId)}
+            />
+          )}
 
           {/* Inline AI Flow Refinement Bar */}
           <div style={{
@@ -4149,7 +4163,7 @@ export default function AutoReplyBotPage({ onNavigate }) {
 
               {validationReport.isValid && (!validationReport.warnings || validationReport.warnings.length === 0) && (
                 <p style={{ margin: 0, fontSize: '0.88rem', color: '#166534', lineHeight: 1.5 }}>
-                  ✓ All start nodes, message prompts, transitions, and business action bindings are fully reachable and compliant with WhatsApp Cloud API constraints. You can safely publish this flow to live WhatsApp chats.
+                  All structural checks passed. Complete the remaining approval gates before requesting activation.
                 </p>
               )}
             </div>

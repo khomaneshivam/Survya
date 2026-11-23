@@ -8,7 +8,7 @@ const availabilityService = require("./hospitalityAvailabilityService");
 const pricingService = require("./hospitalityPricingService");
 const enquiryService = require("./enquiryService");
 const { getNodeExecutor } = require("./workflow/nodeExecutors");
-const { evaluateRules } = require("./workflow/expressionEvaluator");
+const { evaluateRules, evaluateSingleRule, getPath, computeVariable, interpolateTemplate } = require("./workflow/expressionEvaluator");
 const { parseMysqlUtcTimestamp } = require("../utils/timeUtil");
 const flowAnalyticsService = require("./workflow/flowAnalyticsService");
 
@@ -879,6 +879,290 @@ function executeBusinessAction(actionName, inputs = {}, context = {}) {
     default:
       return {};
   }
+}
+
+/**
+ * Pure, in-memory simulator for the Flow Studio.  It deliberately does not
+ * delegate to production node executors: many of those executors read or
+ * write business data, invoke AI, call HTTP endpoints, schedule jobs, or
+ * dispatch messages.  Keeping this interpreter local gives simulation a
+ * single, fail-closed safety boundary.
+ */
+function executePureSimulationNode(node, context = {}) {
+  const type = String(node?.type || "SEND_MESSAGE").toUpperCase();
+  const config = { ...(node?.data || {}), ...(node?.config || {}) };
+  const session = context.session || {};
+  const variableContext = context.variableContext || session;
+  const render = (value) => interpolateTemplate(String(value || ""), variableContext);
+  const options = Array.isArray(config.options) ? config.options : [];
+
+  const makeInteractive = (text) => ({
+    type: config.messageType || (options.length > 0 ? "BUTTONS" : "TEXT"),
+    text,
+    mediaUrl: config.mediaUrl ? render(config.mediaUrl) : undefined,
+    mediaType: config.mediaType || "IMAGE",
+    caption: config.caption ? render(config.caption) : undefined,
+    options: options.map(option => ({
+      id: option.id,
+      title: render(option.title || ""),
+      value: option.value || option.id
+    })),
+    listButtonText: config.listButtonText || "View options",
+    listTitle: config.listTitle || "Options"
+  });
+
+  if (["TRIGGER_WHATSAPP", "TRIGGER_EVENT", "START"].includes(type)) {
+    return {
+      action: "CONTINUE",
+      nextHandle: "default",
+      updatedData: {
+        "trigger.keyword": String(context.userInput || ""),
+        "trigger.source": config.eventType || (context.userPayload ? "INTERACTIVE" : "SIMULATOR")
+      },
+      traceNote: `[Simulation] Trigger initialized for ${type}.`
+    };
+  }
+
+  if (["SEND_MESSAGE", "MESSAGE", "BUTTON_MENU", "SELECTION", "CONFIRMATION", "PAYMENT"].includes(type)) {
+    if (context.isWaitingForThisNode && options.length > 0) {
+      const payloadValue = context.userPayload?.id || context.userPayload?.payload || context.userPayload?.value || context.userPayload?.title || "";
+      const matched = matchOption(options, payloadValue, context.userInput);
+      if (matched) {
+        return {
+          action: "CONTINUE",
+          nextHandle: matched.id || matched.value || "default",
+          updatedData: {
+            [config.variable || "selected_option"]: matched.value || matched.id,
+            selected_option_title: matched.title || ""
+          },
+          traceNote: `[Simulation] Selected option '${matched.title || matched.id}'.`
+        };
+      }
+      return {
+        action: "CONTINUE",
+        nextHandle: "default",
+        updatedData: { [config.variable || "selected_option"]: String(context.userInput || "") },
+        traceNote: "[Simulation] No option matched; followed the default transition."
+      };
+    }
+
+    const text = render(config.text || config.messageText || config.prompt || "");
+    const replyInteractive = makeInteractive(text);
+    if (options.length > 0) {
+      return {
+        action: "WAIT_FOR_INPUT",
+        replyMessages: text ? [text] : [],
+        replyInteractive,
+        traceNote: `[Simulation] Displayed ${options.length} local choice(s).`
+      };
+    }
+    return {
+      action: "CONTINUE",
+      nextHandle: "default",
+      replyMessages: text ? [text] : [],
+      replyInteractive: replyInteractive.mediaUrl ? replyInteractive : null,
+      traceNote: "[Simulation] Rendered a message locally."
+    };
+  }
+
+  if (["COLLECT_INPUT", "INPUT_COLLECTION", "QUESTION"].includes(type)) {
+    const variable = config.saveAs || config.variable || "user_input";
+    const inputType = String(config.inputType || config.validationType || config.validation?.type || "TEXT").toUpperCase();
+    const retryKey = `_retries_${node.id}`;
+    const maxRetries = Math.max(0, Number(config.maxRetries || 3));
+
+    if (!context.isWaitingForThisNode) {
+      const prompt = render(config.promptText || config.prompt || `Please provide ${variable}:`);
+      return {
+        action: "WAIT_FOR_INPUT",
+        replyMessages: prompt ? [prompt] : [],
+        updatedData: { [retryKey]: 0 },
+        traceNote: `[Simulation] Waiting for '${variable}' input.`
+      };
+    }
+
+    const raw = String(context.userInput || "").trim();
+    let valid = raw.length > 0;
+    let value = raw;
+    if (inputType === "EMAIL") {
+      valid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw);
+      value = raw.toLowerCase();
+    } else if (inputType === "PHONE") {
+      value = raw.replace(/\D/g, "");
+      valid = value.length >= 10 && value.length <= 15;
+    } else if (inputType === "NUMBER") {
+      value = Number(raw.replace(/,/g, ""));
+      valid = raw.length > 0 && Number.isFinite(value);
+    } else if (inputType === "DATE") {
+      value = parseDateInput(raw);
+      valid = Boolean(value);
+    } else if (inputType === "REGEX") {
+      try {
+        valid = new RegExp(config.regexPattern || ".*").test(raw);
+      } catch (_) {
+        valid = false;
+      }
+    }
+
+    if (valid) {
+      return {
+        action: "CONTINUE",
+        nextHandle: "valid",
+        updatedData: { [variable]: value, [retryKey]: 0 },
+        traceNote: `[Simulation] Accepted '${variable}' input locally.`
+      };
+    }
+
+    const retries = Number(session[retryKey] || 0) + 1;
+    if (retries > maxRetries) {
+      return {
+        action: "CONTINUE",
+        nextHandle: "max_retries",
+        updatedData: { [retryKey]: 0 },
+        traceNote: `[Simulation] Input retries exhausted for '${variable}'.`
+      };
+    }
+
+    const retryMessage = render(config.retryPrompt || config.retryMessage || config.errorMessage || `Please enter a valid ${variable}.`);
+    return {
+      action: "WAIT_FOR_INPUT",
+      replyMessages: retryMessage ? [retryMessage] : [],
+      updatedData: { [retryKey]: retries },
+      traceNote: `[Simulation] Input for '${variable}' needs correction (${retries}/${maxRetries}).`
+    };
+  }
+
+  if (type === "CONDITION") {
+    const rules = Array.isArray(config.rules) ? config.rules : [];
+    const explicitRule = rules.find(rule => rule.targetNodeId && evaluateSingleRule(
+      getPath(variableContext, rule.variable || config.variable),
+      rule.operator || "equals",
+      rule.value
+    ));
+    if (explicitRule) {
+      return {
+        action: "CONTINUE",
+        targetNodeId: explicitRule.targetNodeId,
+        nextHandle: explicitRule.targetNodeId,
+        traceNote: `[Simulation] Condition matched local branch '${explicitRule.targetNodeId}'.`
+      };
+    }
+    if (config.defaultTargetNodeId) {
+      return {
+        action: "CONTINUE",
+        targetNodeId: config.defaultTargetNodeId,
+        nextHandle: config.defaultTargetNodeId,
+        traceNote: `[Simulation] Condition used configured default branch.`
+      };
+    }
+    const passed = rules.length > 0
+      ? evaluateRules(rules, config.matchMode || config.conditionMatch || "ALL", variableContext)
+      : true;
+    return {
+      action: "CONTINUE",
+      nextHandle: passed ? "true" : "false",
+      traceNote: `[Simulation] Condition evaluated ${passed ? "true" : "false"}.`
+    };
+  }
+
+  if (type === "SET_VARIABLE") {
+    const variable = config.targetVar || config.variable || "temp_var";
+    const current = getPath(variableContext, variable);
+    const value = computeVariable(config.operation || config.action || "set", current, config.value ?? "", variableContext);
+    return {
+      action: "CONTINUE",
+      nextHandle: "default",
+      updatedData: { [variable]: value },
+      traceNote: `[Simulation] Updated '${variable}' locally.`
+    };
+  }
+
+  if (["WAIT_DELAY", "DELAY"].includes(type)) {
+    return {
+      action: "CONTINUE",
+      nextHandle: "after_delay",
+      pendingDelay: {
+        simulated: true,
+        delayAmount: Number(config.delayAmount || 0),
+        delayUnit: config.delayUnit || "MINUTES"
+      },
+      replyMessages: ["[Simulation only] Scheduled delay was skipped; no job was created."],
+      traceNote: "[Simulation] Delay skipped without creating a scheduled job."
+    };
+  }
+
+  if (["HUMAN_HANDOFF", "HANDOFF"].includes(type)) {
+    const message = render(config.handoffMessage || config.prompt || config.text || "[Simulation only] Conversation would be handed to a human team.");
+    return {
+      action: "HANDOFF",
+      replyMessages: message ? [message] : [],
+      updatedData: { "handoff.simulated": true, "handoff.team": config.team || config.department || "FRONT_DESK" },
+      traceNote: "[Simulation] Human handoff displayed locally; no team notification was created."
+    };
+  }
+
+  if (type === "END") {
+    const message = render(config.farewellMessage || "");
+    return {
+      action: "COMPLETE",
+      replyMessages: message ? [message] : [],
+      traceNote: "[Simulation] Flow ended locally."
+    };
+  }
+
+  if (type === "SEND_TEMPLATE") {
+    const templateName = config.templateName || config.name || "approved template";
+    const body = render(config.body || config.bodyText || config.text || `[Simulation only] Template preview: ${templateName}`);
+    return {
+      action: "CONTINUE",
+      nextHandle: "default",
+      replyMessages: body ? [body] : [],
+      traceNote: `[Simulation] Previewed template '${templateName}' without dispatching it.`
+    };
+  }
+
+  if (type === "SEND_WHATSAPP_FLOW") {
+    return {
+      action: "CONTINUE",
+      nextHandle: "default",
+      replyMessages: ["[Simulation only] WhatsApp Flow form was not opened or dispatched."],
+      traceNote: "[Simulation] Blocked WhatsApp Flow form dispatch."
+    };
+  }
+
+  // Any remaining node is an integration-capable or unknown node.  Never use
+  // the production executor here: it could create records, reserve inventory,
+  // call AI/webhooks, or issue an outbound WhatsApp request.  A deterministic
+  // mock handle keeps graph review possible while making the block visible.
+  const simulatedHandles = {
+    CRM_UPSERT: "success",
+    CATALOG_BOOKING: "available",
+    BUSINESS_ACTION: "success",
+    TRANSACTION: "success",
+    BOOKING: "success",
+    QUOTATION: "success",
+    HTTP_WEBHOOK: "success",
+    API_INTEGRATION: "success",
+    AI_KNOWLEDGE_REPLY: "answered",
+    AI_REPLY: "answered",
+    AI_HYBRID_ASSIST: "answered",
+    CATALOG_BROWSER: "item_selected",
+    ADDON_UPSELL_AND_QUOTE: "confirmed",
+    MASTER_PICKER: "selected",
+    DYNAMIC_MASTER_SELECTION: "selected",
+    OPEN_INAPP_EXPERIENCE: "default",
+    INAPP_BRIDGE: "default",
+    INTERACTIVE_APP: "default"
+  };
+  const defaultHandle = simulatedHandles[type] || "default";
+  const label = node?.title || type.replace(/_/g, " ");
+  return {
+    action: "CONTINUE",
+    nextHandle: config.simulationHandle || config.mockHandle || defaultHandle,
+    replyMessages: [`[Simulation only] '${label}' was mocked. No API, AI, database mutation, inventory hold, or WhatsApp message was executed.`],
+    updatedData: { simulation_last_mocked_node: node?.id || type },
+    traceNote: `[Simulation] Blocked production executor for ${type}; followed mock handle '${config.simulationHandle || config.mockHandle || defaultHandle}'.`
+  };
 }
 
 /**
