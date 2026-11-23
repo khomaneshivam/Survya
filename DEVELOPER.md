@@ -670,6 +670,7 @@ Admins can generate complete multi-step flows using plain English or Hinglish pr
 ## 10. Dynamic In-App Experience Studio (`/x/:slug`)
 
 The In-App Experience Studio allows businesses to offer mobile web experiences for complex interactions that exceed WhatsApp's text interface (e.g. room image carousels, interactive floorplans, customized date-range calendars, or multi-step checkout):
+- **Admin Access Protection:** Studio creation, editing, and screen/field schema management are protected by `requireAdmin` backend middleware and tagged `adminOnly: true` in the frontend navigation registry. Non-admin users cannot access the studio.
 - **Clean URLs:** Mapped to vanity paths: `https://survya.flex-us.in/x/{slug}`.
 - **Bi-Directional Bridge:** When a user transitions from WhatsApp to `/x/:slug`, the session token hydrates the web view with their phone number and cart context.
 - **Live Rate Negotiation:** Customers can submit counter-offers on quotes; sales agents receive instant alerts in `InboxPage` and can accept or counter in real time.
@@ -773,6 +774,7 @@ When new frontend builds are deployed to production, older browser tabs requesti
 
 All 21 sidebar navigation tabs are governed centrally in [frontend/src/components/PageSystem.jsx](file:///d:/whatsapp_bulk/frontend/src/components/PageSystem.jsx):
 - Each tab declares its ID, title, module, group, badge, Lucide icon, description, `adminOnly` flag, and code-split component.
+- **Admin Control Section:** `admin`, `autoreply`, `flowStudio`, `inapp_studio`, `payouts`, and `connect` are classified under **System Administration** and flagged `adminOnly: true`. If a non-admin user navigates to an admin-only tab or deep link, `PageSystem` automatically redirects them to the overview dashboard.
 - Automatically handles deep-linking, browser tab title updates (`usePageMeta`), and contextual sibling navigation pills.
 
 ### 13.5 High-Density UI Primitives & `DataTable.jsx`
@@ -869,3 +871,4 @@ To quickly master the SARVYA architecture, follow this recommended study sequenc
 ---
 
 *End of Developer Master Architecture Guide. Document maintained by the SARVYA Core Platform Team.*
+

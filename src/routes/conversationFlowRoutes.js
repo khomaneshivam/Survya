@@ -37,22 +37,22 @@ router.patch(["/flows/conversation-flows/:id/set-default", "/:id/set-default"], 
 // CONVERSATION FLOWS (STUDIO BUILDER & LIFECYCLE)
 // =========================================================================
 
-// List flows
-router.get(["/flows", "/flows/conversation-flows", "/conversation-flows"], authenticateToken, flowController.listFlows);
+// List flows (Admin only)
+router.get(["/flows", "/flows/conversation-flows", "/conversation-flows"], authenticateToken, requireAdmin, flowController.listFlows);
 
 // Create flow
 router.post(["/flows", "/flows/conversation-flows", "/conversation-flows"], authenticateToken, requireAdmin, flowController.createFlow);
 
-// In-Memory Test Simulator (zero dispatch, zero live charges)
-router.post(["/flows/conversation-flows/simulate", "/simulate"], authenticateToken, flowController.simulateTurn);
+// In-Memory Test Simulator (zero dispatch, zero live charges - Admin only)
+router.post(["/flows/conversation-flows/simulate", "/simulate"], authenticateToken, requireAdmin, flowController.simulateTurn);
 
 // Reusable Message Templates
-router.get(["/flows/message-templates", "/message-templates"], authenticateToken, flowController.listMessageTemplates);
+router.get(["/flows/message-templates", "/message-templates"], authenticateToken, requireAdmin, flowController.listMessageTemplates);
 router.post(["/flows/message-templates", "/message-templates"], authenticateToken, requireAdmin, flowController.saveMessageTemplate);
 router.delete(["/flows/message-templates/:id", "/message-templates/:id"], authenticateToken, requireAdmin, flowController.deleteMessageTemplate);
 
 // Starter Journey Templates
-router.get(["/flows/conversation-templates", "/conversation-templates"], authenticateToken, flowController.listTemplates);
+router.get(["/flows/conversation-templates", "/conversation-templates"], authenticateToken, requireAdmin, flowController.listTemplates);
 router.post(["/flows/conversation-templates", "/conversation-templates"], authenticateToken, requireAdmin, flowController.createTemplate);
 router.post(["/flows/conversation-templates/:slug/clone", "/conversation-templates/:slug/clone"], authenticateToken, requireAdmin, flowController.cloneTemplate);
 
@@ -61,7 +61,7 @@ router.post(["/flows/conversation-templates/:slug/clone", "/conversation-templat
 router.get(["/flows/conversation-flows/:id/approvals", "/:id/approvals"], authenticateToken, requireAdmin, flowApprovalController.getFlowApprovals);
 router.post(["/flows/conversation-flows/:id/approvals/request", "/:id/approvals/request"], authenticateToken, requireAdmin, flowApprovalController.requestFlowApproval);
 router.post(["/flows/conversation-flows/:id/approvals/decision", "/:id/approvals/decision"], authenticateToken, requireAdmin, flowApprovalController.decideFlowApproval);
-router.get(["/flows/conversation-flows/:id", "/:id"], authenticateToken, flowController.getFlowById);
+router.get(["/flows/conversation-flows/:id", "/:id"], authenticateToken, requireAdmin, flowController.getFlowById);
 router.put(["/flows/conversation-flows/:id", "/:id"], authenticateToken, requireAdmin, flowController.updateFlow);
 router.post(["/flows/conversation-flows/:id/duplicate", "/:id/duplicate"], authenticateToken, requireAdmin, flowController.duplicateFlow);
 router.post(["/flows/conversation-flows/:id/draft", "/:id/draft"], authenticateToken, requireAdmin, flowController.saveFlowDraft);

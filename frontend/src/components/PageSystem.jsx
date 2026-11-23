@@ -145,24 +145,24 @@ export const PAGE_REGISTRY = {
     id: 'autoreply',
     title: 'Conversational Concierge & Auto-Reply Bot',
     module: 'Connect',
-    group: 'Operations & Messaging',
+    group: 'System Administration',
     badge: 'AI Smart',
     badgeTone: 'green',
     icon: BotMessageSquare,
     description: 'Inbound automation engine: instant room quotes, WhatsApp quick buttons, Meta Flows, and programmable dynamic rules.',
-    adminOnly: false,
+    adminOnly: true,
     component: AutoReplyBotPage
   },
   flowStudio: {
     id: 'flowStudio',
     title: 'Multi-Flow Hub & Studio',
     module: 'Flow',
-    group: 'Operations & Messaging',
+    group: 'System Administration',
     badge: 'Universal',
     badgeTone: 'purple',
     icon: BotMessageSquare,
     description: 'High-speed multi-flow control hub with O(1) trigger router, conflict detector, AI Architect & dual-mode editor.',
-    adminOnly: false,
+    adminOnly: true,
     component: FlowStudioPage
   },
   broadcast: {
@@ -193,12 +193,12 @@ export const PAGE_REGISTRY = {
     id: 'inapp_studio',
     title: 'In-App Experience Studio',
     module: 'In-App',
-    group: 'Operations & Messaging',
+    group: 'System Administration',
     badge: 'Dynamic',
     badgeTone: 'purple',
     icon: Smartphone,
     description: 'WhatsApp-Flows-style multi-screen web experiences with validated forms, catalog browsing, image galleries, price-range filters, rate discussions, and calls.',
-    adminOnly: false,
+    adminOnly: true,
     component: InAppStudioPage
   },
   ai: {
