@@ -4195,7 +4195,16 @@ export default function AutoReplyBotPage({ onNavigate }) {
         isOpen={templatesModalOpen}
         onClose={() => setTemplatesModalOpen(false)}
         templates={templatesList}
+        token={token}
         onCloneTemplate={handleCloneTemplate}
+        onFlowInstalled={flow => {
+          if (flow) {
+            setFlowsList(prev => [flow, ...prev]);
+            setActiveFlowId(flow.id);
+            loadFlowDetails(flow.id);
+            setStudioMode('BUILDER');
+          }
+        }}
       />
 
       {/* AI Flow Architect Modal */}

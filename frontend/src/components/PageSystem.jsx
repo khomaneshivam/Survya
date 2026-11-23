@@ -36,6 +36,7 @@ const EnquiriesPage = lazyWithRetry(() => import('../pages/EnquiriesPage'));
 const FlowsPage = lazyWithRetry(() => import('../pages/FlowsPage'));
 const AutomationPage = lazyWithRetry(() => import('../pages/AutomationPage'));
 const InboxPage = lazyWithRetry(() => import('../pages/InboxPage'));
+const AutomationStudio = lazyWithRetry(() => import('../features/automation/AutomationStudio'));
 const AutoReplyBotPage = lazyWithRetry(() => import('../pages/AutoReplyBotPage'));
 const BroadcastPage = lazyWithRetry(() => import('../pages/BroadcastPage'));
 const FlowStudioPage = lazyWithRetry(() => import('../pages/FlowStudioPage'));
@@ -143,15 +144,15 @@ export const PAGE_REGISTRY = {
   },
   autoreply: {
     id: 'autoreply',
-    title: 'Conversational Concierge & Auto-Reply Bot',
+    title: 'Enterprise Automation Studio',
     module: 'Connect',
     group: 'System Administration',
-    badge: 'AI Smart',
+    badge: 'Enterprise',
     badgeTone: 'green',
     icon: BotMessageSquare,
-    description: 'Inbound automation engine: instant room quotes, WhatsApp quick buttons, Meta Flows, and programmable dynamic rules.',
+    description: 'Universal conversational template library, client configurations, and visual workflow builder.',
     adminOnly: true,
-    component: AutoReplyBotPage
+    component: AutomationStudio
   },
   flowStudio: {
     id: 'flowStudio',
@@ -163,7 +164,7 @@ export const PAGE_REGISTRY = {
     icon: BotMessageSquare,
     description: 'High-speed multi-flow control hub with O(1) trigger router, conflict detector, AI Architect & dual-mode editor.',
     adminOnly: true,
-    component: FlowStudioPage
+    component: AutomationStudio
   },
   broadcast: {
     id: 'broadcast',

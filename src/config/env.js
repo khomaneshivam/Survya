@@ -65,7 +65,7 @@ const config = {
   PUBLIC_APP_URL: process.env.PUBLIC_APP_URL || "",
   CORS_ORIGIN: process.env.CORS_ORIGIN || process.env.CORS_ORIGINS || "",
   WHATSAPP_BUSINESS_ACCOUNT_ID: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
-  WHATSAPP_FLOWS_ENABLED: process.env.WHATSAPP_FLOWS_ENABLED === "true",
+  WHATSAPP_FLOWS_ENABLED: process.env.WHATSAPP_FLOWS_ENABLED ? process.env.WHATSAPP_FLOWS_ENABLED === "true" : true,
   FLOWS_PRIVATE_KEY: process.env.FLOWS_PRIVATE_KEY || "",
   FLOWS_PASSPHRASE: process.env.FLOWS_PASSPHRASE || "",
   FLOWS_ENDPOINT_URL: process.env.FLOWS_ENDPOINT_URL || ""

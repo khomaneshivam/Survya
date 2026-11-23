@@ -37,6 +37,7 @@
    - [9.3 Cycle-Free Hop Traversal & 18 Specialized Node Executors](#93-cycle-free-hop-traversal--18-specialized-node-executors)
    - [9.4 AI Flow Architect (Prompt-to-Graph Generation)](#94-ai-flow-architect-prompt-to-graph-generation)
    - [9.5 O(1) Pre-Aggregated Daily Funnel Analytics](#95-o1-pre-aggregated-daily-funnel-analytics)
+   - [9.6 Universal Flow Template Library & Client Configuration Engine (Enterprise Automation Studio)](#96-universal-flow-template-library--client-configuration-engine-enterprise-automation-studio)
 10. [Dynamic In-App Experience Studio (`/x/:slug`)](#10-dynamic-in-app-experience-studio-xslug)
 11. [Transactional Job Queue & Background Worker (`sarvya-worker`)](#11-transactional-job-queue--background-worker-sarvya-worker)
 12. [Task-Scoped AI, Knowledge Grounding & Voice Copilot](#12-task-scoped-ai-knowledge-grounding--voice-copilot)
@@ -664,6 +665,23 @@ Admins can generate complete multi-step flows using plain English or Hinglish pr
 - Telemetry events are stored in `conversation_flow_events`.
 - To prevent heavy `GROUP BY` full-table scans when admins view analytics dashboards, the background worker continuously rolls up counts into `flow_node_daily_metrics`.
 - Funnel queries read directly from daily rollups in $< 50\text{ms}$.
+
+### 9.6 Universal Flow Template Library & Client Configuration Engine (Enterprise Automation Studio)
+
+Implemented in `src/modules/templateLibrary/` and `frontend/src/features/automation/`:
+- **Core Principle:** *"One reusable workflow design. Independent client configurations. Separate client data."*
+- **Master Template Registry:** Platform admins publish immutable versioned workflows (`template_catalog`, `template_versions`) with typed configuration schemas (`configSchema`) and required channel/data bindings (`requiredBindings`).
+- **Tenant Isolation:** Customers install blueprints (`template_installations`, `template_bindings`) into independent `conversation_flows` without duplicating nodes or leaking tenant data.
+- **Dynamic Expression Engine:** `expressionEvaluator.js` resolves dot-path variables (`{{config.business.name}}`, `{{catalog.starting_price}}`, `{{pricing.quote_total}}`) at runtime, maintaining namespaces across conversational restarts.
+- **Controlled Upgrades:** Allows upgrading from version `1.0.0` to `1.1.0` seamlessly while preserving client business overrides.
+- **Enterprise Automation Studio (`AutomationStudio.jsx`):** Replaces legacy monolithic flow builders with a 5-step setup wizard, "My Automations" operational dashboard, Template Library, and unified visual builder.
+- **Dedicated Architecture & Study Guides:**
+  - [AUTOMATION_STUDIO_ARCHITECTURE.md](file:///d:/whatsapp_bulk/docs/AUTOMATION_STUDIO_ARCHITECTURE.md)
+  - [TEMPLATE_LIBRARY_PRD.md](file:///d:/whatsapp_bulk/docs/TEMPLATE_LIBRARY_PRD.md)
+  - [TEMPLATE_CONFIGURATION_SCHEMA.md](file:///d:/whatsapp_bulk/docs/TEMPLATE_CONFIGURATION_SCHEMA.md)
+  - [AUTOMATION_STUDIO_API.md](file:///d:/whatsapp_bulk/docs/AUTOMATION_STUDIO_API.md)
+  - [AUTOMATION_STUDIO_MIGRATION.md](file:///d:/whatsapp_bulk/docs/AUTOMATION_STUDIO_MIGRATION.md)
+  - [AUTOMATION_STUDIO_TEST_PLAN.md](file:///d:/whatsapp_bulk/docs/AUTOMATION_STUDIO_TEST_PLAN.md)
 
 ---
 

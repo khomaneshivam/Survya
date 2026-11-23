@@ -353,18 +353,7 @@ function upsertActiveSession({
  */
 function interpolateVariables(templateStr, context = {}) {
   if (!templateStr || typeof templateStr !== "string") return "";
-  return templateStr.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (match, path) => {
-    const parts = path.split(".");
-    let curr = context;
-    for (const p of parts) {
-      if (curr == null || typeof curr !== "object") {
-        curr = undefined;
-        break;
-      }
-      curr = curr[p];
-    }
-    return curr !== undefined && curr !== null ? String(curr) : "";
-  });
+  return interpolateTemplate(templateStr, context);
 }
 
 /**
@@ -1185,16 +1174,21 @@ async function processTurn({
   startFlowId = null,
   startNodeId = null,
   phoneNumberId = null,
+  tenantId: topTenantId = null,
+  propertyId: topPropertyId = null,
   context = {}
 }) {
   const {
-    tenantId = 1,
-    propertyId = 1,
+    tenantId: ctxTenantId = null,
+    propertyId: ctxPropertyId = null,
     channel = "WHATSAPP",
     isSimulation = false,
     simulationState = null,
     flowOverride = null
   } = context;
+
+  const tenantId = ctxTenantId || topTenantId || 1;
+  const propertyId = ctxPropertyId || topPropertyId || 1;
 
   // A caller that marks a turn as simulated must never fall back to the
   // production routing/session/executor path. `simulationState` is retained
@@ -1371,15 +1365,61 @@ async function processTurn({
     }
   }
 
+  // Load dynamic template configuration if flow was installed from a template
+  let templateConfig = {};
+  const effectiveFlowId = flow?.id || session?.flow_id;
+  if (effectiveFlowId) {
+    try {
+      const inst = db.prepare(`
+        SELECT config_values_json, custom_flow_name 
+        FROM template_installations 
+        WHERE flow_id = ? AND delete_status = 0
+        LIMIT 1
+      `).get(effectiveFlowId);
+      if (inst && inst.config_values_json) {
+        templateConfig = typeof inst.config_values_json === 'string' ? JSON.parse(inst.config_values_json) : inst.config_values_json;
+      }
+    } catch (_) {}
+  }
+
+  // Fetch tenant's minimum starting price from universal catalog or room types
+  let startingPrice = null;
+  try {
+    const minCatItem = db.prepare(`
+      SELECT MIN(base_price) as min_price 
+      FROM catalog_items 
+      WHERE tenant_id = ? AND delete_status = 0 AND active_status = 1 AND (is_sold_out = 0 OR is_sold_out IS NULL)
+    `).get(tenantId);
+    if (minCatItem && minCatItem.min_price) {
+      startingPrice = `₹${minCatItem.min_price.toLocaleString('en-IN')}`;
+    } else {
+      const minRoom = db.prepare(`
+        SELECT MIN(base_rate) as min_price 
+        FROM room_types 
+        WHERE tenant_id = ? AND active = 1
+      `).get(tenantId);
+      if (minRoom && minRoom.min_price) {
+        startingPrice = `₹${minRoom.min_price.toLocaleString('en-IN')}`;
+      }
+    }
+  } catch (_) {}
+
+  const resolvedBusinessName = templateConfig['business.name'] || templateConfig.business?.name || configuredBusinessName || prop.name;
+  const resolvedPhone = templateConfig['business.phone'] || templateConfig.business?.phone || prop.phone;
+
   // Pre-populate system variables
   const variableContext = {
     ...collectedData,
     sender_phone: normalizedPhone,
-    business_name: configuredBusinessName || prop.name,
+    business_name: resolvedBusinessName,
+    config: templateConfig,
+    catalog: {
+      starting_price: startingPrice || '₹3,500'
+    },
     property: {
-      name: configuredBusinessName || prop.name,
+      name: resolvedBusinessName,
       city: prop.city,
-      phone: prop.phone
+      phone: resolvedPhone
     }
   };
 
@@ -1430,7 +1470,7 @@ async function processTurn({
     currentNode = startNode;
     collectedData = {};
     Object.keys(variableContext).forEach(k => {
-      if (!['sender_phone', 'property', 'business_name'].includes(k)) delete variableContext[k];
+      if (!['sender_phone', 'property', 'business_name', 'config', 'catalog'].includes(k)) delete variableContext[k];
     });
     if (!isInMemorySimulation && session?.id) {
       try {

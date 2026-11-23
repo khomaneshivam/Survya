@@ -16,7 +16,7 @@ import {
   BotMessageSquare
 } from 'lucide-react';
 import { formatIndianDate, formatIndianTime } from '../utils/indianTime';
-import AutoReplyBotPage from './AutoReplyBotPage';
+import AutomationStudio from '../features/automation/AutomationStudio';
 
 export default function AutomationPage() {
   const { token } = useAuth();
@@ -704,7 +704,7 @@ export default function AutomationPage() {
 
       {subTab === 'STUDIO' ? (
         <div style={{ marginTop: '-20px' }}>
-          <AutoReplyBotPage />
+          <AutomationStudio />
         </div>
       ) : (
         <>

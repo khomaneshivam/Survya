@@ -2203,6 +2203,14 @@ function seedFlowsAndTemplates(db) {
         }
       }
     } catch (_) {}
+
+    // 4. Seed Universal Template Library (Catalog & Immutable Releases)
+    try {
+      const { seedTemplateCatalog } = require("./universalTemplateSeeds");
+      seedTemplateCatalog(db);
+    } catch (seedErr) {
+      console.warn("[ConversationFlowSeeds] Universal template seed error:", seedErr.message);
+    }
   } catch (err) {
     console.warn("[ConversationFlowSeeds] Seed notice:", err.message);
   }

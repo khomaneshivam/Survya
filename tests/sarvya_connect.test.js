@@ -285,6 +285,13 @@ describe("SARVYA Connect — WhatsApp Campaign, Custom Template Management & Rul
     });
     assert.equal(whRes.status, 200);
 
+    // Wait for async webhook worker to process approval
+    for (let i = 0; i < 25; i++) {
+      const checkTpl = db.prepare("SELECT status FROM templates WHERE id = ?").get(tplId);
+      if (checkTpl && checkTpl.status === 'APPROVED') break;
+      await new Promise(r => setTimeout(r, 100));
+    }
+
     // APPROVED template cannot be directly mutated via PUT (409 Conflict)
     const lockRes = await originalFetch(`${baseUrl}/api/v1/whatsapp/templates/${tplId}`, {
       method: "PUT",

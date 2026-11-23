@@ -903,4 +903,8 @@ router.use(["/v1/agency", "/agency"], require("./agencyRoutes"));
 router.use(["/v1/transactions", "/transactions"], require("./universalFulfillmentRoutes"));
 router.use(["/v1/public", "/public"], require("./publicUniversalFulfillmentRoutes"));
 
+// Universal Flow Template Library & Client Configuration Engine
+router.use(["/v1/template-library", "/template-library"], require("../modules/templateLibrary/templateRoutes"));
+router.use(["/v1/template-installations", "/template-installations"], require("../modules/templateLibrary/templateInstallationRoutes"));
+
 module.exports = router;

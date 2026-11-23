@@ -46,7 +46,7 @@ export default function Sidebar({
         { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
         { id: 'enquiries', label: 'CRM', icon: Users },
         { id: 'flows', label: 'Forms', icon: FileSpreadsheet },
-        { id: 'automation', label: 'Workflows', icon: GitBranch },
+        { id: 'automation', label: 'Automations', icon: GitBranch, badge: 'Studio' },
         { id: 'inbox', label: 'Conversations', icon: MessageSquare },
         { id: 'broadcast', label: 'Campaigns', icon: Send },
         { id: 'links', label: 'Chat Links', icon: Link2 },
@@ -69,7 +69,7 @@ export default function Sidebar({
         isAdminSection: true,
         items: [
           { id: 'admin', label: 'System Admin Panel', icon: ShieldCheck, highlight: true },
-          { id: 'autoreply', label: 'Auto-Reply Bot', icon: BotMessageSquare },
+          { id: 'autoreply', label: 'Automation Studio', icon: BotMessageSquare },
           { id: 'inapp_studio', label: 'In-App Studio', icon: Smartphone, badge: 'Dynamic' },
           { id: 'payouts', label: 'Payouts & Settlements', icon: Landmark },
           { id: 'connect', label: 'Connect', icon: Plug }

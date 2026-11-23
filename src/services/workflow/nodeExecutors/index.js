@@ -60,6 +60,7 @@ const EXECUTORS = {
 
   // Actions & Integrations
   CRM_UPSERT: crmUpsertExecutor,
+  CRM_CREATE_OR_UPDATE_RECORD: crmUpsertExecutor,
   CATALOG_BOOKING: catalogBookingExecutor,
   BUSINESS_ACTION: catalogBookingExecutor,
   TRANSACTION: catalogBookingExecutor,
