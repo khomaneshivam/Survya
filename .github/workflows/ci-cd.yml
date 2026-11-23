@@ -1,4 +1,4 @@
-name: SARVYA CI/CD Pipeline
+name: SARVYA CI Pipeline
 
 on:
   push:
@@ -17,11 +17,6 @@ on:
         options:
           - production
           - staging
-      skip_tests:
-        description: 'Skip Tests (Emergency Hotfix Only)'
-        required: false
-        default: false
-        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -50,8 +45,7 @@ jobs:
           npm --prefix frontend ci
 
       - name: Frontend Static Analysis & Lint (Oxlint)
-        run: |
-          npm --prefix frontend run lint || true
+        run: npm --prefix frontend run lint
 
       - name: Compile Vite Production Bundle
         run: |
@@ -105,6 +99,11 @@ jobs:
       APP_TIMEZONE: Asia/Kolkata
       DATA_DIR: ./data
       UPLOADS_DIR: ./uploads
+      # CI is offline-only. These deliberately invalid values ensure no test can
+      # accidentally reach a real Meta Graph API endpoint.
+      META_API_URL: http://127.0.0.1:9
+      META_API_TOKEN: ci-simulation-only
+      WHATSAPP_ACCESS_TOKEN: ci-simulation-only
 
     steps:
       - name: Checkout Repository
@@ -146,107 +145,5 @@ jobs:
           node tests/universal_fulfillment_and_payments.test.js
           node tests/hybrid_inapp_bridge_and_analytics.test.js
 
-  # ============================================================================
-  # 3. CD DEPLOYMENT: Zero-Downtime PM2 Deployment via SSH
-  # ============================================================================
-  deploy:
-    name: Deploy to Production (PM2)
-    runs-on: ubuntu-latest
-    needs: [frontend-build, backend-test]
-    if: |
-      always() &&
-      (needs.frontend-build.result == 'success') &&
-      (needs.backend-test.result == 'success' || needs.backend-test.result == 'skipped') &&
-      (github.ref == 'refs/heads/main') &&
-      (github.event_name != 'pull_request')
-    environment:
-      name: production
-      url: https://survya.flex-us.in
+# End of CI configuration.
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Check Deployment Configuration
-        id: check-secrets
-        run: |
-          if [ -n "${{ secrets.SSH_HOST }}" ] && [ -n "${{ secrets.SSH_USER }}" ] && [ -n "${{ secrets.SSH_KEY }}" ]; then
-            echo "configured=true" >> $GITHUB_OUTPUT
-            echo "SSH deployment secrets detected."
-          else
-            echo "configured=false" >> $GITHUB_OUTPUT
-            echo "::warning ::SSH deployment secrets (SSH_HOST, SSH_USER, SSH_KEY) are not set. Remote SSH execution will be skipped until configured."
-          fi
-
-      - name: Deploy to VPS via SSH
-        if: steps.check-secrets.outputs.configured == 'true'
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          script_stop: true
-          envs: GITHUB_SHA
-          script: |
-            set -e
-            DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/var/www/whatsapp_bulk' }}"
-            echo "=========================================================="
-            echo "Starting SARVYA Production Deployment: $(date -u)"
-            echo "Commit SHA: $GITHUB_SHA"
-            echo "Target Directory: $DEPLOY_PATH"
-            echo "=========================================================="
-
-            if [ ! -d "$DEPLOY_PATH" ]; then
-              echo "Error: Target directory $DEPLOY_PATH does not exist!"
-              exit 1
-            fi
-
-            cd "$DEPLOY_PATH"
-
-            echo "--> 1. Pulling latest code from main..."
-            git fetch origin main
-            git reset --hard origin/main
-
-            echo "--> 2. Installing backend dependencies..."
-            npm ci --omit=dev
-
-            echo "--> 3. Installing frontend dependencies & compiling Vite build..."
-            npm --prefix frontend ci
-            npm --prefix frontend run build
-
-            echo "--> 4. Validating database schema & migrations..."
-            npm run db:init
-
-            echo "--> 5. Gracefully reloading PM2 processes (sarvya-api & sarvya-worker)..."
-            if pm2 describe sarvya-api > /dev/null 2>&1; then
-              pm2 reload ecosystem.config.js --update-env
-            else
-              pm2 start ecosystem.config.js
-            fi
-            pm2 save
-
-            echo "--> 6. Checking PM2 Process Health..."
-            pm2 status
-
-            echo "--> 7. Performing Local HTTP Health Check..."
-            sleep 2
-            curl -f -s -I http://127.0.0.1:5000/robots.txt > /dev/null || echo "Health check ping complete."
-
-            echo "=========================================================="
-            echo "SARVYA Deployment Completed Successfully at $(date -u)"
-            echo "=========================================================="
-
-      - name: Post-Deployment Summary
-        run: |
-          echo "### SARVYA CI/CD Run Summary :rocket:" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Actor**: \`${{ github.actor }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Frontend Build**: Verified :white_check_mark:" >> $GITHUB_STEP_SUMMARY
-          echo "- **MySQL & QA Tests**: Passed :white_check_mark:" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.check-secrets.outputs.configured }}" == "true" ]; then
-            echo "- **Production Deployment**: Executed on \`${{ secrets.SSH_HOST }}\` :tada:" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- **Production Deployment**: Pending SSH Secrets configuration (see docs/CI_CD_PIPELINE.md) :bulb:" >> $GITHUB_STEP_SUMMARY
-          fi
