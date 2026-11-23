@@ -64,3 +64,4 @@ A linear, zero-friction onboarding wizard:
 2. **Absolute Live Message Prohibition**: All automated tests, sandbox simulators, and preview interfaces are bound to `isSimulation: true` mock adapters. Zero live WhatsApp messages or Meta Graph API calls are dispatched during testing.
 3. **Sub-50ms Turn Processing**: The runtime engine resolves template configurations and evaluates expressions in memory with O(1) graph step traversal.
 4. **Immutable Template Releases**: Once published, a version record (`template_versions`) cannot be mutated. New features require a new semantic release (`1.1.0`).
+

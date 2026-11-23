@@ -151,3 +151,4 @@ The frontend migration routes users cleanly into the unified Studio experience w
 
 ### Existing Workflows Compatibility Guarantee:
 All existing rows in `conversation_flows` and `conversation_flow_versions` remain 100% active. Their execution through `conversationFlowEngine.js` continues seamlessly because the underlying graph model is identical.
+

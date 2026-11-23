@@ -155,3 +155,4 @@ const namespaces = {
    - `ADMIN` role within a tenant grants administrative rights *only within that tenant's workspace*.
    - Master template authoring, public publishing, and cross-workspace version deprecation require verified Platform Super-Admin authorization (`req.user.isPlatformAdmin === true` or verified system root privileges).
 4. **Mandatory Safety Rule**: In accordance with system safety constraints, **all testing, verification, and sandboxes utilize mock adapters and `isSimulation: true` stubs**. Real Meta Graph API outbound endpoints are never triggered by automated testing.
+

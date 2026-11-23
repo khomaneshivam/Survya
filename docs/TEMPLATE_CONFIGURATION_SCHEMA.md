@@ -199,3 +199,4 @@ Resource bindings define external tenant resources required for the workflow to 
   ]
 }
 ```
+
