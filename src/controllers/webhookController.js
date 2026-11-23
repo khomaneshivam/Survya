@@ -3,13 +3,21 @@ const webhookService = require("../services/webhookService");
 const { getSetting, db } = require("../config/database");
 const config = require("../config/env");
 
+// Legacy shared-bot settings and webhook secrets are not tenant-isolated.
+// Deny access to other workspaces until these settings have their own data model.
+function requireLegacyWorkspace(req, res) {
+  if (Number(req.user?.tenant_id) === 1) return true;
+  res.status(403).json({ success: false, message: "Legacy shared automation settings are unavailable for this workspace." });
+  return false;
+}
+
 /**
  * Validates incoming Meta X-Hub-Signature-256 against raw request payload
  */
 function verifyMetaSignature(req) {
-  // Allow explicit signature bypass if disabled via env/settings (e.g. for staging or troubleshooting)
-  const bypassFlag = process.env.VERIFY_WEBHOOK_SIGNATURE ?? getSetting("VERIFY_WEBHOOK_SIGNATURE");
-  if (bypassFlag === "false" || bypassFlag === false) {
+  // Signature bypass is permitted only by an explicit local development flag.
+  // A database setting must never turn off verification in production.
+  if (process.env.NODE_ENV !== "production" && process.env.VERIFY_WEBHOOK_SIGNATURE === "false") {
     return true;
   }
 
@@ -17,9 +25,9 @@ function verifyMetaSignature(req) {
   let appSecret = config.META_APP_SECRET || getSetting("META_APP_SECRET") || process.env.META_APP_SECRET || "";
   appSecret = String(appSecret).trim().replace(/^["']|["']$/g, "");
 
-  // If no Meta App Secret is configured on the platform, permit inbound event without HMAC verification
+  // Fail closed for live traffic. Development fixtures may omit the secret.
   if (!appSecret || /placeholder|your_meta_app_secret|your_app_secret|dummy|optional/i.test(appSecret)) {
-    return true;
+    return process.env.NODE_ENV !== "production";
   }
 
   // If App Secret is configured, enforce strict HMAC-SHA256 signature verification
@@ -74,46 +82,45 @@ function handleVerification(req, res) {
  * Handles Meta Webhook Event Notification (POST /webhook or POST /api/webhook)
  */
 function handleIncomingEvent(req, res) {
-  // 1. Verify Meta signature before accepting or processing
-  const isValidSig = verifyMetaSignature(req);
-  if (!isValidSig) {
-    console.warn("[Webhook Security] Rejected incoming webhook with invalid or missing X-Hub-Signature-256.");
+  if (!verifyMetaSignature(req)) {
     return res.status(403).json({ success: false, message: "Forbidden: Invalid webhook signature." });
   }
 
-  // 2. Acknowledge immediately to Meta with 200 OK
-  res.status(200).send("EVENT_RECEIVED");
-
-  // 3. Durably log & asynchronously process payload without exposing PII in console
-  const payload = req.body;
-  const entriesCount = Array.isArray(payload?.entry) ? payload.entry.length : 0;
-  console.log(`[Webhook] Processing incoming Meta notification (entries: ${entriesCount})`);
-
-  // Durable event recording for auditing and recovery
+  // Acknowledge to Meta only after committing the payload to the durable queue.
+  // The content digest makes retries idempotent, unlike Meta's static WABA entry ID.
   try {
-    const eventId = payload?.entry?.[0]?.id || `evt_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
-    db.prepare(`
-      INSERT OR IGNORE INTO incoming_webhook_events (event_id, event_type, status, created_at)
-      VALUES (?, 'META_NOTIFICATION', 'PROCESSING', CURRENT_TIMESTAMP)
-    `).run(eventId);
-  } catch (e) {}
+    const payload = req.body;
+    if (!payload || typeof payload !== 'object') {
+      return res.status(400).json({ success: false, message: "Invalid webhook payload." });
+    }
 
-  webhookService
-    .processIncomingPayload(payload)
-    .then(result => {
-      if (result.processed > 0) {
-        console.log(`[WebhookController] Processed ${result.messages} customer reply(ies), ${result.statuses} delivery status update(s).`);
-      }
-    })
-    .catch(err => {
-      console.error("[WebhookController] Error processing payload:", err.message);
+    const rawBody = req.rawBody || Buffer.from(JSON.stringify(payload));
+    const digest = crypto.createHash('sha256').update(rawBody).digest('hex');
+    const { enqueueJob } = require("../services/queue/jobQueueService");
+    const queued = enqueueJob({
+      tenantId: 0, // System-scoped ingress; individual messages resolve their tenant on processing.
+      queueName: "webhook",
+      jobType: "META_WEBHOOK_INGEST",
+      idempotencyKey: `meta_ingest_${digest}`,
+      payload,
+      priority: 10,
+      maxAttempts: 7
     });
+
+    if (!queued?.success) throw new Error("Webhook event could not be durably queued");
+    return res.status(200).send("EVENT_RECEIVED");
+  } catch (error) {
+    console.error("[Webhook] Durable enqueue failed:", error.message);
+    // A 5xx instructs Meta to retry rather than losing a just-acknowledged event.
+    return res.status(503).json({ success: false, message: "Temporary webhook ingestion failure." });
+  }
 }
 
 /**
  * Gets Webhook configuration and status for the UI
  */
 function getConfig(req, res) {
+  if (!requireLegacyWorkspace(req, res)) return;
   try {
     const user = req.user;
     let verifyToken = webhookService.getVerifyToken();
@@ -131,7 +138,7 @@ function getConfig(req, res) {
     const altWebhookUrl = publicUrl ? `${publicUrl}/api/webhook` : `${protocol}://${host}/api/webhook`;
 
     const scopedUserId = user && user.role !== "ADMIN" ? user.id : null;
-    const repliesStats = webhookService.getReplies({ limit: 1, userId: scopedUserId });
+    const repliesStats = webhookService.getReplies({ limit: 1, userId: scopedUserId, tenantId: req.user?.tenant_id || 1 });
 
     return res.status(200).json({
       success: true,
@@ -235,6 +242,7 @@ async function restartTunnel(req, res) {
  * Generates a new secure random verify token (Admin Only)
  */
 function generateNewToken(req, res) {
+  if (!requireLegacyWorkspace(req, res)) return;
   try {
     const newToken = webhookService.generateVerifyToken();
     return res.status(200).json({
@@ -254,6 +262,7 @@ function generateNewToken(req, res) {
  * Saves a custom verify token (Admin Only)
  */
 function saveToken(req, res) {
+  if (!requireLegacyWorkspace(req, res)) return;
   try {
     const { verifyToken } = req.body || {};
     if (!verifyToken || !String(verifyToken).trim()) {
@@ -294,6 +303,7 @@ function listReplies(req, res) {
       campaignId,
       unreadOnly,
       userId: targetUserId,
+      tenantId: req.user.tenant_id,
       repliesOnly
     });
 
@@ -321,7 +331,7 @@ function listReplies(req, res) {
 function markAsRead(req, res) {
   try {
     const { id } = req.params;
-    webhookService.markAsRead(id);
+    webhookService.markAsRead(id, req.user.tenant_id);
     return res.status(200).json({ success: true, message: "Reply marked as read." });
   } catch (error) {
     console.error("[WebhookController] markAsRead error:", error);
@@ -334,7 +344,7 @@ function markAsRead(req, res) {
  */
 function markAllAsRead(req, res) {
   try {
-    webhookService.markAllAsRead();
+    webhookService.markAllAsRead(req.user.tenant_id);
     return res.status(200).json({ success: true, message: "All replies marked as read." });
   } catch (error) {
     console.error("[WebhookController] markAllAsRead error:", error);
@@ -348,7 +358,7 @@ function markAllAsRead(req, res) {
 function markConversationAsRead(req, res) {
   try {
     const { phone } = req.params;
-    const result = webhookService.markConversationAsRead(phone);
+    const result = webhookService.markConversationAsRead(phone, req.user.tenant_id);
     return res.status(200).json({ success: true, message: "Conversation marked as read.", updated: result.updated });
   } catch (error) {
     console.error("[WebhookController] markConversationAsRead error:", error);
@@ -363,7 +373,7 @@ function getConversationMessages(req, res) {
   try {
     const { phone } = req.params;
     const { limit, before, offset } = req.query;
-    const result = webhookService.getConversationMessages({ phone, limit, before, offset });
+    const result = webhookService.getConversationMessages({ phone, limit, before, offset, tenantId: req.user.tenant_id });
     return res.status(200).json({ success: true, ...result });
   } catch (error) {
     console.error("[WebhookController] getConversationMessages error:", error);
@@ -377,7 +387,7 @@ function getConversationMessages(req, res) {
 function deleteReply(req, res) {
   try {
     const { id } = req.params;
-    webhookService.deleteReply(id);
+    webhookService.deleteReply(id, req.user.tenant_id, req.user.id);
     return res.status(200).json({ success: true, message: "Reply deleted." });
   } catch (error) {
     console.error("[WebhookController] deleteReply error:", error);
@@ -394,7 +404,7 @@ function deleteConversation(req, res) {
     if (!phone) {
       return res.status(400).json({ success: false, message: "Phone number is required to delete chat." });
     }
-    const result = webhookService.deleteConversation(phone);
+    const result = webhookService.deleteConversation(phone, req.user.tenant_id, req.user.id);
     return res.status(200).json({
       success: true,
       message: "Chat conversation deleted successfully.",
@@ -410,6 +420,7 @@ function deleteConversation(req, res) {
  * Simulates an incoming customer reply (Restricted to authenticated testing)
  */
 function simulateTestReply(req, res) {
+  if (!requireLegacyWorkspace(req, res)) return;
   try {
     const { fromPhone, customerName, messageBody, campaignId, messageType, mediaUrl, mediaId } = req.body || {};
 
@@ -443,7 +454,7 @@ function simulateTestReply(req, res) {
  */
 async function sendManualReply(req, res) {
   try {
-    const { id } = req.params;
+    const id = req.params.id || req.body?.replyId;
     const { replyText } = req.body || {};
 
     if (!replyText || !String(replyText).trim()) {
@@ -452,7 +463,9 @@ async function sendManualReply(req, res) {
 
     const updated = await webhookService.sendManualReply({
       replyId: id,
-      replyText: String(replyText).trim()
+      replyText: String(replyText).trim(),
+      tenantId: req.user.tenant_id,
+      userId: req.user.id
     });
 
     return res.status(200).json({
@@ -470,6 +483,7 @@ async function sendManualReply(req, res) {
  * Gets Auto-Reply settings
  */
 function getAutoReplySettings(req, res) {
+  if (!requireLegacyWorkspace(req, res)) return;
   try {
     const settings = webhookService.getAutoReplySettings();
     return res.status(200).json({ success: true, data: settings });
@@ -483,6 +497,7 @@ function getAutoReplySettings(req, res) {
  * Updates Auto-Reply settings
  */
 function updateAutoReplySettings(req, res) {
+  if (!requireLegacyWorkspace(req, res)) return;
   try {
     const updated = webhookService.saveAutoReplySettings(req.body || {});
     return res.status(200).json({
@@ -500,6 +515,7 @@ function updateAutoReplySettings(req, res) {
  * GET /api/replies/dynamic-options - List all dynamic bot rules & options
  */
 function getDynamicOptions(req, res) {
+  if (!requireLegacyWorkspace(req, res)) return;
   try {
     const settings = webhookService.getAutoReplySettings();
     return res.status(200).json({ success: true, data: settings.dynamicOptions || [] });
@@ -512,6 +528,7 @@ function getDynamicOptions(req, res) {
  * POST /api/replies/dynamic-options - Save dynamic bot rules
  */
 function saveDynamicOptions(req, res) {
+  if (!requireLegacyWorkspace(req, res)) return;
   try {
     const options = Array.isArray(req.body) ? req.body : (req.body?.dynamicOptions || []);
     const updated = webhookService.saveAutoReplySettings({ dynamicOptions: options });
@@ -529,6 +546,7 @@ function saveDynamicOptions(req, res) {
  * Gets Bot Pause / Takeover status for a contact
  */
 function getBotStatus(req, res) {
+  if (!requireLegacyWorkspace(req, res)) return;
   try {
     const phone = req.params.phone || req.query.phone;
     const status = webhookService.getBotStatus(phone);
@@ -542,6 +560,7 @@ function getBotStatus(req, res) {
  * Sets Bot Pause / Resume status for a contact
  */
 function setBotStatus(req, res) {
+  if (!requireLegacyWorkspace(req, res)) return;
   try {
     const phone = req.params.phone || req.body?.phone;
     const { paused, durationMinutes } = req.body || {};

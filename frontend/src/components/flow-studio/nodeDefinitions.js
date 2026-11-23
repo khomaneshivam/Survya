@@ -197,6 +197,48 @@ export const NODE_DEFINITIONS = [
     ]
   },
 
+  // One executor, unlimited no-code question instances configured by metadata.
+  {
+    type: 'SCHEMA_INPUT',
+    label: 'Configurable Question',
+    category: 'INTAKE',
+    icon: FileSpreadsheet,
+    color: '#B45309',
+    bg: '#FEF3C7',
+    badge: 'No-code',
+    desc: 'Collect and validate customer answers without client-specific code',
+    defaultConfig: {
+      prompt: 'What information would you like to provide?',
+      saveAs: 'customer_response',
+      inputType: 'TEXT',
+      maxRetries: 3,
+      retryMessage: 'Please provide a valid response.'
+    },
+    configFields: [
+      { key: 'prompt', label: 'Question shown to customer', type: 'textarea',
+        required: true, maxLength: 1024, placeholder: 'What date would you prefer?' },
+      { key: 'saveAs', label: 'Save answer as variable', type: 'text',
+        required: true, pattern: '^[A-Za-z_][A-Za-z0-9_.]{0,63}$',
+        placeholder: 'appointment_date' },
+      { key: 'inputType', label: 'Expected answer', type: 'select',
+        required: true, options: [
+          { value: 'TEXT', label: 'Text' },
+          { value: 'EMAIL', label: 'Email address' },
+          { value: 'PHONE', label: 'Phone number' },
+          { value: 'NUMBER', label: 'Number' },
+          { value: 'DATE', label: 'Date' }
+        ] },
+      { key: 'maxRetries', label: 'Maximum retry attempts',
+        type: 'number', min: 1, max: 10, required: true },
+      { key: 'retryMessage', label: 'Invalid answer message',
+        type: 'textarea', maxLength: 1024 }
+    ],
+    getOutputHandles: () => [
+      { id: 'valid', label: 'Valid answer', type: 'source', color: '#16A34A' },
+      { id: 'max_retries', label: 'Maximum retries', type: 'source', color: '#EA580C' }
+    ]
+  },
+
   // 4. LOGIC & ROUTING
   {
     type: 'CONDITION',

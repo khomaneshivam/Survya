@@ -1,0 +1,100 @@
+name: Conversation Foundation Quality Gate
+
+on:
+  push:
+    branches:
+      - "review/**"
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conversation-foundation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conversation-regressions:
+    name: Conversation isolation and syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Check modified backend modules
+        run: |
+          node --check src/services/webhookService.js
+          node --check src/services/queue/jobWorkerEngine.js
+          node --check server.js
+          node --check src/controllers/webhookController.js
+          node --check src/config/schema.js
+          node --check src/routes/apiRoutes.js
+          node --check src/services/conversationFlowEngine.js
+          node --check src/services/conversationFlowService.js
+          node --check src/services/workflow/nodeExecutors/index.js
+          node --check src/services/workflow/conversationContextResolver.js
+      - name: Isolated regression tests (no database required)
+        run: |
+          node --test tests/conversation_tenant_workflows.test.js tests/inbox_tenant_isolation.test.js tests/durable_webhook_ingress.test.js tests/schema_driven_workflow_input.test.js
+
+  full-backend-regression:
+    name: Full backend regression (MySQL 8.4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: whatsapp_bulk_db
+          MYSQL_ROOT_PASSWORD: integration_test_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pintegration_test_password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      NODE_ENV: test
+      DB_CLIENT: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_USER: root
+      DB_PASSWORD: integration_test_password
+      DB_NAME: whatsapp_bulk_db
+      JWT_SECRET: integration_test_jwt_secret_very_long_nonproduction
+      META_APP_SECRET: integration_test_meta_secret_only
+      VERIFY_WEBHOOK_SIGNATURE: "false"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Install frontend dependencies used by cross-package source tests
+        run: npm ci --ignore-scripts
+        working-directory: frontend
+      - run: npm test
+
+  frontend-quality:
+    name: Frontend lint and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

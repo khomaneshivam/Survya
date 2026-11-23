@@ -519,6 +519,7 @@ class WebhookService {
 
     let processedMessages = 0;
     let processedStatuses = 0;
+    const processingFailures = [];
 
     for (const entry of entries) {
       const changes = Array.isArray(entry.changes) ? entry.changes : [];
@@ -570,6 +571,7 @@ class WebhookService {
               }
             } catch (err) {
               console.error("[Webhook] Error saving customer reply:", err);
+              processingFailures.push(err);
             }
           }
         }
@@ -585,10 +587,17 @@ class WebhookService {
               }
             } catch (err) {
               console.error("[Webhook] Error processing delivery status:", err);
+              processingFailures.push(err);
             }
           }
         }
       }
+    }
+
+    if (processingFailures.length > 0) {
+      // The durable webhook job must retry unprocessed items rather than
+      // silently mark a partially failed batch as successful.
+      throw new AggregateError(processingFailures, "Some webhook events were not processed");
     }
 
     return {
@@ -602,6 +611,15 @@ class WebhookService {
    * Saves incoming customer message to customer_replies table
    */
   saveCustomerReply(msg, contacts = [], rawValue = {}) {
+    const { resolveWhatsAppContext } = require("./workflow/conversationContextResolver");
+    const channelAccountId = rawValue?.metadata?.phone_number_id || null;
+    const simulated = Boolean(rawValue?.is_simulation || msg?.is_simulation);
+    const owner = resolveWhatsAppContext(channelAccountId, { simulation: simulated });
+    if (!owner && (channelAccountId || process.env.NODE_ENV === "production")) {
+      console.warn("[Webhook] Rejected inbound from unknown receiving account.");
+      return null;
+    }
+    const tenantId = owner?.tenantId || 1;
     const waMessageId = msg.id;
     if (!waMessageId) return null;
 
@@ -912,7 +930,7 @@ class WebhookService {
         if (flowValidation.isBooking && normalizedData.check_in && normalizedData.check_out) {
           try {
             const enquiryService = require("./enquiryService");
-            enquiryService.createEnquiry(1, {
+            enquiryService.createEnquiry(tenantId, {
               phone: cleanPhone,
               guest_name: normalizedData.guest_name || customerName,
               check_in: normalizedData.check_in,
@@ -938,6 +956,7 @@ class WebhookService {
     try {
       const recipientLine = rawValue?.metadata?.display_phone_number || rawValue?.metadata?.phone_number_id || null;
       matchedLink = this.detectChatLinkAttribution(messageBody, cleanPhone, recipientLine);
+      if (matchedLink && Number(matchedLink.tenant_id || 1) !== tenantId) matchedLink = null;
       if (matchedLink) {
         matchedLinkId = matchedLink.id;
         if (!replyUserId && matchedLink.user_id && matchedLink.user_id !== "bot") {
@@ -972,8 +991,9 @@ class WebhookService {
         wa_message_id, from_phone, customer_name, message_type,
         message_body, raw_payload, context_message_id, campaign_id,
         media_url, media_type, media_caption, flow_id, flow_response_id,
-        link_id, source, is_read, user_id, received_at, reply_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'PENDING_REPLY')
+        link_id, source, is_read, user_id, received_at, reply_status,
+        tenant_id, channel_account_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'PENDING_REPLY', ?, ?)
     `);
 
     const runResult = insertStmt.run(
@@ -993,7 +1013,9 @@ class WebhookService {
       matchedLinkId,
       replySource,
       replyUserId,
-      receivedAt
+      receivedAt,
+      tenantId,
+      channelAccountId
     );
 
     const maskedSender = cleanPhone.length > 4 ? `***${cleanPhone.slice(-4)}` : "***";
@@ -1002,7 +1024,7 @@ class WebhookService {
     // PRD PR-004: Upsert contact for incoming guest message
     try {
       const enquiryService = require("./enquiryService");
-      enquiryService.upsertContact(1, cleanPhone, customerName, null, "WHATSAPP_INBOUND");
+      enquiryService.upsertContact(tenantId, cleanPhone, customerName, null, "WHATSAPP_INBOUND");
     } catch (contactErr) {}
 
     // If inbound media needs background downloading from Meta
@@ -1303,13 +1325,13 @@ class WebhookService {
   /**
    * Retrieves customer replies and outbound broadcast messages with filtering, searching, and pagination
    */
-  getReplies({ limit = 50, offset = 0, search = "", campaignId = "", unreadOnly = false, userId = null, repliesOnly = true }) {
+  getReplies({ limit = 50, offset = 0, search = "", campaignId = "", unreadOnly = false, userId = null, repliesOnly = true, tenantId = 1 }) {
     const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 2000);
     const parsedOffset = Math.max(parseInt(offset, 10) || 0, 0);
     const onlyWithReplies = repliesOnly === undefined ? true : (repliesOnly === true || repliesOnly === "true" || repliesOnly === "1" || repliesOnly === 1);
 
-    const conditions = [];
-    const params = [];
+    const conditions = ["m.tenant_id = ?", "m.deleted_at IS NULL"];
+    const params = [tenantId];
 
     // Tenant scoping (match assigned user or campaign owner)
     if (userId) {
@@ -1336,13 +1358,16 @@ class WebhookService {
 
     // 2-Way Inbox scoping: when onlyWithReplies is true, only include broadcast dispatches for contacts who actually replied
     const repliesFilterClause = onlyWithReplies
-      ? "AND cr.clean_phone IN (SELECT from_phone FROM customer_replies WHERE message_type != 'outbound')"
+      ? "AND cr.clean_phone IN (SELECT from_phone FROM customer_replies WHERE tenant_id = c.tenant_id AND deleted_at IS NULL AND message_type != 'outbound')"
       : "";
 
     const cteSql = `
       WITH combined_messages AS (
         SELECT 
           r.id as id,
+          r.tenant_id as tenant_id,
+          r.deleted_at as deleted_at,
+          r.channel_account_id as channel_account_id,
           r.wa_message_id as wa_message_id,
           r.from_phone as from_phone,
           r.customer_name as customer_name,
@@ -1377,6 +1402,9 @@ class WebhookService {
 
         SELECT 
           CONCAT('cr_', cr.id) as id,
+          c.tenant_id as tenant_id,
+          NULL as deleted_at,
+          c.phone_number_id as channel_account_id,
           cr.meta_message_id as wa_message_id,
           cr.clean_phone as from_phone,
           cr.contact_name as customer_name,
@@ -1415,8 +1443,8 @@ class WebhookService {
     const totalCount = db.prepare(countSql).get(...params).total;
 
     // Unread count
-    const unreadConditions = ["m.is_read = 0"];
-    const unreadParams = [];
+    const unreadConditions = ["m.tenant_id = ?", "m.deleted_at IS NULL", "m.is_read = 0"];
+    const unreadParams = [tenantId];
     if (userId) {
       unreadConditions.push("(m.user_id = ? OR m.campaign_user_id = ?)");
       unreadParams.push(userId, userId);
@@ -1425,8 +1453,8 @@ class WebhookService {
     const unreadCount = db.prepare(unreadSql).get(...unreadParams).unread;
 
     // Distinct customer contacts count
-    const distinctConditions = [];
-    const distinctParams = [];
+    const distinctConditions = ["m.tenant_id = ?", "m.deleted_at IS NULL"];
+    const distinctParams = [tenantId];
     if (userId) {
       distinctConditions.push("(m.user_id = ? OR m.campaign_user_id = ?)");
       distinctParams.push(userId, userId);
@@ -1450,7 +1478,7 @@ class WebhookService {
     // Cache templates for high-speed message text reconstruction
     const templateMap = new Map();
     try {
-      const tpls = db.prepare("SELECT name, body_text FROM templates").all();
+      const tpls = db.prepare("SELECT name, body_text FROM templates WHERE tenant_id = ?").all(tenantId);
       for (const t of tpls) {
         if (t.name && t.body_text) {
           templateMap.set(t.name.trim().toLowerCase(), t.body_text);
@@ -1602,21 +1630,21 @@ class WebhookService {
   /**
    * Marks a specific reply as read
    */
-  markAsRead(id) {
-    return db.prepare("UPDATE customer_replies SET is_read = 1 WHERE id = ?").run(id);
+  markAsRead(id, tenantId = 1) {
+    return db.prepare("UPDATE customer_replies SET is_read = 1 WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL").run(id, tenantId);
   }
 
   /**
    * Marks all replies as read
    */
-  markAllAsRead() {
-    return db.prepare("UPDATE customer_replies SET is_read = 1 WHERE is_read = 0").run();
+  markAllAsRead(tenantId = 1) {
+    return db.prepare("UPDATE customer_replies SET is_read = 1 WHERE tenant_id = ? AND is_read = 0 AND deleted_at IS NULL").run(tenantId);
   }
 
   /**
    * Marks all unread messages for a specific customer phone number as read
    */
-  markConversationAsRead(phone) {
+  markConversationAsRead(phone, tenantId = 1) {
     if (!phone) return { updated: 0 };
     const rawPhone = String(phone).trim();
     const cleanDigits = rawPhone.replace(/\D/g, "");
@@ -1625,9 +1653,10 @@ class WebhookService {
     const result = db.prepare(`
       UPDATE customer_replies 
       SET is_read = 1 
-      WHERE (from_phone = ? OR from_phone = ? OR from_phone = ?)
+      WHERE tenant_id = ? AND deleted_at IS NULL
+        AND (from_phone = ? OR from_phone = ? OR from_phone = ?)
         AND is_read = 0
-    `).run(rawPhone, cleanDigits, withPlus);
+    `).run(tenantId, rawPhone, cleanDigits, withPlus);
 
     return { updated: result.changes };
   }
@@ -1635,7 +1664,7 @@ class WebhookService {
   /**
    * Retrieves conversation message history for a specific phone number with pagination (load previous chat)
    */
-  getConversationMessages({ phone, limit = 100, before = null, offset = 0 }) {
+  getConversationMessages({ phone, limit = 100, before = null, offset = 0, tenantId = 1 }) {
     if (!phone) return { phone: "", messages: [], total: 0, hasMore: false };
     const rawPhone = String(phone).trim();
     const cleanDigits = rawPhone.replace(/\D/g, "");
@@ -1644,8 +1673,8 @@ class WebhookService {
     const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
     const parsedOffset = Math.max(parseInt(offset, 10) || 0, 0);
 
-    const conditions = ["(m.from_phone = ? OR m.from_phone = ? OR m.from_phone = ?)"];
-    const params = [rawPhone, cleanDigits, withPlus];
+    const conditions = ["m.tenant_id = ?", "m.deleted_at IS NULL", "(m.from_phone = ? OR m.from_phone = ? OR m.from_phone = ?)"];
+    const params = [tenantId, rawPhone, cleanDigits, withPlus];
 
     if (before && String(before).trim()) {
       conditions.push("m.received_at < ?");
@@ -1658,6 +1687,9 @@ class WebhookService {
       WITH combined_messages AS (
         SELECT 
           r.id as id,
+          r.tenant_id as tenant_id,
+          r.deleted_at as deleted_at,
+          r.channel_account_id as channel_account_id,
           r.wa_message_id as wa_message_id,
           r.from_phone as from_phone,
           r.customer_name as customer_name,
@@ -1684,12 +1716,16 @@ class WebhookService {
         FROM customer_replies r
         LEFT JOIN campaigns c ON r.campaign_id = c.id
         LEFT JOIN chat_links l ON r.link_id = l.id
-        WHERE r.from_phone = ? OR r.from_phone = ? OR r.from_phone = ?
+        WHERE r.tenant_id = ? AND r.deleted_at IS NULL
+          AND (r.from_phone = ? OR r.from_phone = ? OR r.from_phone = ?)
 
         UNION ALL
 
         SELECT 
           CONCAT('cr_', cr.id) as id,
+          c.tenant_id as tenant_id,
+          NULL as deleted_at,
+          c.phone_number_id as channel_account_id,
           cr.meta_message_id as wa_message_id,
           cr.clean_phone as from_phone,
           cr.contact_name as customer_name,
@@ -1715,11 +1751,12 @@ class WebhookService {
           c.user_id as campaign_user_id
         FROM campaign_recipients cr
         LEFT JOIN campaigns c ON cr.campaign_id = c.id
-        WHERE (cr.clean_phone = ? OR cr.clean_phone = ?) AND cr.status IN ('SENT', 'DELIVERED', 'READ') AND cr.sent_at IS NOT NULL
+        WHERE c.tenant_id = ? AND (cr.clean_phone = ? OR cr.clean_phone = ?)
+          AND cr.status IN ('SENT', 'DELIVERED', 'READ') AND cr.sent_at IS NOT NULL
       )
     `;
 
-    const cteParams = [rawPhone, cleanDigits, withPlus, cleanDigits, rawPhone];
+    const cteParams = [tenantId, rawPhone, cleanDigits, withPlus, tenantId, cleanDigits, rawPhone];
 
     // Count total messages for this contact
     let totalCount = 0;
@@ -1762,23 +1799,27 @@ class WebhookService {
   /**
    * Deletes a specific reply
    */
-  deleteReply(id) {
-    return db.prepare("DELETE FROM customer_replies WHERE id = ?").run(id);
+  deleteReply(id, tenantId = 1, userId = null) {
+    return db.prepare(
+      "UPDATE customer_replies SET deleted_at = UTC_TIMESTAMP(), deleted_by = ? WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL"
+    ).run(userId, id, tenantId);
   }
 
   /**
    * Deletes an entire chat conversation by customer phone number
    */
-  deleteConversation(phone) {
+  deleteConversation(phone, tenantId = 1, userId = null) {
     if (!phone) return { deleted: 0 };
     const rawPhone = String(phone).trim();
     const cleanDigits = rawPhone.replace(/\D/g, "");
     const withPlus = cleanDigits ? `+${cleanDigits}` : "";
 
     const result = db.prepare(`
-      DELETE FROM customer_replies 
-      WHERE from_phone = ? OR from_phone = ? OR from_phone = ?
-    `).run(rawPhone, cleanDigits, withPlus);
+      UPDATE customer_replies
+      SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?
+      WHERE tenant_id = ? AND deleted_at IS NULL
+        AND (from_phone = ? OR from_phone = ? OR from_phone = ?)
+    `).run(userId, tenantId, rawPhone, cleanDigits, withPlus);
 
     return { deleted: result.changes };
   }
@@ -1881,17 +1922,18 @@ class WebhookService {
       this.phoneQueues = new Map();
     }
 
-    const currentTask = this.phoneQueues.get(cleanPhone) || Promise.resolve();
+    const queueKey = `${rawValue?.metadata?.phone_number_id || "simulation"}:${cleanPhone}`;
+    const currentTask = this.phoneQueues.get(queueKey) || Promise.resolve();
     const nextTask = currentTask
       .catch(() => {}) // Don't let a prior failure block subsequent messages
       .then(() => this._executeConversationalFlow(replyRecord, rawMsg, rawValue))
       .finally(() => {
-        if (this.phoneQueues.get(cleanPhone) === nextTask) {
-          this.phoneQueues.delete(cleanPhone);
+        if (this.phoneQueues.get(queueKey) === nextTask) {
+          this.phoneQueues.delete(queueKey);
         }
       });
 
-    this.phoneQueues.set(cleanPhone, nextTask);
+    this.phoneQueues.set(queueKey, nextTask);
     return nextTask;
   }
 
@@ -1905,8 +1947,23 @@ class WebhookService {
     const cleanPhone = rawPhone.replace(/\D/g, "");
     if (!cleanPhone || cleanPhone.length < 10) return null;
 
+    const { resolveWhatsAppContext } = require("./workflow/conversationContextResolver");
+    const incomingPhoneId = rawValue?.metadata?.phone_number_id || null;
+    const isSimulation = Boolean(rawValue?.is_simulation || rawMsg?.is_simulation || isSandboxOrTestPhone(cleanPhone));
+    // Legacy direct-call fixtures have no receiver metadata. Allow a non-live
+    // tenant-1 fallback in development/test only; production always fails closed.
+    const localLegacyFixture = process.env.NODE_ENV !== "production" && !incomingPhoneId;
+    const tenantContext = resolveWhatsAppContext(incomingPhoneId, {
+      simulation: isSimulation || localLegacyFixture
+    });
+    if (!tenantContext) {
+      console.warn("[Webhook Flow] Unrecognized or ambiguous receiving account; suppressing automation.");
+      return null;
+    }
+    const { tenantId, propertyId } = tenantContext;
+
     // Deduplication lock: prevent concurrent dispatch for the same message ID or phone turn
-    const dispatchKey = `${cleanPhone}:${replyRecord.id || replyRecord.wa_message_id || 'unknown'}`;
+    const dispatchKey = `${incomingPhoneId || "simulation"}:${cleanPhone}:${replyRecord.id || replyRecord.wa_message_id || "unknown"}`;
     if (this.activeDispatchKeys.has(dispatchKey)) {
       console.log(`[Webhook Flow] Deduplication: Dispatch key ${dispatchKey} is currently active. Skipping duplicate.`);
       return null;
@@ -2041,14 +2098,12 @@ class WebhookService {
 
       // 5. Check Auto-Reply Master Settings
       const autoReplySettings = this.getAutoReplySettings();
-      if (!autoReplySettings.enabled) {
+      if (tenantId === 1 && !autoReplySettings.enabled) {
         console.log(`[Webhook Flow] Auto-Reply Bot is disabled in settings. Skipping automated response.`);
         return null;
       }
 
       // Resolve multi-line sender phone ID and simulation sandbox
-      const incomingPhoneId = rawValue?.metadata?.phone_number_id || null;
-      const isSimulation = Boolean(rawValue?.is_simulation || rawMsg?.is_simulation || isSandboxOrTestPhone(cleanPhone));
       const customCredentials = {
         ...(incomingPhoneId ? { phoneNumberId: incomingPhoneId } : {}),
         ...(isSimulation ? { isSimulation: true } : {})
@@ -2081,19 +2136,20 @@ class WebhookService {
       const normPhoneDigits = String(cleanPhone || "").replace(/\D/g, "");
       try {
         if (typeof flowEngine.getActiveSession === 'function') {
-          activeFlowSession = flowEngine.getActiveSession(1, normPhoneDigits);
+          activeFlowSession = flowEngine.getActiveSession(tenantId, normPhoneDigits, incomingPhoneId);
         }
         if (!activeFlowSession) {
           activeFlowSession = db.prepare(`
             SELECT s.*, f.status as flow_status, f.name as flow_name
             FROM conversation_flow_sessions s
             JOIN conversation_flows f ON s.flow_id = f.id
-            WHERE (s.sender_phone = ? OR s.sender_phone = ? OR s.sender_phone = ?) 
+            WHERE (s.sender_phone = ? OR s.sender_phone = ? OR s.sender_phone = ?)
+              AND s.tenant_id = ? AND s.session_key = ?
               AND s.session_status = 'ACTIVE' 
               AND (s.expires_at IS NULL OR s.expires_at > UTC_TIMESTAMP())
             ORDER BY s.id DESC
             LIMIT 1
-          `).get(normPhoneDigits, cleanPhone, `+${normPhoneDigits}`);
+          `).get(normPhoneDigits, cleanPhone, `+${normPhoneDigits}`, tenantId, `WHATSAPP:${normPhoneDigits}:${tenantId}${incomingPhoneId ? `:${incomingPhoneId}` : ""}`);
         }
       } catch (sessErr) {
         console.warn("[Webhook Flow] Active session lookup note:", sessErr.message);
@@ -2159,7 +2215,7 @@ class WebhookService {
       if (!activeFlowSession && !isInteractiveAction) {
         try {
           const workflowTriggerService = require("./workflow/workflowTriggerService");
-          matchedTrigger = workflowTriggerService.matchInboundTrigger(1, {
+          matchedTrigger = workflowTriggerService.matchInboundTrigger(tenantId, {
             text: effectiveText,
             phone: cleanPhone,
             phoneNumberId: incomingPhoneId,
@@ -2180,11 +2236,13 @@ class WebhookService {
       let defaultPublishedFlow = null;
       try {
         defaultPublishedFlow = db.prepare(`
-          SELECT id FROM conversation_flows
-          WHERE tenant_id = 1 AND status = 'PUBLISHED'
-          ORDER BY is_default DESC, priority DESC, id ASC
+          SELECT id, property_id FROM conversation_flows
+          WHERE tenant_id = ? AND status = 'PUBLISHED'
+            AND (phone_number_id IS NULL OR phone_number_id = ?)
+          ORDER BY CASE WHEN phone_number_id = ? THEN 0 ELSE 1 END ASC,
+                   is_default DESC, priority DESC, id ASC
           LIMIT 1
-        `).get();
+        `).get(tenantId, incomingPhoneId, incomingPhoneId);
       } catch (fErr) {}
 
       // STRICT ROUTING PRIORITY:
@@ -2235,8 +2293,8 @@ class WebhookService {
             startNodeId: targetNodeId,
             phoneNumberId: incomingPhoneId,
             context: {
-              tenantId: 1,
-              propertyId: 1,
+              tenantId,
+              propertyId: activeFlowSession?.property_id || defaultPublishedFlow?.property_id || propertyId,
               channel: "WHATSAPP",
               phoneNumberId: incomingPhoneId,
               isSimulation: isSimulation,
@@ -2384,6 +2442,9 @@ class WebhookService {
           };
         }
       }
+
+      // Legacy fallback depends on global hospitality settings; it is not multi-tenant safe.
+      if (tenantId !== 1) return null;
 
       // 7. Simple Greeting Engine Mode (if business client configured simple greeting instead of interactive flow)
       if (autoReplySettings.engineMode === "SIMPLE_GREETING") {
@@ -3430,11 +3491,11 @@ class WebhookService {
       // 9b. Task-Scoped Grounded AI Knowledge Agent (Meta Policy Grounded RAG)
       try {
         const taskScopedAiAgentService = require("./ai/taskScopedAiAgentService");
-        const agentCfg = taskScopedAiAgentService.getAgentConfig(1);
+        const agentCfg = taskScopedAiAgentService.getAgentConfig(tenantId);
         if (agentCfg && agentCfg.enabled) {
           console.log(`[Webhook Flow] Task-Scoped Knowledge AI Agent evaluating query for ${cleanPhone}: "${effectiveText}"`);
           const aiResult = await taskScopedAiAgentService.generateReply({
-            tenantId: 1,
+            tenantId,
             senderPhone: cleanPhone,
             userInput: effectiveText,
             inputType: replyRecord.message_type === "audio" ? "VOICE_NOTE" : "TEXT",
@@ -3549,12 +3610,12 @@ class WebhookService {
   /**
    * Manually sends a custom reply from the dashboard to a customer (Staff Takeover)
    */
-  async sendManualReply({ replyId, replyText, userId = null }) {
+  async sendManualReply({ replyId, replyText, userId = null, tenantId = 1 }) {
     if (!replyId) throw new Error("Reply ID is required.");
     if (!replyText || !String(replyText).trim()) throw new Error("Reply message cannot be empty.");
 
     const cleanText = String(replyText).trim();
-    const record = db.prepare("SELECT * FROM customer_replies WHERE id = ?").get(replyId);
+    const record = db.prepare("SELECT * FROM customer_replies WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL").get(replyId, tenantId);
     if (!record) {
       throw new Error(`Customer reply #${replyId} not found.`);
     }
@@ -3568,7 +3629,8 @@ class WebhookService {
 
     const sendResult = await sendTextMessage({
       to: cleanPhone,
-      body: cleanText
+      body: cleanText,
+      customCredentials: record.channel_account_id ? { phoneNumberId: record.channel_account_id } : undefined
     });
 
     const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
@@ -3577,8 +3639,8 @@ class WebhookService {
     db.prepare(`
       UPDATE customer_replies 
       SET reply_text = ?, reply_sent_at = ?, reply_status = 'SENT', is_read = 1, user_id = ?
-      WHERE id = ?
-    `).run(cleanText, nowIso, assignedUserId, replyId);
+      WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL
+    `).run(cleanText, nowIso, assignedUserId, replyId, tenantId);
 
     const updatedRecord = {
       ...record,

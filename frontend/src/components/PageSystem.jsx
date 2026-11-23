@@ -1,4 +1,6 @@
+
 import React, { Component, useEffect, useMemo, useCallback, Suspense } from 'react';
+
 import { useAuth } from '../context/AuthContext';
 import usePageMeta from '../utils/usePageMeta';
 import lazyWithRetry from '../utils/lazyWithRetry';
@@ -21,9 +23,7 @@ import {
   Settings,
   AlertTriangle,
   ChevronRight,
-  ArrowLeft,
   Sparkles,
-  ExternalLink,
   Database,
   RotateCcw,
   Smartphone,
@@ -58,7 +58,7 @@ const LandingPage = lazyWithRetry(() => import('../pages/LandingPage'));
  */
 function PageSkeleton({ title }) {
   return (
-    <div style={{ padding: '28px 24px', maxWidth: '1280px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+    <div role="status" aria-label={`Loading ${title || 'page'}`} style={{ padding: '28px 24px', maxWidth: '1280px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: '#EEEEF0', animation: 'shimmer 1.4s infinite linear' }} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -352,12 +352,6 @@ class PageErrorBoundary extends Component {
     console.error(`[PageSystem Error caught in tab "${this.props.tabId}"]:`, error, errorInfo);
   }
 
-  componentDidUpdate(prevProps) {
-    if (prevProps.tabId !== this.props.tabId && this.state.hasError) {
-      this.setState({ hasError: false, error: null });
-    }
-  }
-
   render() {
     if (this.state.hasError) {
       const isChunkError =
@@ -437,12 +431,7 @@ class PageErrorBoundary extends Component {
  * Standardized Page System Container Component
  * Wraps every sidebar tab view with unified layout, breadcrumb bar, navigation injection, and deep-linking.
  */
-export default function PageSystem({
-  activeTab,
-  setActiveTab,
-  sidebarCollapsed,
-  mobileOpen
-}) {
+export default function PageSystem({ activeTab, setActiveTab }) {
   const { user, isAdmin } = useAuth();
 
   // Resolve active page configuration from registry with safe fallback to dashboard
@@ -586,7 +575,7 @@ export default function PageSystem({
 
       {/* Main Viewport Wrapped in Per-Page Error Boundary */}
       <div style={{ flex: 1, position: 'relative' }}>
-        <PageErrorBoundary tabId={activePage.id} pageTitle={activePage.title} onNavigate={handleNavigate}>
+        <PageErrorBoundary key={activePage.id} tabId={activePage.id} pageTitle={activePage.title} onNavigate={handleNavigate}>
           <Suspense fallback={<PageSkeleton title={activePage.title} />}>
             <ActiveComponent
               onNavigate={handleNavigate}

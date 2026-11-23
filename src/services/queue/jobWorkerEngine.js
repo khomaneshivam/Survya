@@ -39,6 +39,15 @@ class JobWorkerEngine extends EventEmitter {
    * Register system built-in job handlers
    */
   _registerBuiltInHandlers() {
+    // Persisted Meta webhook ingestion. Tenant resolution occurs for each inbound message.
+    this.registerHandler("META_WEBHOOK_INGEST", async payload => {
+      const webhookService = require("../webhookService");
+      if (!payload || typeof payload !== 'object') {
+        throw new Error("Malformed persisted Meta webhook event");
+      }
+      return webhookService.processIncomingPayload(payload);
+    });
+
     // 1. Session Cleanup Handler
     this.registerHandler("SESSION_CLEANUP", async (payload, job) => {
       let expiredFlows = 0;
