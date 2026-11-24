@@ -2155,38 +2155,6 @@ class WebhookService {
         console.warn("[Webhook Flow] Active session lookup note:", sessErr.message);
       }
 
-      // Check global escape/reset words if active session exists
-      const normInputLower = String(effectiveText || "").trim().toLowerCase();
-      const isResetKeyword = ["restart", "reset", "menu", "/start", "/menu", "main menu"].includes(normInputLower);
-      const isCancelKeyword = ["cancel", "stop", "exit"].includes(normInputLower);
-
-      if (activeFlowSession && isResetKeyword) {
-        console.log(`[Webhook Flow] Customer ${cleanPhone} requested reset ('${normInputLower}'). Expiring session #${activeFlowSession.id} for fresh start.`);
-        try {
-          db.prepare("UPDATE conversation_flow_sessions SET session_status = 'EXPIRED', updated_at = UTC_TIMESTAMP() WHERE id = ?").run(activeFlowSession.id);
-        } catch (e) {}
-        activeFlowSession = null;
-      }
-
-      if (activeFlowSession && isCancelKeyword) {
-        console.log(`[Webhook Flow] Customer ${cleanPhone} requested cancellation ('${normInputLower}'). Terminating session #${activeFlowSession.id}.`);
-        try {
-          db.prepare("UPDATE conversation_flow_sessions SET session_status = 'CANCELLED', updated_at = UTC_TIMESTAMP() WHERE id = ?").run(activeFlowSession.id);
-        } catch (e) {}
-        try {
-          await sendTextMessage({
-            to: cleanPhone,
-            body: "Conversation cancelled. Type 'hi' anytime to start again.",
-            customCredentials
-          });
-        } catch (e) {}
-        return {
-          success: true,
-          cancelled: true,
-          replyText: "Conversation cancelled."
-        };
-      }
-
       // Check for pending delay jobs that should cancel on customer reply
       try {
         const pendingJobs = db.prepare(`
@@ -2434,6 +2402,38 @@ class WebhookService {
               handled: true
             };
           }
+
+          // Strict Single-Owner Routing: When flow engine is active for this tenant/line,
+          // execute Global Fallback rather than dropping down into legacy KonkanTrip/hospitality hardcoded handlers.
+          const flowGlobalSettingsService = require("./flowGlobalSettingsService");
+          const globalSettings = flowGlobalSettingsService.getSettings(tenantId, incomingPhoneId);
+          const fallbackMsg = globalSettings?.fallback_message || "Thank you for reaching out. Please type 'menu' to see our main menu.";
+          let sentMsgId = null;
+          try {
+            const txtRes = await sendTextMessage({
+              to: cleanPhone,
+              body: fallbackMsg,
+              customCredentials
+            });
+            sentMsgId = txtRes?.messageId || null;
+          } catch (e) {}
+
+          const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+          try {
+            db.prepare(`
+              UPDATE customer_replies 
+              SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
+              WHERE id = ?
+            `).run(fallbackMsg, nowIso, replyRecord.id);
+          } catch (e) {}
+
+          return {
+            success: true,
+            flowEngine: true,
+            fallback: true,
+            messageId: sentMsgId,
+            replyText: fallbackMsg
+          };
         } catch (engineErr) {
           console.warn("[Webhook Flow] Conversation Flow Engine error:", engineErr.message);
           return {

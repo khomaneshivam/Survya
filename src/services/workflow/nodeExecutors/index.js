@@ -29,6 +29,7 @@ const EXECUTORS = {
   SEND_MESSAGE: messageExecutor,
   MESSAGE: messageExecutor,
   BUTTON_MENU: messageExecutor,
+  INTERACTIVE_MENU: messageExecutor,
   SELECTION: messageExecutor,
   CONFIRMATION: messageExecutor,
   PAYMENT: messageExecutor,
@@ -46,6 +47,7 @@ const EXECUTORS = {
   INTERACTIVE_APP: inappBridgeExecutor,
 
   // Intake
+  ASK_INPUT: intakeExecutor,
   COLLECT_INPUT: intakeExecutor,
   SCHEMA_INPUT: intakeExecutor,
   INPUT_COLLECTION: intakeExecutor,
@@ -71,6 +73,8 @@ const EXECUTORS = {
   QUOTATION: catalogBookingExecutor,
   HTTP_WEBHOOK: webhookExecutor,
   API_INTEGRATION: webhookExecutor,
+  ACTION_API: webhookExecutor,
+  API_ACTION: webhookExecutor,
 
   // Terminal
   HUMAN_HANDOFF: handoffExecutor,

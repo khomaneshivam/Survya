@@ -357,7 +357,7 @@ app.use(["/api/v1/universal-catalog", "/api/universal-catalog"], universalCatalo
 
 // 4i. Universal Multi-Flow Hub & Studio API (/api/v1/flows)
 const conversationFlowRoutes = require("./src/routes/conversationFlowRoutes");
-app.use(["/api/v1/flows", "/v1/flows"], conversationFlowRoutes);
+app.use(["/api/v1/flows", "/v1/flows", "/api/flows", "/flows"], conversationFlowRoutes);
 
 // 4j. Universal Fulfillment & Transactions API (/api/v1/transactions)
 const universalFulfillmentRoutes = require("./src/routes/universalFulfillmentRoutes");

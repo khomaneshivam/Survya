@@ -1467,6 +1467,8 @@ module.exports = {
   deleteMessageTemplate,
   getFlowAnalytics,
   listFlowExecutions,
+  listSessions: listFlowExecutions,
   getExecutionDetails,
+  getSessionEvents: getExecutionDetails,
   resetSession
 };
