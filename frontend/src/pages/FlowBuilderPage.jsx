@@ -33,6 +33,8 @@ import NodePaletteSidebar from '../components/flow-studio/NodePaletteSidebar';
 import NodeInspectorDrawer from '../components/flow-studio/NodeInspectorDrawer';
 import { validateFlowGraph } from '../components/flow-studio/flowGraphValidator';
 import FlowSimulatorPanel from '../components/flow-studio/FlowSimulatorPanel';
+import IndustryBlueprintsModal from '../components/catalog/IndustryBlueprintsModal';
+import BusinessProfileSetupDrawer from '../components/flow-studio/BusinessProfileSetupDrawer';
 import { automationApi } from '../features/automation/api/automationApi';
 
 export function formatIstTimestamp(utcStr) {
@@ -87,10 +89,23 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
   const [savingSettings, setSavingSettings] = useState(false);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [blueprintsModalOpen, setBlueprintsModalOpen] = useState(false);
+  const [businessProfileDrawerOpen, setBusinessProfileDrawerOpen] = useState(false);
   const [newFlowName, setNewFlowName] = useState('');
   const [newFlowRole, setNewFlowRole] = useState('MAIN');
   const [newFlowKeywords, setNewFlowKeywords] = useState('hi, enquiry');
   const [bannerNotice, setBannerNotice] = useState(null);
+
+  const handleBlueprintApplied = useCallback(async (result) => {
+    await loadFlows();
+    setBannerNotice({
+      type: 'success',
+      text: `Blueprint "${result.sectorName}" deployed! Flow #${result.flowId} created for ${result.businessName || 'your business'}.`
+    });
+    if (result.flowId) {
+      handleOpenFlowInCanvas(result.flowId);
+    }
+  }, [loadFlows]);
 
   // 1. Load Flows
   const loadFlows = useCallback(async () => {
@@ -781,6 +796,48 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
 
         {/* Right: Quick Global Settings & Create */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={() => setBlueprintsModalOpen(true)}
+            title="Import industry master data, catalog products and ready conversation flow"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              border: '1px solid #BBF7D0',
+              background: '#F0FDF4',
+              color: '#166534',
+              padding: '5px 10px',
+              borderRadius: '6px',
+              fontSize: '0.76rem',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            <Sparkles size={14} color="#16A34A" />
+            <span>Import Blueprint</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setBusinessProfileDrawerOpen(true)}
+            title="Setup business name, contact line, operating hours & bot defaults"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              border: '1px solid #E2E8F0',
+              background: '#FFFFFF',
+              color: '#334155',
+              padding: '5px 10px',
+              borderRadius: '6px',
+              fontSize: '0.76rem',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            <Sliders size={14} />
+            <span>Business Profile</span>
+          </button>
           <button
             type="button"
             onClick={() => setGlobalSettingsOpen(true)}
@@ -1617,6 +1674,32 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
           </div>
         </div>
       )}
+
+      {/* 1-Click Industry Blueprints Modal */}
+      <IndustryBlueprintsModal
+        isOpen={blueprintsModalOpen}
+        onClose={() => setBlueprintsModalOpen(false)}
+        onBlueprintApplied={handleBlueprintApplied}
+        onOpenFlow={(flowId) => {
+          setBlueprintsModalOpen(false);
+          handleOpenFlowInCanvas(flowId);
+        }}
+        onOpenProfile={() => {
+          setBlueprintsModalOpen(false);
+          setBusinessProfileDrawerOpen(true);
+        }}
+      />
+
+      {/* Business Profile Setup Drawer */}
+      <BusinessProfileSetupDrawer
+        isOpen={businessProfileDrawerOpen}
+        onClose={() => setBusinessProfileDrawerOpen(false)}
+        onProfileUpdated={async () => {
+          await loadFlows();
+          await loadGlobalSettings();
+        }}
+        flows={flows}
+      />
     </div>
   );
 }

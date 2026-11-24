@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import MasterCrudTable from '../components/masters/MasterCrudTable';
+import IndustryBlueprintsModal from '../components/catalog/IndustryBlueprintsModal';
 import {
   Database,
   Layers,
@@ -12,7 +13,8 @@ import {
   Tag,
   Globe,
   Sparkles,
-  CheckCircle2
+  CheckCircle2,
+  Package
 } from 'lucide-react';
 
 const SECTORS = [
@@ -44,6 +46,7 @@ export default function MastersHubPage() {
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState(null);
   const [seedError, setSeedError] = useState(null);
+  const [blueprintsModalOpen, setBlueprintsModalOpen] = useState(false);
 
   const handleSeedSector = async () => {
     setSeeding(true);
@@ -152,6 +155,27 @@ export default function MastersHubPage() {
           >
             <Sparkles size={14} />
             {seeding ? 'Initializing...' : '1-Click Initialize Sector Masters'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setBlueprintsModalOpen(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              borderRadius: '8px',
+              border: '1px solid #10B981',
+              background: '#FFFFFF',
+              color: '#065F46',
+              fontSize: '0.84rem',
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            <Package size={15} color="#059669" />
+            <span>Full Blueprint Suite (Masters + Flow)</span>
           </button>
         </div>
       </div>
@@ -441,6 +465,19 @@ export default function MastersHubPage() {
           />
         )}
       </div>
+
+      {/* 1-Click Industry Blueprints Modal */}
+      <IndustryBlueprintsModal
+        isOpen={blueprintsModalOpen}
+        onClose={() => setBlueprintsModalOpen(false)}
+        onBlueprintApplied={(res) => {
+          setSeedResult({
+            success: true,
+            message: `Deployed ${res.sectorName} suite: ${res.itemCount} items, ${res.pricingRuleCount} pricing rules & Flow #${res.flowId}.`
+          });
+          setTimeout(() => setSeedResult(null), 6000);
+        }}
+      />
     </div>
   );
 }

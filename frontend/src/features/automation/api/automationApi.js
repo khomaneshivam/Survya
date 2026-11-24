@@ -240,6 +240,35 @@ export const automationApi = {
       body: JSON.stringify(payload)
     });
     return res.json();
+  },
+
+  // --- BLUEPRINTS & BUSINESS PROFILE ---
+  async getBlueprints() {
+    const res = await fetchWithAuth('/api/v1/universal/blueprints');
+    return res.json();
+  },
+
+  async importFullIndustrySuite(payload) {
+    const res = await fetchWithAuth('/api/v1/universal/blueprints/import-full-suite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  },
+
+  async getBusinessProfile() {
+    const res = await fetchWithAuth('/api/v1/business-profile');
+    return res.json();
+  },
+
+  async updateBusinessProfile(payload) {
+    const res = await fetchWithAuth('/api/v1/business-profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.json();
   }
 };
 
