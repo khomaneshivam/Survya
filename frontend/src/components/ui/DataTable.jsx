@@ -221,9 +221,14 @@ export default function DataTable({
 
                     let rendered;
                     if (col.render) {
-                      // Pass (cellValue, row) when fieldKey is on row; if field is absent (e.g. Actions), pass (row, row) so both (row) and (_, row) signatures work!
+                      // Pass (cellValue, row) when fieldKey is on row; if field is absent (e.g. Actions), pass (row, row).
+                      // If render function only takes 1 argument (render.length === 1) and firstArg is null/undefined or not an object,
+                      // fall back to row so single-argument (row) => ... callbacks never crash on null properties!
                       const firstArg = hasField ? cellValue : row;
-                      rendered = col.render(firstArg, row);
+                      const safeFirstArg = (col.render.length === 1 && (firstArg === null || firstArg === undefined) && row)
+                        ? row
+                        : firstArg;
+                      rendered = col.render(safeFirstArg, row);
                     } else {
                       rendered = cellValue !== undefined && cellValue !== null ? cellValue : '—';
                     }

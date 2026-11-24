@@ -356,28 +356,33 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
       key: 'name',
       header: 'Flow Name',
       sortable: true,
-      render: (row) => (
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontWeight: 600, color: '#0F172A', fontSize: '0.82rem' }}>{row.name}</span>
-            {row.is_root_menu === 1 && (
-              <span style={{ fontSize: '0.66rem', background: '#FEF3C7', color: '#92400E', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
-                ROOT MENU
-              </span>
-            )}
+      render: (val, row) => {
+        const r = (row && typeof row === 'object') ? row : ((val && typeof val === 'object') ? val : {});
+        const flowName = (typeof val === 'string' && val) ? val : (r.name || 'Untitled Flow');
+        return (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontWeight: 600, color: '#0F172A', fontSize: '0.82rem' }}>{flowName}</span>
+              {r.is_root_menu === 1 && (
+                <span style={{ fontSize: '0.66rem', background: '#FEF3C7', color: '#92400E', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
+                  ROOT MENU
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: '0.70rem', color: '#64748B', fontFamily: 'monospace' }}>
+              ID: {r.id} · {r.category || 'GENERAL'}
+            </div>
           </div>
-          <div style={{ fontSize: '0.70rem', color: '#64748B', fontFamily: 'monospace' }}>
-            ID: {row.id} · {row.category || 'GENERAL'}
-          </div>
-        </div>
-      )
+        );
+      }
     },
     {
       key: 'flow_role',
       header: 'Role',
       sortable: true,
-      render: (row) => {
-        const role = row.flow_role || 'MAIN';
+      render: (val, row) => {
+        const r = (row && typeof row === 'object') ? row : ((val && typeof val === 'object') ? val : {});
+        const role = (typeof val === 'string' && val) ? val : (r.flow_role || 'MAIN');
         const styles = {
           MAIN: { bg: '#EFF6FF', color: '#1D4ED8' },
           SUBFLOW: { bg: '#F3E8FF', color: '#6B21A8' },
@@ -394,25 +399,30 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
       key: 'phone_number_id',
       header: 'WhatsApp Line',
       sortable: true,
-      render: (row) => (
-        <span style={{ fontSize: '0.74rem', color: '#334155' }}>
-          {row.phone_number_id ? (
-            <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>{row.assigned_phone_number || row.phone_number_id}</span>
-          ) : (
-            <span style={{ color: '#94A3B8', fontStyle: 'italic' }}>Global / Default</span>
-          )}
-        </span>
-      )
+      render: (val, row) => {
+        const r = (row && typeof row === 'object') ? row : ((val && typeof val === 'object') ? val : {});
+        const phoneId = (val && typeof val === 'string') ? val : r.phone_number_id;
+        return (
+          <span style={{ fontSize: '0.74rem', color: '#334155' }}>
+            {phoneId ? (
+              <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>{r.assigned_phone_number || phoneId}</span>
+            ) : (
+              <span style={{ color: '#94A3B8', fontStyle: 'italic' }}>Global / Default</span>
+            )}
+          </span>
+        );
+      }
     },
     {
       key: 'triggers',
       header: 'Triggers',
-      render: (row) => {
-        const kws = Array.isArray(row.trigger_keywords)
-          ? row.trigger_keywords
-          : (row.trigger_keywords_json ? JSON.parse(row.trigger_keywords_json || '[]') : []);
+      render: (val, row) => {
+        const r = (row && typeof row === 'object') ? row : ((val && typeof val === 'object') ? val : {});
+        const kws = Array.isArray(r.trigger_keywords)
+          ? r.trigger_keywords
+          : (r.trigger_keywords_json ? (typeof r.trigger_keywords_json === 'string' ? JSON.parse(r.trigger_keywords_json || '[]') : r.trigger_keywords_json) : []);
         if (kws.length === 0) {
-          return <span style={{ fontSize: '0.72rem', color: '#94A3B8' }}>{row.trigger_type || 'Inbound'}</span>;
+          return <span style={{ fontSize: '0.72rem', color: '#94A3B8' }}>{r.trigger_type || 'Inbound'}</span>;
         }
         return (
           <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
@@ -432,9 +442,11 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
       key: 'status',
       header: 'Status',
       sortable: true,
-      render: (row) => {
-        const isLive = row.status === 'PUBLISHED';
-        const isDraft = row.status === 'DRAFT';
+      render: (val, row) => {
+        const r = (row && typeof row === 'object') ? row : ((val && typeof val === 'object') ? val : {});
+        const status = (typeof val === 'string' && val) ? val : (r.status || 'DRAFT');
+        const isLive = status === 'PUBLISHED';
+        const isDraft = status === 'DRAFT';
         return (
           <span style={{
             fontSize: '0.70rem',
@@ -444,7 +456,7 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
             background: isLive ? '#DCFCE7' : isDraft ? '#FEF3C7' : '#F1F5F9',
             color: isLive ? '#15803D' : isDraft ? '#B45309' : '#64748B'
           }}>
-            {row.status}
+            {status}
           </span>
         );
       }
@@ -453,88 +465,98 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
       key: 'active_sessions',
       header: 'Active',
       sortable: true,
-      render: (row) => (
-        <span style={{ fontSize: '0.76rem', fontFamily: 'monospace', fontWeight: 600, color: '#334155' }}>
-          {row.active_session_count || 0}
-        </span>
-      )
+      render: (val, row) => {
+        const r = (row && typeof row === 'object') ? row : ((val && typeof val === 'object') ? val : {});
+        return (
+          <span style={{ fontSize: '0.76rem', fontFamily: 'monospace', fontWeight: 600, color: '#334155' }}>
+            {r.active_session_count || (typeof val === 'number' ? val : 0)}
+          </span>
+        );
+      }
     },
     {
       key: 'updated_at',
       header: 'Updated (IST)',
       sortable: true,
-      render: (row) => (
-        <span style={{ fontSize: '0.72rem', color: '#64748B' }}>
-          {formatIstTimestamp(row.updated_at || row.created_at)}
-        </span>
-      )
+      render: (val, row) => {
+        const r = (row && typeof row === 'object') ? row : ((val && typeof val === 'object') ? val : {});
+        const ts = (typeof val === 'string' && val) ? val : (r.updated_at || r.created_at);
+        return (
+          <span style={{ fontSize: '0.72rem', color: '#64748B' }}>
+            {formatIstTimestamp(ts)}
+          </span>
+        );
+      }
     },
     {
       key: 'actions',
       header: 'Actions',
-      render: (row) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <button
-            type="button"
-            onClick={() => handleOpenFlowInCanvas(row.id)}
-            style={{
-              padding: '3px 8px',
-              fontSize: '0.72rem',
-              fontWeight: 600,
-              background: '#2563EB',
-              color: '#FFFFFF',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedFlowId(row.id);
-              setSimulatorOpen(true);
-            }}
-            title="Test in Simulator"
-            style={{
-              padding: '3px 6px',
-              fontSize: '0.72rem',
-              background: '#F1F5F9',
-              color: '#334155',
-              border: '1px solid #CBD5E1',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            Test
-          </button>
-          <button
-            type="button"
-            onClick={async () => {
-              if (!window.confirm(`Duplicate "${row.name}"?`)) return;
-              await automationApi.duplicateFlow(row.id);
-              await loadFlows();
-            }}
-            title="Duplicate Flow"
-            style={{ border: 'none', background: 'transparent', color: '#64748B', cursor: 'pointer', padding: '3px' }}
-          >
-            <Copy size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={async () => {
-              if (!window.confirm(`Delete flow "${row.name}"?`)) return;
-              await automationApi.deleteFlow(row.id);
-              await loadFlows();
-            }}
-            title="Delete Flow"
-            style={{ border: 'none', background: 'transparent', color: '#EF4444', cursor: 'pointer', padding: '3px' }}
-          >
-            <Trash2 size={13} />
-          </button>
-        </div>
-      )
+      render: (val, row) => {
+        const r = (row && typeof row === 'object') ? row : ((val && typeof val === 'object') ? val : {});
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              type="button"
+              onClick={() => handleOpenFlowInCanvas(r.id)}
+              style={{
+                padding: '3px 8px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                background: '#2563EB',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedFlowId(r.id);
+                setSimulatorOpen(true);
+              }}
+              title="Test in Simulator"
+              style={{
+                padding: '3px 6px',
+                fontSize: '0.72rem',
+                background: '#F1F5F9',
+                color: '#334155',
+                border: '1px solid #CBD5E1',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Test
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!window.confirm(`Duplicate "${r.name}"?`)) return;
+                await automationApi.duplicateFlow(r.id);
+                await loadFlows();
+              }}
+              title="Duplicate Flow"
+              style={{ border: 'none', background: 'transparent', color: '#64748B', cursor: 'pointer', padding: '3px' }}
+            >
+              <Copy size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!window.confirm(`Delete flow "${r.name}"?`)) return;
+                await automationApi.deleteFlow(r.id);
+                await loadFlows();
+              }}
+              title="Delete Flow"
+              style={{ border: 'none', background: 'transparent', color: '#EF4444', cursor: 'pointer', padding: '3px' }}
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+        );
+      }
     }
   ];
 
@@ -544,38 +566,49 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
       key: 'sender_phone',
       header: 'Phone Number',
       sortable: true,
-      render: (row) => (
-        <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#0F172A', fontSize: '0.78rem' }}>
-          +{row.sender_phone}
-        </span>
-      )
+      render: (val, row) => {
+        const r = (row && typeof row === 'object') ? row : ((val && typeof val === 'object') ? val : {});
+        const phone = (typeof val === 'string' && val) ? val : (r.sender_phone || '');
+        return (
+          <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#0F172A', fontSize: '0.78rem' }}>
+            +{phone}
+          </span>
+        );
+      }
     },
     {
       key: 'flow_name',
       header: 'Flow Name',
       sortable: true,
-      render: (row) => (
-        <div>
-          <span style={{ fontWeight: 600, color: '#334155', fontSize: '0.76rem' }}>{row.flow_name || `Flow #${row.flow_id}`}</span>
-          <div style={{ fontSize: '0.68rem', color: '#94A3B8', fontFamily: 'monospace' }}>Session #{row.id}</div>
-        </div>
-      )
+      render: (val, row) => {
+        const r = (row && typeof row === 'object') ? row : ((val && typeof val === 'object') ? val : {});
+        return (
+          <div>
+            <span style={{ fontWeight: 600, color: '#334155', fontSize: '0.76rem' }}>{r.flow_name || `Flow #${r.flow_id}`}</span>
+            <div style={{ fontSize: '0.68rem', color: '#94A3B8', fontFamily: 'monospace' }}>Session #{r.id}</div>
+          </div>
+        );
+      }
     },
     {
       key: 'current_node_id',
       header: 'Current Step',
-      render: (row) => (
-        <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', background: '#F8FAFC', padding: '2px 5px', borderRadius: '3px', border: '1px solid #E2E8F0' }}>
-          {row.current_node_id || 'node_start'}
-        </span>
-      )
+      render: (val, row) => {
+        const r = (row && typeof row === 'object') ? row : ((val && typeof val === 'object') ? val : {});
+        return (
+          <span style={{ fontSize: '0.72rem', fontFamily: 'monospace', background: '#F8FAFC', padding: '2px 5px', borderRadius: '3px', border: '1px solid #E2E8F0' }}>
+            {r.current_node_id || (typeof val === 'string' ? val : 'node_start')}
+          </span>
+        );
+      }
     },
     {
       key: 'session_status',
       header: 'Status',
       sortable: true,
-      render: (row) => {
-        const s = row.session_status || 'ACTIVE';
+      render: (val, row) => {
+        const r = (row && typeof row === 'object') ? row : ((val && typeof val === 'object') ? val : {});
+        const s = (typeof val === 'string' && val) ? val : (r.session_status || 'ACTIVE');
         const styles = {
           ACTIVE: { bg: '#DCFCE7', color: '#15803D' },
           PAUSED_AGENT_HANDOFF: { bg: '#F3E8FF', color: '#6B21A8' },
@@ -594,50 +627,57 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
       key: 'last_interaction_at',
       header: 'Last Active (IST)',
       sortable: true,
-      render: (row) => (
-        <span style={{ fontSize: '0.72rem', color: '#64748B' }}>
-          {formatIstTimestamp(row.last_interaction_at || row.created_at)}
-        </span>
-      )
+      render: (val, row) => {
+        const r = (row && typeof row === 'object') ? row : ((val && typeof val === 'object') ? val : {});
+        const ts = (typeof val === 'string' && val) ? val : (r.last_interaction_at || r.created_at);
+        return (
+          <span style={{ fontSize: '0.72rem', color: '#64748B' }}>
+            {formatIstTimestamp(ts)}
+          </span>
+        );
+      }
     },
     {
       key: 'actions',
       header: 'Actions',
-      render: (row) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <button
-            type="button"
-            onClick={() => handleInspectSession(row.id)}
-            style={{
-              padding: '3px 8px',
-              fontSize: '0.72rem',
-              fontWeight: 600,
-              background: '#0F172A',
-              color: '#FFFFFF',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            Trace
-          </button>
-          <button
-            type="button"
-            onClick={() => handleResetSession(row.id)}
-            style={{
-              padding: '3px 6px',
-              fontSize: '0.70rem',
-              background: '#FFF1F2',
-              color: '#BE123C',
-              border: '1px solid #FECDD3',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            Reset
-          </button>
-        </div>
-      )
+      render: (val, row) => {
+        const r = (row && typeof row === 'object') ? row : ((val && typeof val === 'object') ? val : {});
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              type="button"
+              onClick={() => handleInspectSession(r.id)}
+              style={{
+                padding: '3px 8px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                background: '#0F172A',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Trace
+            </button>
+            <button
+              type="button"
+              onClick={() => handleResetSession(r.id)}
+              style={{
+                padding: '3px 6px',
+                fontSize: '0.70rem',
+                background: '#FFF1F2',
+                color: '#BE123C',
+                border: '1px solid #FECDD3',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Reset
+            </button>
+          </div>
+        );
+      }
     }
   ];
 
