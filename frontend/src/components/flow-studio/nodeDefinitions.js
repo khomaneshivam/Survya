@@ -278,6 +278,24 @@ export const NODE_DEFINITIONS = [
       { id: 'default', label: 'Next Step', type: 'source' }
     ]
   },
+  {
+    type: 'CALL_SUBFLOW',
+    label: 'Call Sub-Flow',
+    category: 'LOGIC',
+    icon: Layers,
+    color: '#6D28D9',
+    bg: '#EDE9FE',
+    badge: 'Modular',
+    desc: 'Delegate execution to a modular sub-flow journey and return on completion',
+    defaultConfig: {
+      targetFlowId: '',
+      returnHandle: 'completed'
+    },
+    getOutputHandles: () => [
+      { id: 'completed', label: 'Completed ✅', type: 'source', color: '#16A34A' },
+      { id: 'error', label: 'On Error ⚠️', type: 'source', color: '#E11D48' }
+    ]
+  },
 
   // 5. TIMING
   {

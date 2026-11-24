@@ -300,25 +300,33 @@ function upsertActiveSession({
   versionId,
   currentNodeId,
   collectedData = {},
+  navigationStack = null,
+  callStack = null,
   status = "ACTIVE",
   extendMinutes = 60,
   extendDays = null
 }) {
   const normPhone = normalizePhone(senderPhone);
   const dataJson = JSON.stringify(compactSessionData(collectedData) || {});
+  const navJson = navigationStack !== null ? JSON.stringify(navigationStack) : null;
+  const callJson = callStack !== null ? JSON.stringify(callStack) : null;
   const intervalMinutes = extendDays ? (extendDays * 1440) : (extendMinutes || 60);
 
   if (sessionId) {
     db.prepare(`
       UPDATE conversation_flow_sessions
-      SET current_node_id = ?,
+      SET flow_id = ?,
+          flow_version_id = ?,
+          current_node_id = ?,
           collected_data_json = ?,
+          navigation_stack_json = COALESCE(?, navigation_stack_json),
+          call_stack_json = COALESCE(?, call_stack_json),
           session_status = ?,
           last_interaction_at = UTC_TIMESTAMP(),
           expires_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE),
           updated_at = UTC_TIMESTAMP()
       WHERE id = ?
-    `).run(currentNodeId, dataJson, status, intervalMinutes, sessionId);
+    `).run(flowId, versionId, currentNodeId, dataJson, navJson, callJson, status, intervalMinutes, sessionId);
 
     return db.prepare("SELECT * FROM conversation_flow_sessions WHERE id = ?").get(sessionId);
   }
@@ -328,13 +336,16 @@ function upsertActiveSession({
     INSERT INTO conversation_flow_sessions (
       session_key, tenant_id, property_id, channel, sender_phone,
       flow_id, flow_version_id, current_node_id, collected_data_json,
+      navigation_stack_json, call_stack_json,
       session_status, last_interaction_at, expires_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE), UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE), UTC_TIMESTAMP(), UTC_TIMESTAMP())
     ON DUPLICATE KEY UPDATE
       flow_id = VALUES(flow_id),
       flow_version_id = VALUES(flow_version_id),
       current_node_id = VALUES(current_node_id),
       collected_data_json = VALUES(collected_data_json),
+      navigation_stack_json = COALESCE(VALUES(navigation_stack_json), navigation_stack_json),
+      call_stack_json = COALESCE(VALUES(call_stack_json), call_stack_json),
       session_status = VALUES(session_status),
       last_interaction_at = UTC_TIMESTAMP(),
       expires_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE),
@@ -342,6 +353,7 @@ function upsertActiveSession({
   `).run(
     sessionKey, tenantId, propertyId, channel, normPhone,
     flowId, versionId, currentNodeId, dataJson,
+    navJson, callJson,
     status, intervalMinutes, intervalMinutes
   );
 
@@ -1151,7 +1163,9 @@ function executePureSimulationNode(node, context = {}) {
     DYNAMIC_MASTER_SELECTION: "selected",
     OPEN_INAPP_EXPERIENCE: "default",
     INAPP_BRIDGE: "default",
-    INTERACTIVE_APP: "default"
+    INTERACTIVE_APP: "default",
+    CALL_SUBFLOW: "completed",
+    SUBFLOW: "completed"
   };
   const defaultHandle = simulatedHandles[type] || "default";
   const label = node?.title || type.replace(/_/g, " ");
@@ -1231,6 +1245,8 @@ async function processTurn({
   let nodes = [];
   let transitions = [];
   let collectedData = {};
+  let navigationStack = [];
+  let callStack = [];
   // Tracks existing session turns. Without this declaration resumed executions throw.
   let isResuming = false;
 
@@ -1260,6 +1276,24 @@ async function processTurn({
     if (session) {
       isResuming = true;
       collectedData = session.collected_data_json ? JSON.parse(session.collected_data_json) : {};
+      if (session.navigation_stack_json) {
+        try {
+          navigationStack = typeof session.navigation_stack_json === 'string'
+            ? JSON.parse(session.navigation_stack_json)
+            : (Array.isArray(session.navigation_stack_json) ? session.navigation_stack_json : []);
+        } catch (_) {
+          navigationStack = [];
+        }
+      }
+      if (session.call_stack_json) {
+        try {
+          callStack = typeof session.call_stack_json === 'string'
+            ? JSON.parse(session.call_stack_json)
+            : (Array.isArray(session.call_stack_json) ? session.call_stack_json : []);
+        } catch (_) {
+          callStack = [];
+        }
+      }
 
       // Load flow & pinned version
       flow = db.prepare("SELECT * FROM conversation_flows WHERE id = ?").get(session.flow_id);
@@ -1444,10 +1478,20 @@ async function processTurn({
     isResuming = false;
   }
 
-  // 3. Global Escape Keywords Handling (cancel, restart, reset, menu)
+  let isWaitingForThisNode = isResuming;
+
+  // 3. Global Escape Keywords Handling (cancel, restart, reset, menu, back, agent/help)
   const normInput = String(userInput || "").trim().toLowerCase();
+  const flowGlobalSettingsService = require("./flowGlobalSettingsService");
+  const globalSettings = flowGlobalSettingsService.getSettings(tenantId, effectivePhoneNumberId);
+
   const isGlobalCancel = ["cancel", "stop", "exit"].includes(normInput);
-  const isGlobalRestart = ["restart", "reset", "menu", "/start", "/menu", "main menu"].includes(normInput);
+  const isGlobalRestart = (globalSettings.menu_keywords || ["restart", "reset", "menu", "/start", "/menu", "main menu"])
+    .some(kw => normInput === kw.toLowerCase() || (normInput.length > 2 && normInput === `/${kw.toLowerCase()}`));
+  const isGlobalBack = (globalSettings.back_keywords || ["0", "back", "previous"])
+    .some(kw => normInput === kw.toLowerCase());
+  const isGlobalHandoff = (globalSettings.handoff_keywords || ["agent", "human", "help", "support"])
+    .some(kw => normInput === kw.toLowerCase());
 
   if (isGlobalCancel) {
     if (!isInMemorySimulation && session?.id) {
@@ -1466,25 +1510,129 @@ async function processTurn({
     };
   }
 
+  if (isGlobalBack && isResuming) {
+    if (navigationStack.length > 1) {
+      // Pop current interactive step
+      navigationStack.pop();
+      const prevStep = navigationStack[navigationStack.length - 1];
+      executionLogs.push(`Customer requested back navigation ('${normInput}'). Returning to previous step '${prevStep.nodeId}'.`);
+      if (prevStep.flowId && Number(prevStep.flowId) !== Number(session?.flow_id || flow?.id)) {
+        // Return to parent/different flow
+        const targetFlow = db.prepare("SELECT * FROM conversation_flows WHERE id = ?").get(prevStep.flowId);
+        const targetVer = db.prepare("SELECT * FROM conversation_flow_versions WHERE id = ?").get(prevStep.flowVersionId);
+        if (targetFlow && targetVer) {
+          flow = targetFlow;
+          flowVersion = targetVer;
+          nodes = JSON.parse(targetVer.nodes_json || "[]");
+          transitions = JSON.parse(targetVer.transitions_json || "[]");
+          nodeMap.clear();
+          nodes.forEach(n => nodeMap.set(n.id, n));
+        }
+      }
+      if (nodeMap.has(prevStep.nodeId)) {
+        currentNode = nodeMap.get(prevStep.nodeId);
+        isResuming = false;
+        isWaitingForThisNode = false;
+        userInput = "";
+        userPayload = null;
+      }
+    } else {
+      return {
+        handled: true,
+        sessionKey,
+        currentNodeId: currentNode?.id || null,
+        sessionStatus: "ACTIVE",
+        collectedData,
+        replyText: "You are already at the beginning of the flow. Type 'menu' to return to the main menu.",
+        executionLogs: [...executionLogs, "Customer requested back, but already at initial step."]
+      };
+    }
+  }
+
   if (isGlobalRestart) {
-    currentNode = startNode;
+    navigationStack = [];
+    callStack = [];
     collectedData = {};
     Object.keys(variableContext).forEach(k => {
       if (!['sender_phone', 'property', 'business_name', 'config', 'catalog'].includes(k)) delete variableContext[k];
     });
+
+    // Check for configured root menu flow
+    let rootFlow = null;
+    if (globalSettings.root_flow_id) {
+      rootFlow = db.prepare(`
+        SELECT f.*, v.id as version_id, v.nodes_json, v.transitions_json
+        FROM conversation_flows f
+        JOIN conversation_flow_versions v ON v.id = f.published_version_id
+        WHERE f.id = ? AND f.tenant_id = ? AND f.status = 'PUBLISHED'
+        LIMIT 1
+      `).get(globalSettings.root_flow_id, tenantId);
+    }
+    if (!rootFlow) {
+      rootFlow = db.prepare(`
+        SELECT f.*, v.id as version_id, v.nodes_json, v.transitions_json
+        FROM conversation_flows f
+        JOIN conversation_flow_versions v ON v.id = f.published_version_id
+        WHERE f.tenant_id = ? AND f.status = 'PUBLISHED' AND (f.is_root_menu = 1 OR f.flow_role = 'ROOT_MENU')
+        ORDER BY f.id ASC LIMIT 1
+      `).get(tenantId);
+    }
+
+    if (rootFlow) {
+      flow = rootFlow;
+      flowVersion = { id: rootFlow.version_id };
+      nodes = JSON.parse(rootFlow.nodes_json || "[]");
+      transitions = JSON.parse(rootFlow.transitions_json || "[]");
+      nodeMap.clear();
+      nodes.forEach(n => nodeMap.set(n.id, n));
+      currentNode = nodes.find(n => n.type === "START" || n.type === "TRIGGER_WHATSAPP") || nodes[0];
+      executionLogs.push(`Customer requested restart/menu. Switched to root menu flow #${rootFlow.id} at node '${currentNode.id}'.`);
+    } else {
+      currentNode = startNode;
+      executionLogs.push(`Customer requested restart/menu. Reset state and restarted from start node '${startNode.id}'.`);
+    }
+
     if (!isInMemorySimulation && session?.id) {
       try {
-        db.prepare("UPDATE conversation_flow_sessions SET current_node_id = ?, collected_data_json = '{}', session_status = 'ACTIVE', updated_at = UTC_TIMESTAMP() WHERE id = ?").run(startNode.id, session.id);
+        db.prepare(`
+          UPDATE conversation_flow_sessions
+          SET flow_id = ?, flow_version_id = ?, current_node_id = ?, collected_data_json = '{}',
+              navigation_stack_json = '[]', call_stack_json = '[]', session_status = 'ACTIVE', updated_at = UTC_TIMESTAMP()
+          WHERE id = ?
+        `).run(flow.id, flowVersion.id, currentNode.id, session.id);
       } catch (e) {}
     }
-    executionLogs.push(`Customer requested restart ('${normInput}'). Reset state and restarted from ${startNode.id}.`);
     isResuming = false;
     userInput = "";
     userPayload = null;
   }
 
+  if (isGlobalHandoff) {
+    if (!isInMemorySimulation && session?.id) {
+      try {
+        db.prepare("UPDATE conversation_flow_sessions SET session_status = 'PAUSED_AGENT_HANDOFF', updated_at = UTC_TIMESTAMP() WHERE id = ?").run(session.id);
+        flowAnalyticsService.recordNodeEvent(
+          tenantId,
+          session?.flow_id || flow?.id || 1,
+          currentNode?.id || "handoff",
+          'HANDOFF',
+          { nodeType: 'HUMAN_HANDOFF' }
+        );
+      } catch (e) {}
+    }
+    return {
+      handled: true,
+      sessionKey,
+      currentNodeId: currentNode?.id || null,
+      sessionStatus: "PAUSED_AGENT_HANDOFF",
+      collectedData,
+      replyText: "You have been connected to an agent. Our team will assist you shortly.",
+      executionLogs: [...executionLogs, "Customer requested human agent handoff ('agent'). Session paused for agent."]
+    };
+  }
+
   // 4. Strict Start-to-End State Machine Execution Loop
-  let isWaitingForThisNode = isResuming;
+  isWaitingForThisNode = isResuming;
   let hops = 0;
   const maxHops = 25;
   let accumulatedReplies = [];
@@ -1522,7 +1670,8 @@ async function processTurn({
       phoneNumberId: effectivePhoneNumberId || flow?.phone_number_id || null,
       senderPhone: normalizedPhone,
       flowId: session?.flow_id || flow?.id || 1,
-      isWaitingForThisNode
+      isWaitingForThisNode,
+      callStack: [...callStack]
     };
     // The pure simulator intentionally does not resolve a production node
     // executor. This blocks all side-effecting integrations by construction.
@@ -1552,8 +1701,34 @@ async function processTurn({
       pendingDelay = execRes.pendingDelay;
     }
 
+    if (execRes.action === "SUBFLOW_CALL") {
+      callStack.push({
+        parentFlowId: session?.flow_id || flow?.id,
+        parentVersionId: session?.flow_version_id || flowVersion?.id,
+        returnNodeId: execRes.returnNodeId,
+        returnHandle: execRes.returnHandle || "completed"
+      });
+      flow = { id: execRes.targetFlowId };
+      flowVersion = { id: execRes.targetVersionId };
+      nodes = JSON.parse(execRes.targetNodesJson || "[]");
+      transitions = JSON.parse(execRes.targetTransitionsJson || "[]");
+      nodeMap.clear();
+      nodes.forEach(n => nodeMap.set(n.id, n));
+      currentNode = nodes.find(n => n.type === "START" || n.type === "TRIGGER_WHATSAPP") || nodes[0];
+      isWaitingForThisNode = false;
+      continue;
+    }
+
     if (execRes.action === "WAIT_FOR_INPUT") {
       finalStatus = "ACTIVE";
+      if (!navigationStack.some(s => s.nodeId === node.id && s.flowId === (session?.flow_id || flow?.id))) {
+        navigationStack.push({
+          nodeId: node.id,
+          flowId: session?.flow_id || flow?.id || 1,
+          flowVersionId: session?.flow_version_id || flowVersion?.id || 1
+        });
+        if (navigationStack.length > 20) navigationStack.shift();
+      }
       if (!isInMemorySimulation && (flow || session)) {
         session = upsertActiveSession({
           sessionId: session?.id,
@@ -1566,6 +1741,8 @@ async function processTurn({
           versionId: session?.flow_version_id || flowVersion?.id || 1,
           currentNodeId: node.id,
           collectedData,
+          navigationStack,
+          callStack,
           status: "ACTIVE"
         });
       }
@@ -1586,6 +1763,8 @@ async function processTurn({
           versionId: session?.flow_version_id || flowVersion?.id || 1,
           currentNodeId: node.id,
           collectedData,
+          navigationStack,
+          callStack,
           status: "ACTIVE",
           extendDays: 7
         });
@@ -1614,6 +1793,8 @@ async function processTurn({
           versionId: session?.flow_version_id || flowVersion?.id || 1,
           currentNodeId: node.id,
           collectedData,
+          navigationStack,
+          callStack,
           status: "PAUSED_AGENT_HANDOFF"
         });
       }
@@ -1621,6 +1802,26 @@ async function processTurn({
     }
 
     if (execRes.action === "COMPLETE") {
+      if (callStack.length > 0) {
+        const frame = callStack.pop();
+        executionLogs.push(`Subflow completed. Resuming parent flow #${frame.parentFlowId} at return node '${frame.returnNodeId}'.`);
+        const parentFlow = db.prepare("SELECT * FROM conversation_flows WHERE id = ?").get(frame.parentFlowId);
+        const parentVer = db.prepare("SELECT * FROM conversation_flow_versions WHERE id = ?").get(frame.parentVersionId);
+        if (parentFlow && parentVer) {
+          flow = parentFlow;
+          flowVersion = parentVer;
+          nodes = JSON.parse(parentVer.nodes_json || "[]");
+          transitions = JSON.parse(parentVer.transitions_json || "[]");
+          nodeMap.clear();
+          nodes.forEach(n => nodeMap.set(n.id, n));
+          const resumeNext = findNextNode(frame.returnNodeId, frame.returnHandle || "completed", transitions, nodeMap, nodes);
+          if (resumeNext) {
+            currentNode = resumeNext;
+            isWaitingForThisNode = false;
+            continue;
+          }
+        }
+      }
       finalStatus = "COMPLETED";
       if (!isInMemorySimulation && (flow || session)) {
         flowAnalyticsService.recordNodeEvent(
@@ -1641,6 +1842,8 @@ async function processTurn({
           versionId: session?.flow_version_id || flowVersion?.id || 1,
           currentNodeId: node.id,
           collectedData,
+          navigationStack,
+          callStack,
           status: "COMPLETED"
         });
       }
@@ -1655,6 +1858,26 @@ async function processTurn({
       nextNode = findNextNode(node.id, execRes.nextHandle || "default", transitions, nodeMap, nodes);
     }
     if (!nextNode) {
+      if (callStack.length > 0) {
+        const frame = callStack.pop();
+        executionLogs.push(`Subflow reached terminus. Resuming parent flow #${frame.parentFlowId} at return node '${frame.returnNodeId}'.`);
+        const parentFlow = db.prepare("SELECT * FROM conversation_flows WHERE id = ?").get(frame.parentFlowId);
+        const parentVer = db.prepare("SELECT * FROM conversation_flow_versions WHERE id = ?").get(frame.parentVersionId);
+        if (parentFlow && parentVer) {
+          flow = parentFlow;
+          flowVersion = parentVer;
+          nodes = JSON.parse(parentVer.nodes_json || "[]");
+          transitions = JSON.parse(parentVer.transitions_json || "[]");
+          nodeMap.clear();
+          nodes.forEach(n => nodeMap.set(n.id, n));
+          const resumeNext = findNextNode(frame.returnNodeId, frame.returnHandle || "completed", transitions, nodeMap, nodes);
+          if (resumeNext) {
+            currentNode = resumeNext;
+            isWaitingForThisNode = false;
+            continue;
+          }
+        }
+      }
       finalStatus = "COMPLETED";
       if (!isInMemorySimulation && (flow || session)) {
         flowAnalyticsService.recordNodeEvent(
@@ -1675,6 +1898,8 @@ async function processTurn({
           versionId: session?.flow_version_id || flowVersion?.id || 1,
           currentNodeId: node.id,
           collectedData,
+          navigationStack,
+          callStack,
           status: "COMPLETED"
         });
       }

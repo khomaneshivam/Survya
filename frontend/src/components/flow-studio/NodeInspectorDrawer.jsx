@@ -238,6 +238,7 @@ export default function NodeInspectorDrawer({
   const isIntake = ['COLLECT_INPUT', 'INPUT_COLLECTION', 'QUESTION'].includes(node.type);
   const isCondition = node.type === 'CONDITION';
   const isSetVar = node.type === 'SET_VARIABLE';
+  const isSubflow = ['CALL_SUBFLOW', 'SUBFLOW'].includes(node.type);
   const isWaitDelay = node.type === 'WAIT_DELAY';
   const isCrm = node.type === 'CRM_UPSERT';
   const isBooking = ['CATALOG_BOOKING', 'BUSINESS_ACTION', 'QUOTATION', 'BOOKING', 'TRANSACTION'].includes(node.type);
@@ -785,39 +786,54 @@ export default function NodeInspectorDrawer({
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {options.map((opt, i) => (
-                      <div
-                        key={opt.id || i}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          padding: '8px 10px',
-                          background: '#F8FAFC',
-                          borderRadius: '6px',
-                          border: '1px solid #E2E8F0'
-                        }}
-                      >
-                        <span style={{ fontSize: '0.72rem', color: '#94A3B8', fontWeight: 600 }}>#{i + 1}</span>
-                        <input
-                          type="text"
-                          className="form-input"
-                          style={{ flex: 1, padding: '4px 8px', fontSize: '0.76rem' }}
-                          value={opt.title || ''}
-                          onChange={(e) => handleUpdateOption(i, 'title', e.target.value)}
-                          placeholder="Button Label"
-                          maxLength={20}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveOption(i)}
-                          title="Delete option"
-                          style={{ border: 'none', background: 'transparent', color: '#EF4444', cursor: 'pointer', padding: '2px' }}
+                    {options.map((opt, i) => {
+                      const currentTitle = opt.title || '';
+                      const maxChars = node.config?.messageType === 'LIST' ? 24 : 20;
+                      const isOver = currentTitle.length > maxChars;
+                      return (
+                        <div
+                          key={opt.id || i}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '8px 10px',
+                            background: '#F8FAFC',
+                            borderRadius: '6px',
+                            border: isOver ? '1px solid #EF4444' : '1px solid #E2E8F0'
+                          }}
                         >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    ))}
+                          <span style={{ fontSize: '0.72rem', color: '#94A3B8', fontWeight: 600 }}>#{i + 1}</span>
+                          <input
+                            type="text"
+                            className="form-input"
+                            style={{ flex: 1, padding: '4px 8px', fontSize: '0.76rem' }}
+                            value={currentTitle}
+                            onChange={(e) => handleUpdateOption(i, 'title', e.target.value)}
+                            placeholder={node.config?.messageType === 'LIST' ? "List Row Title" : "Button Label"}
+                            maxLength={maxChars}
+                          />
+                          <span style={{
+                            fontSize: '0.68rem',
+                            fontFamily: 'monospace',
+                            fontWeight: 600,
+                            color: isOver ? '#EF4444' : (currentTitle.length >= maxChars - 2 ? '#D97706' : '#64748B'),
+                            minWidth: '38px',
+                            textAlign: 'right'
+                          }}>
+                            {currentTitle.length}/{maxChars}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveOption(i)}
+                            title="Delete option"
+                            style={{ border: 'none', background: 'transparent', color: '#EF4444', cursor: 'pointer', padding: '2px' }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      );
+                    })}
                     {options.length === 0 && (
                       <div style={{ fontSize: '0.74rem', color: '#94A3B8', fontStyle: 'italic' }}>
                         No buttons added. Message will send as plain text.
@@ -1108,6 +1124,36 @@ export default function NodeInspectorDrawer({
                     onChange={(e) => handleConfigChange('value', e.target.value)}
                     placeholder="10"
                   />
+                </div>
+              </>
+            )}
+
+            {/* 7b. CALL SUBFLOW */}
+            {isSubflow && (
+              <>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Target Sub-Flow ID / Name</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={node.config?.targetFlowId || ''}
+                    onChange={(e) => handleConfigChange('targetFlowId', e.target.value)}
+                    placeholder="e.g. 431 or Flow ID"
+                  />
+                  <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: '4px' }}>
+                    The published modular conversation flow to execute.
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, fontSize: '0.80rem' }}>Return Handle</label>
+                  <select
+                    className="form-input"
+                    value={node.config?.returnHandle || 'completed'}
+                    onChange={(e) => handleConfigChange('returnHandle', e.target.value)}
+                  >
+                    <option value="completed">completed (Normal Return)</option>
+                    <option value="default">default</option>
+                  </select>
                 </div>
               </>
             )}

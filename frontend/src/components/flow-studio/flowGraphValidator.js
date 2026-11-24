@@ -88,6 +88,14 @@ export function validateFlowGraph(nodes = [], transitions = []) {
     } else {
       incomingMap.get(t.target).push(t);
     }
+
+    if (t.source && t.target && t.source === t.target) {
+      errors.push({
+        nodeId: t.source,
+        severity: 'error',
+        message: `Self-loop detected on '${nodeMap.get(t.source)?.title || t.source}': a step cannot connect directly to itself.`
+      });
+    }
   });
 
   // 3. Node Configuration & Required Fields Check
@@ -95,8 +103,8 @@ export function validateFlowGraph(nodes = [], transitions = []) {
     const config = node.config || {};
     const type = node.type;
 
-    // Send Message / Message
-    if (type === 'SEND_MESSAGE' || type === 'MESSAGE') {
+    // Send Message / Message / Button Menu
+    if (type === 'SEND_MESSAGE' || type === 'MESSAGE' || type === 'BUTTON_MENU' || type === 'SELECTION') {
       const text = config.text || '';
       const options = config.options || [];
       const mediaUrl = config.mediaUrl || '';
@@ -105,6 +113,56 @@ export function validateFlowGraph(nodes = [], transitions = []) {
           nodeId: node.id,
           severity: 'error',
           message: `Message step '${node.title || node.id}' has empty content and no options.`
+        });
+      }
+
+      const msgType = String(config.messageType || '').toUpperCase();
+      const isButtonMode = msgType === 'BUTTONS' || (options.length > 0 && options.length <= 3 && msgType !== 'LIST');
+      const isListMode = msgType === 'LIST' || options.length > 3;
+
+      if (isButtonMode && options.length > 3) {
+        errors.push({
+          nodeId: node.id,
+          severity: 'error',
+          message: `Button menu on '${node.title || node.id}' has ${options.length} buttons (WhatsApp limit is 3). Use a list menu instead.`
+        });
+      }
+
+      if (isListMode && options.length > 10) {
+        errors.push({
+          nodeId: node.id,
+          severity: 'error',
+          message: `List menu on '${node.title || node.id}' has ${options.length} rows (WhatsApp limit is 10).`
+        });
+      }
+
+      options.forEach((opt, oIdx) => {
+        const titleStr = String(opt.title || opt.label || '').trim();
+        if (isButtonMode && titleStr.length > 20) {
+          errors.push({
+            nodeId: node.id,
+            severity: 'error',
+            message: `Button #${oIdx + 1} "${titleStr}" on '${node.title || node.id}' exceeds WhatsApp 20-character limit (${titleStr.length} chars).`
+          });
+        }
+        if (isListMode && titleStr.length > 24) {
+          errors.push({
+            nodeId: node.id,
+            severity: 'error',
+            message: `List row #${oIdx + 1} "${titleStr}" on '${node.title || node.id}' exceeds WhatsApp 24-character limit (${titleStr.length} chars).`
+          });
+        }
+      });
+    }
+
+    // Call Subflow
+    if (type === 'CALL_SUBFLOW' || type === 'SUBFLOW') {
+      const targetFlowId = config.targetFlowId || config.subflowId || config.flowId;
+      if (!targetFlowId) {
+        errors.push({
+          nodeId: node.id,
+          severity: 'error',
+          message: `Sub-flow step '${node.title || node.id}' must specify a target sub-flow.`
         });
       }
     }

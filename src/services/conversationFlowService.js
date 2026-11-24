@@ -70,6 +70,9 @@ function validateFlowGraph(nodes, transitions, variables = {}) {
     if (!t.target || !nodeMap.has(t.target)) {
       errors.push(`Transition #${idx + 1} has invalid or missing target node '${t.target}'.`);
     }
+    if (t.source && t.target && t.source === t.target) {
+      errors.push(`Self-loop detected: transition #${idx + 1} on node '${t.source}' connects directly to itself.`);
+    }
   });
 
   // 4. Reachability from trigger nodes
@@ -152,18 +155,40 @@ function validateFlowGraph(nodes, transitions, variables = {}) {
     try { getNodeExecutor(n.type); }
     catch (_) { errors.push(`Node '${n.id || 'unknown'}' has unsupported type '${n.type || ''}'.`); }
 
-    if (n.type === "BUTTON_MENU" || n.type === "SELECTION" || n.type === "CONFIRMATION") {
+    if (n.type === "BUTTON_MENU" || n.type === "SELECTION" || n.type === "CONFIRMATION" || n.type === "SEND_MESSAGE") {
       const opts = cfg.options || [];
-      if (opts.length === 0 && n.type !== "CONFIRMATION") {
+      const msgType = String(cfg.messageType || "").toUpperCase();
+      const isButtonMode = msgType === "BUTTONS" || (opts.length > 0 && opts.length <= 3 && msgType !== "LIST");
+      const isListMode = msgType === "LIST" || opts.length > 3;
+
+      if (opts.length === 0 && (n.type === "BUTTON_MENU" || n.type === "SELECTION")) {
         errors.push(`Menu node '${n.id}' must have at least one option.`);
-      } else if (opts.length > 10) {
-        warnings.push(`Menu node '${n.id}' has ${opts.length} options (WhatsApp interactive list maximum is 10).`);
       }
-      opts.forEach(o => {
-        if (o.title && o.title.length > 20) {
-          warnings.push(`Button title '${o.title}' on node '${n.id}' exceeds WhatsApp 20-character limit (${o.title.length} chars). It will be truncated.`);
+
+      if (isButtonMode && opts.length > 3) {
+        errors.push(`Button menu node '${n.id}' exceeds WhatsApp limit of 3 quick-reply buttons (found ${opts.length}). Switch to a List menu or reduce buttons.`);
+      }
+
+      if (isListMode && opts.length > 10) {
+        errors.push(`List menu node '${n.id}' exceeds WhatsApp limit of 10 list rows (found ${opts.length}).`);
+      }
+
+      opts.forEach((o, oIdx) => {
+        const titleStr = String(o.title || o.label || o.text || "").trim();
+        if (isButtonMode && titleStr.length > 20) {
+          errors.push(`Button #${oIdx + 1} title "${titleStr}" on node '${n.id}' exceeds WhatsApp 20-character limit (${titleStr.length} chars).`);
+        }
+        if (isListMode && titleStr.length > 24) {
+          errors.push(`List row #${oIdx + 1} title "${titleStr}" on node '${n.id}' exceeds WhatsApp 24-character limit (${titleStr.length} chars).`);
         }
       });
+    }
+
+    if (n.type === "CALL_SUBFLOW" || n.type === "SUBFLOW") {
+      const targetFlowId = cfg.targetFlowId || cfg.subflowId || cfg.flowId;
+      if (!targetFlowId) {
+        errors.push(`Subflow node '${n.id}' must specify a valid target flow.`);
+      }
     }
 
     if (n.type === "CONDITION") {
@@ -1395,6 +1420,28 @@ function getExecutionDetails(sessionId, tenantId = 1) {
   };
 }
 
+/**
+ * Reset / cancel an active or paused session
+ */
+function resetSession(sessionId, tenantId = 1) {
+  const session = db.prepare("SELECT * FROM conversation_flow_sessions WHERE id = ? AND tenant_id = ?").get(sessionId, tenantId);
+  if (!session) {
+    throw new Error(`Execution session #${sessionId} not found.`);
+  }
+
+  db.prepare(`
+    UPDATE conversation_flow_sessions
+    SET session_status = 'CANCELLED', updated_at = UTC_TIMESTAMP()
+    WHERE id = ? AND tenant_id = ?
+  `).run(sessionId, tenantId);
+
+  return {
+    success: true,
+    sessionId: Number(sessionId),
+    status: 'CANCELLED'
+  };
+}
+
 module.exports = {
   validateFlowGraph,
   listFlows,
@@ -1420,5 +1467,6 @@ module.exports = {
   deleteMessageTemplate,
   getFlowAnalytics,
   listFlowExecutions,
-  getExecutionDetails
+  getExecutionDetails,
+  resetSession
 };

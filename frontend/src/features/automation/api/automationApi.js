@@ -135,6 +135,53 @@ export const automationApi = {
     return res.json();
   },
 
+  async createFlow(payload) {
+    const res = await fetchWithAuth('/api/flows/conversation-flows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  },
+
+  async assignFlowToLine(id, phoneNumberId) {
+    const res = await fetchWithAuth(`/api/flows/conversation-flows/${id}/assign-line`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phoneNumberId })
+    });
+    return res.json();
+  },
+
+  async setDefaultFlow(id) {
+    const res = await fetchWithAuth(`/api/flows/conversation-flows/${id}/set-default`, {
+      method: 'POST'
+    });
+    return res.json();
+  },
+
+  async getTriggerConflicts() {
+    const res = await fetchWithAuth('/api/flows/conflicts');
+    return res.json();
+  },
+
+  // --- GLOBAL SETTINGS ---
+  async getGlobalSettings(phoneNumberId = null) {
+    const query = phoneNumberId ? `?phoneNumberId=${encodeURIComponent(phoneNumberId)}` : '';
+    const res = await fetchWithAuth(`/api/flows/global-settings${query}`);
+    return res.json();
+  },
+
+  async updateGlobalSettings(payload, phoneNumberId = null) {
+    const query = phoneNumberId ? `?phoneNumberId=${encodeURIComponent(phoneNumberId)}` : '';
+    const res = await fetchWithAuth(`/api/flows/global-settings${query}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.json();
+  },
+
   // --- SIMULATION & SANDBOX ---
   async simulateTurn(payload) {
     const res = await fetchWithAuth('/api/flows/conversation-flows/simulate', {
@@ -161,6 +208,13 @@ export const automationApi = {
 
   async getExecutionDetails(sessionId) {
     const res = await fetchWithAuth(`/api/flows/executions/${sessionId}`);
+    return res.json();
+  },
+
+  async resetSession(sessionId) {
+    const res = await fetchWithAuth(`/api/flows/sessions/${sessionId}/reset`, {
+      method: 'POST'
+    });
     return res.json();
   },
 

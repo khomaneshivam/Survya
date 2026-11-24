@@ -322,11 +322,11 @@ function AppContent() {
             </button>
             <button
               type="button"
-              className={`mobile-nav-item ${activeTab === 'automation' ? 'active' : ''}`}
-              onClick={() => setActiveTab('automation')}
+              className={`mobile-nav-item ${activeTab === 'flows' ? 'active' : ''}`}
+              onClick={() => setActiveTab('flows')}
             >
               <GitBranch size={18} />
-              <span>Workflows</span>
+              <span>Flows</span>
             </button>
             <button
               type="button"

@@ -79,8 +79,13 @@ router.post(["/flows/conversation-flows/:id(\\d+)/ai-optimize", "/:id(\\d+)/ai-o
 router.post(["/flows/conversation-flows/:id(\\d+)/ai-optimize/apply", "/:id(\\d+)/ai-optimize/apply"], authenticateToken, requireAdmin, flowController.applyAiOptimization);
 router.get(["/flows/conversation-flows/:id(\\d+)/executions", "/:id(\\d+)/executions"], authenticateToken, flowController.listFlowExecutions);
 
-// Global Executions & Audit Trace
-router.get("/flows/executions", authenticateToken, flowController.listFlowExecutions);
-router.get("/flows/executions/:sessionId", authenticateToken, flowController.getExecutionDetails);
+// Global Settings (Navigation, Root Menu, Fallback)
+router.get(["/flows/global-settings", "/global-settings"], authenticateToken, flowController.getGlobalSettings);
+router.put(["/flows/global-settings", "/global-settings"], authenticateToken, requireAdmin, flowController.updateGlobalSettings);
+
+// Live Sessions Monitor & Audit Trace
+router.get(["/flows/sessions", "/flows/executions"], authenticateToken, flowController.listSessions);
+router.get(["/flows/sessions/:id/events", "/flows/executions/:id"], authenticateToken, flowController.getSessionEvents);
+router.post("/flows/sessions/:id/reset", authenticateToken, requireAdmin, flowController.resetSession);
 
 module.exports = router;

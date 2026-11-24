@@ -5,6 +5,7 @@
 
 const flowService = require("../services/conversationFlowService");
 const flowEngine = require("../services/conversationFlowEngine");
+const flowGlobalSettingsService = require("../services/flowGlobalSettingsService");
 const aiFlowGenerator = require("../services/workflow/aiFlowGeneratorService");
 const flowAnalyticsService = require("../services/workflow/flowAnalyticsService");
 
@@ -490,6 +491,61 @@ async function getExecutionDetails(req, res) {
   }
 }
 
+async function getGlobalSettings(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const phoneNumberId = req.query.phoneNumberId || null;
+    const settings = flowGlobalSettingsService.getSettings(tenantId, phoneNumberId);
+    return res.json({ success: true, settings });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+async function updateGlobalSettings(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const phoneNumberId = req.body.phoneNumberId || req.query.phoneNumberId || null;
+    const updated = flowGlobalSettingsService.updateSettings(tenantId, phoneNumberId, req.body);
+    return res.json({ success: true, settings: updated });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
+async function listSessions(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const { flowId, status, search, page, limit } = req.query;
+    const data = flowService.listFlowExecutions(tenantId, { flowId, status, search, page, limit });
+    return res.json({ success: true, ...data });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+async function getSessionEvents(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const sessionId = req.params.id;
+    const data = flowService.getExecutionDetails(sessionId, tenantId);
+    return res.json({ success: true, ...data });
+  } catch (err) {
+    return res.status(404).json({ success: false, error: err.message });
+  }
+}
+
+async function resetSession(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const sessionId = req.params.id;
+    const result = flowService.resetSession(sessionId, tenantId);
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
 module.exports = {
   listFlows,
   getFlowById,
@@ -521,5 +577,10 @@ module.exports = {
   assignFlowToLine,
   setDefaultFlow,
   getAiOptimizationRecommendations,
-  applyAiOptimization
+  applyAiOptimization,
+  getGlobalSettings,
+  updateGlobalSettings,
+  listSessions,
+  getSessionEvents,
+  resetSession
 };

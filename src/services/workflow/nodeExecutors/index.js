@@ -17,6 +17,7 @@ const addonQuoteExecutor = require('./addonQuoteExecutor');
 const aiHybridExecutor = require('./aiHybridExecutor');
 const masterPickerExecutor = require('./masterPickerExecutor');
 const inappBridgeExecutor = require('./inappBridgeExecutor');
+const subflowExecutor = require('./subflowExecutor');
 
 const EXECUTORS = {
   // Triggers
@@ -53,6 +54,8 @@ const EXECUTORS = {
   // Logic & Routing
   CONDITION: conditionExecutor,
   SET_VARIABLE: variableExecutor,
+  CALL_SUBFLOW: subflowExecutor,
+  SUBFLOW: subflowExecutor,
 
   // Timing
   WAIT_DELAY: delayExecutor,
