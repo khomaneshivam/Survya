@@ -96,17 +96,6 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
   const [newFlowKeywords, setNewFlowKeywords] = useState('hi, enquiry');
   const [bannerNotice, setBannerNotice] = useState(null);
 
-  const handleBlueprintApplied = useCallback(async (result) => {
-    await loadFlows();
-    setBannerNotice({
-      type: 'success',
-      text: `Blueprint "${result.sectorName}" deployed! Flow #${result.flowId} created for ${result.businessName || 'your business'}.`
-    });
-    if (result.flowId) {
-      handleOpenFlowInCanvas(result.flowId);
-    }
-  }, [loadFlows]);
-
   // 1. Load Flows
   const loadFlows = useCallback(async () => {
     setLoadingFlows(true);
@@ -191,11 +180,23 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
   }, [selectedFlowId, activeTab]);
 
   // Handle open Canvas for a flow
-  const handleOpenFlowInCanvas = (flowId) => {
+  const handleOpenFlowInCanvas = useCallback((flowId) => {
     setSelectedFlowId(flowId);
     setSelectedNodeId(null);
     setActiveTab('canvas');
-  };
+  }, []);
+
+  // Handle Blueprint Applied
+  const handleBlueprintApplied = useCallback(async (result) => {
+    await loadFlows();
+    setBannerNotice({
+      type: 'success',
+      text: `Blueprint "${result.sectorName}" deployed! Flow #${result.flowId} created for ${result.businessName || 'your business'}.`
+    });
+    if (result.flowId) {
+      handleOpenFlowInCanvas(result.flowId);
+    }
+  }, [loadFlows, handleOpenFlowInCanvas]);
 
   // Handle Create Flow
   const handleCreateFlow = async (e) => {
