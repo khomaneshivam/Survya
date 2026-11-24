@@ -34,11 +34,43 @@ function getPath(context, path) {
     return curr;
   }
 
+  // Direct flat key match on context (e.g. context['business.name'])
+  if (cleanPath in context && context[cleanPath] !== undefined) {
+    return context[cleanPath];
+  }
+
+  // Dynamic template configuration resolution (e.g. {{config.business.name}} or flat config['business.name'])
+  if (context.config && typeof context.config === 'object') {
+    if (cleanPath.startsWith('config.')) {
+      const sub = cleanPath.slice(7);
+      if (sub in context.config && context.config[sub] !== undefined) {
+        return context.config[sub];
+      }
+      const subParts = sub.split('.');
+      let ptr = context.config;
+      let ok = true;
+      for (const p of subParts) {
+        if (ptr == null || typeof ptr !== 'object' || !(p in ptr)) {
+          ok = false;
+          break;
+        }
+        ptr = ptr[p];
+      }
+      if (ok && ptr !== undefined) {
+        return ptr;
+      }
+    } else if (cleanPath in context.config && context.config[cleanPath] !== undefined) {
+      return context.config[cleanPath];
+    }
+  }
+
   // Fallback checks inside standard SARVYA namespaces if top-level lookup missed
-  const namespaces = ['session', 'contact', 'crm', 'catalog', 'trigger', 'api'];
+  const namespaces = ['session', 'contact', 'crm', 'catalog', 'trigger', 'api', 'config'];
   for (const ns of namespaces) {
-    if (context[ns] && typeof context[ns] === 'object' && cleanPath in context[ns]) {
-      return context[ns][cleanPath];
+    if (context[ns] && typeof context[ns] === 'object') {
+      if (cleanPath in context[ns] && context[ns][cleanPath] !== undefined) {
+        return context[ns][cleanPath];
+      }
     }
   }
 

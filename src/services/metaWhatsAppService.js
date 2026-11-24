@@ -8,6 +8,9 @@ function getMetaGraphVersion() {
 }
 
 function getMetaBaseUrl() {
+  if (config.META_API_URL) {
+    return `${config.META_API_URL.replace(/\/$/, "")}/${getMetaGraphVersion()}`;
+  }
   return `https://graph.facebook.com/${getMetaGraphVersion()}`;
 }
 

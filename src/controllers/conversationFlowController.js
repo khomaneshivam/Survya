@@ -5,8 +5,27 @@
 
 const flowService = require("../services/conversationFlowService");
 const flowEngine = require("../services/conversationFlowEngine");
+const flowGlobalSettingsService = require("../services/flowGlobalSettingsService");
 const aiFlowGenerator = require("../services/workflow/aiFlowGeneratorService");
 const flowAnalyticsService = require("../services/workflow/flowAnalyticsService");
+
+function requireEnabledAiFlowBuilder(res) {
+  try {
+    // The service owns the persisted setting lookup. The fallback preserves
+    // compatibility with isolated controller tests that stub the generator.
+    if (typeof aiFlowGenerator.isAiFlowBuilderEnabled !== "function" || aiFlowGenerator.isAiFlowBuilderEnabled()) {
+      return true;
+    }
+  } catch (_) {
+    // Fail closed if the setting cannot be read.
+  }
+
+  res.status(403).json({
+    success: false,
+    error: "AI Flow Builder is disabled. An administrator must enable it in AI Flow Builder Setup before generating or refining flows."
+  });
+  return false;
+}
 
 async function getAiCapabilities(req, res) {
   try {
@@ -21,16 +40,18 @@ async function getAiCapabilities(req, res) {
 
 async function generateFlowWithAi(req, res) {
   try {
+    if (!requireEnabledAiFlowBuilder(res)) return;
     const tenantId = req.user?.tenant_id || 1;
     const user = req.user || { id: "admin", name: "Administrator" };
-    const { prompt, propertyId, phoneNumberId, autoPublish } = req.body;
+    const { prompt, propertyId, phoneNumberId } = req.body;
 
     const result = await aiFlowGenerator.generateFlowFromPrompt({
       prompt,
       tenantId,
       propertyId: propertyId || 1,
       phoneNumberId,
-      autoPublish: Boolean(autoPublish),
+      // Client input may never auto-publish a generated flow.
+      autoPublish: false,
       user
     });
 
@@ -42,6 +63,7 @@ async function generateFlowWithAi(req, res) {
 
 async function refineFlowWithAi(req, res) {
   try {
+    if (!requireEnabledAiFlowBuilder(res)) return;
     const tenantId = req.user?.tenant_id || 1;
     const user = req.user || { id: "admin", name: "Administrator" };
     const flowId = req.params.id || req.body.flowId;
@@ -319,6 +341,22 @@ async function simulateTurn(req, res) {
       fastForward = false
     } = req.body;
 
+    if (!flowOverride || !Array.isArray(flowOverride.nodes) || !Array.isArray(flowOverride.transitions)) {
+      return res.status(400).json({
+        success: false,
+        error: "Simulation requires an explicit draft graph. Published flow routing is not available in simulation mode."
+      });
+    }
+
+    // A truthy state tells the engine to remain entirely in-memory on the
+    // first turn too; it must never create or resume a production session.
+    const isolatedSimulationState = simulationState || {
+      currentNodeId: null,
+      collectedData: {},
+      nodes: flowOverride.nodes,
+      transitions: flowOverride.transitions
+    };
+
     const result = await flowEngine.processTurn({
       senderPhone,
       userInput,
@@ -329,7 +367,7 @@ async function simulateTurn(req, res) {
         channel: "WHATSAPP",
         isSimulation: true,
         dryRun: true,
-        simulationState,
+        simulationState: isolatedSimulationState,
         flowOverride,
         fastForward
       }
@@ -453,6 +491,61 @@ async function getExecutionDetails(req, res) {
   }
 }
 
+async function getGlobalSettings(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const phoneNumberId = req.query.phoneNumberId || null;
+    const settings = flowGlobalSettingsService.getSettings(tenantId, phoneNumberId);
+    return res.json({ success: true, settings });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+async function updateGlobalSettings(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const phoneNumberId = req.body.phoneNumberId || req.query.phoneNumberId || null;
+    const updated = flowGlobalSettingsService.updateSettings(tenantId, phoneNumberId, req.body);
+    return res.json({ success: true, settings: updated });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
+async function listSessions(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const { flowId, status, search, page, limit } = req.query;
+    const data = flowService.listFlowExecutions(tenantId, { flowId, status, search, page, limit });
+    return res.json({ success: true, ...data });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+async function getSessionEvents(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const sessionId = req.params.id;
+    const data = flowService.getExecutionDetails(sessionId, tenantId);
+    return res.json({ success: true, ...data });
+  } catch (err) {
+    return res.status(404).json({ success: false, error: err.message });
+  }
+}
+
+async function resetSession(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const sessionId = req.params.id;
+    const result = flowService.resetSession(sessionId, tenantId);
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
 module.exports = {
   listFlows,
   getFlowById,
@@ -484,5 +577,10 @@ module.exports = {
   assignFlowToLine,
   setDefaultFlow,
   getAiOptimizationRecommendations,
-  applyAiOptimization
+  applyAiOptimization,
+  getGlobalSettings,
+  updateGlobalSettings,
+  listSessions,
+  getSessionEvents,
+  resetSession
 };

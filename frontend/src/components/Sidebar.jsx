@@ -45,13 +45,10 @@ export default function Sidebar({
       items: [
         { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
         { id: 'enquiries', label: 'CRM', icon: Users },
-        { id: 'flows', label: 'Forms', icon: FileSpreadsheet },
-        { id: 'automation', label: 'Workflows', icon: GitBranch },
+        { id: 'flows', label: 'Flow Builder', icon: GitBranch, badge: 'Studio' },
         { id: 'inbox', label: 'Conversations', icon: MessageSquare },
-        { id: 'autoreply', label: 'Auto-Reply Bot', icon: BotMessageSquare },
         { id: 'broadcast', label: 'Campaigns', icon: Send },
         { id: 'links', label: 'Chat Links', icon: Link2 },
-        { id: 'inapp_studio', label: 'In-App Studio', icon: Smartphone, badge: 'Dynamic' },
         { id: 'ai', label: 'SARVYA AI', icon: Bot },
         { id: 'reports', label: 'Insights', icon: BarChart3 }
       ]
@@ -71,6 +68,7 @@ export default function Sidebar({
         isAdminSection: true,
         items: [
           { id: 'admin', label: 'System Admin Panel', icon: ShieldCheck, highlight: true },
+          { id: 'inapp_studio', label: 'In-App Studio', icon: Smartphone, badge: 'Dynamic' },
           { id: 'payouts', label: 'Payouts & Settlements', icon: Landmark },
           { id: 'connect', label: 'Connect', icon: Plug }
         ]

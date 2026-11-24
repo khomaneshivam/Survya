@@ -8,9 +8,42 @@
 const { getSetting, getDb } = require("../../config/database");
 const { buildSystemCapabilitiesContext } = require("./aiFlowContextBuilder");
 const flowService = require("../conversationFlowService");
+const flowApprovalService = require("../flowApprovalService");
 const flowAnalyticsService = require("./flowAnalyticsService");
 const runtimeCache = require("./runtimeCache");
 const { SECTOR_BLUEPRINTS } = require("../universal/universalCatalogService");
+
+function isAiFlowBuilderEnabled() {
+  const raw = String(getSetting("AI_FLOW_BUILDER_ENABLED") || "").trim().toLowerCase();
+  return raw === "true" || raw === "1";
+}
+
+function getAiFlowBuilderRules() {
+  const defaults = {
+    requireStepApproval: true,
+    requireApiReview: true,
+    requireMockTests: true,
+    requireSandboxPreview: true,
+    instructions: ""
+  };
+
+  try {
+    const raw = getSetting("AI_FLOW_BUILDER_RULES");
+    if (!raw) return defaults;
+    const stored = JSON.parse(raw);
+    return {
+      // Generated flows are always governed. Per-flow approval and safe
+      // pre-publication evidence are not optional administrator preferences.
+      requireStepApproval: true,
+      requireApiReview: true,
+      requireMockTests: true,
+      requireSandboxPreview: true,
+      instructions: typeof stored.instructions === "string" ? stored.instructions.slice(0, 6000) : ""
+    };
+  } catch (_) {
+    return defaults;
+  }
+}
 
 /**
  * Automatically calculates visual layout positions for a node graph
@@ -1720,8 +1753,9 @@ function synthesizeSmartLocalFlow(prompt = "", systemContext = {}) {
  * Calls external LLM (Gemini or OpenAI) with grounded system capabilities
  */
 async function callLlmGenerator(prompt, systemContext) {
-  const { aiConfig, roomTypes, businessEntities, crmPipelines } = systemContext;
+  const { aiConfig, roomTypes, businessEntities, crmPipelines, aiFlowBuilderRules = {} } = systemContext;
   const provider = aiConfig.provider || "GEMINI";
+  const adminInstructions = String(aiFlowBuilderRules.instructions || "").trim();
 
   const systemInstruction = `
 You are the AI Flow Architect for SARVYA, a multi-industry WhatsApp business automation platform.
@@ -1747,6 +1781,15 @@ RULES & CONSTRAINTS:
    - CATALOG_BOOKING: 'available', 'unavailable'
    - HTTP_WEBHOOK: 'success', 'failure'
    - HUMAN_HANDOFF / END: no outputs (terminal)
+6. Generated flows are drafts only. Never claim that a flow is published, live, or allowed to dispatch a WhatsApp message.
+7. Do not create runtime source-code changes, remote API calls, or live-message actions. Flag missing integrations for administrator review instead.
+
+ADMIN FLOW-BUILDER POLICY:
+- Require step approval: ${aiFlowBuilderRules.requireStepApproval !== false}
+- Require API review: ${aiFlowBuilderRules.requireApiReview !== false}
+- Require mock-test review: ${aiFlowBuilderRules.requireMockTests !== false}
+- Require sandbox preview: ${aiFlowBuilderRules.requireSandboxPreview !== false}
+${adminInstructions ? `- Additional administrator instructions (must not override the constraints above): ${adminInstructions}` : ""}
 
 Respond ONLY with valid JSON in this exact structure:
 {
@@ -1830,15 +1873,71 @@ Respond ONLY with valid JSON in this exact structure:
 }
 
 /**
+ * Produces a deterministic integration review for the generated graph. This is
+ * intentionally a readiness report, not an API executor: unrecognised or
+ * external integrations remain blocked for administrator review.
+ */
+function buildApiReadinessReport(nodes = [], systemContext = {}) {
+  const seen = new Set();
+  const items = [];
+  const catalogReady = Array.isArray(systemContext.catalogItems) && systemContext.catalogItems.length > 0;
+  const crmReady = Array.isArray(systemContext.crmPipelines) && systemContext.crmPipelines.length > 0;
+
+  for (const node of nodes) {
+    const type = String(node?.type || "").toUpperCase();
+    if (!type || seen.has(type)) continue;
+    seen.add(type);
+
+    if (type === "CRM_UPSERT") {
+      items.push({
+        type,
+        status: crmReady ? "READY" : "GAP",
+        title: "CRM lead or record update",
+        detail: crmReady ? "A configured CRM pipeline is available for review." : "No configured CRM pipeline was found. Define one before approval."
+      });
+    } else if (type === "CATALOG_BOOKING") {
+      items.push({
+        type,
+        status: catalogReady ? "READY" : "GAP",
+        title: "Catalog, availability, or booking action",
+        detail: catalogReady ? "Catalog context is available for sandbox simulation." : "No catalog context was found. Add or approve the required inventory API first."
+      });
+    } else if (type === "HTTP_WEBHOOK" || type === "API_INTEGRATION") {
+      items.push({
+        type,
+        status: "REVIEW_REQUIRED",
+        title: "External API integration",
+        detail: "External endpoints are not called by generated drafts. Review the contract, allowlist, secret reference, timeout, and mock response before approval."
+      });
+    } else if (type === "SEND_TEMPLATE") {
+      items.push({
+        type,
+        status: "REVIEW_REQUIRED",
+        title: "Message template dependency",
+        detail: "Confirm that the approved template and its variables exist before activation."
+      });
+    }
+  }
+
+  const blockingItems = items.filter(item => item.status !== "READY");
+  return {
+    status: blockingItems.length === 0 ? "READY" : "REVIEW_REQUIRED",
+    items,
+    readyCount: items.filter(item => item.status === "READY").length,
+    reviewCount: blockingItems.length
+  };
+}
+
+/**
  * Main AI Flow Generator Entrypoint
- * Generates, validates, positions, saves, optionally publishes, and assigns flow to WhatsApp line.
+ * Generates, validates, positions, saves, and assigns a draft flow to a WhatsApp line.
+ * Publishing is intentionally a separate administrator-approved action.
  */
 async function generateFlowFromPrompt({
   prompt,
   tenantId = 1,
   propertyId = 1,
   phoneNumberId = null,
-  autoPublish = false,
   user = { id: "admin", name: "Administrator" }
 }) {
   if (!prompt || !String(prompt).trim()) {
@@ -1847,6 +1946,8 @@ async function generateFlowFromPrompt({
 
   const cleanPrompt = String(prompt).trim();
   const systemContext = buildSystemCapabilitiesContext(tenantId, propertyId);
+  const aiFlowBuilderRules = getAiFlowBuilderRules();
+  systemContext.aiFlowBuilderRules = aiFlowBuilderRules;
 
   let flowDraft = null;
   let usedProvider = "SMART_LOCAL";
@@ -1884,6 +1985,7 @@ async function generateFlowFromPrompt({
 
   // Validate the graph
   const validationReport = flowService.validateFlowGraph(nodes, transitions, variables);
+  const apiReadiness = buildApiReadinessReport(nodes, systemContext);
 
   // Determine line assignment
   let assignedPhone = null;
@@ -1914,33 +2016,30 @@ async function generateFlowFromPrompt({
     trigger_keywords: flowDraft.triggerKeywords || ["hi", "hello"],
     is_default: 0,
     priority: 10,
+    approval_required: true,
     initialNodes: nodes,
     initialTransitions: transitions,
     initialVariables: variables
   }, user);
 
   let finalFlow = createResult.flow;
+  let initialApproval = null;
+  initialApproval = flowApprovalService.initializeApprovalWorkflow({
+    flowId: finalFlow.id,
+    tenantId,
+    user,
+    requirementsSummary: `Review the AI-generated requirements for: ${cleanPrompt.slice(0, 1000)}`
+  });
+  finalFlow.approval_required = 1;
+  finalFlow.approval_state = "REQUIREMENTS_PENDING";
   if (finalFlow && createResult?.draftVersion) {
     finalFlow.nodes_json = createResult.draftVersion.nodes_json;
     finalFlow.edges_json = createResult.draftVersion.transitions_json;
     finalFlow.transitions_json = createResult.draftVersion.transitions_json;
   }
-  let publishedVersion = null;
-
-  // Auto-publish if requested and valid
-  if (autoPublish) {
-    if (validationReport.isValid) {
-      try {
-        const pubResult = flowService.publishFlow(finalFlow.id, user, tenantId);
-        finalFlow = pubResult.flow;
-        publishedVersion = pubResult.publishedVersion;
-      } catch (pubErr) {
-        console.warn(`[AIFlowGenerator] Auto-publish note for flow ${finalFlow.id}:`, pubErr.message);
-      }
-    } else {
-      console.warn(`[AIFlowGenerator] Skipping auto-publish: Flow has validation warnings/errors:`, validationReport.errors);
-    }
-  }
+  // A generated flow never activates triggers. It remains a reviewable draft
+  // until an administrator validates, simulates, and explicitly publishes it.
+  const publishedVersion = null;
 
   return {
     success: true,
@@ -1949,6 +2048,15 @@ async function generateFlowFromPrompt({
     publishedVersion,
     validationReport,
     usedProvider,
+    governance: {
+      requireStepApproval: aiFlowBuilderRules.requireStepApproval,
+      requireApiReview: aiFlowBuilderRules.requireApiReview,
+      requireMockTests: aiFlowBuilderRules.requireMockTests,
+      requireSandboxPreview: aiFlowBuilderRules.requireSandboxPreview,
+      draftOnly: true,
+      initialApprovalStage: initialApproval?.stage || null,
+      apiReadiness
+    },
     suggestedBlueprint,
     suggestedCatalogItems: flowDraft.suggestedCatalogItems || [],
     suggestedAddons: flowDraft.suggestedAddons || [],
@@ -2212,6 +2320,7 @@ async function refineFlowWithAi({
  */
 function getAiCapabilities(tenantId = 1, propertyId = 1) {
   const context = buildSystemCapabilitiesContext(tenantId, propertyId);
+  const rules = getAiFlowBuilderRules();
   return {
     success: true,
     capabilities: {
@@ -2230,7 +2339,23 @@ function getAiCapabilities(tenantId = 1, propertyId = 1) {
         phoneNumberId: p.phone_number_id,
         isDefault: Boolean(p.is_default)
       })),
-      aiConfig: context.aiConfig
+      aiConfig: context.aiConfig,
+      flowBuilder: {
+        enabled: isAiFlowBuilderEnabled(),
+        rules: {
+          requireStepApproval: rules.requireStepApproval,
+          requireApiReview: rules.requireApiReview,
+          requireMockTests: rules.requireMockTests,
+          requireSandboxPreview: rules.requireSandboxPreview,
+          hasAdditionalInstructions: Boolean(rules.instructions.trim())
+        },
+        safety: {
+          draftOnly: true,
+          autoPublish: false,
+          runtimeCodeChanges: false,
+          liveMessageDispatch: false
+        }
+      }
     }
   };
 }
@@ -2542,6 +2667,9 @@ function applyOptimization(tenantId = 1, flowId, { recommendationId, patch = {},
 module.exports = {
   applyHierarchicalLayout,
   synthesizeSmartLocalFlow,
+  buildApiReadinessReport,
+  isAiFlowBuilderEnabled,
+  getAiFlowBuilderRules,
   generateFlowFromPrompt,
   refineFlowWithAi,
   getAiCapabilities,

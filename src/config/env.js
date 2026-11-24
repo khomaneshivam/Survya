@@ -49,6 +49,9 @@ const config = {
   WHATSAPP_PHONE_NUMBER_ID: process.env.WHATSAPP_PHONE_NUMBER_ID || "",
   META_APP_SECRET: metaAppSecret,
   META_GRAPH_VERSION: process.env.META_GRAPH_VERSION || "v21.0",
+  // An explicit endpoint override allows CI to route any accidental API call to
+  // an unreachable local address instead of Meta's live Graph API.
+  META_API_URL: process.env.META_API_URL || "",
   WHATSAPP_TEMPLATE_ID: process.env.WHATSAPP_TEMPLATE_ID || "",
   DEFAULT_TEMPLATE_NAME: process.env.DEFAULT_TEMPLATE_NAME || "kt_restaurant_invitation",
   DEFAULT_TEMPLATE_LANG: process.env.DEFAULT_TEMPLATE_LANG || "en",
@@ -62,7 +65,7 @@ const config = {
   PUBLIC_APP_URL: process.env.PUBLIC_APP_URL || "",
   CORS_ORIGIN: process.env.CORS_ORIGIN || process.env.CORS_ORIGINS || "",
   WHATSAPP_BUSINESS_ACCOUNT_ID: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
-  WHATSAPP_FLOWS_ENABLED: process.env.WHATSAPP_FLOWS_ENABLED === "true",
+  WHATSAPP_FLOWS_ENABLED: process.env.WHATSAPP_FLOWS_ENABLED ? process.env.WHATSAPP_FLOWS_ENABLED === "true" : true,
   FLOWS_PRIVATE_KEY: process.env.FLOWS_PRIVATE_KEY || "",
   FLOWS_PASSPHRASE: process.env.FLOWS_PASSPHRASE || "",
   FLOWS_ENDPOINT_URL: process.env.FLOWS_ENDPOINT_URL || ""

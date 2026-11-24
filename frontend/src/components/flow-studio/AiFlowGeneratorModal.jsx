@@ -12,7 +12,8 @@ import {
   Check,
   RotateCcw,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  ShieldCheck
 } from 'lucide-react';
 
 export default function AiFlowGeneratorModal({
@@ -23,7 +24,6 @@ export default function AiFlowGeneratorModal({
 }) {
   const [prompt, setPrompt] = useState('');
   const [selectedLine, setSelectedLine] = useState('');
-  const [autoPublish, setAutoPublish] = useState(false);
   const [loading, setLoading] = useState(false);
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
   const [capabilities, setCapabilities] = useState(null);
@@ -33,7 +33,7 @@ export default function AiFlowGeneratorModal({
   const QUICK_PROMPTS = [
     {
       label: '🏖️ Resort Room Booking (Hospitality)',
-      text: 'Create a luxury resort room booking flow that checks live room tariffs, collects check-in & check-out dates, logs the booking lead in CRM, and schedules a 1-hour follow-up reminder.'
+      text: 'Create a luxury resort room booking flow that checks configured room tariffs, collects check-in and check-out dates, logs the booking lead in CRM, and schedules a follow-up reminder.'
     },
     {
       label: '👗 D2C Fashion & Apparel (Retail)',
@@ -96,8 +96,13 @@ export default function AiFlowGeneratorModal({
   }, [isOpen, token]);
 
   if (!isOpen) return null;
+  const flowBuilderEnabled = capabilities?.flowBuilder?.enabled !== false;
 
   const handleGenerate = async () => {
+    if (!flowBuilderEnabled) {
+      setError('AI flow drafting is disabled. Enable it in System Administration → AI Flow Builder setup.');
+      return;
+    }
     if (!prompt.trim()) {
       setError('Please provide a prompt describing your desired workflow.');
       return;
@@ -118,8 +123,7 @@ export default function AiFlowGeneratorModal({
         headers,
         body: JSON.stringify({
           prompt: prompt.trim(),
-          phoneNumberId: selectedLine || null,
-          autoPublish
+          phoneNumberId: selectedLine || null
         })
       });
 
@@ -192,7 +196,7 @@ export default function AiFlowGeneratorModal({
                 AI Flow Architect
               </h2>
               <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', opacity: 0.85 }}>
-                Prompt-to-Workflow Generator Grounded in Real System APIs &amp; Inventory
+                Describe the outcome; AI creates a reviewable draft from your approved business context.
               </p>
             </div>
           </div>
@@ -214,7 +218,7 @@ export default function AiFlowGeneratorModal({
           </button>
         </div>
 
-        {/* Live Grounding Capability Pill Strip */}
+        {/* Available system context */}
         <div style={{
           padding: '10px 24px',
           background: '#F8FAFC',
@@ -225,7 +229,7 @@ export default function AiFlowGeneratorModal({
           flexWrap: 'wrap',
           fontSize: '0.78rem'
         }}>
-          <span style={{ fontWeight: 600, color: '#475569' }}>Live Grounding Context:</span>
+          <span style={{ fontWeight: 600, color: '#475569' }}>Available system context:</span>
           {capabilities ? (
             <>
               <span style={{
@@ -304,6 +308,20 @@ export default function AiFlowGeneratorModal({
             </div>
           )}
 
+          {capabilities && !flowBuilderEnabled && (
+            <div style={{
+              background: '#FFFBEB',
+              border: '1px solid #FDE68A',
+              color: '#92400E',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              marginBottom: '16px',
+              fontSize: '0.84rem'
+            }}>
+              AI flow drafting is disabled by the administrator. Configure it in System Administration before creating a proposal.
+            </div>
+          )}
+
           {!generationResult ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
@@ -320,7 +338,7 @@ export default function AiFlowGeneratorModal({
                   rows={3}
                   value={prompt}
                   onChange={e => setPrompt(e.target.value)}
-                  placeholder="e.g., Build a luxury resort room booking flow that checks live room tariffs, collects check-in & check-out dates, logs the booking lead in CRM, and schedules a 1-hour follow-up reminder..."
+                  placeholder="e.g., Build a resort booking flow that checks configured room tariffs, collects stay dates, logs a CRM lead, and schedules a follow-up..."
                   style={{
                     width: '100%',
                     padding: '12px 14px',
@@ -338,7 +356,7 @@ export default function AiFlowGeneratorModal({
               {/* Quick Prompt Chips */}
               <div>
                 <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748B', display: 'block', marginBottom: '8px' }}>
-                  Quick Ideas &amp; Industry Blueprints:
+                  Examples (optional):
                 </span>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '8px' }}>
                   {QUICK_PROMPTS.map((qp, idx) => (
@@ -389,7 +407,7 @@ export default function AiFlowGeneratorModal({
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
                   <label style={{ fontSize: '0.84rem', fontWeight: 700, color: '#1E293B', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <Phone size={14} color="#2F5219" />
-                    <span>Assign Directly to Connected WhatsApp Line:</span>
+                    <span>Use this line as draft context:</span>
                   </label>
                   <select
                     value={selectedLine}
@@ -414,22 +432,13 @@ export default function AiFlowGeneratorModal({
                   </select>
                 </div>
                 <p style={{ margin: 0, fontSize: '0.76rem', color: '#64748B', lineHeight: 1.4 }}>
-                  Inbound messages arriving on the selected line will be routed with top priority to this newly generated flow.
+                  This selection is saved with the draft only. It does not activate routing or send any message.
                 </p>
               </div>
 
-              {/* Auto Publish Checkbox */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <input
-                  type="checkbox"
-                  id="auto_publish_chk"
-                  checked={autoPublish}
-                  onChange={e => setAutoPublish(e.target.checked)}
-                  style={{ width: '16px', height: '16px', accentColor: '#2F5219', cursor: 'pointer' }}
-                />
-                <label htmlFor="auto_publish_chk" style={{ fontSize: '0.82rem', fontWeight: 600, color: '#334155', cursor: 'pointer' }}>
-                  Auto-publish flow immediately (activates triggers and begins live execution)
-                </label>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '10px 12px', borderRadius: '8px', background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#166534', fontSize: '0.78rem', lineHeight: 1.45 }}>
+                <ShieldCheck size={16} style={{ flex: '0 0 auto', marginTop: '1px' }} />
+                <span>This creates a draft only. Review requirements, APIs, design, and simulation before requesting activation.</span>
               </div>
             </div>
           ) : (
@@ -486,6 +495,24 @@ export default function AiFlowGeneratorModal({
                 </div>
               </div>
 
+              {generationResult.governance?.apiReadiness?.items?.length > 0 && (
+                <div style={{ border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px 14px', background: '#F8FAFC' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline', marginBottom: '8px' }}>
+                    <strong style={{ color: '#1E293B', fontSize: '0.82rem' }}>Integration review</strong>
+                    <span style={{ color: generationResult.governance.apiReadiness.reviewCount ? '#92400E' : '#166534', fontSize: '0.74rem', fontWeight: 700 }}>
+                      {generationResult.governance.apiReadiness.reviewCount ? `${generationResult.governance.apiReadiness.reviewCount} item(s) need review` : 'Ready for API review'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'grid', gap: '7px' }}>
+                    {generationResult.governance.apiReadiness.items.map((item) => (
+                      <div key={item.type} style={{ fontSize: '0.76rem', color: '#475569', lineHeight: 1.45 }}>
+                        <strong style={{ color: item.status === 'READY' ? '#166534' : '#92400E' }}>{item.title}:</strong> {item.detail}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {generationResult?.suggestedCatalogItems?.length > 0 && (
                 <div style={{ marginTop: '12px', background: '#F0FDF4', border: '1px solid #86EFAC', borderRadius: '8px', padding: '10px 14px', fontSize: '0.8rem', color: '#166534' }}>
                   <span style={{ fontWeight: 700 }}>📦 Sector Catalog Scaffolding Available: </span>
@@ -494,7 +521,7 @@ export default function AiFlowGeneratorModal({
               )}
 
               <p style={{ margin: 0, fontSize: '0.82rem', color: '#64748B' }}>
-                Your generated workflow has been grounded with live catalog inventory and CRM pipelines, laid out hierarchically, and saved to your flows library.
+                Your draft is grounded in available catalog and CRM context, laid out for review, and saved to the flow library.
               </p>
             </div>
           )}
@@ -532,16 +559,16 @@ export default function AiFlowGeneratorModal({
               <button
                 type="button"
                 onClick={handleGenerate}
-                disabled={loading || !prompt.trim()}
+                disabled={loading || !prompt.trim() || !flowBuilderEnabled}
                 style={{
                   padding: '8px 20px',
                   borderRadius: '8px',
                   border: 'none',
-                  background: loading || !prompt.trim() ? '#94A3B8' : '#2F5219',
+                  background: loading || !prompt.trim() || !flowBuilderEnabled ? '#94A3B8' : '#2F5219',
                   color: '#FFFFFF',
                   fontSize: '0.84rem',
                   fontWeight: 700,
-                  cursor: loading || !prompt.trim() ? 'not-allowed' : 'pointer',
+                  cursor: loading || !prompt.trim() || !flowBuilderEnabled ? 'not-allowed' : 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
@@ -549,7 +576,7 @@ export default function AiFlowGeneratorModal({
                 }}
               >
                 {loading ? <RotateCcw size={16} className="spin" /> : <Sparkles size={16} color="#FDE047" />}
-                <span>{loading ? 'Architecting Flow...' : 'Generate Workflow with AI'}</span>
+                <span>{loading ? 'Creating draft...' : 'Create draft with AI'}</span>
               </button>
             </>
           ) : (

@@ -126,7 +126,7 @@ function parseDateInput(inputStr, referenceDate = new Date()) {
 async function execute(node, context) {
   const { session = {}, userInput = '', isWaitingForThisNode = false } = context;
   const config = { ...(node.data || {}), ...(node.config || {}) };
-  const varName = config.saveAs || config.variable || 'user_input';
+  const varName = config.saveAs || config.variable || config.variableName || 'user_input';
   const inputType = String(config.inputType || config.validationType || config.validation?.type || 'TEXT').toUpperCase();
   const maxRetries = Number(config.maxRetries || 3);
   const retryKey = `_retries_${node.id}`;
@@ -242,7 +242,7 @@ async function execute(node, context) {
   }
 
   // First time entering node: send question prompt and wait for user's input
-  const promptRaw = config.prompt || `Please provide ${varName}:`;
+  const promptRaw = config.prompt || config.questionText || config.text || config.message || `Please provide ${varName}:`;
   const renderedPrompt = interpolateTemplate(promptRaw, context.variableContext || session);
 
   return {

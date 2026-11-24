@@ -7,6 +7,7 @@ import AdminOverviewTab from '../components/admin/AdminOverviewTab';
 import AdminUsersCrudTab from '../components/admin/AdminUsersCrudTab';
 import AdminRecycleBinTab from '../components/admin/AdminRecycleBinTab';
 import AdminComplianceTab from '../components/admin/AdminComplianceTab';
+import AiFlowBuilderSetupCard from '../components/admin/AiFlowBuilderSetupCard';
 import {
   PageHeader,
   Tabs,
@@ -78,17 +79,10 @@ export default function SystemAdminPanel({ onNavigate }) {
     META_GRAPH_VERSION: 'v21.0',
     BROADCAST_DELAY_MS: '250',
     DEFAULT_COUNTRY_CODE: '91',
-    APP_TIMEZONE: 'Asia/Kolkata',
-    AI_PROVIDER: 'GEMINI',
-    GEMINI_API_KEY: '',
-    GEMINI_MODEL: 'gemini-1.5-flash',
-    OPENAI_API_KEY: '',
-    OPENAI_MODEL: 'gpt-4o-mini'
+    APP_TIMEZONE: 'Asia/Kolkata'
   });
   const [showToken, setShowToken] = useState(false);
   const [showAppSecret, setShowAppSecret] = useState(false);
-  const [showGeminiKey, setShowGeminiKey] = useState(false);
-  const [showOpenAiKey, setShowOpenAiKey] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [metaConnectionResult, setMetaConnectionResult] = useState(null);
@@ -182,12 +176,7 @@ export default function SystemAdminPanel({ onNavigate }) {
           META_GRAPH_VERSION: s.META_GRAPH_VERSION || 'v21.0',
           BROADCAST_DELAY_MS: s.BROADCAST_DELAY_MS !== undefined ? String(s.BROADCAST_DELAY_MS) : '250',
           DEFAULT_COUNTRY_CODE: s.DEFAULT_COUNTRY_CODE || '91',
-          APP_TIMEZONE: s.APP_TIMEZONE || 'Asia/Kolkata',
-          AI_PROVIDER: s.AI_PROVIDER || 'GEMINI',
-          GEMINI_API_KEY: s.GEMINI_API_KEY || '',
-          GEMINI_MODEL: s.GEMINI_MODEL || 'gemini-1.5-flash',
-          OPENAI_API_KEY: s.OPENAI_API_KEY || '',
-          OPENAI_MODEL: s.OPENAI_MODEL || 'gpt-4o-mini'
+          APP_TIMEZONE: s.APP_TIMEZONE || 'Asia/Kolkata'
         }));
         setSettlementConfig({
           platformFeePercent: s.SETTLEMENT_COMMISSION_PERCENT || '1.5',
@@ -1005,100 +994,7 @@ export default function SystemAdminPanel({ onNavigate }) {
             </CardBody>
           </Card>
 
-          {/* AI Flow Architect Credentials & Model Configuration */}
-          <Card>
-            <CardHeader title="AI Flow Architect & LLM Credentials" icon={Sparkles} />
-            <CardBody>
-              <form onSubmit={handleSaveMetaSettings} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Configure your Google Gemini or OpenAI API credentials to power the <strong>AI Flow Architect</strong>. If no external key is supplied, SARVYA automatically defaults to the built-in <strong>Smart Deterministic System Synthesizer</strong>, creating 100% grounded workflows completely offline with zero API cost.
-                </p>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
-                      Primary AI Provider
-                    </label>
-                    <select
-                      className="sarvya-input"
-                      style={{ width: '100%' }}
-                      value={metaSettings.AI_PROVIDER || 'GEMINI'}
-                      onChange={(e) => setMetaSettings({ ...metaSettings, AI_PROVIDER: e.target.value })}
-                    >
-                      <option value="GEMINI">Google Gemini API (Recommended)</option>
-                      <option value="OPENAI">OpenAI (ChatGPT / GPT-4o)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
-                      Gemini Model
-                    </label>
-                    <input
-                      type="text"
-                      className="sarvya-input"
-                      style={{ width: '100%' }}
-                      value={metaSettings.GEMINI_MODEL || 'gemini-1.5-flash'}
-                      onChange={(e) => setMetaSettings({ ...metaSettings, GEMINI_MODEL: e.target.value })}
-                      placeholder="gemini-1.5-flash"
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
-                      Google Gemini API Key
-                    </label>
-                    <div style={{ position: 'relative' }}>
-                      <input
-                        type={showGeminiKey ? 'text' : 'password'}
-                        className="sarvya-input"
-                        style={{ width: '100%', paddingRight: '40px', fontFamily: 'monospace', fontSize: '12.5px' }}
-                        value={metaSettings.GEMINI_API_KEY || ''}
-                        onChange={(e) => setMetaSettings({ ...metaSettings, GEMINI_API_KEY: e.target.value })}
-                        placeholder="AIzaSy..."
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowGeminiKey(!showGeminiKey)}
-                        style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                      >
-                        {showGeminiKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
-                      OpenAI API Key (Optional)
-                    </label>
-                    <div style={{ position: 'relative' }}>
-                      <input
-                        type={showOpenAiKey ? 'text' : 'password'}
-                        className="sarvya-input"
-                        style={{ width: '100%', paddingRight: '40px', fontFamily: 'monospace', fontSize: '12.5px' }}
-                        value={metaSettings.OPENAI_API_KEY || ''}
-                        onChange={(e) => setMetaSettings({ ...metaSettings, OPENAI_API_KEY: e.target.value })}
-                        placeholder="sk-..."
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowOpenAiKey(!showOpenAiKey)}
-                        style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
-                      >
-                        {showOpenAiKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
-                  <Button type="submit" variant="primary" disabled={savingSettings}>
-                    {savingSettings ? 'Saving Settings...' : 'Save AI Credentials'}
-                  </Button>
-                </div>
-              </form>
-            </CardBody>
-          </Card>
+          <AiFlowBuilderSetupCard token={token} onSuccess={flashSuccess} onError={flashError} />
         </div>
       )}
 

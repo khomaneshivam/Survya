@@ -8,7 +8,7 @@ const availabilityService = require("./hospitalityAvailabilityService");
 const pricingService = require("./hospitalityPricingService");
 const enquiryService = require("./enquiryService");
 const { getNodeExecutor } = require("./workflow/nodeExecutors");
-const { evaluateRules } = require("./workflow/expressionEvaluator");
+const { evaluateRules, evaluateSingleRule, getPath, computeVariable, interpolateTemplate } = require("./workflow/expressionEvaluator");
 const { parseMysqlUtcTimestamp } = require("../utils/timeUtil");
 const flowAnalyticsService = require("./workflow/flowAnalyticsService");
 
@@ -300,25 +300,33 @@ function upsertActiveSession({
   versionId,
   currentNodeId,
   collectedData = {},
+  navigationStack = null,
+  callStack = null,
   status = "ACTIVE",
   extendMinutes = 60,
   extendDays = null
 }) {
   const normPhone = normalizePhone(senderPhone);
   const dataJson = JSON.stringify(compactSessionData(collectedData) || {});
+  const navJson = navigationStack !== null ? JSON.stringify(navigationStack) : null;
+  const callJson = callStack !== null ? JSON.stringify(callStack) : null;
   const intervalMinutes = extendDays ? (extendDays * 1440) : (extendMinutes || 60);
 
   if (sessionId) {
     db.prepare(`
       UPDATE conversation_flow_sessions
-      SET current_node_id = ?,
+      SET flow_id = ?,
+          flow_version_id = ?,
+          current_node_id = ?,
           collected_data_json = ?,
+          navigation_stack_json = COALESCE(?, navigation_stack_json),
+          call_stack_json = COALESCE(?, call_stack_json),
           session_status = ?,
           last_interaction_at = UTC_TIMESTAMP(),
           expires_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE),
           updated_at = UTC_TIMESTAMP()
       WHERE id = ?
-    `).run(currentNodeId, dataJson, status, intervalMinutes, sessionId);
+    `).run(flowId, versionId, currentNodeId, dataJson, navJson, callJson, status, intervalMinutes, sessionId);
 
     return db.prepare("SELECT * FROM conversation_flow_sessions WHERE id = ?").get(sessionId);
   }
@@ -328,13 +336,16 @@ function upsertActiveSession({
     INSERT INTO conversation_flow_sessions (
       session_key, tenant_id, property_id, channel, sender_phone,
       flow_id, flow_version_id, current_node_id, collected_data_json,
+      navigation_stack_json, call_stack_json,
       session_status, last_interaction_at, expires_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE), UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE), UTC_TIMESTAMP(), UTC_TIMESTAMP())
     ON DUPLICATE KEY UPDATE
       flow_id = VALUES(flow_id),
       flow_version_id = VALUES(flow_version_id),
       current_node_id = VALUES(current_node_id),
       collected_data_json = VALUES(collected_data_json),
+      navigation_stack_json = COALESCE(VALUES(navigation_stack_json), navigation_stack_json),
+      call_stack_json = COALESCE(VALUES(call_stack_json), call_stack_json),
       session_status = VALUES(session_status),
       last_interaction_at = UTC_TIMESTAMP(),
       expires_at = DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE),
@@ -342,6 +353,7 @@ function upsertActiveSession({
   `).run(
     sessionKey, tenantId, propertyId, channel, normPhone,
     flowId, versionId, currentNodeId, dataJson,
+    navJson, callJson,
     status, intervalMinutes, intervalMinutes
   );
 
@@ -353,18 +365,7 @@ function upsertActiveSession({
  */
 function interpolateVariables(templateStr, context = {}) {
   if (!templateStr || typeof templateStr !== "string") return "";
-  return templateStr.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (match, path) => {
-    const parts = path.split(".");
-    let curr = context;
-    for (const p of parts) {
-      if (curr == null || typeof curr !== "object") {
-        curr = undefined;
-        break;
-      }
-      curr = curr[p];
-    }
-    return curr !== undefined && curr !== null ? String(curr) : "";
-  });
+  return interpolateTemplate(templateStr, context);
 }
 
 /**
@@ -892,6 +893,292 @@ function executeBusinessAction(actionName, inputs = {}, context = {}) {
 }
 
 /**
+ * Pure, in-memory simulator for the Flow Studio.  It deliberately does not
+ * delegate to production node executors: many of those executors read or
+ * write business data, invoke AI, call HTTP endpoints, schedule jobs, or
+ * dispatch messages.  Keeping this interpreter local gives simulation a
+ * single, fail-closed safety boundary.
+ */
+function executePureSimulationNode(node, context = {}) {
+  const type = String(node?.type || "SEND_MESSAGE").toUpperCase();
+  const config = { ...(node?.data || {}), ...(node?.config || {}) };
+  const session = context.session || {};
+  const variableContext = context.variableContext || session;
+  const render = (value) => interpolateTemplate(String(value || ""), variableContext);
+  const options = Array.isArray(config.options) ? config.options : [];
+
+  const makeInteractive = (text) => ({
+    type: config.messageType || (options.length > 0 ? "BUTTONS" : "TEXT"),
+    text,
+    mediaUrl: config.mediaUrl ? render(config.mediaUrl) : undefined,
+    mediaType: config.mediaType || "IMAGE",
+    caption: config.caption ? render(config.caption) : undefined,
+    options: options.map(option => ({
+      id: option.id,
+      title: render(option.title || ""),
+      value: option.value || option.id
+    })),
+    listButtonText: config.listButtonText || "View options",
+    listTitle: config.listTitle || "Options"
+  });
+
+  if (["TRIGGER_WHATSAPP", "TRIGGER_EVENT", "START"].includes(type)) {
+    return {
+      action: "CONTINUE",
+      nextHandle: "default",
+      updatedData: {
+        "trigger.keyword": String(context.userInput || ""),
+        "trigger.source": config.eventType || (context.userPayload ? "INTERACTIVE" : "SIMULATOR")
+      },
+      traceNote: `[Simulation] Trigger initialized for ${type}.`
+    };
+  }
+
+  if (["SEND_MESSAGE", "MESSAGE", "BUTTON_MENU", "SELECTION", "CONFIRMATION", "PAYMENT"].includes(type)) {
+    if (context.isWaitingForThisNode && options.length > 0) {
+      const payloadValue = context.userPayload?.id || context.userPayload?.payload || context.userPayload?.value || context.userPayload?.title || "";
+      const matched = matchOption(options, payloadValue, context.userInput);
+      if (matched) {
+        return {
+          action: "CONTINUE",
+          nextHandle: matched.id || matched.value || "default",
+          updatedData: {
+            [config.variable || "selected_option"]: matched.value || matched.id,
+            selected_option_title: matched.title || ""
+          },
+          traceNote: `[Simulation] Selected option '${matched.title || matched.id}'.`
+        };
+      }
+      return {
+        action: "CONTINUE",
+        nextHandle: "default",
+        updatedData: { [config.variable || "selected_option"]: String(context.userInput || "") },
+        traceNote: "[Simulation] No option matched; followed the default transition."
+      };
+    }
+
+    const text = render(config.text || config.messageText || config.prompt || "");
+    const replyInteractive = makeInteractive(text);
+    if (options.length > 0) {
+      return {
+        action: "WAIT_FOR_INPUT",
+        replyMessages: text ? [text] : [],
+        replyInteractive,
+        traceNote: `[Simulation] Displayed ${options.length} local choice(s).`
+      };
+    }
+    return {
+      action: "CONTINUE",
+      nextHandle: "default",
+      replyMessages: text ? [text] : [],
+      replyInteractive: replyInteractive.mediaUrl ? replyInteractive : null,
+      traceNote: "[Simulation] Rendered a message locally."
+    };
+  }
+
+  if (["COLLECT_INPUT", "INPUT_COLLECTION", "QUESTION"].includes(type)) {
+    const variable = config.saveAs || config.variable || "user_input";
+    const inputType = String(config.inputType || config.validationType || config.validation?.type || "TEXT").toUpperCase();
+    const retryKey = `_retries_${node.id}`;
+    const maxRetries = Math.max(0, Number(config.maxRetries || 3));
+
+    if (!context.isWaitingForThisNode) {
+      const prompt = render(config.promptText || config.prompt || `Please provide ${variable}:`);
+      return {
+        action: "WAIT_FOR_INPUT",
+        replyMessages: prompt ? [prompt] : [],
+        updatedData: { [retryKey]: 0 },
+        traceNote: `[Simulation] Waiting for '${variable}' input.`
+      };
+    }
+
+    const raw = String(context.userInput || "").trim();
+    let valid = raw.length > 0;
+    let value = raw;
+    if (inputType === "EMAIL") {
+      valid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw);
+      value = raw.toLowerCase();
+    } else if (inputType === "PHONE") {
+      value = raw.replace(/\D/g, "");
+      valid = value.length >= 10 && value.length <= 15;
+    } else if (inputType === "NUMBER") {
+      value = Number(raw.replace(/,/g, ""));
+      valid = raw.length > 0 && Number.isFinite(value);
+    } else if (inputType === "DATE") {
+      value = parseDateInput(raw);
+      valid = Boolean(value);
+    } else if (inputType === "REGEX") {
+      try {
+        valid = new RegExp(config.regexPattern || ".*").test(raw);
+      } catch (_) {
+        valid = false;
+      }
+    }
+
+    if (valid) {
+      return {
+        action: "CONTINUE",
+        nextHandle: "valid",
+        updatedData: { [variable]: value, [retryKey]: 0 },
+        traceNote: `[Simulation] Accepted '${variable}' input locally.`
+      };
+    }
+
+    const retries = Number(session[retryKey] || 0) + 1;
+    if (retries > maxRetries) {
+      return {
+        action: "CONTINUE",
+        nextHandle: "max_retries",
+        updatedData: { [retryKey]: 0 },
+        traceNote: `[Simulation] Input retries exhausted for '${variable}'.`
+      };
+    }
+
+    const retryMessage = render(config.retryPrompt || config.retryMessage || config.errorMessage || `Please enter a valid ${variable}.`);
+    return {
+      action: "WAIT_FOR_INPUT",
+      replyMessages: retryMessage ? [retryMessage] : [],
+      updatedData: { [retryKey]: retries },
+      traceNote: `[Simulation] Input for '${variable}' needs correction (${retries}/${maxRetries}).`
+    };
+  }
+
+  if (type === "CONDITION") {
+    const rules = Array.isArray(config.rules) ? config.rules : [];
+    const explicitRule = rules.find(rule => rule.targetNodeId && evaluateSingleRule(
+      getPath(variableContext, rule.variable || config.variable),
+      rule.operator || "equals",
+      rule.value
+    ));
+    if (explicitRule) {
+      return {
+        action: "CONTINUE",
+        targetNodeId: explicitRule.targetNodeId,
+        nextHandle: explicitRule.targetNodeId,
+        traceNote: `[Simulation] Condition matched local branch '${explicitRule.targetNodeId}'.`
+      };
+    }
+    if (config.defaultTargetNodeId) {
+      return {
+        action: "CONTINUE",
+        targetNodeId: config.defaultTargetNodeId,
+        nextHandle: config.defaultTargetNodeId,
+        traceNote: `[Simulation] Condition used configured default branch.`
+      };
+    }
+    const passed = rules.length > 0
+      ? evaluateRules(rules, config.matchMode || config.conditionMatch || "ALL", variableContext)
+      : true;
+    return {
+      action: "CONTINUE",
+      nextHandle: passed ? "true" : "false",
+      traceNote: `[Simulation] Condition evaluated ${passed ? "true" : "false"}.`
+    };
+  }
+
+  if (type === "SET_VARIABLE") {
+    const variable = config.targetVar || config.variable || "temp_var";
+    const current = getPath(variableContext, variable);
+    const value = computeVariable(config.operation || config.action || "set", current, config.value ?? "", variableContext);
+    return {
+      action: "CONTINUE",
+      nextHandle: "default",
+      updatedData: { [variable]: value },
+      traceNote: `[Simulation] Updated '${variable}' locally.`
+    };
+  }
+
+  if (["WAIT_DELAY", "DELAY"].includes(type)) {
+    return {
+      action: "CONTINUE",
+      nextHandle: "after_delay",
+      pendingDelay: {
+        simulated: true,
+        delayAmount: Number(config.delayAmount || 0),
+        delayUnit: config.delayUnit || "MINUTES"
+      },
+      replyMessages: ["[Simulation only] Scheduled delay was skipped; no job was created."],
+      traceNote: "[Simulation] Delay skipped without creating a scheduled job."
+    };
+  }
+
+  if (["HUMAN_HANDOFF", "HANDOFF"].includes(type)) {
+    const message = render(config.handoffMessage || config.prompt || config.text || "[Simulation only] Conversation would be handed to a human team.");
+    return {
+      action: "HANDOFF",
+      replyMessages: message ? [message] : [],
+      updatedData: { "handoff.simulated": true, "handoff.team": config.team || config.department || "FRONT_DESK" },
+      traceNote: "[Simulation] Human handoff displayed locally; no team notification was created."
+    };
+  }
+
+  if (type === "END") {
+    const message = render(config.farewellMessage || "");
+    return {
+      action: "COMPLETE",
+      replyMessages: message ? [message] : [],
+      traceNote: "[Simulation] Flow ended locally."
+    };
+  }
+
+  if (type === "SEND_TEMPLATE") {
+    const templateName = config.templateName || config.name || "approved template";
+    const body = render(config.body || config.bodyText || config.text || `[Simulation only] Template preview: ${templateName}`);
+    return {
+      action: "CONTINUE",
+      nextHandle: "default",
+      replyMessages: body ? [body] : [],
+      traceNote: `[Simulation] Previewed template '${templateName}' without dispatching it.`
+    };
+  }
+
+  if (type === "SEND_WHATSAPP_FLOW") {
+    return {
+      action: "CONTINUE",
+      nextHandle: "default",
+      replyMessages: ["[Simulation only] WhatsApp Flow form was not opened or dispatched."],
+      traceNote: "[Simulation] Blocked WhatsApp Flow form dispatch."
+    };
+  }
+
+  // Any remaining node is an integration-capable or unknown node.  Never use
+  // the production executor here: it could create records, reserve inventory,
+  // call AI/webhooks, or issue an outbound WhatsApp request.  A deterministic
+  // mock handle keeps graph review possible while making the block visible.
+  const simulatedHandles = {
+    CRM_UPSERT: "success",
+    CATALOG_BOOKING: "available",
+    BUSINESS_ACTION: "success",
+    TRANSACTION: "success",
+    BOOKING: "success",
+    QUOTATION: "success",
+    HTTP_WEBHOOK: "success",
+    API_INTEGRATION: "success",
+    AI_KNOWLEDGE_REPLY: "answered",
+    AI_REPLY: "answered",
+    AI_HYBRID_ASSIST: "answered",
+    CATALOG_BROWSER: "item_selected",
+    ADDON_UPSELL_AND_QUOTE: "confirmed",
+    MASTER_PICKER: "selected",
+    DYNAMIC_MASTER_SELECTION: "selected",
+    OPEN_INAPP_EXPERIENCE: "default",
+    INAPP_BRIDGE: "default",
+    INTERACTIVE_APP: "default",
+    CALL_SUBFLOW: "completed",
+    SUBFLOW: "completed"
+  };
+  const defaultHandle = simulatedHandles[type] || "default";
+  const label = node?.title || type.replace(/_/g, " ");
+  return {
+    action: "CONTINUE",
+    nextHandle: config.simulationHandle || config.mockHandle || defaultHandle,
+    replyMessages: [`[Simulation only] '${label}' was mocked. No API, AI, database mutation, inventory hold, or WhatsApp message was executed.`],
+    updatedData: { simulation_last_mocked_node: node?.id || type },
+    traceNote: `[Simulation] Blocked production executor for ${type}; followed mock handle '${config.simulationHandle || config.mockHandle || defaultHandle}'.`
+  };
+}
+
+/**
  * Execute a conversation turn
  */
 async function processTurn({
@@ -901,19 +1188,27 @@ async function processTurn({
   startFlowId = null,
   startNodeId = null,
   phoneNumberId = null,
+  tenantId: topTenantId = null,
+  propertyId: topPropertyId = null,
   context = {}
 }) {
   const {
-    tenantId = 1,
-    propertyId = 1,
+    tenantId: ctxTenantId = null,
+    propertyId: ctxPropertyId = null,
     channel = "WHATSAPP",
     isSimulation = false,
     simulationState = null,
     flowOverride = null
   } = context;
 
-  // Distinguish pure in-memory simulator (canvas testing) from real/mock webhook flow execution
-  const isInMemorySimulation = Boolean(simulationState);
+  const tenantId = ctxTenantId || topTenantId || 1;
+  const propertyId = ctxPropertyId || topPropertyId || 1;
+
+  // A caller that marks a turn as simulated must never fall back to the
+  // production routing/session/executor path. `simulationState` is retained
+  // for backwards compatibility, but `isSimulation` is the authoritative
+  // fail-closed safety boundary.
+  const isInMemorySimulation = Boolean(isSimulation || simulationState);
 
   const effectivePhoneNumberId = phoneNumberId || context.phoneNumberId || null;
 
@@ -922,20 +1217,26 @@ async function processTurn({
   const sessionKey = `${channel}:${normalizedPhone}:${tenantId}${accountScope}`;
   const executionLogs = [];
 
-  // Fetch property details for variable interpolation
-  let configuredBusinessName = Number(tenantId) === 1 ? "Hotel Green Vally" : "Business";
-  try {
-    const { getSetting } = require("../config/database");
-    configuredBusinessName = Number(tenantId) === 1 ? (getSetting("BOT_BUSINESS_NAME") || "Hotel Green Vally") : "Business";
-  } catch (e) {}
-
-  const prop = db.prepare("SELECT id, name, city, phone FROM properties WHERE id = ? AND tenant_id = ?").get(propertyId, tenantId) || {
+  // Simulation does not read tenant configuration or a property record. A
+  // stable local placeholder keeps the preview deterministic and avoids any
+  // dependency on production data.
+  let configuredBusinessName = "Business";
+  let prop = {
     id: 1,
     name: configuredBusinessName,
     city: "Alibaug, Maharashtra"
   };
-  if (Number(tenantId) === 1 && configuredBusinessName && configuredBusinessName !== "KonkanTrip Beach Resort & Spa") {
-    prop.name = configuredBusinessName;
+  if (!isInMemorySimulation) {
+    configuredBusinessName = Number(tenantId) === 1 ? "Hotel Green Vally" : "Business";
+    try {
+      const { getSetting } = require("../config/database");
+      configuredBusinessName = Number(tenantId) === 1 ? (getSetting("BOT_BUSINESS_NAME") || "Hotel Green Vally") : "Business";
+    } catch (e) {}
+
+    prop = db.prepare("SELECT id, name, city, phone FROM properties WHERE id = ? AND tenant_id = ?").get(propertyId, tenantId) || prop;
+    if (Number(tenantId) === 1 && configuredBusinessName && configuredBusinessName !== "KonkanTrip Beach Resort & Spa") {
+      prop.name = configuredBusinessName;
+    }
   }
 
   let session = null;
@@ -944,8 +1245,17 @@ async function processTurn({
   let nodes = [];
   let transitions = [];
   let collectedData = {};
+  let navigationStack = [];
+  let callStack = [];
   // Tracks existing session turns. Without this declaration resumed executions throw.
   let isResuming = false;
+
+  if (isInMemorySimulation && !flowOverride) {
+    return {
+      handled: false,
+      reason: "Simulation requires an explicit in-memory flow graph."
+    };
+  }
 
   if (flowOverride) {
     if (simulationState) {
@@ -966,6 +1276,24 @@ async function processTurn({
     if (session) {
       isResuming = true;
       collectedData = session.collected_data_json ? JSON.parse(session.collected_data_json) : {};
+      if (session.navigation_stack_json) {
+        try {
+          navigationStack = typeof session.navigation_stack_json === 'string'
+            ? JSON.parse(session.navigation_stack_json)
+            : (Array.isArray(session.navigation_stack_json) ? session.navigation_stack_json : []);
+        } catch (_) {
+          navigationStack = [];
+        }
+      }
+      if (session.call_stack_json) {
+        try {
+          callStack = typeof session.call_stack_json === 'string'
+            ? JSON.parse(session.call_stack_json)
+            : (Array.isArray(session.call_stack_json) ? session.call_stack_json : []);
+        } catch (_) {
+          callStack = [];
+        }
+      }
 
       // Load flow & pinned version
       flow = db.prepare("SELECT * FROM conversation_flows WHERE id = ?").get(session.flow_id);
@@ -1071,15 +1399,61 @@ async function processTurn({
     }
   }
 
+  // Load dynamic template configuration if flow was installed from a template
+  let templateConfig = {};
+  const effectiveFlowId = flow?.id || session?.flow_id;
+  if (effectiveFlowId) {
+    try {
+      const inst = db.prepare(`
+        SELECT config_values_json, custom_flow_name 
+        FROM template_installations 
+        WHERE flow_id = ? AND delete_status = 0
+        LIMIT 1
+      `).get(effectiveFlowId);
+      if (inst && inst.config_values_json) {
+        templateConfig = typeof inst.config_values_json === 'string' ? JSON.parse(inst.config_values_json) : inst.config_values_json;
+      }
+    } catch (_) {}
+  }
+
+  // Fetch tenant's minimum starting price from universal catalog or room types
+  let startingPrice = null;
+  try {
+    const minCatItem = db.prepare(`
+      SELECT MIN(base_price) as min_price 
+      FROM catalog_items 
+      WHERE tenant_id = ? AND delete_status = 0 AND active_status = 1 AND (is_sold_out = 0 OR is_sold_out IS NULL)
+    `).get(tenantId);
+    if (minCatItem && minCatItem.min_price) {
+      startingPrice = `₹${minCatItem.min_price.toLocaleString('en-IN')}`;
+    } else {
+      const minRoom = db.prepare(`
+        SELECT MIN(base_rate) as min_price 
+        FROM room_types 
+        WHERE tenant_id = ? AND active = 1
+      `).get(tenantId);
+      if (minRoom && minRoom.min_price) {
+        startingPrice = `₹${minRoom.min_price.toLocaleString('en-IN')}`;
+      }
+    }
+  } catch (_) {}
+
+  const resolvedBusinessName = templateConfig['business.name'] || templateConfig.business?.name || configuredBusinessName || prop.name;
+  const resolvedPhone = templateConfig['business.phone'] || templateConfig.business?.phone || prop.phone;
+
   // Pre-populate system variables
   const variableContext = {
     ...collectedData,
     sender_phone: normalizedPhone,
-    business_name: configuredBusinessName || prop.name,
+    business_name: resolvedBusinessName,
+    config: templateConfig,
+    catalog: {
+      starting_price: startingPrice || '₹3,500'
+    },
     property: {
-      name: configuredBusinessName || prop.name,
+      name: resolvedBusinessName,
       city: prop.city,
-      phone: prop.phone
+      phone: resolvedPhone
     }
   };
 
@@ -1104,10 +1478,20 @@ async function processTurn({
     isResuming = false;
   }
 
-  // 3. Global Escape Keywords Handling (cancel, restart, reset, menu)
+  let isWaitingForThisNode = isResuming;
+
+  // 3. Global Escape Keywords Handling (cancel, restart, reset, menu, back, agent/help)
   const normInput = String(userInput || "").trim().toLowerCase();
+  const flowGlobalSettingsService = require("./flowGlobalSettingsService");
+  const globalSettings = flowGlobalSettingsService.getSettings(tenantId, effectivePhoneNumberId);
+
   const isGlobalCancel = ["cancel", "stop", "exit"].includes(normInput);
-  const isGlobalRestart = ["restart", "reset", "menu", "/start", "/menu", "main menu"].includes(normInput);
+  const isGlobalRestart = (globalSettings.menu_keywords || ["restart", "reset", "menu", "/start", "/menu", "main menu"])
+    .some(kw => normInput === kw.toLowerCase() || (normInput.length > 2 && normInput === `/${kw.toLowerCase()}`));
+  const isGlobalBack = (globalSettings.back_keywords || ["0", "back", "previous"])
+    .some(kw => normInput === kw.toLowerCase());
+  const isGlobalHandoff = (globalSettings.handoff_keywords || ["agent", "human", "help", "support"])
+    .some(kw => normInput === kw.toLowerCase());
 
   if (isGlobalCancel) {
     if (!isInMemorySimulation && session?.id) {
@@ -1126,25 +1510,129 @@ async function processTurn({
     };
   }
 
+  if (isGlobalBack && isResuming) {
+    if (navigationStack.length > 1) {
+      // Pop current interactive step
+      navigationStack.pop();
+      const prevStep = navigationStack[navigationStack.length - 1];
+      executionLogs.push(`Customer requested back navigation ('${normInput}'). Returning to previous step '${prevStep.nodeId}'.`);
+      if (prevStep.flowId && Number(prevStep.flowId) !== Number(session?.flow_id || flow?.id)) {
+        // Return to parent/different flow
+        const targetFlow = db.prepare("SELECT * FROM conversation_flows WHERE id = ?").get(prevStep.flowId);
+        const targetVer = db.prepare("SELECT * FROM conversation_flow_versions WHERE id = ?").get(prevStep.flowVersionId);
+        if (targetFlow && targetVer) {
+          flow = targetFlow;
+          flowVersion = targetVer;
+          nodes = JSON.parse(targetVer.nodes_json || "[]");
+          transitions = JSON.parse(targetVer.transitions_json || "[]");
+          nodeMap.clear();
+          nodes.forEach(n => nodeMap.set(n.id, n));
+        }
+      }
+      if (nodeMap.has(prevStep.nodeId)) {
+        currentNode = nodeMap.get(prevStep.nodeId);
+        isResuming = false;
+        isWaitingForThisNode = false;
+        userInput = "";
+        userPayload = null;
+      }
+    } else {
+      return {
+        handled: true,
+        sessionKey,
+        currentNodeId: currentNode?.id || null,
+        sessionStatus: "ACTIVE",
+        collectedData,
+        replyText: "You are already at the beginning of the flow. Type 'menu' to return to the main menu.",
+        executionLogs: [...executionLogs, "Customer requested back, but already at initial step."]
+      };
+    }
+  }
+
   if (isGlobalRestart) {
-    currentNode = startNode;
+    navigationStack = [];
+    callStack = [];
     collectedData = {};
     Object.keys(variableContext).forEach(k => {
-      if (!['sender_phone', 'property', 'business_name'].includes(k)) delete variableContext[k];
+      if (!['sender_phone', 'property', 'business_name', 'config', 'catalog'].includes(k)) delete variableContext[k];
     });
+
+    // Check for configured root menu flow
+    let rootFlow = null;
+    if (globalSettings.root_flow_id) {
+      rootFlow = db.prepare(`
+        SELECT f.*, v.id as version_id, v.nodes_json, v.transitions_json
+        FROM conversation_flows f
+        JOIN conversation_flow_versions v ON v.id = f.published_version_id
+        WHERE f.id = ? AND f.tenant_id = ? AND f.status = 'PUBLISHED'
+        LIMIT 1
+      `).get(globalSettings.root_flow_id, tenantId);
+    }
+    if (!rootFlow) {
+      rootFlow = db.prepare(`
+        SELECT f.*, v.id as version_id, v.nodes_json, v.transitions_json
+        FROM conversation_flows f
+        JOIN conversation_flow_versions v ON v.id = f.published_version_id
+        WHERE f.tenant_id = ? AND f.status = 'PUBLISHED' AND (f.is_root_menu = 1 OR f.flow_role = 'ROOT_MENU')
+        ORDER BY f.id ASC LIMIT 1
+      `).get(tenantId);
+    }
+
+    if (rootFlow) {
+      flow = rootFlow;
+      flowVersion = { id: rootFlow.version_id };
+      nodes = JSON.parse(rootFlow.nodes_json || "[]");
+      transitions = JSON.parse(rootFlow.transitions_json || "[]");
+      nodeMap.clear();
+      nodes.forEach(n => nodeMap.set(n.id, n));
+      currentNode = nodes.find(n => n.type === "START" || n.type === "TRIGGER_WHATSAPP") || nodes[0];
+      executionLogs.push(`Customer requested restart/menu. Switched to root menu flow #${rootFlow.id} at node '${currentNode.id}'.`);
+    } else {
+      currentNode = startNode;
+      executionLogs.push(`Customer requested restart/menu. Reset state and restarted from start node '${startNode.id}'.`);
+    }
+
     if (!isInMemorySimulation && session?.id) {
       try {
-        db.prepare("UPDATE conversation_flow_sessions SET current_node_id = ?, collected_data_json = '{}', session_status = 'ACTIVE', updated_at = UTC_TIMESTAMP() WHERE id = ?").run(startNode.id, session.id);
+        db.prepare(`
+          UPDATE conversation_flow_sessions
+          SET flow_id = ?, flow_version_id = ?, current_node_id = ?, collected_data_json = '{}',
+              navigation_stack_json = '[]', call_stack_json = '[]', session_status = 'ACTIVE', updated_at = UTC_TIMESTAMP()
+          WHERE id = ?
+        `).run(flow.id, flowVersion.id, currentNode.id, session.id);
       } catch (e) {}
     }
-    executionLogs.push(`Customer requested restart ('${normInput}'). Reset state and restarted from ${startNode.id}.`);
     isResuming = false;
     userInput = "";
     userPayload = null;
   }
 
+  if (isGlobalHandoff) {
+    if (!isInMemorySimulation && session?.id) {
+      try {
+        db.prepare("UPDATE conversation_flow_sessions SET session_status = 'PAUSED_AGENT_HANDOFF', updated_at = UTC_TIMESTAMP() WHERE id = ?").run(session.id);
+        flowAnalyticsService.recordNodeEvent(
+          tenantId,
+          session?.flow_id || flow?.id || 1,
+          currentNode?.id || "handoff",
+          'HANDOFF',
+          { nodeType: 'HUMAN_HANDOFF' }
+        );
+      } catch (e) {}
+    }
+    return {
+      handled: true,
+      sessionKey,
+      currentNodeId: currentNode?.id || null,
+      sessionStatus: "PAUSED_AGENT_HANDOFF",
+      collectedData,
+      replyText: "You have been connected to an agent. Our team will assist you shortly.",
+      executionLogs: [...executionLogs, "Customer requested human agent handoff ('agent'). Session paused for agent."]
+    };
+  }
+
   // 4. Strict Start-to-End State Machine Execution Loop
-  let isWaitingForThisNode = isResuming;
+  isWaitingForThisNode = isResuming;
   let hops = 0;
   const maxHops = 25;
   let accumulatedReplies = [];
@@ -1169,21 +1657,27 @@ async function processTurn({
       );
     }
 
-    const executor = getNodeExecutor(node.type);
-    const execRes = await executor.execute(node, {
+    const executionContext = {
       session: collectedData,
       userInput: isWaitingForThisNode ? userInput : "",
       userPayload: isWaitingForThisNode ? userPayload : null,
       variableContext,
-      dryRun: Boolean(isSimulation),
+      dryRun: isInMemorySimulation,
+      isSimulation: isInMemorySimulation,
       fastForward: Boolean(context.fastForward),
       tenantId,
       propertyId,
       phoneNumberId: effectivePhoneNumberId || flow?.phone_number_id || null,
       senderPhone: normalizedPhone,
       flowId: session?.flow_id || flow?.id || 1,
-      isWaitingForThisNode
-    });
+      isWaitingForThisNode,
+      callStack: [...callStack]
+    };
+    // The pure simulator intentionally does not resolve a production node
+    // executor. This blocks all side-effecting integrations by construction.
+    const execRes = isInMemorySimulation
+      ? executePureSimulationNode(node, executionContext)
+      : await getNodeExecutor(node.type).execute(node, executionContext);
 
     // Key invariant: isWaitingForThisNode is only true for the initial resumed node in Turn 2+
     isWaitingForThisNode = false;
@@ -1207,8 +1701,34 @@ async function processTurn({
       pendingDelay = execRes.pendingDelay;
     }
 
+    if (execRes.action === "SUBFLOW_CALL") {
+      callStack.push({
+        parentFlowId: session?.flow_id || flow?.id,
+        parentVersionId: session?.flow_version_id || flowVersion?.id,
+        returnNodeId: execRes.returnNodeId,
+        returnHandle: execRes.returnHandle || "completed"
+      });
+      flow = { id: execRes.targetFlowId };
+      flowVersion = { id: execRes.targetVersionId };
+      nodes = JSON.parse(execRes.targetNodesJson || "[]");
+      transitions = JSON.parse(execRes.targetTransitionsJson || "[]");
+      nodeMap.clear();
+      nodes.forEach(n => nodeMap.set(n.id, n));
+      currentNode = nodes.find(n => n.type === "START" || n.type === "TRIGGER_WHATSAPP") || nodes[0];
+      isWaitingForThisNode = false;
+      continue;
+    }
+
     if (execRes.action === "WAIT_FOR_INPUT") {
       finalStatus = "ACTIVE";
+      if (!navigationStack.some(s => s.nodeId === node.id && s.flowId === (session?.flow_id || flow?.id))) {
+        navigationStack.push({
+          nodeId: node.id,
+          flowId: session?.flow_id || flow?.id || 1,
+          flowVersionId: session?.flow_version_id || flowVersion?.id || 1
+        });
+        if (navigationStack.length > 20) navigationStack.shift();
+      }
       if (!isInMemorySimulation && (flow || session)) {
         session = upsertActiveSession({
           sessionId: session?.id,
@@ -1221,6 +1741,8 @@ async function processTurn({
           versionId: session?.flow_version_id || flowVersion?.id || 1,
           currentNodeId: node.id,
           collectedData,
+          navigationStack,
+          callStack,
           status: "ACTIVE"
         });
       }
@@ -1241,6 +1763,8 @@ async function processTurn({
           versionId: session?.flow_version_id || flowVersion?.id || 1,
           currentNodeId: node.id,
           collectedData,
+          navigationStack,
+          callStack,
           status: "ACTIVE",
           extendDays: 7
         });
@@ -1269,6 +1793,8 @@ async function processTurn({
           versionId: session?.flow_version_id || flowVersion?.id || 1,
           currentNodeId: node.id,
           collectedData,
+          navigationStack,
+          callStack,
           status: "PAUSED_AGENT_HANDOFF"
         });
       }
@@ -1276,6 +1802,26 @@ async function processTurn({
     }
 
     if (execRes.action === "COMPLETE") {
+      if (callStack.length > 0) {
+        const frame = callStack.pop();
+        executionLogs.push(`Subflow completed. Resuming parent flow #${frame.parentFlowId} at return node '${frame.returnNodeId}'.`);
+        const parentFlow = db.prepare("SELECT * FROM conversation_flows WHERE id = ?").get(frame.parentFlowId);
+        const parentVer = db.prepare("SELECT * FROM conversation_flow_versions WHERE id = ?").get(frame.parentVersionId);
+        if (parentFlow && parentVer) {
+          flow = parentFlow;
+          flowVersion = parentVer;
+          nodes = JSON.parse(parentVer.nodes_json || "[]");
+          transitions = JSON.parse(parentVer.transitions_json || "[]");
+          nodeMap.clear();
+          nodes.forEach(n => nodeMap.set(n.id, n));
+          const resumeNext = findNextNode(frame.returnNodeId, frame.returnHandle || "completed", transitions, nodeMap, nodes);
+          if (resumeNext) {
+            currentNode = resumeNext;
+            isWaitingForThisNode = false;
+            continue;
+          }
+        }
+      }
       finalStatus = "COMPLETED";
       if (!isInMemorySimulation && (flow || session)) {
         flowAnalyticsService.recordNodeEvent(
@@ -1296,6 +1842,8 @@ async function processTurn({
           versionId: session?.flow_version_id || flowVersion?.id || 1,
           currentNodeId: node.id,
           collectedData,
+          navigationStack,
+          callStack,
           status: "COMPLETED"
         });
       }
@@ -1310,6 +1858,26 @@ async function processTurn({
       nextNode = findNextNode(node.id, execRes.nextHandle || "default", transitions, nodeMap, nodes);
     }
     if (!nextNode) {
+      if (callStack.length > 0) {
+        const frame = callStack.pop();
+        executionLogs.push(`Subflow reached terminus. Resuming parent flow #${frame.parentFlowId} at return node '${frame.returnNodeId}'.`);
+        const parentFlow = db.prepare("SELECT * FROM conversation_flows WHERE id = ?").get(frame.parentFlowId);
+        const parentVer = db.prepare("SELECT * FROM conversation_flow_versions WHERE id = ?").get(frame.parentVersionId);
+        if (parentFlow && parentVer) {
+          flow = parentFlow;
+          flowVersion = parentVer;
+          nodes = JSON.parse(parentVer.nodes_json || "[]");
+          transitions = JSON.parse(parentVer.transitions_json || "[]");
+          nodeMap.clear();
+          nodes.forEach(n => nodeMap.set(n.id, n));
+          const resumeNext = findNextNode(frame.returnNodeId, frame.returnHandle || "completed", transitions, nodeMap, nodes);
+          if (resumeNext) {
+            currentNode = resumeNext;
+            isWaitingForThisNode = false;
+            continue;
+          }
+        }
+      }
       finalStatus = "COMPLETED";
       if (!isInMemorySimulation && (flow || session)) {
         flowAnalyticsService.recordNodeEvent(
@@ -1330,6 +1898,8 @@ async function processTurn({
           versionId: session?.flow_version_id || flowVersion?.id || 1,
           currentNodeId: node.id,
           collectedData,
+          navigationStack,
+          callStack,
           status: "COMPLETED"
         });
       }

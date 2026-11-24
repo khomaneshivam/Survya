@@ -278,6 +278,24 @@ export const NODE_DEFINITIONS = [
       { id: 'default', label: 'Next Step', type: 'source' }
     ]
   },
+  {
+    type: 'CALL_SUBFLOW',
+    label: 'Call Sub-Flow',
+    category: 'LOGIC',
+    icon: Layers,
+    color: '#6D28D9',
+    bg: '#EDE9FE',
+    badge: 'Modular',
+    desc: 'Delegate execution to a modular sub-flow journey and return on completion',
+    defaultConfig: {
+      targetFlowId: '',
+      returnHandle: 'completed'
+    },
+    getOutputHandles: () => [
+      { id: 'completed', label: 'Completed ✅', type: 'source', color: '#16A34A' },
+      { id: 'error', label: 'On Error ⚠️', type: 'source', color: '#E11D48' }
+    ]
+  },
 
   // 5. TIMING
   {
@@ -519,6 +537,8 @@ export const LEGACY_NODE_TYPE_MAP = {
   START: 'TRIGGER_WHATSAPP',
   MESSAGE: 'SEND_MESSAGE',
   BUTTON_MENU: 'SEND_MESSAGE',
+  INTERACTIVE_MENU: 'SEND_MESSAGE',
+  ASK_INPUT: 'COLLECT_INPUT',
   INPUT_COLLECTION: 'COLLECT_INPUT',
   QUESTION: 'COLLECT_INPUT',
   BUSINESS_ACTION: 'CATALOG_BOOKING',
@@ -526,6 +546,8 @@ export const LEGACY_NODE_TYPE_MAP = {
   PAYMENT: 'SEND_MESSAGE',
   QUOTATION: 'CATALOG_BOOKING',
   API_INTEGRATION: 'HTTP_WEBHOOK',
+  ACTION_API: 'HTTP_WEBHOOK',
+  API_ACTION: 'HTTP_WEBHOOK',
   DELAY: 'WAIT_DELAY',
   HANDOFF: 'HUMAN_HANDOFF',
   END: 'END',

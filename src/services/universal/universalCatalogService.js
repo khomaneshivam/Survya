@@ -1860,6 +1860,304 @@ function seedIndustryBlueprint(tenantId = 1, sectorCode = "HOSPITALITY", userId 
   };
 }
 
+/**
+ * 1-Click Complete Industry Suite Importer
+ * Atomically provisions:
+ * 1. ERP Masters (Taxes, Payment Modes, Units, Status Tags)
+ * 2. Business Profile Entity (with optional custom name, phone, city)
+ * 3. Catalog Items & Add-ons
+ * 4. Pricing Rules & Promos
+ * 5. Pre-wired Conversation Flow
+ * 6. Global Settings & Fallbacks
+ */
+function importFullIndustrySuite(tenantId = 1, options = {}, userId = "system") {
+  const numericTenantId = Number(tenantId) || 1;
+  const sectorCode = String(options.sectorCode || options.sector || "HOSPITALITY").trim().toUpperCase();
+  const customBusinessName = options.businessName || options.customBusinessName || options.name || null;
+  const customPhone = options.phone || options.phone_e164 || options.customPhone || null;
+  const city = options.city || null;
+  const state = options.state || null;
+  const phoneLineId = options.phoneLineId || options.phoneNumberId || null;
+
+  // 1. Seed ERP Master Tables (Tax Slabs, Payment Modes, Units, Status Tags, Categories)
+  const masterDataService = require("../masters/masterDataService");
+  const masterResult = masterDataService.seedMastersForSector(numericTenantId, sectorCode, userId);
+
+  // 2. Seed Universal Catalog Blueprint (Entity, Items, Addons, Pricing Rules, Ready Workflow)
+  const catalogResult = seedIndustryBlueprint(numericTenantId, sectorCode, userId);
+
+  // 3. If custom business details were provided, update the newly created business_entity
+  const finalBizName = customBusinessName || catalogResult.entity?.name || (SECTOR_BLUEPRINTS[sectorCode]?.entity?.name || "Business Workspace");
+  const finalPhone = customPhone || catalogResult.entity?.phone_e164 || (SECTOR_BLUEPRINTS[sectorCode]?.entity?.phone_e164 || "+919999900000");
+
+  if (catalogResult.entityId) {
+    const updates = ["name = ?", "phone_e164 = ?"];
+    const updateParams = [finalBizName, finalPhone];
+    if (city) {
+      updates.push("city = ?");
+      updateParams.push(city);
+    }
+    if (state) {
+      updates.push("state = ?");
+      updateParams.push(state);
+    }
+    updates.push("updated_at = UTC_TIMESTAMP()");
+    updateParams.push(catalogResult.entityId, numericTenantId);
+
+    db.prepare(`
+      UPDATE business_entities
+      SET ${updates.join(", ")}
+      WHERE id = ? AND tenant_id = ?
+    `).run(...updateParams);
+  }
+
+  // 4. Update or ensure default property in `properties` table
+  const existingProp = db.prepare("SELECT id FROM properties WHERE tenant_id = ? ORDER BY id ASC LIMIT 1").get(numericTenantId);
+  if (existingProp) {
+    db.prepare(`
+      UPDATE properties 
+      SET name = ?, phone = COALESCE(?, phone), city = COALESCE(?, city), state = COALESCE(?, state), updated_at = UTC_TIMESTAMP()
+      WHERE id = ? AND tenant_id = ?
+    `).run(finalBizName, finalPhone, city, state, existingProp.id, numericTenantId);
+  } else {
+    db.prepare(`
+      INSERT INTO properties (tenant_id, name, phone, city, state, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    `).run(numericTenantId, finalBizName, finalPhone, city || "Mumbai", state || "Maharashtra");
+  }
+
+  // 5. Update the newly created flow with the custom business name & bound line
+  if (catalogResult.flowId) {
+    const flowName = `${finalBizName} - ${SECTOR_BLUEPRINTS[sectorCode]?.sectorName || 'WhatsApp'} Flow`;
+    db.prepare(`
+      UPDATE conversation_flows
+      SET name = ?,
+          phone_number_id = COALESCE(?, phone_number_id),
+          updated_at = UTC_TIMESTAMP()
+      WHERE id = ? AND tenant_id = ?
+    `).run(flowName, phoneLineId, catalogResult.flowId, numericTenantId);
+  }
+
+  // 6. Sync flow_global_settings
+  const flowGlobalSettingsService = require("../flowGlobalSettingsService");
+  flowGlobalSettingsService.updateSettings(numericTenantId, phoneLineId, {
+    root_flow_id: catalogResult.flowId,
+    fallback_message: `👋 Thank you for contacting *${finalBizName}*! Please type *menu* to view our options.`,
+    menu_keywords: ["menu", "restart", "start", "main menu"],
+    back_keywords: ["0", "back", "prev"],
+    handoff_keywords: ["agent", "human", "help", "support"]
+  });
+
+  // 7. Update settings table
+  try {
+    const { setSetting } = require("../../config/database");
+    setSetting("BOT_BUSINESS_NAME", finalBizName);
+    if (finalPhone) setSetting("BOT_HANDOFF_PHONE", finalPhone);
+  } catch (_) {}
+
+  const propId = db.prepare("SELECT id FROM properties WHERE tenant_id = ? ORDER BY id ASC LIMIT 1").get(numericTenantId)?.id || null;
+
+  return {
+    success: true,
+    message: `Industry blueprint for '${catalogResult.sectorName}' successfully imported!`,
+    sector: sectorCode,
+    sectorName: catalogResult.sectorName,
+    entityId: catalogResult.entityId,
+    propertyId: propId,
+    businessName: finalBizName,
+    flowId: catalogResult.flowId,
+    itemCount: catalogResult.itemCount || 0,
+    addonGroupCount: catalogResult.addonGroupCount || 0,
+    pricingRuleCount: catalogResult.pricingRuleCount || 0,
+    mastersSeeded: masterResult.seeded || {}
+  };
+}
+
+/**
+ * Retrieve aggregated Business Profile and operational setup
+ */
+function getBusinessProfile(tenantId = 1) {
+  const numericTenantId = Number(tenantId) || 1;
+  const entity = db.prepare(`
+    SELECT * FROM business_entities
+    WHERE tenant_id = ? AND delete_status = 0
+    ORDER BY id ASC LIMIT 1
+  `).get(numericTenantId);
+
+  const property = db.prepare(`
+    SELECT * FROM properties
+    WHERE tenant_id = ?
+    ORDER BY id ASC LIMIT 1
+  `).get(numericTenantId);
+
+  const globalSettings = require("../flowGlobalSettingsService").getSettings(numericTenantId, null);
+
+  // Summary counts
+  const itemCount = db.prepare("SELECT COUNT(*) as cnt FROM catalog_items WHERE tenant_id = ? AND delete_status = 0").get(numericTenantId)?.cnt || 0;
+  const flowCount = db.prepare("SELECT COUNT(*) as cnt FROM conversation_flows WHERE tenant_id = ?").get(numericTenantId)?.cnt || 0;
+  const taxCount = db.prepare("SELECT COUNT(*) as cnt FROM master_tax_slabs WHERE tenant_id = ? AND delete_status = 0").get(numericTenantId)?.cnt || 0;
+
+  const profile = {
+    businessName: entity?.name || property?.name || "My Business",
+    sector: entity?.domain || "GENERAL",
+    phone: entity?.phone_e164 || property?.phone || "",
+    email: entity?.email || "",
+    currency: entity?.currency || "INR",
+    city: entity?.city || property?.city || "",
+    state: entity?.state || property?.state || "",
+    operatingHours: entity?.checkin_time ? `Check-in: ${entity.checkin_time}, Check-out: ${entity.checkout_time || "11:00"}` : (entity?.opening_time ? `${entity.opening_time} - ${entity.closing_time || "21:00"}` : "09:00 - 21:00"),
+    fallbackMessage: globalSettings?.fallback_message || "Sorry, I did not understand that. Type *menu* to see available options.",
+    rootFlowId: globalSettings?.root_flow_id || null,
+    menuKeywords: globalSettings?.menu_keywords || ["menu", "restart"]
+  };
+
+  return {
+    success: true,
+    tenantId: numericTenantId,
+    profile,
+    entity: entity || {
+      name: property?.name || "My Business",
+      domain: "GENERAL",
+      phone_e164: property?.phone || "",
+      city: property?.city || "",
+      state: property?.state || "",
+      currency: "INR",
+      timezone: "Asia/Kolkata",
+      tagline: "",
+      description: "",
+      checkin_time: "14:00",
+      checkout_time: "11:00",
+      opening_time: "09:00",
+      closing_time: "21:00"
+    },
+    property: property || null,
+    globalSettings,
+    stats: {
+      items: itemCount,
+      flows: flowCount,
+      taxSlabs: taxCount
+    }
+  };
+}
+
+/**
+ * Update Business Profile & sync across entities, properties, and flow settings
+ */
+function updateBusinessProfile(tenantId = 1, payload = {}, userId = "system") {
+  const numericTenantId = Number(tenantId) || 1;
+  const {
+    name, businessName,
+    sector, domain,
+    legal_name, legalName,
+    tagline, description,
+    phone_e164, phone,
+    email, city, state, currency, timezone,
+    checkin_time, checkinTime,
+    checkout_time, checkoutTime,
+    opening_time, openingTime,
+    closing_time, closingTime,
+    operatingHours,
+    fallback_message, fallbackMessage,
+    root_flow_id, rootFlowId,
+    phone_number_id, phoneNumberId,
+    menuKeywords, menu_keywords
+  } = payload;
+
+  const finalName = name || businessName;
+  const finalSector = sector || domain;
+  const finalLegalName = legal_name || legalName;
+  const finalPhone = phone_e164 || phone;
+  const finalFallback = fallback_message || fallbackMessage;
+  const finalRootFlow = root_flow_id !== undefined ? root_flow_id : rootFlowId;
+  const finalMenuKeywords = menuKeywords || menu_keywords;
+  const finalLine = phone_number_id || phoneNumberId || null;
+
+  let existing = db.prepare(`
+    SELECT * FROM business_entities
+    WHERE tenant_id = ? AND delete_status = 0
+    ORDER BY id ASC LIMIT 1
+  `).get(numericTenantId);
+
+  if (existing) {
+    db.prepare(`
+      UPDATE business_entities
+      SET name = COALESCE(?, name),
+          domain = COALESCE(?, domain),
+          legal_name = COALESCE(?, legal_name),
+          tagline = COALESCE(?, tagline),
+          description = COALESCE(?, description),
+          phone_e164 = COALESCE(?, phone_e164),
+          email = COALESCE(?, email),
+          city = COALESCE(?, city),
+          state = COALESCE(?, state),
+          currency = COALESCE(?, currency),
+          timezone = COALESCE(?, timezone),
+          checkin_time = COALESCE(?, checkin_time),
+          checkout_time = COALESCE(?, checkout_time),
+          opening_time = COALESCE(?, opening_time),
+          closing_time = COALESCE(?, closing_time),
+          updated_at = UTC_TIMESTAMP()
+      WHERE id = ? AND tenant_id = ?
+    `).run(
+      finalName, finalSector, finalLegalName, tagline, description,
+      finalPhone, email, city, state, currency, timezone,
+      checkin_time || checkinTime, checkout_time || checkoutTime, opening_time || openingTime, closing_time || closingTime,
+      existing.id, numericTenantId
+    );
+  } else {
+    const slug = slugify(finalName || "business") + "-" + Date.now().toString().slice(-4);
+    db.prepare(`
+      INSERT INTO business_entities (
+        tenant_id, domain, name, legal_name, slug, tagline, description,
+        phone_e164, email, city, state, currency, timezone,
+        checkin_time, checkout_time, opening_time, closing_time,
+        status, active_status, delete_status, created_at, updated_at
+      ) VALUES (
+        ?, COALESCE(?, 'GENERAL'), ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, COALESCE(?, 'INR'), COALESCE(?, 'Asia/Kolkata'),
+        ?, ?, ?, ?,
+        'ACTIVE', 1, 0, UTC_TIMESTAMP(), UTC_TIMESTAMP()
+      )
+    `).run(
+      numericTenantId, finalSector, finalName || "My Business", finalLegalName, slug, tagline, description,
+      finalPhone || "", email, city || "", state || "", currency, timezone,
+      checkin_time || checkinTime, checkout_time || checkoutTime, opening_time || openingTime, closing_time || closingTime
+    );
+  }
+
+  // Update properties table
+  const existingProp = db.prepare("SELECT id FROM properties WHERE tenant_id = ? ORDER BY id ASC LIMIT 1").get(numericTenantId);
+  if (existingProp && finalName) {
+    db.prepare("UPDATE properties SET name = ?, phone = COALESCE(?, phone), city = COALESCE(?, city), state = COALESCE(?, state), updated_at = UTC_TIMESTAMP() WHERE id = ?").run(finalName, finalPhone, city, state, existingProp.id);
+  }
+
+  // Update flow_global_settings if fallback_message, root_flow_id, or menu_keywords provided
+  if (finalFallback || finalRootFlow !== undefined || finalMenuKeywords || finalName) {
+    const flowGlobalSettingsService = require("../flowGlobalSettingsService");
+    const currentSettings = flowGlobalSettingsService.getSettings(numericTenantId, finalLine);
+    const updates = {};
+    if (finalFallback) updates.fallback_message = finalFallback;
+    else if (finalName && !currentSettings.fallback_message) {
+      updates.fallback_message = `Thank you for contacting *${finalName}*! Please type *menu* to view our options.`;
+    }
+    if (finalRootFlow !== undefined) updates.root_flow_id = finalRootFlow;
+    if (finalMenuKeywords) updates.menu_keywords = finalMenuKeywords;
+
+    flowGlobalSettingsService.updateSettings(numericTenantId, finalLine, updates);
+  }
+
+  // Sync settings table
+  if (finalName) {
+    try {
+      const { setSetting } = require("../../config/database");
+      setSetting("BOT_BUSINESS_NAME", finalName);
+      if (finalPhone) setSetting("BOT_HANDOFF_PHONE", finalPhone);
+    } catch (_) {}
+  }
+
+  return getBusinessProfile(numericTenantId);
+}
+
 module.exports = {
   slugify,
   listItems,
@@ -1891,5 +2189,8 @@ module.exports = {
   updatePricingRule,
   deletePricingRule,
   seedIndustryBlueprint,
+  importFullIndustrySuite,
+  getBusinessProfile,
+  updateBusinessProfile,
   SECTOR_BLUEPRINTS
 };

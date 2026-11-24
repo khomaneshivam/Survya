@@ -9,6 +9,7 @@ import lazyWithRetry from './utils/lazyWithRetry';
 // Lazy-loaded route chunks with deployment chunk-mismatch auto-recovery
 const PublicChatLandingPage = lazyWithRetry(() => import('./pages/PublicChatLandingPage'));
 const PublicExperiencePage = lazyWithRetry(() => import('./pages/PublicExperiencePage'));
+const PublicFlowPreviewPage = lazyWithRetry(() => import('./pages/PublicFlowPreviewPage'));
 const LoginPage = lazyWithRetry(() => import('./pages/LoginPage'));
 const RegisterPage = lazyWithRetry(() => import('./pages/RegisterPage'));
 const LandingPage = lazyWithRetry(() => import('./pages/LandingPage'));
@@ -204,6 +205,16 @@ function AppContent() {
 
   // Intercept public customer chat links (/c/:slug or /chat/:slug) without requiring login
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
+  const currentHash = typeof window !== 'undefined' ? window.location.hash : '';
+  const previewMatch = currentHash.match(/^#flow-preview\/([A-Za-z0-9_-]{43})$/);
+  if (previewMatch) {
+    return (
+      <Suspense fallback={<FullPageLoader />}>
+        <PublicFlowPreviewPage token={previewMatch[1]} />
+      </Suspense>
+    );
+  }
+
   const chatMatch = currentPath.match(/^\/(?:c|chat)\/([a-zA-Z0-9_-]+)/);
   if (chatMatch) {
     const slug = chatMatch[1];
@@ -311,11 +322,11 @@ function AppContent() {
             </button>
             <button
               type="button"
-              className={`mobile-nav-item ${activeTab === 'automation' ? 'active' : ''}`}
-              onClick={() => setActiveTab('automation')}
+              className={`mobile-nav-item ${activeTab === 'flows' ? 'active' : ''}`}
+              onClick={() => setActiveTab('flows')}
             >
               <GitBranch size={18} />
-              <span>Workflows</span>
+              <span>Flows</span>
             </button>
             <button
               type="button"

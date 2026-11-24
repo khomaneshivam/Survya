@@ -55,8 +55,13 @@ router.post("/holds/:token/release", authenticateToken, universalCatalogControll
 router.post("/quote-preview", authenticateToken, universalCatalogController.calculateQuote);
 router.post("/quote", authenticateToken, universalCatalogController.calculateQuote);
 
-// 8 Industry Blueprints
+// 8 Industry Blueprints & Full Suite Seeder
 router.get("/blueprints", authenticateToken, universalCatalogController.listBlueprints);
 router.post("/blueprints/seed", authenticateToken, universalCatalogController.seedBlueprint);
+router.post("/blueprints/import-full-suite", authenticateToken, universalCatalogController.importFullSuite);
+
+// Business Profile & Masters Setup
+router.get(["/business-profile", "/profile"], authenticateToken, universalCatalogController.getBusinessProfile);
+router.put(["/business-profile", "/profile"], authenticateToken, universalCatalogController.updateBusinessProfile);
 
 module.exports = router;

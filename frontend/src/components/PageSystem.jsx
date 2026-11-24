@@ -34,8 +34,10 @@ import {
 const DashboardPage = lazyWithRetry(() => import('../pages/DashboardPage'));
 const EnquiriesPage = lazyWithRetry(() => import('../pages/EnquiriesPage'));
 const FlowsPage = lazyWithRetry(() => import('../pages/FlowsPage'));
+const FlowBuilderPage = lazyWithRetry(() => import('../pages/FlowBuilderPage'));
 const AutomationPage = lazyWithRetry(() => import('../pages/AutomationPage'));
 const InboxPage = lazyWithRetry(() => import('../pages/InboxPage'));
+const AutomationStudio = lazyWithRetry(() => import('../features/automation/AutomationStudio'));
 const AutoReplyBotPage = lazyWithRetry(() => import('../pages/AutoReplyBotPage'));
 const BroadcastPage = lazyWithRetry(() => import('../pages/BroadcastPage'));
 const FlowStudioPage = lazyWithRetry(() => import('../pages/FlowStudioPage'));
@@ -107,27 +109,27 @@ export const PAGE_REGISTRY = {
   },
   flows: {
     id: 'flows',
-    title: 'Forms & Flow Builder',
-    module: 'Forms',
+    title: 'Flow Builder',
+    module: 'Flow',
     group: 'Operations & Messaging',
-    badge: 'Interactive',
+    badge: 'Studio',
     badgeTone: 'purple',
-    icon: FileSpreadsheet,
-    description: 'Visual builder and editor for native WhatsApp Flow screens, survey forms, and intake schemas.',
+    icon: GitBranch,
+    description: 'Visual builder for WhatsApp conversation flows, modular sub-flows, and live session monitor.',
     adminOnly: false,
-    component: FlowsPage
+    component: FlowBuilderPage
   },
   automation: {
     id: 'automation',
-    title: 'Workflows & Lifecycle Triggers',
+    title: 'Flow Builder',
     module: 'Flow',
     group: 'Operations & Messaging',
-    badge: 'Automated',
-    badgeTone: 'blue',
+    badge: 'Studio',
+    badgeTone: 'purple',
     icon: GitBranch,
-    description: 'Multi-stage guest lifecycle automations: directions, arrival greetings, departures, and review collection.',
+    description: 'Visual builder for WhatsApp conversation flows, modular sub-flows, and live session monitor.',
     adminOnly: false,
-    component: AutomationPage
+    component: FlowBuilderPage
   },
   inbox: {
     id: 'inbox',
@@ -143,27 +145,27 @@ export const PAGE_REGISTRY = {
   },
   autoreply: {
     id: 'autoreply',
-    title: 'Conversational Concierge & Auto-Reply Bot',
+    title: 'Enterprise Automation Studio',
     module: 'Connect',
-    group: 'Operations & Messaging',
-    badge: 'AI Smart',
+    group: 'System Administration',
+    badge: 'Enterprise',
     badgeTone: 'green',
     icon: BotMessageSquare,
-    description: 'Inbound automation engine: instant room quotes, WhatsApp quick buttons, Meta Flows, and programmable dynamic rules.',
-    adminOnly: false,
-    component: AutoReplyBotPage
+    description: 'Universal conversational template library, client configurations, and visual workflow builder.',
+    adminOnly: true,
+    component: AutomationStudio
   },
   flowStudio: {
     id: 'flowStudio',
     title: 'Multi-Flow Hub & Studio',
     module: 'Flow',
-    group: 'Operations & Messaging',
+    group: 'System Administration',
     badge: 'Universal',
     badgeTone: 'purple',
     icon: BotMessageSquare,
     description: 'High-speed multi-flow control hub with O(1) trigger router, conflict detector, AI Architect & dual-mode editor.',
-    adminOnly: false,
-    component: FlowStudioPage
+    adminOnly: true,
+    component: AutomationStudio
   },
   broadcast: {
     id: 'broadcast',
@@ -193,12 +195,12 @@ export const PAGE_REGISTRY = {
     id: 'inapp_studio',
     title: 'In-App Experience Studio',
     module: 'In-App',
-    group: 'Operations & Messaging',
+    group: 'System Administration',
     badge: 'Dynamic',
     badgeTone: 'purple',
     icon: Smartphone,
     description: 'WhatsApp-Flows-style multi-screen web experiences with validated forms, catalog browsing, image galleries, price-range filters, rate discussions, and calls.',
-    adminOnly: false,
+    adminOnly: true,
     component: InAppStudioPage
   },
   ai: {

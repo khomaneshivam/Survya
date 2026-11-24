@@ -363,6 +363,38 @@ async function seedBlueprint(req, res) {
   }
 }
 
+async function importFullSuite(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const userId = req.user?.id || "admin";
+    const result = universalCatalogService.importFullIndustrySuite(tenantId, req.body || {}, userId);
+    return res.status(201).json(result);
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
+async function getBusinessProfile(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const profile = universalCatalogService.getBusinessProfile(tenantId);
+    return res.json({ success: true, ...profile });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+async function updateBusinessProfile(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const userId = req.user?.id || "admin";
+    const updated = universalCatalogService.updateBusinessProfile(tenantId, req.body || {}, userId);
+    return res.json({ success: true, ...updated });
+  } catch (err) {
+    return res.status(400).json({ success: false, error: err.message });
+  }
+}
+
 module.exports = {
   listItems,
   getItem,
@@ -396,6 +428,9 @@ module.exports = {
   releaseHold,
   calculateQuote,
   listBlueprints,
-  seedBlueprint
+  seedBlueprint,
+  importFullSuite,
+  getBusinessProfile,
+  updateBusinessProfile
 };
 

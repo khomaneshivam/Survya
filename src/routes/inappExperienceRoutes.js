@@ -1,39 +1,39 @@
 const express = require("express");
 const router = express.Router();
 const inappController = require("../controllers/inappExperienceController");
-const { authenticateToken } = require("../middleware/authMiddleware");
+const { authenticateToken, requireAdmin } = require("../middleware/authMiddleware");
 
 // All routes require authentication and tenant context
 router.use(authenticateToken);
 
-// Experiences CRUD & Lifecycle
-router.get("/experiences", inappController.listExperiences);
-router.post("/experiences", inappController.createExperience);
-router.post("/experiences/from-starter", inappController.createFromStarter);
+// Experiences CRUD & Lifecycle (Admin Only)
+router.get("/experiences", requireAdmin, inappController.listExperiences);
+router.post("/experiences", requireAdmin, inappController.createExperience);
+router.post("/experiences/from-starter", requireAdmin, inappController.createFromStarter);
 
-router.get("/experiences/:id", inappController.getExperience);
-router.put("/experiences/:id", inappController.updateExperience);
-router.delete("/experiences/:id", inappController.deleteExperience);
-router.patch("/experiences/:id/status", inappController.updateStatus);
-router.get("/experiences/:id/qr", inappController.getQrCode);
+router.get("/experiences/:id", requireAdmin, inappController.getExperience);
+router.put("/experiences/:id", requireAdmin, inappController.updateExperience);
+router.delete("/experiences/:id", requireAdmin, inappController.deleteExperience);
+router.patch("/experiences/:id/status", requireAdmin, inappController.updateStatus);
+router.get("/experiences/:id/qr", requireAdmin, inappController.getQrCode);
 
-// Screens Management
-router.get("/experiences/:id/screens", inappController.listScreens);
-router.post("/experiences/:id/screens", inappController.createScreen);
-router.post("/experiences/:id/screens/reorder", inappController.reorderScreens);
+// Screens Management (Admin Only)
+router.get("/experiences/:id/screens", requireAdmin, inappController.listScreens);
+router.post("/experiences/:id/screens", requireAdmin, inappController.createScreen);
+router.post("/experiences/:id/screens/reorder", requireAdmin, inappController.reorderScreens);
 
-router.put("/screens/:screenId", inappController.updateScreen);
-router.delete("/screens/:screenId", inappController.deleteScreen);
+router.put("/screens/:screenId", requireAdmin, inappController.updateScreen);
+router.delete("/screens/:screenId", requireAdmin, inappController.deleteScreen);
 
-// Form Fields Management & Validation
-router.get("/screens/:screenId/fields", inappController.listFields);
-router.post("/screens/:screenId/fields", inappController.createField);
-router.post("/screens/:screenId/fields/reorder", inappController.reorderFields);
+// Form Fields Management & Validation (Admin Only)
+router.get("/screens/:screenId/fields", requireAdmin, inappController.listFields);
+router.post("/screens/:screenId/fields", requireAdmin, inappController.createField);
+router.post("/screens/:screenId/fields/reorder", requireAdmin, inappController.reorderFields);
 
-router.put("/fields/:fieldId", inappController.updateField);
-router.delete("/fields/:fieldId", inappController.deleteField);
+router.put("/fields/:fieldId", requireAdmin, inappController.updateField);
+router.delete("/fields/:fieldId", requireAdmin, inappController.deleteField);
 
-router.post("/screens/:screenId/validate", inappController.validateForm);
+router.post("/screens/:screenId/validate", requireAdmin, inappController.validateForm);
 
 // Agent Rate Negotiations Management
 const inappNegotiationService = require("../services/inapp/inappNegotiationService");

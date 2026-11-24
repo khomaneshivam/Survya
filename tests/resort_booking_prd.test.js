@@ -37,6 +37,14 @@ describe("WhatsApp Resort Booking & Guest Management Platform (PRD v1.0 MVP)", (
       `).run(testAgentUserId, `agent_${Date.now()}@konkantrip.com`);
     }
 
+    const existingLine = db.prepare("SELECT id FROM waba_phone_numbers WHERE phone_number_id = ?").get("test_phone_id");
+    if (!existingLine) {
+      db.prepare(`
+        INSERT INTO waba_phone_numbers (id, phone_number_id, phone_number, display_name, quality_rating, status, tenant_id)
+        VALUES ('waba_line_test_phone_id', 'test_phone_id', '15550234567', 'Test Resort Line', 'GREEN', 'CONNECTED', ?)
+      `).run(testTenantId);
+    }
+
     // Ensure a room type exists
     const rt = db.prepare("SELECT id FROM room_types WHERE tenant_id = ? LIMIT 1").get(testTenantId);
     if (rt) {

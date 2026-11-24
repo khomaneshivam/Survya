@@ -6,6 +6,7 @@
 const express = require("express");
 const router = express.Router();
 const flowController = require("../controllers/conversationFlowController");
+const flowApprovalController = require("../controllers/flowApprovalController");
 const { authenticateToken, requireAdmin } = require("../middleware/authMiddleware");
 
 // =========================================================================
@@ -13,34 +14,34 @@ const { authenticateToken, requireAdmin } = require("../middleware/authMiddlewar
 // =========================================================================
 
 // Live system capabilities introspector (rooms, catalog, CRM pipelines, templates, lines, AI status)
-router.get(["/flows/ai/capabilities", "/ai/capabilities"], authenticateToken, flowController.getAiCapabilities);
+router.get(["/flows/ai/capabilities", "/ai/capabilities"], authenticateToken, requireAdmin, flowController.getAiCapabilities);
 
 // 1-Click Prompt-to-Workflow Generator Grounded in Live System APIs
-router.post(["/flows/ai-generate", "/flows/ai/generate", "/ai-generate", "/ai/generate"], authenticateToken, flowController.generateFlowWithAi);
+router.post(["/flows/ai-generate", "/flows/ai/generate", "/ai-generate", "/ai/generate"], authenticateToken, requireAdmin, flowController.generateFlowWithAi);
 
 // Prompt-based conversational refiner
-router.post(["/flows/:id/ai-refine", "/flows/ai/refine", "/flows/conversation-flows/:id/refine", "/:id/ai-refine", "/ai/refine"], authenticateToken, flowController.refineFlowWithAi);
+router.post(["/flows/:id(\\d+)/ai-refine", "/flows/ai/refine", "/flows/conversation-flows/:id(\\d+)/refine", "/:id(\\d+)/ai-refine", "/ai/refine"], authenticateToken, requireAdmin, flowController.refineFlowWithAi);
 
 // Linear-time trigger conflict detection across lines & flows
-router.get(["/flows/conflicts", "/flows/trigger-conflicts", "/conflicts", "/trigger-conflicts"], authenticateToken, flowController.getTriggerConflicts);
+router.get(["/flows/conflicts", "/flows/trigger-conflicts", "/conflicts", "/trigger-conflicts"], authenticateToken, requireAdmin, flowController.getTriggerConflicts);
 
 // Direct WhatsApp Business Phone Line Assignment
-router.patch(["/flows/conversation-flows/:id/assign-line", "/:id/assign-line"], authenticateToken, flowController.assignFlowToLine);
-router.post(["/flows/conversation-flows/:id/assign-line", "/:id/assign-line"], authenticateToken, flowController.assignFlowToLine);
+router.patch(["/flows/conversation-flows/:id(\\d+)/assign-line", "/:id(\\d+)/assign-line"], authenticateToken, requireAdmin, flowController.assignFlowToLine);
+router.post(["/flows/conversation-flows/:id(\\d+)/assign-line", "/:id(\\d+)/assign-line"], authenticateToken, requireAdmin, flowController.assignFlowToLine);
 
 // Set Default Active Flow
-router.post(["/flows/conversation-flows/:id/set-default", "/:id/set-default"], authenticateToken, flowController.setDefaultFlow);
-router.patch(["/flows/conversation-flows/:id/set-default", "/:id/set-default"], authenticateToken, flowController.setDefaultFlow);
+router.post(["/flows/conversation-flows/:id(\\d+)/set-default", "/:id(\\d+)/set-default"], authenticateToken, requireAdmin, flowController.setDefaultFlow);
+router.patch(["/flows/conversation-flows/:id(\\d+)/set-default", "/:id(\\d+)/set-default"], authenticateToken, requireAdmin, flowController.setDefaultFlow);
 
 // =========================================================================
 // CONVERSATION FLOWS (STUDIO BUILDER & LIFECYCLE)
 // =========================================================================
 
-// List flows
-router.get(["/flows", "/flows/conversation-flows", "/conversation-flows"], authenticateToken, flowController.listFlows);
+// List flows (Tenant-scoped)
+router.get(["/flows/conversation-flows", "/conversation-flows"], authenticateToken, flowController.listFlows);
 
-// Create flow
-router.post(["/flows", "/flows/conversation-flows", "/conversation-flows"], authenticateToken, flowController.createFlow);
+// Create flow (Tenant-scoped)
+router.post(["/flows/conversation-flows", "/conversation-flows"], authenticateToken, flowController.createFlow);
 
 // In-Memory Test Simulator (zero dispatch, zero live charges)
 router.post(["/flows/conversation-flows/simulate", "/simulate"], authenticateToken, flowController.simulateTurn);
@@ -56,26 +57,35 @@ router.post(["/flows/conversation-templates", "/conversation-templates"], authen
 router.post(["/flows/conversation-templates/:slug/clone", "/conversation-templates/:slug/clone"], authenticateToken, flowController.cloneTemplate);
 
 // Single Flow Operations
-router.get(["/flows/conversation-flows/:id", "/:id"], authenticateToken, flowController.getFlowById);
-router.put(["/flows/conversation-flows/:id", "/:id"], authenticateToken, flowController.updateFlow);
-router.post(["/flows/conversation-flows/:id/duplicate", "/:id/duplicate"], authenticateToken, flowController.duplicateFlow);
-router.post(["/flows/conversation-flows/:id/draft", "/:id/draft"], authenticateToken, flowController.saveFlowDraft);
-router.post(["/flows/conversation-flows/:id/validate", "/:id/validate"], authenticateToken, flowController.validateFlow);
-router.post(["/flows/conversation-flows/:id/publish", "/:id/publish"], authenticateToken, flowController.publishFlow);
-router.post(["/flows/conversation-flows/:id/pause", "/:id/pause"], authenticateToken, flowController.pauseFlow);
-router.post(["/flows/conversation-flows/:id/archive", "/:id/archive"], authenticateToken, flowController.archiveFlow);
-router.delete(["/flows/conversation-flows/:id", "/:id"], authenticateToken, flowController.deleteFlow);
-router.post(["/flows/conversation-flows/:id/delete", "/:id/delete"], authenticateToken, flowController.deleteFlow);
-router.post(["/flows/conversation-flows/:id/rollback", "/:id/rollback"], authenticateToken, flowController.rollbackFlow);
-router.get(["/flows/conversation-flows/:id/versions", "/:id/versions"], authenticateToken, flowController.listVersions);
-router.get(["/flows/conversation-flows/:id/analytics", "/:id/analytics"], authenticateToken, flowController.getFlowAnalytics);
-router.get(["/flows/conversation-flows/:id/ai-optimize", "/:id/ai-optimize"], authenticateToken, flowController.getAiOptimizationRecommendations);
-router.post(["/flows/conversation-flows/:id/ai-optimize", "/:id/ai-optimize"], authenticateToken, flowController.getAiOptimizationRecommendations);
-router.post(["/flows/conversation-flows/:id/ai-optimize/apply", "/:id/ai-optimize/apply"], authenticateToken, flowController.applyAiOptimization);
-router.get(["/flows/conversation-flows/:id/executions", "/:id/executions"], authenticateToken, flowController.listFlowExecutions);
+// Approval checkpoints are administrative, auditable gates for AI-generated flows.
+router.get(["/flows/conversation-flows/:id(\\d+)/approvals", "/conversation-flows/:id(\\d+)/approvals", "/:id(\\d+)/approvals"], authenticateToken, flowApprovalController.getFlowApprovals);
+router.post(["/flows/conversation-flows/:id(\\d+)/approvals/request", "/conversation-flows/:id(\\d+)/approvals/request", "/:id(\\d+)/approvals/request"], authenticateToken, flowApprovalController.requestFlowApproval);
+router.post(["/flows/conversation-flows/:id(\\d+)/approvals/decision", "/conversation-flows/:id(\\d+)/approvals/decision", "/:id(\\d+)/approvals/decision"], authenticateToken, flowApprovalController.decideFlowApproval);
+router.get(["/flows/conversation-flows/:id(\\d+)", "/conversation-flows/:id(\\d+)", "/:id(\\d+)"], authenticateToken, flowController.getFlowById);
+router.put(["/flows/conversation-flows/:id(\\d+)", "/conversation-flows/:id(\\d+)", "/:id(\\d+)"], authenticateToken, flowController.updateFlow);
+router.post(["/flows/conversation-flows/:id(\\d+)/duplicate", "/conversation-flows/:id(\\d+)/duplicate", "/:id(\\d+)/duplicate"], authenticateToken, flowController.duplicateFlow);
+router.post(["/flows/conversation-flows/:id(\\d+)/draft", "/conversation-flows/:id(\\d+)/draft", "/:id(\\d+)/draft"], authenticateToken, flowController.saveFlowDraft);
+router.post(["/flows/conversation-flows/:id(\\d+)/validate", "/conversation-flows/:id(\\d+)/validate", "/:id(\\d+)/validate"], authenticateToken, flowController.validateFlow);
+router.post(["/flows/conversation-flows/:id(\\d+)/publish", "/conversation-flows/:id(\\d+)/publish", "/:id(\\d+)/publish"], authenticateToken, flowController.publishFlow);
+router.post(["/flows/conversation-flows/:id(\\d+)/pause", "/conversation-flows/:id(\\d+)/pause", "/:id(\\d+)/pause"], authenticateToken, flowController.pauseFlow);
+router.post(["/flows/conversation-flows/:id(\\d+)/archive", "/conversation-flows/:id(\\d+)/archive", "/:id(\\d+)/archive"], authenticateToken, flowController.archiveFlow);
+router.delete(["/flows/conversation-flows/:id(\\d+)", "/conversation-flows/:id(\\d+)", "/:id(\\d+)"], authenticateToken, flowController.deleteFlow);
+router.post(["/flows/conversation-flows/:id(\\d+)/delete", "/conversation-flows/:id(\\d+)/delete", "/:id(\\d+)/delete"], authenticateToken, flowController.deleteFlow);
+router.post(["/flows/conversation-flows/:id(\\d+)/rollback", "/conversation-flows/:id(\\d+)/rollback", "/:id(\\d+)/rollback"], authenticateToken, flowController.rollbackFlow);
+router.get(["/flows/conversation-flows/:id(\\d+)/versions", "/conversation-flows/:id(\\d+)/versions", "/:id(\\d+)/versions"], authenticateToken, flowController.listVersions);
+router.get(["/flows/conversation-flows/:id(\\d+)/analytics", "/conversation-flows/:id(\\d+)/analytics", "/:id(\\d+)/analytics"], authenticateToken, flowController.getFlowAnalytics);
+router.get(["/flows/conversation-flows/:id(\\d+)/ai-optimize", "/conversation-flows/:id(\\d+)/ai-optimize", "/:id(\\d+)/ai-optimize"], authenticateToken, requireAdmin, flowController.getAiOptimizationRecommendations);
+router.post(["/flows/conversation-flows/:id(\\d+)/ai-optimize", "/conversation-flows/:id(\\d+)/ai-optimize", "/:id(\\d+)/ai-optimize"], authenticateToken, requireAdmin, flowController.getAiOptimizationRecommendations);
+router.post(["/flows/conversation-flows/:id(\\d+)/ai-optimize/apply", "/conversation-flows/:id(\\d+)/ai-optimize/apply", "/:id(\\d+)/ai-optimize/apply"], authenticateToken, requireAdmin, flowController.applyAiOptimization);
+router.get(["/flows/conversation-flows/:id(\\d+)/executions", "/conversation-flows/:id(\\d+)/executions", "/:id(\\d+)/executions"], authenticateToken, flowController.listFlowExecutions);
 
-// Global Executions & Audit Trace
-router.get("/flows/executions", authenticateToken, flowController.listFlowExecutions);
-router.get("/flows/executions/:sessionId", authenticateToken, flowController.getExecutionDetails);
+// Global Settings (Navigation, Root Menu, Fallback)
+router.get(["/flows/global-settings", "/global-settings"], authenticateToken, flowController.getGlobalSettings);
+router.put(["/flows/global-settings", "/global-settings"], authenticateToken, requireAdmin, flowController.updateGlobalSettings);
+
+// Live Sessions Monitor & Audit Trace
+router.get(["/flows/sessions", "/flows/executions", "/sessions", "/executions"], authenticateToken, flowController.listSessions);
+router.get(["/flows/sessions/:id/events", "/flows/executions/:id", "/sessions/:id/events", "/executions/:id", "/sessions/:id"], authenticateToken, flowController.getSessionEvents);
+router.post(["/flows/sessions/:id/reset", "/sessions/:id/reset"], authenticateToken, requireAdmin, flowController.resetSession);
 
 module.exports = router;

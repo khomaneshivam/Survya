@@ -359,6 +359,9 @@ router.delete("/templates/:templateId", authenticateToken, requireAdmin, templat
 // =========================================================================
 // 6.4. CONVERSATION FLOW & AUTOMATION STUDIO MODULE
 // =========================================================================
+// Browser-only, expiring preview links must be registered before the generic
+// `/flows/:id` handlers in the conversation flow router.
+router.use(require("./flowPreviewRoutes"));
 router.use(require("./conversationFlowRoutes"));
 
 // Dynamic CRM Pipelines & Records Module
@@ -427,10 +430,10 @@ router.post("/webhook/tunnel/restart", authenticateToken, requireAdmin, webhookC
 // Customer Replies & Inbox (Protected & Scoped)
 router.get("/replies", authenticateToken, webhookController.listReplies);
 router.get("/inbox/replies", authenticateToken, webhookController.listReplies);
-router.get("/replies/auto-reply-settings", authenticateToken, webhookController.getAutoReplySettings);
-router.post("/replies/auto-reply-settings", authenticateToken, webhookController.updateAutoReplySettings);
-router.get("/replies/dynamic-options", authenticateToken, webhookController.getDynamicOptions);
-router.post("/replies/dynamic-options", authenticateToken, webhookController.saveDynamicOptions);
+router.get("/replies/auto-reply-settings", authenticateToken, requireAdmin, webhookController.getAutoReplySettings);
+router.post("/replies/auto-reply-settings", authenticateToken, requireAdmin, webhookController.updateAutoReplySettings);
+router.get("/replies/dynamic-options", authenticateToken, requireAdmin, webhookController.getDynamicOptions);
+router.post("/replies/dynamic-options", authenticateToken, requireAdmin, webhookController.saveDynamicOptions);
 router.post("/replies/:id/reply", authenticateToken, webhookController.sendManualReply);
 router.post("/replies/:id/mark-read", authenticateToken, webhookController.markAsRead);
 router.post("/replies/mark-all-read", authenticateToken, webhookController.markAllAsRead);
@@ -899,5 +902,9 @@ router.use(["/v1/agency", "/agency"], require("./agencyRoutes"));
 // Universal Fulfillment, Transactions, Invoices & Payment Reconciliation
 router.use(["/v1/transactions", "/transactions"], require("./universalFulfillmentRoutes"));
 router.use(["/v1/public", "/public"], require("./publicUniversalFulfillmentRoutes"));
+
+// Universal Flow Template Library & Client Configuration Engine
+router.use(["/v1/template-library", "/template-library"], require("../modules/templateLibrary/templateRoutes"));
+router.use(["/v1/template-installations", "/template-installations"], require("../modules/templateLibrary/templateInstallationRoutes"));
 
 module.exports = router;

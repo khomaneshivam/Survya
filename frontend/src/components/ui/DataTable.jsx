@@ -149,7 +149,7 @@ export default function DataTable({
         <table className={`sarvya-table ${tableDensityClass} ${responsive ? 'sarvya-table-responsive' : ''}`}>
           <thead style={stickyHeader ? { position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', backdropFilter: 'blur(8px)' } : undefined}>
             <tr>
-              {columns.map((col) => {
+              {columns.map((col, colIdx) => {
                 const isSorted = sortKey === col.key;
                 const columnLabel = col.label || col.header || '';
                 const isNumeric = col.numeric || col.align === 'right' || col.align === 'end';
@@ -157,7 +157,7 @@ export default function DataTable({
 
                 return (
                   <th
-                    key={col.key}
+                    key={col.key || col.accessor || col.header || col.label || `col_${colIdx}`}
                     scope="col"
                     aria-sort={col.sortable ? (isSorted ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined) : undefined}
                     style={{ textAlign, width: col.width }}
@@ -210,7 +210,7 @@ export default function DataTable({
                   className={isSelected ? 'is-selected' : ''}
                   style={{ cursor: onRowClick ? 'pointer' : 'default' }}
                 >
-                  {columns.map((col) => {
+                  {columns.map((col, colIdx) => {
                     const isNumeric = col.numeric || col.align === 'right' || col.align === 'end';
                     const textAlign = col.align || (isNumeric ? 'right' : 'start');
                     const fieldKey = col.accessor || col.key;
@@ -221,16 +221,21 @@ export default function DataTable({
 
                     let rendered;
                     if (col.render) {
-                      // Pass (cellValue, row) when fieldKey is on row; if field is absent (e.g. Actions), pass (row, row) so both (row) and (_, row) signatures work!
+                      // Pass (cellValue, row) when fieldKey is on row; if field is absent (e.g. Actions), pass (row, row).
+                      // If render function only takes 1 argument (render.length === 1) and firstArg is null/undefined or not an object,
+                      // fall back to row so single-argument (row) => ... callbacks never crash on null properties!
                       const firstArg = hasField ? cellValue : row;
-                      rendered = col.render(firstArg, row);
+                      const safeFirstArg = (col.render.length === 1 && (firstArg === null || firstArg === undefined) && row)
+                        ? row
+                        : firstArg;
+                      rendered = col.render(safeFirstArg, row);
                     } else {
                       rendered = cellValue !== undefined && cellValue !== null ? cellValue : '—';
                     }
 
                     return (
                       <td
-                        key={col.key || col.accessor || col.header || col.label}
+                        key={col.key || col.accessor || col.header || col.label || `cell_${colIdx}`}
                         data-label={col.label || col.header || ''}
                         style={{ textAlign, width: col.width }}
                         className={`${isNumeric ? 'tabular-nums ' : ''}${col.className || ''}`.trim()}

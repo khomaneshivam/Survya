@@ -53,8 +53,13 @@ router.post("/quote", optionalAuth, universalCatalogController.calculateQuote);
 router.get("/catalog/search", optionalAuth, universalCatalogController.searchCatalog);
 
 // 8 Industry Blueprints 1-Click Seeder
-router.get("/v1/universal/blueprints", authenticateToken, universalCatalogController.listBlueprints);
-router.post("/v1/universal/blueprints/seed", authenticateToken, universalCatalogController.seedBlueprint);
+router.get(["/v1/universal/blueprints", "/v1/universal-catalog/blueprints", "/universal/blueprints"], authenticateToken, universalCatalogController.listBlueprints);
+router.post(["/v1/universal/blueprints/seed", "/v1/universal-catalog/blueprints/seed", "/universal/blueprints/seed"], authenticateToken, universalCatalogController.seedBlueprint);
+router.post(["/v1/universal/blueprints/import-full-suite", "/v1/universal-catalog/blueprints/import-full-suite", "/universal-catalog/blueprints/import-full-suite"], authenticateToken, universalCatalogController.importFullSuite);
+
+// Business Profile & Masters Setup
+router.get(["/v1/business-profile", "/business-profile", "/v1/universal-catalog/business-profile", "/universal-catalog/business-profile"], authenticateToken, universalCatalogController.getBusinessProfile);
+router.put(["/v1/business-profile", "/business-profile", "/v1/universal-catalog/business-profile", "/universal-catalog/business-profile"], authenticateToken, universalCatalogController.updateBusinessProfile);
 
 // =========================================================================
 // ENTITIES & LEGACY COMMERCE ENDPOINTS

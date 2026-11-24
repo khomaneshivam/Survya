@@ -16,19 +16,25 @@ import {
   UtensilsCrossed,
   LifeBuoy,
   ReceiptText,
-  Video
+  Video,
+  Sliders
 } from 'lucide-react';
+import TemplateInstallerModal from './TemplateInstallerModal';
 
 export default function FlowTemplatesModal({
   isOpen,
   onClose,
   templates = [],
   onCloneTemplate,
+  onFlowInstalled,
+  token,
   cloning = false
 }) {
   const [selectedSlug, setSelectedSlug] = useState('b2b-sales-qualification-demo');
   const [customName, setCustomName] = useState('');
   const [industryFilter, setIndustryFilter] = useState('ALL');
+  const [installerOpen, setInstallerOpen] = useState(false);
+  const [templateToInstall, setTemplateToInstall] = useState(null);
 
   if (!isOpen) return null;
 
@@ -403,7 +409,7 @@ export default function FlowTemplatesModal({
                       type="button"
                       onClick={onClose}
                       className="btn btn-outline"
-                      style={{ padding: '9px 18px' }}
+                      style={{ padding: '9px 16px' }}
                     >
                       Cancel
                     </button>
@@ -411,6 +417,23 @@ export default function FlowTemplatesModal({
                       type="button"
                       onClick={handleUseTemplate}
                       disabled={cloning}
+                      className="btn btn-outline"
+                      style={{
+                        padding: '9px 16px',
+                        fontWeight: 600,
+                        gap: '6px'
+                      }}
+                      title="Quick clone without business configuration"
+                    >
+                      {cloning ? <RotateCcw size={15} className="spin" /> : <ArrowRight size={15} />}
+                      <span>Quick Clone</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTemplateToInstall(selectedTpl);
+                        setInstallerOpen(true);
+                      }}
                       className="btn btn-primary"
                       style={{
                         padding: '9px 20px',
@@ -420,8 +443,8 @@ export default function FlowTemplatesModal({
                         gap: '8px'
                       }}
                     >
-                      {cloning ? <RotateCcw size={16} className="spin" /> : <ArrowRight size={16} />}
-                      <span>{cloning ? 'Cloning Journey...' : 'Clone & Open in Visual Builder'}</span>
+                      <Sliders size={16} />
+                      <span>Configure & Install (Guided)</span>
                     </button>
                   </div>
                 </div>
@@ -430,6 +453,29 @@ export default function FlowTemplatesModal({
           </div>
         </div>
       </div>
+
+      {/* Guided Template Installer Wizard Modal */}
+      {installerOpen && templateToInstall && (
+        <TemplateInstallerModal
+          isOpen={installerOpen}
+          onClose={() => {
+            setInstallerOpen(false);
+            setTemplateToInstall(null);
+          }}
+          template={templateToInstall}
+          token={token || localStorage.getItem('token') || ''}
+          onInstalled={(result) => {
+            setInstallerOpen(false);
+            setTemplateToInstall(null);
+            onClose();
+            if (onFlowInstalled) {
+              onFlowInstalled(result.flow);
+            } else if (onCloneTemplate && result.flow) {
+              onCloneTemplate(result.flow.id, result.flow.name);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
