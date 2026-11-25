@@ -11,7 +11,7 @@ function resolveWhatsAppContext(phoneNumberId, { simulation = false, database = 
   const db = database || require('../../config/database').db;
   const accounts = db.prepare(`
     SELECT id, tenant_id, phone_number_id FROM waba_phone_numbers
-    WHERE phone_number_id = ? AND status IN ('VERIFIED', 'ACTIVE', 'CONNECTED')
+    WHERE phone_number_id = ? AND status IN ('VERIFIED', 'ACTIVE', 'CONNECTED', 'REGISTERED')
     LIMIT 2
   `).all(id);
   if (accounts.length !== 1) return null;

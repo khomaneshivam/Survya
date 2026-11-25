@@ -228,6 +228,15 @@ describe("Layer 2: Communication Adapter, Channel Isolation, Durable Webhook & H
   });
 
   test("4. OUTBOUND_MESSAGE_DISPATCH durable worker handler executes queued sends", async () => {
+    const { resolveWhatsAppContext } = require("../src/services/workflow/conversationContextResolver");
+    const regPhoneId = `pn_reg_${Date.now()}`;
+    db.prepare(`
+      INSERT INTO waba_phone_numbers (id, tenant_id, display_name, phone_number, phone_number_id, waba_id, is_default, status)
+      VALUES (?, ?, 'Registered Line', '919822990099', ?, 'waba_reg_test', 0, 'REGISTERED')
+    `).run(`waba_reg_${Date.now()}`, tenantAOwner.tenantId, regPhoneId);
+    const resolvedReg = resolveWhatsAppContext(regPhoneId);
+    assert.equal(resolvedReg?.tenantId, tenantAOwner.tenantId, "REGISTERED WABA lines must resolve tenant context for inbound replies");
+    db.prepare("DELETE FROM waba_phone_numbers WHERE phone_number_id = ?").run(regPhoneId);
     const engine = new JobWorkerEngine({ workerId: "l2_test_worker" });
     assert.equal(typeof engine.handlers.get("OUTBOUND_MESSAGE_DISPATCH"), "function");
   });
