@@ -77,6 +77,17 @@ function CustomFlowNodeComponent({ id, data, selected }) {
     if (type === 'HUMAN_HANDOFF' || type === 'HANDOFF') {
       return `Handoff to: ${config.team || 'FRONT_DESK'}`;
     }
+    if (type === 'OPEN_INAPP_EXPERIENCE' || type === 'INAPP_BRIDGE' || type === 'INTERACTIVE_APP') {
+      return config.experienceSlug
+        ? `Opens Survya App: /x/${config.experienceSlug}`
+        : (config.buttonLabel || 'Opens interactive Survya web chat');
+    }
+    if (type === 'CATALOG_BROWSER') {
+      return `${config.title || 'Interactive Catalog'} (${config.inventoryMode || 'UNIT_STOCK'})`;
+    }
+    if (type === 'ADDON_UPSELL_AND_QUOTE') {
+      return config.title || 'Add-ons & GST Quote Builder';
+    }
     if (type === 'END') {
       return config.farewellMessage ? `${config.farewellMessage.substring(0, 50)}...` : 'Journey Completed';
     }

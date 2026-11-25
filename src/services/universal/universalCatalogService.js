@@ -1657,10 +1657,21 @@ const SECTOR_BLUEPRINTS = {
   }
 };
 
+const DOMAIN_SURVYA_CTA = Object.freeze({
+  HOSPITALITY: "Book Stay (Survya)",
+  RESTAURANT_FOOD: "Order Menu (Survya)",
+  RETAIL_ECOM: "Shop Now (Survya)",
+  CLINIC_HEALTH: "Book Slot (Survya)",
+  SALON_WELLNESS: "Book Visit (Survya)",
+  REAL_ESTATE: "Visit Site (Survya)",
+  EDUCATION_COACHING: "Enroll Now (Survya)",
+  B2B_WHOLESALE: "Get Quote (Survya)"
+});
+
 /**
  * Seeds a full industry blueprint in a clean transaction
  */
-function seedIndustryBlueprint(tenantId = 1, sectorCode = "HOSPITALITY", userId = "system") {
+function seedIndustryBlueprint(tenantId = 1, sectorCode = "HOSPITALITY", userId = "system", flowOptions = {}) {
   const numericTenantId = Number(tenantId) || 1;
   const upperSector = String(sectorCode || "").trim().toUpperCase();
   const blueprint = SECTOR_BLUEPRINTS[upperSector];
@@ -1668,6 +1679,9 @@ function seedIndustryBlueprint(tenantId = 1, sectorCode = "HOSPITALITY", userId 
   if (!blueprint) {
     throw new Error(`Unsupported sector code: '${sectorCode}'. Available: ${Object.keys(SECTOR_BLUEPRINTS).join(", ")}`);
   }
+
+  const displayBusinessName = String(flowOptions.businessName || blueprint.entity.name || blueprint.sectorName).trim();
+  const targetExperienceSlug = String(flowOptions.experienceSlug || "").trim();
 
   // 1. Create or ensure Business Entity
   const existingEntity = db.prepare(`
@@ -1746,38 +1760,65 @@ function seedIndustryBlueprint(tenantId = 1, sectorCode = "HOSPITALITY", userId 
     }
   }
 
-  // 5. Create Ready-to-Publish Workflow
+  // 5. Create Ready-to-Publish Hybrid WhatsApp <-> Survya Conversation Workflow
   const flowService = require("../conversationFlowService");
+  const survyaCtaTitle = DOMAIN_SURVYA_CTA[upperSector] || "Explore in Survya";
+  const mergedTriggerKeywords = [...new Set([
+    "hi",
+    "hello",
+    "hey",
+    "start",
+    "menu",
+    ...(Array.isArray(blueprint.flow?.triggerKeywords) ? blueprint.flow.triggerKeywords : [])
+  ])];
+
   const nodes = [
     {
       id: "node_trigger",
       type: "TRIGGER_WHATSAPP",
-      position: { x: 300, y: 50 },
-      data: {
+      title: "Inbound WhatsApp Message",
+      position: { x: 320, y: 40 },
+      config: {
         triggerType: "KEYWORD_MATCH",
-        keywords: blueprint.flow.triggerKeywords,
+        keywords: mergedTriggerKeywords,
+        matchType: "CONTAINS",
         label: "Inbound Trigger"
       }
     },
     {
       id: "node_welcome",
       type: "SEND_MESSAGE",
-      position: { x: 300, y: 180 },
-      data: {
-        messageType: "INTERACTIVE_BUTTONS",
-        text: `👋 Welcome to *${blueprint.entity.name}*!\n\n${blueprint.entity.tagline}.\n\nHow can we serve you today? Tap an option below:`,
-        buttons: [
-          { id: "opt_browse", title: "Browse Catalog" },
-          { id: "opt_pricing", title: "Check Offers" },
-          { id: "opt_human", title: "Talk to Team" }
+      title: "Welcome & Options",
+      position: { x: 320, y: 190 },
+      config: {
+        messageType: "BUTTONS",
+        text: `👋 Welcome to *${displayBusinessName}*!\n\n${blueprint.entity.tagline}.\n\nTap below to explore everything inside Survya & receive confirmation on WhatsApp:`,
+        options: [
+          { id: "opt_survya", title: survyaCtaTitle, value: "SURVYA" },
+          { id: "opt_browse", title: "Browse on WhatsApp", value: "WHATSAPP" },
+          { id: "opt_human", title: "Talk to Team", value: "HUMAN" }
         ]
+      }
+    },
+    {
+      id: "node_open_survya",
+      type: "OPEN_INAPP_EXPERIENCE",
+      title: "Open in Survya Studio",
+      position: { x: 40, y: 400 },
+      config: {
+        experienceSlug: targetExperienceSlug,
+        messageText: `✨ Tap below to browse *${displayBusinessName}*, choose options & complete your request inside Survya:\n\nOnce submitted, we will send your confirmation right back here on WhatsApp!`,
+        buttonLabel: "Open Survya Experience",
+        waitForCompletion: true,
+        carrySessionVars: ["selected_location_id", "selected_category_id", "guest_name", "phone", "selected_option"]
       }
     },
     {
       id: "node_catalog",
       type: "CATALOG_BROWSER",
-      position: { x: 150, y: 340 },
-      data: {
+      title: "Browse Offerings",
+      position: { x: 340, y: 400 },
+      config: {
         title: "Our Featured Offerings",
         entityId: entityId,
         inventoryMode: blueprint.items[0]?.inventory_mode || "UNIT_STOCK",
@@ -1787,8 +1828,9 @@ function seedIndustryBlueprint(tenantId = 1, sectorCode = "HOSPITALITY", userId 
     {
       id: "node_addon_quote",
       type: "ADDON_UPSELL_AND_QUOTE",
-      position: { x: 150, y: 480 },
-      data: {
+      title: "Add-Ons & Quote",
+      position: { x: 340, y: 590 },
+      config: {
         title: "Customize & Summary",
         entityId: entityId,
         allowAddons: true,
@@ -1798,42 +1840,52 @@ function seedIndustryBlueprint(tenantId = 1, sectorCode = "HOSPITALITY", userId 
     {
       id: "node_confirm",
       type: "SEND_MESSAGE",
-      position: { x: 150, y: 620 },
-      data: {
+      title: "WhatsApp Confirmation",
+      position: { x: 180, y: 780 },
+      config: {
         messageType: "TEXT",
-        text: `🎉 Thank you! Your request with *${blueprint.entity.name}* has been received and confirmed.\n\nOur team is reviewing your details and will assist you right here on WhatsApp.`
+        text: `🎉 Confirmed with *${displayBusinessName}*!\nRef: *{{transaction_ref}}*\n\nThank you! All details are saved and shared with you right here on WhatsApp.`
       }
     },
     {
       id: "node_handoff",
       type: "HUMAN_HANDOFF",
-      position: { x: 450, y: 340 },
-      data: {
-        teamNote: `Customer requested live support for ${blueprint.entity.name}.`
+      title: "Talk to Support Team",
+      position: { x: 640, y: 400 },
+      config: {
+        team: "FRONT_DESK",
+        handoffMessage: `🔔 Connecting you with the *${displayBusinessName}* team right here on WhatsApp.`,
+        teamNote: `Customer requested live support for ${displayBusinessName}.`
       }
     }
   ];
 
   const transitions = [
-    { source: "node_trigger", target: "node_welcome", sourceHandle: "default" },
-    { source: "node_welcome", target: "node_catalog", sourceHandle: "opt_browse" },
-    { source: "node_welcome", target: "node_catalog", sourceHandle: "opt_pricing" },
-    { source: "node_welcome", target: "node_handoff", sourceHandle: "opt_human" },
-    { source: "node_catalog", target: "node_addon_quote", sourceHandle: "item_selected" },
-    { source: "node_catalog", target: "node_addon_quote", sourceHandle: "default" },
-    { source: "node_addon_quote", target: "node_confirm", sourceHandle: "confirmed" },
-    { source: "node_addon_quote", target: "node_confirm", sourceHandle: "default" }
+    { id: "t_bp_1", source: "node_trigger", target: "node_welcome", sourceHandle: "default" },
+    { id: "t_bp_2", source: "node_welcome", target: "node_open_survya", sourceHandle: "opt_survya", optionId: "opt_survya" },
+    { id: "t_bp_3", source: "node_welcome", target: "node_catalog", sourceHandle: "opt_browse", optionId: "opt_browse" },
+    { id: "t_bp_4", source: "node_welcome", target: "node_handoff", sourceHandle: "opt_human", optionId: "opt_human" },
+    { id: "t_bp_5", source: "node_open_survya", target: "node_confirm", sourceHandle: "completed" },
+    { id: "t_bp_6", source: "node_open_survya", target: "node_confirm", sourceHandle: "default" },
+    { id: "t_bp_7", source: "node_catalog", target: "node_addon_quote", sourceHandle: "item_selected" },
+    { id: "t_bp_8", source: "node_catalog", target: "node_addon_quote", sourceHandle: "default" },
+    { id: "t_bp_9", source: "node_addon_quote", target: "node_confirm", sourceHandle: "confirmed" },
+    { id: "t_bp_10", source: "node_addon_quote", target: "node_confirm", sourceHandle: "default" }
   ];
+
+  const existingDefault = db.prepare(`
+    SELECT id FROM conversation_flows WHERE tenant_id = ? AND is_default = 1 LIMIT 1
+  `).get(numericTenantId);
 
   const createdFlow = flowService.createFlow({
     tenant_id: numericTenantId,
-    name: blueprint.flow.name,
-    description: `Auto-generated production flow for ${blueprint.sectorName}`,
+    name: `${displayBusinessName} - ${blueprint.sectorName} Flow`,
+    description: `Auto-generated hybrid WhatsApp <-> Survya flow for ${blueprint.sectorName}`,
     category: blueprint.domain,
-    trigger_keywords: blueprint.flow.triggerKeywords,
+    trigger_keywords: mergedTriggerKeywords,
     initialNodes: nodes,
     initialTransitions: transitions,
-    is_default: 0,
+    is_default: existingDefault ? 0 : 1,
     priority: 80
   }, { id: userId, name: userId });
 
@@ -1884,7 +1936,10 @@ function importFullIndustrySuite(tenantId = 1, options = {}, userId = "system") 
   const masterResult = masterDataService.seedMastersForSector(numericTenantId, sectorCode, userId);
 
   // 2. Seed Universal Catalog Blueprint (Entity, Items, Addons, Pricing Rules, Ready Workflow)
-  const catalogResult = seedIndustryBlueprint(numericTenantId, sectorCode, userId);
+  const catalogResult = seedIndustryBlueprint(numericTenantId, sectorCode, userId, {
+    businessName: customBusinessName,
+    experienceSlug: options.experienceSlug || ""
+  });
 
   // 3. If custom business details were provided, update the newly created business_entity
   const finalBizName = customBusinessName || catalogResult.entity?.name || (SECTOR_BLUEPRINTS[sectorCode]?.entity?.name || "Business Workspace");

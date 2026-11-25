@@ -446,6 +446,21 @@ export const NODE_DEFINITIONS = [
       categoryName: '',
       inventoryMode: 'UNIT_STOCK'
     },
+    configFields: [
+      { key: 'title', label: 'Catalog Prompt Header', type: 'text', placeholder: 'Explore Our Offerings' },
+      {
+        key: 'inventoryMode',
+        label: 'Availability Mode',
+        type: 'select',
+        options: [
+          { value: 'UNIT_STOCK', label: 'Unit Stock (Retail / Food / B2B)' },
+          { value: 'DATE_RANGE', label: 'Date Range (Hospitality / Villas)' },
+          { value: 'TIME_SLOT', label: 'Time Slots (Clinic / Salon / Coaching)' },
+          { value: 'QUOTE_SERVICE', label: 'Custom Quote / Enquiry' }
+        ]
+      },
+      { key: 'pageSize', label: 'Items per WhatsApp Menu', type: 'number', min: 1, max: 10 }
+    ],
     getOutputHandles: () => [
       { id: 'item_selected', label: 'Item Selected', type: 'source' },
       { id: 'empty', label: 'Catalog Empty', type: 'source' },
@@ -465,6 +480,11 @@ export const NODE_DEFINITIONS = [
       allowAddons: true,
       allowPromoCode: true
     },
+    configFields: [
+      { key: 'title', label: 'Summary Header', type: 'text', placeholder: 'Customize & Summary' },
+      { key: 'allowAddons', label: 'Enable Add-On Upsells', type: 'boolean' },
+      { key: 'allowPromoCode', label: 'Allow Promo Codes', type: 'boolean' }
+    ],
     getOutputHandles: () => [
       { id: 'confirmed', label: 'Quote Confirmed', type: 'source' },
       { id: 'default', label: 'Continue', type: 'source' }
@@ -519,11 +539,17 @@ export const NODE_DEFINITIONS = [
     desc: 'Transitions WhatsApp customer into a personalized In-App Experience with pre-populated variables, then resumes on completion',
     defaultConfig: {
       experienceSlug: '',
-      messageText: 'Tap the button below to view all options, compare features & customize add-ons:',
-      buttonLabel: 'Open Interactive App 📱',
+      messageText: 'Tap the button below to view all options, compare features & complete your request in Survya:',
+      buttonLabel: 'Continue in Survya 📱',
       waitForCompletion: true,
       carrySessionVars: ['selected_location_id', 'selected_category_id', 'guest_name', 'phone']
     },
+    configFields: [
+      { key: 'experienceSlug', label: 'Target Survya Experience Slug (blank = auto-detect published)', type: 'text', placeholder: 'e.g. hospitality-resort-assistant' },
+      { key: 'buttonLabel', label: 'WhatsApp CTA Label', type: 'text', placeholder: 'Continue in Survya' },
+      { key: 'messageText', label: 'WhatsApp Invitation Message', type: 'textarea', maxLength: 1024 },
+      { key: 'waitForCompletion', label: 'Pause WhatsApp flow until Survya submission completes', type: 'boolean' }
+    ],
     getOutputHandles: () => [
       { id: 'completed', label: 'In-App Completed', type: 'source' },
       { id: 'cancelled', label: 'User Cancelled', type: 'source' },

@@ -967,14 +967,20 @@ function navigateSession(slug, {
     }
   }
 
+  let syncResult = null;
   if (isCompletionScreen && (session.flow_session_id || stateData.flow_session_id)) {
     try {
-      syncInappCompletionToFlowSession(session.session_token, {
+      syncResult = syncInappCompletionToFlowSession(session.session_token, {
         ...stateData,
         ...safeFormValues,
         referenceCode: goalOutcome?.referenceCode || stateData.referenceCode || null,
         targetScreenKey: nextScreenKey
       });
+      if (syncResult?.confirmationText) {
+        stateData.whatsapp_confirmation_preview = syncResult.confirmationText;
+        db.prepare("UPDATE inapp_sessions SET state_data_json = ? WHERE id = ?")
+          .run(JSON.stringify(stateData), session.id);
+      }
     } catch (syncErr) {
       console.warn("[inappRuntimeService] Auto-sync to flow session warning:", syncErr.message);
     }
@@ -989,6 +995,7 @@ function navigateSession(slug, {
     channelOwner: nextChannelOwner,
     goalStatus: nextGoalStatus,
     goalOutcome,
+    syncResult,
     optimisticLockVersion: currentLockVersion + 1
   };
 }
@@ -1113,7 +1120,7 @@ function createLinkedSession({
     isSingleUse: true
   });
 
-  const baseUrl = process.env.PUBLIC_APP_URL || "";
+  const baseUrl = String(process.env.PUBLIC_APP_URL || "").trim().replace(/\/+$/, "");
   const inappUrl = `${baseUrl}/x/${exp.slug}?ct=${ctResult.continuationToken}`;
 
   return {
@@ -1182,10 +1189,11 @@ function syncInappCompletionToFlowSession(sessionToken, payload = {}) {
     negotiation_id: payload.negotiationId || payload.negotiation_id || inappState.negotiationId || null
   };
 
-  // Find linked flow's next node
+  // Find linked flow's next node & confirmation message template
   let advancedNodeId = flowSession.current_node_id;
   const flow = db.prepare(`SELECT * FROM conversation_flows WHERE id = ?`).get(flowSession.flow_id);
   let transitions = [];
+  let flowNodes = [];
   const versionId = flowSession.flow_version_id || flow?.published_version_id || flow?.current_draft_version_id;
   if (versionId) {
     const ver = db.prepare(`SELECT * FROM conversation_flow_versions WHERE id = ?`).get(versionId);
@@ -1194,11 +1202,17 @@ function syncInappCompletionToFlowSession(sessionToken, payload = {}) {
         transitions = typeof ver.transitions_json === "string" ? JSON.parse(ver.transitions_json) : (ver.transitions_json || []);
       } catch (_) {}
     }
+    if (ver?.nodes_json) {
+      try {
+        flowNodes = typeof ver.nodes_json === "string" ? JSON.parse(ver.nodes_json) : (ver.nodes_json || []);
+      } catch (_) {}
+    }
   }
   if (transitions.length === 0 && flow?.definition_json) {
     try {
       const def = typeof flow.definition_json === "string" ? JSON.parse(flow.definition_json) : (flow.definition_json || {});
       transitions = def.transitions || [];
+      if (flowNodes.length === 0) flowNodes = def.nodes || [];
     } catch (_) {}
   }
 
@@ -1214,14 +1228,31 @@ function syncInappCompletionToFlowSession(sessionToken, payload = {}) {
     }
   }
 
+  let confirmationText = null;
+  let shouldMarkCompleted = false;
+  if (advancedNodeId && advancedNodeId !== flowSession.current_node_id && flowNodes.length > 0) {
+    const confirmNode = flowNodes.find((n) => String(n.id) === String(advancedNodeId));
+    const confirmCfg = { ...(confirmNode?.data || {}), ...(confirmNode?.config || {}) };
+    const rawTemplate = confirmCfg.text || confirmCfg.message || confirmCfg.farewellMessage || "";
+    if (rawTemplate) {
+      confirmationText = expressionEvaluator.interpolateTemplate(rawTemplate, mergedCollected);
+    }
+    const nextFromConfirm = transitions.filter((t) => (t.sourceNodeId || t.source) === advancedNodeId);
+    if (nextFromConfirm.length === 0 || ["END", "SEND_MESSAGE"].includes(confirmNode?.type)) {
+      shouldMarkCompleted = true;
+    }
+  }
+
   db.prepare(`
     UPDATE conversation_flow_sessions
     SET current_node_id = ?,
+        session_status = CASE WHEN ? = 1 THEN 'COMPLETED' ELSE session_status END,
         collected_data_json = ?,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
     advancedNodeId,
+    shouldMarkCompleted ? 1 : 0,
     JSON.stringify(mergedCollected),
     flowSession.id
   );
@@ -1234,7 +1265,180 @@ function syncInappCompletionToFlowSession(sessionToken, payload = {}) {
     currentNodeId: advancedNodeId,
     nextNodeId: advancedNodeId,
     flowAdvanced: advancedNodeId !== flowSession.current_node_id,
+    confirmationText,
     collectedData: mergedCollected
+  };
+}
+
+/**
+ * Dispatches (or records in test/simulation mode) a confirmation message back to
+ * the customer's WhatsApp thread once a Survya experience completes.
+ */
+async function dispatchWhatsappConfirmation(sessionToken, navResult = {}, opts = {}) {
+  if (!sessionToken) {
+    return { success: false, skipped: true, reason: "sessionToken is required" };
+  }
+
+  const session = db.prepare(`
+    SELECT s.*, e.name as experience_name, e.slug as experience_slug, e.tenant_id as exp_tenant_id
+    FROM inapp_sessions s
+    JOIN inapp_experiences e ON e.id = s.experience_id
+    WHERE s.session_token = ? AND s.delete_status = 0
+  `).get(String(sessionToken).trim());
+
+  if (!session) {
+    return { success: false, skipped: true, reason: "session_not_found" };
+  }
+
+  let stateData = {};
+  try {
+    stateData = JSON.parse(session.state_data_json || "{}");
+  } catch (_) {}
+
+  if (stateData.whatsapp_confirmation_sent) {
+    return {
+      success: true,
+      alreadySent: true,
+      messageId: stateData.whatsapp_confirmation_message_id || null,
+      body: stateData.whatsapp_confirmation_text || null
+    };
+  }
+
+  const rawPhone = session.visitor_phone || stateData.phone || stateData.visitor_phone || "";
+  const cleanPhone = String(rawPhone).replace(/\D/g, "");
+  if (cleanPhone.length < 7) {
+    return { success: false, skipped: true, reason: "no_customer_phone" };
+  }
+
+  const tenantId = Number(session.exp_tenant_id || session.tenant_id || 1);
+  const refCode = navResult?.goalOutcome?.referenceCode || stateData.referenceCode || stateData.transaction_ref || "CONFIRMED";
+  const selectedItemTitle = stateData.selectedItemTitle || stateData.selected_option || "";
+  const customerName = session.visitor_name || stateData.name || stateData.guest_name || "Customer";
+
+  let bodyText = navResult?.syncResult?.confirmationText || stateData.whatsapp_confirmation_preview || "";
+  if (!bodyText) {
+    const itemLine = selectedItemTitle ? `\nSelection: *${selectedItemTitle}*` : "";
+    bodyText = `✅ *${session.experience_name || "Request"} Confirmed!*\n\nHi ${customerName}, your submission is complete.\nReference: *${refCode}*${itemLine}\n\nThank you — our team will assist you right here on WhatsApp.`;
+  }
+
+  let phoneNumberId = null;
+  if (session.flow_session_id) {
+    try {
+      const flowPhoneRow = db.prepare(`
+        SELECT cf.phone_number_id
+        FROM conversation_flow_sessions cfs
+        JOIN conversation_flows cf ON cf.id = cfs.flow_id
+        WHERE cfs.id = ?
+      `).get(session.flow_session_id);
+      if (flowPhoneRow?.phone_number_id) {
+        phoneNumberId = flowPhoneRow.phone_number_id;
+      }
+    } catch (_) {}
+  }
+
+  if (!phoneNumberId) {
+    try {
+      const activeLine = db.prepare(`
+        SELECT phone_number_id
+        FROM waba_phone_numbers
+        WHERE tenant_id = ? AND status IN ('VERIFIED', 'CONNECTED', 'REGISTERED')
+          AND COALESCE(delete_status, 0) = 0
+        ORDER BY is_default DESC, id ASC
+        LIMIT 1
+      `).get(tenantId);
+      if (activeLine?.phone_number_id) {
+        phoneNumberId = activeLine.phone_number_id;
+      }
+    } catch (_) {}
+  }
+
+  const isSimulated = Boolean(
+    opts.isSimulation ||
+    process.env.NODE_ENV === "test" ||
+    String(sessionToken).startsWith("sim_") ||
+    String(session.experience_slug || "").startsWith("demo_")
+  );
+
+  let sentLive = false;
+  let sentMessageId = `survya_wa_conf_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`;
+  let sendError = null;
+
+  if (!isSimulated) {
+    try {
+      const metaWhatsAppService = require("../metaWhatsAppService");
+      const creds = metaWhatsAppService.resolveCredentials({ tenantId, phoneNumberId }, tenantId);
+      const sendRes = await metaWhatsAppService.sendTextMessage({
+        to: cleanPhone,
+        body: bodyText,
+        customCredentials: { ...creds, tenantId }
+      });
+      if (sendRes?.messageId) {
+        sentMessageId = sendRes.messageId;
+      }
+      sentLive = true;
+    } catch (err) {
+      sendError = err.message;
+      console.warn(`[inappRuntimeService] WhatsApp confirmation send note (tenant ${tenantId}):`, err.message);
+    }
+  }
+
+  try {
+    const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+    db.prepare(`
+      INSERT INTO customer_replies (
+        wa_message_id, tenant_id, from_phone, customer_name, message_type,
+        message_body, reply_text, reply_sent_at, reply_status,
+        link_id, source, is_read, user_id, received_at
+      ) VALUES (?, ?, ?, ?, 'outbound', ?, ?, ?, 'AUTO_REPLIED', ?, 'SURVYA_INAPP_CONFIRMATION', 1, 'bot', ?)
+    `).run(
+      sentMessageId,
+      tenantId,
+      cleanPhone,
+      customerName,
+      bodyText,
+      bodyText,
+      nowIso,
+      String(session.id),
+      nowIso
+    );
+  } catch (logErr) {
+    console.warn("[inappRuntimeService] Could not record confirmation row in customer_replies:", logErr.message);
+  }
+
+  try {
+    const broadcastEngine = require("../broadcastEngine");
+    broadcastEngine.emit("webhook:reply", {
+      wa_message_id: sentMessageId,
+      tenant_id: tenantId,
+      from_phone: cleanPhone,
+      customer_name: customerName,
+      message_type: "outbound",
+      message_body: bodyText,
+      reply_text: bodyText,
+      source: "SURVYA_INAPP_CONFIRMATION"
+    });
+  } catch (_) {}
+
+  stateData.whatsapp_confirmation_sent = true;
+  stateData.whatsapp_confirmation_mode = sentLive ? "LIVE_WHATSAPP" : (isSimulated ? "SIMULATED" : "LOGGED_ONLY");
+  stateData.whatsapp_confirmation_message_id = sentMessageId;
+  stateData.whatsapp_confirmation_text = bodyText;
+  if (sendError) stateData.whatsapp_confirmation_error = sendError;
+
+  db.prepare(`
+    UPDATE inapp_sessions
+    SET state_data_json = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(JSON.stringify(stateData), session.id);
+
+  return {
+    success: true,
+    sent: sentLive,
+    simulated: isSimulated,
+    messageId: sentMessageId,
+    phone: cleanPhone,
+    body: bodyText,
+    error: sendError
   };
 }
 
@@ -1321,6 +1525,7 @@ module.exports = {
   navigateSession,
   createLinkedSession,
   syncInappCompletionToFlowSession,
+  dispatchWhatsappConfirmation,
   redeemContinuation,
   switchChannelOwner,
   startVisitorSession: (slugOrOpts, opts = {}) => {
