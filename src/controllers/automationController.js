@@ -1,4 +1,5 @@
 const bookingAutomationService = require("../services/bookingAutomationService");
+const { isWorkspaceAdmin } = require("../middleware/authMiddleware");
 
 /**
  * Get current automation configuration & sync status
@@ -97,7 +98,7 @@ async function getHistory(req, res) {
   try {
     const limit = parseInt(req.query.limit, 10) || 100;
     let targetUserId = null;
-    if (req.user?.role !== "ADMIN") {
+    if (!isWorkspaceAdmin(req.user)) {
       targetUserId = req.user.id;
     } else if (req.query?.userId && req.query.userId !== "ALL") {
       targetUserId = String(req.query.userId).trim();
@@ -135,7 +136,7 @@ async function getContacts(req, res) {
   try {
     const limit = parseInt(req.query.limit, 10) || 500;
     let targetUserId = null;
-    if (req.user?.role !== "ADMIN") {
+    if (!isWorkspaceAdmin(req.user)) {
       targetUserId = req.user.id;
     } else if (req.query?.userId && req.query.userId !== "ALL") {
       targetUserId = String(req.query.userId).trim();
@@ -157,7 +158,7 @@ async function getContacts(req, res) {
  */
 async function clearContacts(req, res) {
   try {
-    const scopedUserId = req.user?.role === "ADMIN" ? null : req.user?.id;
+    const scopedUserId = isWorkspaceAdmin(req.user) ? null : req.user?.id;
     const result = bookingAutomationService.clearUploadedContacts(scopedUserId);
     return res.status(200).json({
       success: true,

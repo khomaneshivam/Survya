@@ -2186,9 +2186,9 @@ class WebhookService {
         return null;
       }
 
-      // 5. Check Auto-Reply Master Settings
-      const autoReplySettings = this.getAutoReplySettings();
-      if (tenantId === 1 && !autoReplySettings.enabled) {
+      // 5. Check Auto-Reply Master Settings (tenant-scoped)
+      const autoReplySettings = this.getAutoReplySettings({ tenantId });
+      if ((tenantId === 1 || autoReplySettings.hasTenantOverride) && !autoReplySettings.enabled) {
         console.log(`[Webhook Flow] Auto-Reply Bot is disabled in settings. Skipping automated response.`);
         return null;
       }
@@ -3693,11 +3693,30 @@ class WebhookService {
   }
 
   /**
-   * Gets current auto-reply settings
+   * Gets current auto-reply settings (tenant-scoped)
    */
-  getAutoReplySettings() {
+  getAutoReplySettings({ tenantId = 1 } = {}) {
+    const numericTenantId = Number(tenantId || 1);
+    const isPrimaryWorkspace = numericTenantId === 1;
+    let tenantSettingsMap = null;
+    if (!isPrimaryWorkspace) {
+      tenantSettingsMap = new Map();
+      try {
+        const rows = db.prepare("SELECT setting_key, setting_value FROM tenant_settings WHERE tenant_id = ?").all(numericTenantId);
+        for (const row of rows) {
+          tenantSettingsMap.set(row.setting_key, row.setting_value);
+        }
+      } catch (e) {}
+    }
+
+    const readScoped = (key) => {
+      if (isPrimaryWorkspace) return getSetting(key);
+      return tenantSettingsMap?.has(key) ? tenantSettingsMap.get(key) : null;
+    };
+
     const self = this;
     const getDefaultOpts = () => {
+      if (!isPrimaryWorkspace) return [];
       try {
         if (self && typeof self.getDefaultDynamicOptions === "function") {
           return self.getDefaultDynamicOptions();
@@ -3711,7 +3730,7 @@ class WebhookService {
 
     const rawOptions = (() => {
       try {
-        const raw = getSetting("BOT_DYNAMIC_OPTIONS");
+        const raw = readScoped("BOT_DYNAMIC_OPTIONS");
         if (!raw) return getDefaultOpts();
         const parsed = JSON.parse(raw);
         return Array.isArray(parsed) && parsed.length > 0 ? parsed : getDefaultOpts();
@@ -3742,32 +3761,48 @@ class WebhookService {
       showInGreeting: Boolean(opt.showInGreeting)
     }));
 
-    const fallbackMsg = getSetting("AUTO_REPLY_MESSAGE") || "Hi {{name}}, thank you for reaching out! We have received your message and our team will get back to you shortly.";
+    let workspaceName = isPrimaryWorkspace ? (readScoped("BOT_BUSINESS_NAME") || "Hotel Green Vally") : readScoped("BOT_BUSINESS_NAME");
+    if (!workspaceName && !isPrimaryWorkspace) {
+      try {
+        workspaceName = db.prepare("SELECT name FROM tenants WHERE id = ?").get(numericTenantId)?.name || "SARVYA Workspace";
+      } catch (e) {
+        workspaceName = "SARVYA Workspace";
+      }
+    }
+
+    const enabled = readScoped("AUTO_REPLY_ENABLED") !== "false";
+    const mode = readScoped("AUTO_REPLY_MODE") || "ONCE_PER_CONTACT";
+    const fallbackMsg = readScoped("AUTO_REPLY_MESSAGE") || "Hi {{name}}, thank you for reaching out! We have received your message and our team will get back to you shortly.";
 
     return {
-      enabled: getSetting("AUTO_REPLY_ENABLED") !== "false",
-      mode: getSetting("AUTO_REPLY_MODE") || "ONCE_PER_CONTACT",
-      engineMode: getSetting("AUTO_REPLY_ENGINE_MODE") || "HOSPITALITY_FLOW",
+      tenantId: numericTenantId,
+      hasTenantOverride: !isPrimaryWorkspace && tenantSettingsMap ? tenantSettingsMap.size > 0 : false,
+      enabled,
+      autoReplyEnabled: enabled,
+      mode,
+      autoReplyMode: mode,
+      engineMode: readScoped("AUTO_REPLY_ENGINE_MODE") || (isPrimaryWorkspace ? "HOSPITALITY_FLOW" : "FLOW_STUDIO"),
       message: fallbackMsg,
       fallbackMessage: fallbackMsg,
-      businessName: getSetting("BOT_BUSINESS_NAME") || "Hotel Green Vally",
-      welcomeMessage: getSetting("BOT_WELCOME_MESSAGE") || "👋 Hello {{name}}! Welcome to *{{business_name}}*.\n\nHow can we help you today? Select an option below or reply with your travel dates to check real-time availability and live rates! 👇",
-      welcomeMediaUrl: getSetting("BOT_WELCOME_MEDIA_URL") || "",
-      button1: getSetting("BOT_WELCOME_BUTTON_1_LABEL") || "This Weekend",
-      button2: getSetting("BOT_WELCOME_BUTTON_2_LABEL") || "Tomorrow (2 N)",
-      button3: getSetting("BOT_WELCOME_BUTTON_3_LABEL") || "Talk to Staff",
-      quoteConfirm: getSetting("BOT_QUOTE_CONFIRM_LABEL") || "Confirm Booking",
-      quoteModify: getSetting("BOT_QUOTE_MODIFY_LABEL") || "Change Dates",
-      quoteRooms: getSetting("BOT_QUOTE_ROOMS_LABEL") || "Other Rooms",
-      confirmedButton1: getSetting("BOT_CONFIRMED_BUTTON_1_LABEL") || "Facilities",
-      confirmedButton2: getSetting("BOT_CONFIRMED_BUTTON_2_LABEL") || "Dining Menu",
-      confirmedButton3: getSetting("BOT_CONFIRMED_BUTTON_3_LABEL") || "Location / Map",
-      handoffPhone: getSetting("BOT_HANDOFF_PHONE") || "+91 87665 90634",
-      handoffMessage: getSetting("BOT_HANDOFF_MESSAGE") || "🤝 *Connecting You with Our Front Desk*\n\nOur reservations staff has been alerted and will message you directly on this chat shortly.\n\n📞 For urgent queries, call us directly at {{phone}}.",
-      selectedFlowId: getSetting("DEFAULT_WHATSAPP_FLOW_ID") || "flow_hospitality_booking",
-      takeoverPauseMinutes: parseInt(getSetting("BOT_TAKEOVER_PAUSE_MINUTES") || "60", 10),
-      sessionTimeoutMinutes: parseInt(getSetting("BOT_SESSION_TIMEOUT_MINUTES") || "30", 10),
-      strictInboundOnly: getSetting("BOT_STRICT_INBOUND_ONLY") !== "false",
+      autoReplyMessage: fallbackMsg,
+      businessName: workspaceName,
+      welcomeMessage: readScoped("BOT_WELCOME_MESSAGE") || "Hello {{name}}! Welcome to *{{business_name}}*. How can we help you today?",
+      welcomeMediaUrl: readScoped("BOT_WELCOME_MEDIA_URL") || "",
+      button1: readScoped("BOT_WELCOME_BUTTON_1_LABEL") || (isPrimaryWorkspace ? "This Weekend" : "Learn More"),
+      button2: readScoped("BOT_WELCOME_BUTTON_2_LABEL") || (isPrimaryWorkspace ? "Tomorrow (2 N)" : "Pricing"),
+      button3: readScoped("BOT_WELCOME_BUTTON_3_LABEL") || "Talk to Staff",
+      quoteConfirm: readScoped("BOT_QUOTE_CONFIRM_LABEL") || "Confirm Booking",
+      quoteModify: readScoped("BOT_QUOTE_MODIFY_LABEL") || "Change Dates",
+      quoteRooms: readScoped("BOT_QUOTE_ROOMS_LABEL") || "Other Options",
+      confirmedButton1: readScoped("BOT_CONFIRMED_BUTTON_1_LABEL") || "Details",
+      confirmedButton2: readScoped("BOT_CONFIRMED_BUTTON_2_LABEL") || "Catalog",
+      confirmedButton3: readScoped("BOT_CONFIRMED_BUTTON_3_LABEL") || "Location / Map",
+      handoffPhone: readScoped("BOT_HANDOFF_PHONE") || (isPrimaryWorkspace ? "+91 87665 90634" : ""),
+      handoffMessage: readScoped("BOT_HANDOFF_MESSAGE") || "Connecting you with our support team. Our staff will reply on this chat shortly.",
+      selectedFlowId: readScoped("DEFAULT_WHATSAPP_FLOW_ID") || (isPrimaryWorkspace ? "flow_hospitality_booking" : ""),
+      takeoverPauseMinutes: parseInt(readScoped("BOT_TAKEOVER_PAUSE_MINUTES") || "60", 10),
+      sessionTimeoutMinutes: parseInt(readScoped("BOT_SESSION_TIMEOUT_MINUTES") || "30", 10),
+      strictInboundOnly: readScoped("BOT_STRICT_INBOUND_ONLY") !== "false",
       dynamicOptions: normalizedOptions
     };
   }
@@ -3842,106 +3877,127 @@ class WebhookService {
   }
 
   /**
-   * Updates auto-reply settings
+   * Updates auto-reply settings (tenant-scoped)
    */
-  saveAutoReplySettings(payload = {}) {
-    if (payload.enabled !== undefined) {
-      const isEnabled = payload.enabled === true || payload.enabled === "true";
-      setSetting("AUTO_REPLY_ENABLED", isEnabled ? "true" : "false");
+  saveAutoReplySettings(payload = {}, { tenantId = 1 } = {}) {
+    const numericTenantId = Number(tenantId || 1);
+    const isPrimaryWorkspace = numericTenantId === 1;
+    const writeScoped = (key, val) => {
+      if (isPrimaryWorkspace) {
+        setSetting(key, val);
+        return;
+      }
+      db.prepare(`
+        INSERT INTO tenant_settings (tenant_id, setting_key, setting_value)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)
+      `).run(numericTenantId, key, val === null || val === undefined ? "" : String(val));
+    };
+
+    const rawEnabled = payload.enabled !== undefined ? payload.enabled : payload.autoReplyEnabled;
+    if (rawEnabled !== undefined) {
+      const isEnabled = rawEnabled === true || rawEnabled === "true";
+      writeScoped("AUTO_REPLY_ENABLED", isEnabled ? "true" : "false");
     }
-    const mode = payload.mode || payload.auto_reply_mode;
+    const mode = payload.mode || payload.autoReplyMode || payload.auto_reply_mode;
     if (mode && (mode === "ONCE_PER_CONTACT" || mode === "ONCE_PER_24_HOURS" || mode === "ALWAYS")) {
-      setSetting("AUTO_REPLY_MODE", mode);
+      writeScoped("AUTO_REPLY_MODE", mode);
     }
     const engineMode = payload.engineMode || payload.engine_mode;
     if (engineMode && (engineMode === "HOSPITALITY_FLOW" || engineMode === "SIMPLE_GREETING" || engineMode === "FLOW_STUDIO" || engineMode === "CONVERSATION_FLOW")) {
-      setSetting("AUTO_REPLY_ENGINE_MODE", engineMode);
+      writeScoped("AUTO_REPLY_ENGINE_MODE", engineMode);
     }
-    const msg = payload.fallbackMessage !== undefined ? payload.fallbackMessage : (payload.message !== undefined ? payload.message : payload.auto_reply_message);
+    const msg = payload.fallbackMessage !== undefined
+      ? payload.fallbackMessage
+      : (payload.message !== undefined
+        ? payload.message
+        : (payload.autoReplyMessage !== undefined ? payload.autoReplyMessage : payload.auto_reply_message));
     if (msg !== undefined && String(msg).trim()) {
-      setSetting("AUTO_REPLY_MESSAGE", String(msg).trim());
+      writeScoped("AUTO_REPLY_MESSAGE", String(msg).trim());
     }
     const bName = payload.businessName || payload.business_name;
     if (bName !== undefined && String(bName).trim()) {
       const cleanBName = String(bName).trim().substring(0, 100);
-      setSetting("BOT_BUSINESS_NAME", cleanBName);
-      try {
-        db.prepare("UPDATE properties SET name = ? WHERE id = 1").run(cleanBName);
-      } catch (e) {}
+      writeScoped("BOT_BUSINESS_NAME", cleanBName);
+      if (isPrimaryWorkspace) {
+        try {
+          db.prepare("UPDATE properties SET name = ? WHERE id = 1").run(cleanBName);
+        } catch (e) {}
+      }
     }
     const welcome = payload.welcomeMessage || payload.welcome_message;
     if (welcome !== undefined && String(welcome).trim()) {
-      setSetting("BOT_WELCOME_MESSAGE", String(welcome).trim());
+      writeScoped("BOT_WELCOME_MESSAGE", String(welcome).trim());
     }
     if (payload.welcomeMediaUrl !== undefined || payload.welcome_media_url !== undefined) {
       const media = payload.welcomeMediaUrl ?? payload.welcome_media_url;
-      setSetting("BOT_WELCOME_MEDIA_URL", String(media || "").trim());
+      writeScoped("BOT_WELCOME_MEDIA_URL", String(media || "").trim());
     }
     if (payload.button1 !== undefined || payload.button_1 !== undefined || payload.welcomeButton1 !== undefined) {
       const b1 = payload.button1 ?? payload.button_1 ?? payload.welcomeButton1;
-      setSetting("BOT_WELCOME_BUTTON_1_LABEL", shortenButtonTitle(String(b1 || "").trim() || "This Weekend"));
+      writeScoped("BOT_WELCOME_BUTTON_1_LABEL", shortenButtonTitle(String(b1 || "").trim() || "This Weekend"));
     }
     if (payload.button2 !== undefined || payload.button_2 !== undefined || payload.welcomeButton2 !== undefined) {
       const b2 = payload.button2 ?? payload.button_2 ?? payload.welcomeButton2;
-      setSetting("BOT_WELCOME_BUTTON_2_LABEL", shortenButtonTitle(String(b2 || "").trim() || "Tomorrow (2 N)"));
+      writeScoped("BOT_WELCOME_BUTTON_2_LABEL", shortenButtonTitle(String(b2 || "").trim() || "Tomorrow (2 N)"));
     }
     if (payload.button3 !== undefined || payload.button_3 !== undefined || payload.welcomeButton3 !== undefined) {
       const b3 = payload.button3 ?? payload.button_3 ?? payload.welcomeButton3;
-      setSetting("BOT_WELCOME_BUTTON_3_LABEL", shortenButtonTitle(String(b3 || "").trim() || "Talk to Staff"));
+      writeScoped("BOT_WELCOME_BUTTON_3_LABEL", shortenButtonTitle(String(b3 || "").trim() || "Talk to Staff"));
     }
     if (payload.quoteConfirm !== undefined || payload.quote_confirm !== undefined) {
       const qc = payload.quoteConfirm ?? payload.quote_confirm;
-      setSetting("BOT_QUOTE_CONFIRM_LABEL", shortenButtonTitle(String(qc || "").trim() || "Confirm Booking"));
+      writeScoped("BOT_QUOTE_CONFIRM_LABEL", shortenButtonTitle(String(qc || "").trim() || "Confirm Booking"));
     }
     if (payload.quoteModify !== undefined || payload.quote_modify !== undefined) {
       const qm = payload.quoteModify ?? payload.quote_modify;
-      setSetting("BOT_QUOTE_MODIFY_LABEL", shortenButtonTitle(String(qm || "").trim() || "Change Dates"));
+      writeScoped("BOT_QUOTE_MODIFY_LABEL", shortenButtonTitle(String(qm || "").trim() || "Change Dates"));
     }
     if (payload.quoteRooms !== undefined || payload.quote_rooms !== undefined) {
       const qr = payload.quoteRooms ?? payload.quote_rooms;
-      setSetting("BOT_QUOTE_ROOMS_LABEL", shortenButtonTitle(String(qr || "").trim() || "Other Rooms"));
+      writeScoped("BOT_QUOTE_ROOMS_LABEL", shortenButtonTitle(String(qr || "").trim() || "Other Rooms"));
     }
     if (payload.confirmedButton1 !== undefined || payload.confirmed_button_1 !== undefined) {
       const cb1 = payload.confirmedButton1 ?? payload.confirmed_button_1;
-      setSetting("BOT_CONFIRMED_BUTTON_1_LABEL", shortenButtonTitle(String(cb1 || "").trim() || "Facilities"));
+      writeScoped("BOT_CONFIRMED_BUTTON_1_LABEL", shortenButtonTitle(String(cb1 || "").trim() || "Facilities"));
     }
     if (payload.confirmedButton2 !== undefined || payload.confirmed_button_2 !== undefined) {
       const cb2 = payload.confirmedButton2 ?? payload.confirmed_button_2;
-      setSetting("BOT_CONFIRMED_BUTTON_2_LABEL", shortenButtonTitle(String(cb2 || "").trim() || "Dining Menu"));
+      writeScoped("BOT_CONFIRMED_BUTTON_2_LABEL", shortenButtonTitle(String(cb2 || "").trim() || "Dining Menu"));
     }
     if (payload.confirmedButton3 !== undefined || payload.confirmed_button_3 !== undefined) {
       const cb3 = payload.confirmedButton3 ?? payload.confirmed_button_3;
-      setSetting("BOT_CONFIRMED_BUTTON_3_LABEL", shortenButtonTitle(String(cb3 || "").trim() || "Location / Map"));
+      writeScoped("BOT_CONFIRMED_BUTTON_3_LABEL", shortenButtonTitle(String(cb3 || "").trim() || "Location / Map"));
     }
     const phone = payload.handoffPhone || payload.handoff_phone;
     if (phone !== undefined && String(phone).trim()) {
-      setSetting("BOT_HANDOFF_PHONE", String(phone).trim());
+      writeScoped("BOT_HANDOFF_PHONE", String(phone).trim());
     }
     const handoffMsg = payload.handoffMessage || payload.handoff_message;
     if (handoffMsg !== undefined && String(handoffMsg).trim()) {
-      setSetting("BOT_HANDOFF_MESSAGE", String(handoffMsg).trim());
+      writeScoped("BOT_HANDOFF_MESSAGE", String(handoffMsg).trim());
     }
     const flowId = payload.selectedFlowId !== undefined ? payload.selectedFlowId : (payload.flowId !== undefined ? payload.flowId : payload.flow_id);
     if (flowId !== undefined) {
-      setSetting("DEFAULT_WHATSAPP_FLOW_ID", flowId ? String(flowId).trim() : "");
+      writeScoped("DEFAULT_WHATSAPP_FLOW_ID", flowId ? String(flowId).trim() : "");
     }
     const pauseMins = payload.takeoverPauseMinutes || payload.takeover_pause_minutes;
     if (pauseMins !== undefined) {
       const parsed = parseInt(pauseMins, 10);
       if (!isNaN(parsed) && parsed >= 1) {
-        setSetting("BOT_TAKEOVER_PAUSE_MINUTES", String(parsed));
+        writeScoped("BOT_TAKEOVER_PAUSE_MINUTES", String(parsed));
       }
     }
     const sessionTimeout = payload.sessionTimeoutMinutes ?? payload.session_timeout_minutes;
     if (sessionTimeout !== undefined) {
       const parsedTimeout = parseInt(sessionTimeout, 10);
       if (!isNaN(parsedTimeout) && parsedTimeout >= 1) {
-        setSetting("BOT_SESSION_TIMEOUT_MINUTES", String(parsedTimeout));
+        writeScoped("BOT_SESSION_TIMEOUT_MINUTES", String(parsedTimeout));
       }
     }
     if (payload.strictInboundOnly !== undefined || payload.strict_inbound_only !== undefined) {
       const strictVal = payload.strictInboundOnly ?? payload.strict_inbound_only;
-      setSetting("BOT_STRICT_INBOUND_ONLY", strictVal ? "true" : "false");
+      writeScoped("BOT_STRICT_INBOUND_ONLY", strictVal ? "true" : "false");
     }
     if (payload.dynamicOptions !== undefined) {
       let opts = payload.dynamicOptions;
@@ -3970,10 +4026,10 @@ class WebhookService {
           isActive: opt.isActive !== false && opt.active !== false,
           showInGreeting: Boolean(opt.showInGreeting)
         }));
-        setSetting("BOT_DYNAMIC_OPTIONS", JSON.stringify(normalized));
+        writeScoped("BOT_DYNAMIC_OPTIONS", JSON.stringify(normalized));
       }
     }
-    return this.getAutoReplySettings();
+    return this.getAutoReplySettings({ tenantId: numericTenantId });
   }
 
   /**

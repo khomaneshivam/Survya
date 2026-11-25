@@ -2,6 +2,7 @@ const inventoryService = require("../services/inventoryService");
 const enquiryService = require("../services/enquiryService");
 const quotationService = require("../services/quotationService");
 const { db } = require("../config/database");
+const { isWorkspaceAdmin } = require("../middleware/authMiddleware");
 
 /**
  * GET /api/v1/dashboard/summary
@@ -99,6 +100,7 @@ async function updateDailyInventory(req, res) {
 async function listEnquiries(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
+    const workspaceAdmin = isWorkspaceAdmin(req.user);
     const filters = {
       status: req.query?.status,
       search: req.query?.search,
@@ -107,9 +109,9 @@ async function listEnquiries(req, res) {
       date_to: req.query?.date_to,
       limit: req.query?.limit,
       offset: req.query?.offset,
-      scopedUserId: req.user?.role === "ADMIN" ? null : req.user?.id,
-      scopedUserName: req.user?.role === "ADMIN" ? null : req.user?.name,
-      isAdmin: req.user?.role === "ADMIN"
+      scopedUserId: workspaceAdmin ? null : req.user?.id,
+      scopedUserName: workspaceAdmin ? null : req.user?.name,
+      isAdmin: workspaceAdmin
     };
     const result = enquiryService.listEnquiries(tenantId, filters);
     return res.json({ success: true, ...result });
@@ -144,7 +146,7 @@ async function getEnquiry(req, res) {
     if (!enquiry) {
       return res.status(404).json({ success: false, message: "Enquiry not found." });
     }
-    if (req.user?.role !== "ADMIN" && enquiry.assigned_to !== req.user.id && enquiry.assigned_to !== req.user.name) {
+    if (!isWorkspaceAdmin(req.user) && enquiry.assigned_to !== req.user.id && enquiry.assigned_to !== req.user.name) {
       return res.status(403).json({ success: false, message: "Access denied. You are not assigned to this enquiry." });
     }
     return res.json({ success: true, data: enquiry });
@@ -165,7 +167,7 @@ async function updateEnquiry(req, res) {
     if (!existing) {
       return res.status(404).json({ success: false, message: "Enquiry not found." });
     }
-    if (req.user?.role !== "ADMIN" && existing.assigned_to !== req.user.id && existing.assigned_to !== req.user.name) {
+    if (!isWorkspaceAdmin(req.user) && existing.assigned_to !== req.user.id && existing.assigned_to !== req.user.name) {
       return res.status(403).json({ success: false, message: "Access denied. You cannot modify enquiries assigned to another user." });
     }
     const updated = enquiryService.updateEnquiry(tenantId, req.params.id, req.body, userId);
@@ -187,7 +189,7 @@ async function createQuote(req, res) {
     if (!enquiry) {
       return res.status(404).json({ success: false, message: "Enquiry not found." });
     }
-    if (req.user?.role !== "ADMIN" && enquiry.assigned_to !== req.user.id && enquiry.assigned_to !== req.user.name) {
+    if (!isWorkspaceAdmin(req.user) && enquiry.assigned_to !== req.user.id && enquiry.assigned_to !== req.user.name) {
       return res.status(403).json({ success: false, message: "Access denied. You cannot quote enquiries assigned to another user." });
     }
     const quote = quotationService.createQuote(tenantId, req.params.id, req.body, userId);
@@ -209,7 +211,7 @@ async function getQuote(req, res) {
       return res.status(404).json({ success: false, message: "Quotation not found." });
     }
     const enquiry = enquiryService.getEnquiryById(tenantId, quote.enquiry_id);
-    if (req.user?.role !== "ADMIN" && enquiry && enquiry.assigned_to !== req.user.id && enquiry.assigned_to !== req.user.name) {
+    if (!isWorkspaceAdmin(req.user) && enquiry && enquiry.assigned_to !== req.user.id && enquiry.assigned_to !== req.user.name) {
       return res.status(403).json({ success: false, message: "Access denied to this quotation." });
     }
     return res.json({ success: true, data: quote });
@@ -231,7 +233,7 @@ async function sendQuote(req, res) {
       return res.status(404).json({ success: false, message: "Quotation not found." });
     }
     const enquiry = enquiryService.getEnquiryById(tenantId, quote.enquiry_id);
-    if (req.user?.role !== "ADMIN" && enquiry && enquiry.assigned_to !== req.user.id && enquiry.assigned_to !== req.user.name) {
+    if (!isWorkspaceAdmin(req.user) && enquiry && enquiry.assigned_to !== req.user.id && enquiry.assigned_to !== req.user.name) {
       return res.status(403).json({ success: false, message: "Access denied to send this quotation." });
     }
     const result = await quotationService.sendQuoteViaWhatsApp(tenantId, req.params.id, userId);
@@ -256,8 +258,8 @@ async function searchContacts(req, res) {
     `;
     const params = [tenantId];
 
-    // Non-admin users strictly see only contacts associated with their assigned enquiries or conversations
-    if (req.user?.role !== "ADMIN") {
+    // Non-admin workspace operators strictly see only contacts associated with their assigned enquiries or conversations
+    if (!isWorkspaceAdmin(req.user)) {
       sql += ` AND (
         EXISTS (SELECT 1 FROM booking_enquiries e WHERE e.contact_id = c.id AND (e.assigned_to = ? OR e.assigned_to = ?))
         OR EXISTS (SELECT 1 FROM customer_replies cr WHERE cr.from_phone = c.phone_e164 AND (cr.user_id = ? OR cr.campaign_id IN (SELECT id FROM campaigns WHERE user_id = ?)))

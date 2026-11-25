@@ -5,6 +5,18 @@ const flowService = require("../services/flowService");
 const flowCryptoService = require("../services/flowCryptoService");
 const metaWhatsAppService = require("../services/metaWhatsAppService");
 const { STARTER_TEMPLATES } = require("../services/flowStarterTemplates");
+const { isPlatformAdmin, isWorkspaceAdmin } = require("../middleware/authMiddleware");
+
+function getFlowAccess(req) {
+  const user = req.user;
+  if (!user) return null;
+  return {
+    userId: user.id,
+    tenantId: Number(user.tenant_id || 1),
+    isPlatform: isPlatformAdmin(user),
+    isAdmin: isWorkspaceAdmin(user)
+  };
+}
 
 /**
  * Helper to check if WhatsApp Flows is enabled on the platform
@@ -24,9 +36,9 @@ function logAudit(userId, action, targetId, details, req) {
   try {
     const ip = req?.headers?.["x-forwarded-for"] || req?.socket?.remoteAddress || "";
     db.prepare(`
-      INSERT INTO audit_logs (user_id, action, target_id, details, ip_address, created_at)
-      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `).run(userId, action, targetId || null, details || null, ip);
+      INSERT INTO audit_logs (user_id, tenant_id, action, target_id, details, ip_address, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(userId, Number(req?.user?.tenant_id || 1), action, targetId || null, details || null, ip);
   } catch (e) {
     // Audit log shouldn't fail the request
   }
@@ -37,6 +49,11 @@ function logAudit(userId, action, targetId, details, req) {
  */
 async function listFlows(req, res) {
   try {
+    const access = getFlowAccess(req);
+    if (!access) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+
     const enabled = isFlowsEnabled();
     if (!enabled) {
       return res.status(403).json({
@@ -46,11 +63,10 @@ async function listFlows(req, res) {
     }
 
     const { search, category, status } = req.query || {};
-    const userId = req.user?.id;
-    const isAdmin = req.user?.role === "ADMIN";
+    const { userId, tenantId, isAdmin } = access;
 
     let sql = `
-      SELECT f.id, f.user_id, f.name, f.description, f.meta_flow_id, f.status, 
+      SELECT f.id, f.tenant_id, f.user_id, f.name, f.description, f.meta_flow_id, f.status, 
              f.categories, f.json_version, f.data_api_version, f.endpoint_uri, 
              f.preview_url, f.validation_errors, f.sync_status, f.last_sync_at,
              f.created_at, f.updated_at,
@@ -58,11 +74,11 @@ async function listFlows(req, res) {
              u.name as creator_name
       FROM whatsapp_flows f
       LEFT JOIN users u ON f.user_id = u.id
-      WHERE 1=1
+      WHERE COALESCE(f.tenant_id, 1) = ?
     `;
-    const params = [];
+    const params = [tenantId];
 
-    // Access control: Admin sees all, non-admin strictly sees only flows they created
+    // Access control: Workspace Admin sees workspace flows; regular user sees only flows they created
     if (!isAdmin) {
       sql += " AND f.user_id = ?";
       params.push(userId);
@@ -124,9 +140,12 @@ async function getStarterTemplates(req, res) {
  */
 async function getFlow(req, res) {
   try {
+    const access = getFlowAccess(req);
+    if (!access) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
     const { flowId } = req.params;
-    const userId = req.user?.id || 1;
-    const isAdmin = req.user?.role === "ADMIN" || !req.user;
+    const { userId, tenantId, isPlatform, isAdmin } = access;
 
     const flow = db.prepare(`
       SELECT f.*, u.name as creator_name
@@ -139,6 +158,9 @@ async function getFlow(req, res) {
       return res.status(404).json({ success: false, message: "Flow not found." });
     }
 
+    if (!isPlatform && Number(flow.tenant_id || 1) !== tenantId) {
+      return res.status(403).json({ success: false, message: "Access denied to this flow." });
+    }
     if (!isAdmin && flow.user_id !== userId) {
       return res.status(403).json({ success: false, message: "Access denied to this flow." });
     }
@@ -147,10 +169,10 @@ async function getFlow(req, res) {
       SELECT id, flow_token, wa_message_id, from_phone, customer_name,
              parsed_data, created_at
       FROM flow_responses
-      WHERE flow_id = ? OR flow_id = ?
+      WHERE (flow_id = ? OR flow_id = ?) AND COALESCE(tenant_id, 1) = ?
       ORDER BY id DESC
       LIMIT 10
-    `).all(flow.id, flow.meta_flow_id || flow.id);
+    `).all(flow.id, flow.meta_flow_id || flow.id, Number(flow.tenant_id || 1));
 
     return res.status(200).json({
       success: true,
@@ -176,8 +198,12 @@ async function getFlow(req, res) {
  */
 async function createFlow(req, res) {
   try {
+    const access = getFlowAccess(req);
+    if (!access) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
     const { name, description, categories, flow_json, endpoint_uri, template_key } = req.body || {};
-    const userId = req.user?.id || req.body?.user_id || 1;
+    const { userId, tenantId } = access;
 
     if (!name || !String(name).trim()) {
       return res.status(400).json({ success: false, message: "Flow name is required." });
@@ -219,12 +245,13 @@ async function createFlow(req, res) {
 
     db.prepare(`
       INSERT INTO whatsapp_flows (
-        id, user_id, name, description, meta_flow_id, status, categories,
+        id, tenant_id, user_id, name, description, meta_flow_id, status, categories,
         flow_json, json_version, data_api_version, endpoint_uri, preview_url,
         validation_errors, sync_status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '[]', 'LOCAL', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '[]', 'LOCAL', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `).run(
       flowId,
+      tenantId,
       userId,
       String(name).trim(),
       description ? String(description).trim() : null,
@@ -244,6 +271,7 @@ async function createFlow(req, res) {
       message: initialStatus === "PUBLISHED" ? "Flow created and published successfully!" : "Flow created successfully as local draft.",
       data: {
         id: flowId,
+        tenant_id: tenantId,
         name: String(name).trim(),
         status: initialStatus,
         meta_status: initialStatus,
@@ -262,16 +290,22 @@ async function createFlow(req, res) {
  */
 async function updateFlow(req, res) {
   try {
+    const access = getFlowAccess(req);
+    if (!access) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
     const { flowId } = req.params;
     const { name, description, categories, flow_json, endpoint_uri } = req.body || {};
-    const userId = req.user?.id || 1;
-    const isAdmin = req.user?.role === "ADMIN" || !req.user;
+    const { userId, tenantId, isPlatform, isAdmin } = access;
 
     const flow = db.prepare("SELECT * FROM whatsapp_flows WHERE id = ?").get(flowId);
     if (!flow) {
       return res.status(404).json({ success: false, message: "Flow not found." });
     }
 
+    if (!isPlatform && Number(flow.tenant_id || 1) !== tenantId) {
+      return res.status(403).json({ success: false, message: "Access denied. Only the owner or an administrator can edit this flow." });
+    }
     if (!isAdmin && flow.user_id !== userId) {
       return res.status(403).json({ success: false, message: "Access denied. Only the owner or an administrator can edit this flow." });
     }
@@ -331,17 +365,23 @@ async function updateFlow(req, res) {
  */
 async function pushFlowToMeta(req, res) {
   try {
+    const access = getFlowAccess(req);
+    if (!access) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
     const { flowId } = req.params;
-    const userId = req.user?.id || 1;
-    const isAdmin = req.user?.role === "ADMIN" || !req.user;
+    const { userId, tenantId, isPlatform, isAdmin } = access;
 
     if (!isAdmin) {
-      return res.status(403).json({ success: false, message: "Only administrators can push Flows to Meta." });
+      return res.status(403).json({ success: false, message: "Access restricted: Only a Workspace Administrator can push Flows to Meta." });
     }
 
     const flow = db.prepare("SELECT * FROM whatsapp_flows WHERE id = ?").get(flowId);
     if (!flow) {
       return res.status(404).json({ success: false, message: "Flow not found." });
+    }
+    if (!isPlatform && Number(flow.tenant_id || 1) !== tenantId) {
+      return res.status(403).json({ success: false, message: "Access denied to this flow." });
     }
 
     let metaFlowId = flow.meta_flow_id;
@@ -415,17 +455,23 @@ async function pushFlowToMeta(req, res) {
  */
 async function publishFlow(req, res) {
   try {
+    const access = getFlowAccess(req);
+    if (!access) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
     const flowId = req.params?.flowId || req.params?.id;
-    const userId = req.user?.id;
-    const isAdmin = req.user?.role === "ADMIN";
+    const { userId, tenantId, isPlatform, isAdmin } = access;
 
     if (!isAdmin) {
-      return res.status(403).json({ success: false, message: "Access restricted: Only an Administrator can publish Flows." });
+      return res.status(403).json({ success: false, message: "Access restricted: Only a Workspace Administrator can publish Flows." });
     }
 
     const flow = db.prepare("SELECT * FROM whatsapp_flows WHERE id = ?").get(flowId);
     if (!flow) {
       return res.status(404).json({ success: false, message: "Flow not found." });
+    }
+    if (!isPlatform && Number(flow.tenant_id || 1) !== tenantId) {
+      return res.status(403).json({ success: false, message: "Access denied to this flow." });
     }
 
     const forceLocal = req.body?.forceLocal || req.query?.forceLocal === 'true';
@@ -477,17 +523,23 @@ async function publishFlow(req, res) {
  */
 async function deprecateFlow(req, res) {
   try {
+    const access = getFlowAccess(req);
+    if (!access) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
     const { flowId } = req.params;
-    const userId = req.user?.id || 1;
-    const isAdmin = req.user?.role === "ADMIN" || !req.user;
+    const { userId, tenantId, isPlatform, isAdmin } = access;
 
     if (!isAdmin) {
-      return res.status(403).json({ success: false, message: "Only administrators can deprecate Flows." });
+      return res.status(403).json({ success: false, message: "Access restricted: Only a Workspace Administrator can deprecate Flows." });
     }
 
     const flow = db.prepare("SELECT * FROM whatsapp_flows WHERE id = ?").get(flowId);
     if (!flow) {
       return res.status(404).json({ success: false, message: "Flow not found." });
+    }
+    if (!isPlatform && Number(flow.tenant_id || 1) !== tenantId) {
+      return res.status(403).json({ success: false, message: "Access denied to this flow." });
     }
 
     if (flow.meta_flow_id) {
@@ -521,17 +573,23 @@ async function deprecateFlow(req, res) {
  */
 async function deleteFlow(req, res) {
   try {
+    const access = getFlowAccess(req);
+    if (!access) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
     const flowId = req.params?.flowId || req.params?.id;
-    const userId = req.user?.id;
-    const isAdmin = req.user?.role === "ADMIN";
+    const { userId, tenantId, isPlatform, isAdmin } = access;
 
     if (!isAdmin) {
-      return res.status(403).json({ success: false, message: "Access denied: Only an Administrator can delete this Flow." });
+      return res.status(403).json({ success: false, message: "Access denied: Only a Workspace Administrator can delete this Flow." });
     }
 
     const flow = db.prepare("SELECT * FROM whatsapp_flows WHERE id = ?").get(flowId);
     if (!flow) {
       return res.status(404).json({ success: false, message: "Flow not found." });
+    }
+    if (!isPlatform && Number(flow.tenant_id || 1) !== tenantId) {
+      return res.status(403).json({ success: false, message: "Access denied to this flow." });
     }
 
     // If registered on Meta and in DRAFT, attempt to delete on Meta
@@ -561,14 +619,17 @@ async function deleteFlow(req, res) {
  */
 async function syncMeta(req, res) {
   try {
-    const userId = req.user?.id || 1;
-    const isAdmin = req.user?.role === "ADMIN" || !req.user;
+    const access = getFlowAccess(req);
+    if (!access) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+    const { userId, tenantId, isAdmin } = access;
 
     if (!isAdmin) {
-      return res.status(403).json({ success: false, message: "Only administrators can synchronize with Meta." });
+      return res.status(403).json({ success: false, message: "Access restricted: Only a Workspace Administrator can synchronize with Meta." });
     }
 
-    const result = await flowService.syncFlowsWithMeta({ userId });
+    const result = await flowService.syncFlowsWithMeta({ userId, tenantId });
     logAudit(userId, "SYNC_FLOWS_META", null, `Synced ${result.totalMetaFlows} flows from Meta`, req);
 
     return res.status(200).json({
@@ -587,9 +648,13 @@ async function syncMeta(req, res) {
  */
 async function sendTestFlow(req, res) {
   try {
+    const access = getFlowAccess(req);
+    if (!access) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
     const { flowId } = req.params;
     const { to, headerText, bodyText, footerText, ctaText } = req.body || {};
-    const userId = req.user?.id || 1;
+    const { userId, tenantId, isPlatform, isAdmin } = access;
 
     if (!to || !String(to).trim()) {
       return res.status(400).json({ success: false, message: "Recipient phone number is required." });
@@ -598,6 +663,12 @@ async function sendTestFlow(req, res) {
     const flow = db.prepare("SELECT * FROM whatsapp_flows WHERE id = ?").get(flowId);
     if (!flow) {
       return res.status(404).json({ success: false, message: "Flow not found." });
+    }
+    if (!isPlatform && Number(flow.tenant_id || 1) !== tenantId) {
+      return res.status(403).json({ success: false, message: "Access denied to this flow." });
+    }
+    if (!isAdmin && flow.user_id !== userId) {
+      return res.status(403).json({ success: false, message: "Access denied to this flow." });
     }
 
     if (!flow.meta_flow_id) {
@@ -647,9 +718,12 @@ async function sendTestFlow(req, res) {
  */
 async function listResponses(req, res) {
   try {
+    const access = getFlowAccess(req);
+    if (!access) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
     const { flowId, search, limit = 50, offset = 0 } = req.query;
-    const userId = req.user?.id || 1;
-    const isAdmin = req.user?.role === "ADMIN" || !req.user;
+    const { userId, tenantId, isAdmin } = access;
 
     let sql = `
       SELECT r.id, r.flow_id, r.flow_token, r.wa_message_id, r.from_phone,
@@ -657,9 +731,9 @@ async function listResponses(req, res) {
              f.name as flow_name, f.meta_flow_id
       FROM flow_responses r
       LEFT JOIN whatsapp_flows f ON (r.flow_id = f.id OR r.flow_id = f.meta_flow_id)
-      WHERE 1=1
+      WHERE COALESCE(f.tenant_id, r.tenant_id, 1) = ?
     `;
-    const params = [];
+    const params = [tenantId];
 
     if (!isAdmin) {
       sql += " AND (r.user_id = ? OR f.user_id = ?)";
@@ -727,10 +801,13 @@ async function getCryptoConfig(req, res) {
  */
 async function generateKeyPair(req, res) {
   try {
-    const userId = req.user?.id || 1;
-    const isAdmin = req.user?.role === "ADMIN" || !req.user;
+    const access = getFlowAccess(req);
+    if (!access) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+    const { userId, isPlatform } = access;
 
-    if (!isAdmin) {
+    if (!isPlatform) {
       return res.status(403).json({ success: false, message: "Access restricted: Only an Administrator can generate encryption keys." });
     }
 
@@ -757,10 +834,13 @@ async function generateKeyPair(req, res) {
  */
 async function savePrivateKey(req, res) {
   try {
-    const userId = req.user?.id || 1;
-    const isAdmin = req.user?.role === "ADMIN" || !req.user;
+    const access = getFlowAccess(req);
+    if (!access) {
+      return res.status(401).json({ success: false, message: "Authentication required." });
+    }
+    const { userId, isPlatform } = access;
 
-    if (!isAdmin) {
+    if (!isPlatform) {
       return res.status(403).json({ success: false, message: "Access restricted: Only an Administrator can save encryption keys." });
     }
 

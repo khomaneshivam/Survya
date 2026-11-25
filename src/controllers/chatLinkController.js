@@ -2,6 +2,7 @@ const chatLinkService = require("../services/chatLinkService");
 const hospitalityConfigService = require("../services/hospitalityConfigService");
 const { generateQrSvg } = require("../utils/qrCodeUtil");
 const config = require("../config/env");
+const { isWorkspaceAdmin } = require("../middleware/authMiddleware");
 
 function getBaseUrl(req) {
   if (config.PUBLIC_APP_URL) {
@@ -38,7 +39,7 @@ async function listLinks(req, res) {
     const { status, category, search, limit, offset, userId } = req.query || {};
     const tenantId = req.user?.tenant_id || 1;
     const reqUserId = req.user?.id;
-    const isAdmin = req.user?.role === "ADMIN";
+    const isAdmin = isWorkspaceAdmin(req.user);
     const baseUrl = getBaseUrl(req);
 
     // If admin requested filter by userId, use that. If regular user, strictly scope to own account.
@@ -197,7 +198,7 @@ async function getLink(req, res) {
     const { id } = req.params;
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id;
-    const isAdmin = req.user?.role === "ADMIN";
+    const isAdmin = isWorkspaceAdmin(req.user);
     const baseUrl = getBaseUrl(req);
 
     const link = chatLinkService.getLinkByIdOrSlug(id, {
@@ -228,7 +229,7 @@ async function updateLink(req, res) {
     const { id } = req.params;
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id;
-    const isAdmin = req.user?.role === "ADMIN";
+    const isAdmin = isWorkspaceAdmin(req.user);
     const baseUrl = getBaseUrl(req);
 
     const updated = chatLinkService.updateLink(id, req.body || {}, {
@@ -256,7 +257,7 @@ async function toggleLinkStatus(req, res) {
     const { id } = req.params;
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id;
-    const isAdmin = req.user?.role === "ADMIN";
+    const isAdmin = isWorkspaceAdmin(req.user);
     const baseUrl = getBaseUrl(req);
 
     const existing = chatLinkService.getLinkByIdOrSlug(id, {
@@ -297,7 +298,7 @@ async function deleteLink(req, res) {
     const { id } = req.params;
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id;
-    const isAdmin = req.user?.role === "ADMIN";
+    const isAdmin = isWorkspaceAdmin(req.user);
 
     const ok = chatLinkService.deleteLink(id, {
       tenantId,

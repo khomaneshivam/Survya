@@ -92,6 +92,7 @@ export default function SettingsPage() {
   const [checkoutGstin, setCheckoutGstin] = useState('');
   const [checkoutAddress, setCheckoutAddress] = useState('');
   const [checkoutBreakdown, setCheckoutBreakdown] = useState(null);
+  const [checkoutOrder, setCheckoutOrder] = useState(null);
   const [processingCheckout, setProcessingCheckout] = useState(false);
 
   // Workspace Team State (/api/v1/workspace/users)
@@ -196,19 +197,19 @@ export default function SettingsPage() {
     }
   }, [token]);
 
-  // Load Auto-reply settings
+  // Load Auto-reply settings (tenant-scoped)
   const loadAutoReplySettings = useCallback(async () => {
     try {
-      const res = await fetch('/api/settings', {
+      const res = await fetch('/api/settings/auto-reply', {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
-      if (data.success) {
-        const s = data.settings || data.data || {};
+      if (data.success && data.data) {
+        const s = data.data;
         setAutoReplySettings({
-          autoReplyEnabled: s.AUTO_REPLY_ENABLED === 'true' || s.AUTO_REPLY_ENABLED === true,
-          autoReplyMode: s.AUTO_REPLY_MODE || 'ONCE_PER_CONTACT',
-          autoReplyMessage: s.AUTO_REPLY_MESSAGE || ''
+          autoReplyEnabled: s.autoReplyEnabled ?? s.enabled ?? true,
+          autoReplyMode: s.autoReplyMode || s.mode || 'ONCE_PER_CONTACT',
+          autoReplyMessage: s.autoReplyMessage ?? s.fallbackMessage ?? s.message ?? ''
         });
       }
     } catch (e) {}
@@ -411,10 +412,21 @@ export default function SettingsPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify(autoReplySettings)
+        body: JSON.stringify({
+          enabled: autoReplySettings.autoReplyEnabled,
+          mode: autoReplySettings.autoReplyMode,
+          message: autoReplySettings.autoReplyMessage
+        })
       });
       const data = await res.json();
       if (data.success) {
+        if (data.data) {
+          setAutoReplySettings({
+            autoReplyEnabled: data.data.autoReplyEnabled ?? data.data.enabled ?? true,
+            autoReplyMode: data.data.autoReplyMode || data.data.mode || 'ONCE_PER_CONTACT',
+            autoReplyMessage: data.data.autoReplyMessage ?? data.data.fallbackMessage ?? data.data.message ?? ''
+          });
+        }
         flashSuccess('Auto-reply configuration saved.');
       } else {
         flashError(data.message || 'Failed to save auto-reply settings.');
@@ -426,7 +438,9 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleOpenCheckout(planCode) {
+  async function handleOpenCheckout(planCode, overrides = {}) {
+    const nextCycle = overrides.billingCycle || billingCycle;
+    const nextStateCode = overrides.customerStateCode || customerStateCode;
     setSelectedPlan(planCode);
     setShowCheckoutModal(true);
     try {
@@ -438,8 +452,8 @@ export default function SettingsPage() {
         },
         body: JSON.stringify({
           planCode,
-          billingCycle,
-          customerStateCode,
+          billingCycle: nextCycle,
+          customerStateCode: nextStateCode,
           gstin: checkoutGstin,
           billingAddress: checkoutAddress
         })
@@ -447,43 +461,101 @@ export default function SettingsPage() {
       const data = await res.json();
       if (data.success) {
         setCheckoutBreakdown(data.breakdown);
+        setCheckoutOrder(data);
+      } else {
+        setCheckoutOrder(null);
+        flashError(data.message || 'Unable to prepare subscription checkout.');
       }
-    } catch (e) {}
+    } catch (e) {
+      setCheckoutOrder(null);
+    }
+  }
+
+  function loadRazorpaySdk() {
+    if (typeof window !== 'undefined' && window.Razorpay) {
+      return Promise.resolve(true);
+    }
+    return new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      script.onload = () => resolve(Boolean(window.Razorpay));
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
   }
 
   async function handleCompletePayment() {
+    if (!checkoutOrder?.gatewayConfigured || !checkoutOrder?.key || !checkoutOrder?.orderId) {
+      flashError('Razorpay checkout credentials (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET) are not configured on the server.');
+      return;
+    }
+
     setProcessingCheckout(true);
     try {
-      const res = await fetch('/api/v1/billing/webhook/razorpay', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-razorpay-signature': 'mock_signature'
-        },
-        body: JSON.stringify({
-          event: 'payment.captured',
-          payment: {
-            id: `pay_${Date.now()}`,
-            notes: {
-              tenant_id: user?.tenant_id,
-              plan_code: selectedPlan,
-              billing_cycle: billingCycle,
-              customer_state_code: customerStateCode
-            }
-          }
-        })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Payment processing failed.');
+      const sdkLoaded = await loadRazorpaySdk();
+      if (!sdkLoaded || !window.Razorpay) {
+        throw new Error('Unable to load Razorpay Checkout SDK. Please verify network access and try again.');
       }
-      flashSuccess(`Subscription successfully activated! GST Tax Invoice ${data.invoiceNumber} generated.`);
-      setShowCheckoutModal(false);
-      await loadBillingData();
-      if (refreshUser) refreshUser();
+
+      const rzp = new window.Razorpay({
+        key: checkoutOrder.key,
+        amount: checkoutOrder.amount,
+        currency: checkoutOrder.currency || 'INR',
+        name: 'SARVYA',
+        description: `${selectedPlan} (${billingCycle}) Workspace Subscription`,
+        order_id: checkoutOrder.orderId,
+        prefill: {
+          name: user?.name || '',
+          email: user?.email || '',
+          contact: user?.phone || ''
+        },
+        modal: {
+          ondismiss: () => setProcessingCheckout(false)
+        },
+        handler: async (rzpResponse) => {
+          try {
+            const verifyRes = await fetch('/api/v1/billing/verify-payment', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                planCode: selectedPlan,
+                billingCycle,
+                customerStateCode,
+                gstin: checkoutGstin,
+                billingAddress: checkoutAddress,
+                razorpay_order_id: rzpResponse.razorpay_order_id || checkoutOrder.orderId,
+                razorpay_payment_id: rzpResponse.razorpay_payment_id,
+                razorpay_signature: rzpResponse.razorpay_signature
+              })
+            });
+            const verifyData = await verifyRes.json();
+            if (!verifyRes.ok || !verifyData.success) {
+              throw new Error(verifyData.message || 'Payment signature verification failed.');
+            }
+            flashSuccess(`Subscription successfully activated! GST Tax Invoice ${verifyData.invoiceNumber} generated.`);
+            setShowCheckoutModal(false);
+            await loadBillingData();
+            if (refreshUser) refreshUser();
+          } catch (verifyErr) {
+            flashError(verifyErr.message);
+          } finally {
+            setProcessingCheckout(false);
+          }
+        }
+      });
+
+      rzp.on('payment.failed', (failure) => {
+        flashError(failure?.error?.description || 'Razorpay payment was cancelled or failed.');
+        setProcessingCheckout(false);
+      });
+
+      rzp.open();
     } catch (err) {
       flashError(err.message);
-    } finally {
       setProcessingCheckout(false);
     }
   }
@@ -1210,8 +1282,9 @@ export default function SettingsPage() {
                     className="sarvya-input"
                     value={billingCycle}
                     onChange={(e) => {
-                      setBillingCycle(e.target.value);
-                      handleOpenCheckout(selectedPlan);
+                      const nextCycle = e.target.value;
+                      setBillingCycle(nextCycle);
+                      handleOpenCheckout(selectedPlan, { billingCycle: nextCycle });
                     }}
                     style={{ width: '100%' }}
                   >
@@ -1227,8 +1300,9 @@ export default function SettingsPage() {
                     className="sarvya-input"
                     value={customerStateCode}
                     onChange={(e) => {
-                      setCustomerStateCode(e.target.value);
-                      handleOpenCheckout(selectedPlan);
+                      const nextState = e.target.value;
+                      setCustomerStateCode(nextState);
+                      handleOpenCheckout(selectedPlan, { customerStateCode: nextState });
                     }}
                     style={{ width: '100%' }}
                   >
@@ -1275,12 +1349,22 @@ export default function SettingsPage() {
                 </div>
               )}
 
+              {checkoutOrder && !checkoutOrder.gatewayConfigured && (
+                <div style={{ padding: '10px 12px', borderRadius: '8px', background: '#fff7ed', border: '1px solid #fdba74', color: '#9a3412', fontSize: '12.5px', lineHeight: 1.45 }}>
+                  Online Razorpay checkout requires server payment gateway keys (<code>RAZORPAY_KEY_ID</code> and <code>RAZORPAY_KEY_SECRET</code>). Configure credentials on the backend to complete payment verification.
+                </div>
+              )}
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', paddingTop: '6px' }}>
                 <Button variant="secondary" onClick={() => setShowCheckoutModal(false)} disabled={processingCheckout}>
                   Cancel
                 </Button>
-                <Button variant="primary" onClick={handleCompletePayment} disabled={processingCheckout}>
-                  {processingCheckout ? 'Processing Payment...' : 'Pay with Razorpay (Instant Activation)'}
+                <Button
+                  variant="primary"
+                  onClick={handleCompletePayment}
+                  disabled={processingCheckout || !checkoutOrder?.gatewayConfigured}
+                >
+                  {processingCheckout ? 'Processing Payment...' : 'Pay with Razorpay (Verified Checkout)'}
                 </Button>
               </div>
             </div>
