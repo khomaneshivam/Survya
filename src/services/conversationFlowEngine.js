@@ -1809,6 +1809,8 @@ async function processTurn({
       phoneNumberId: effectivePhoneNumberId || flow?.phone_number_id || null,
       senderPhone: normalizedPhone,
       flowId: session?.flow_id || flow?.id || 1,
+      flowSessionId: session?.id || null,
+      sessionKey,
       isWaitingForThisNode,
       callStack: [...callStack]
     };
@@ -1887,6 +1889,29 @@ async function processTurn({
           callStack,
           status: "ACTIVE"
         });
+        if (execRes.updatedData?.inapp_session_token && session?.id && !executionContext.flowSessionId) {
+          try {
+            const linkTok = execRes.updatedData.inapp_session_token;
+            db.prepare(`
+              UPDATE inapp_sessions
+              SET flow_session_id = COALESCE(flow_session_id, ?)
+              WHERE session_token = ?
+            `).run(session.id, linkTok);
+            const linkedRow = db.prepare("SELECT id, state_data_json FROM inapp_sessions WHERE session_token = ?").get(linkTok);
+            if (linkedRow?.id) {
+              db.prepare(`
+                UPDATE experience_continuation_tokens
+                SET flow_session_id = COALESCE(flow_session_id, ?)
+                WHERE inapp_session_id = ?
+              `).run(session.id, linkedRow.id);
+              const sd = linkedRow.state_data_json ? JSON.parse(linkedRow.state_data_json) : {};
+              if (!sd.flow_session_id) {
+                sd.flow_session_id = session.id;
+                db.prepare("UPDATE inapp_sessions SET state_data_json = ? WHERE id = ?").run(JSON.stringify(sd), linkedRow.id);
+              }
+            }
+          } catch (_) {}
+        }
       }
       break;
     }

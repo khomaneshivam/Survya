@@ -72,11 +72,20 @@ describe("Pre-Built Domain Registration & Plan-Scoped App Visibility", { concurr
     if (server) server.close();
     if (clinicTenantId && clinicTenantId > 1) {
       const cleanupTables = [
+        "customer_replies",
+        "business_goal_outcomes",
+        "experience_continuation_tokens",
         "inapp_sessions",
         "inapp_form_fields",
         "inapp_screens",
         "inapp_experiences",
+        "conversation_flow_events",
+        "conversation_flow_sessions",
+        "workflow_triggers",
+        "conversation_flow_versions",
         "conversation_flows",
+        "flow_global_settings",
+        "properties",
         "pricing_rules",
         "catalog_addons",
         "catalog_addon_groups",
@@ -248,5 +257,141 @@ describe("Pre-Built Domain Registration & Plan-Scoped App Visibility", { concurr
     assert.equal(entAccessRes.body.data.maxDomains, 8);
     assert.equal(entAccessRes.body.data.allowedDomains.length, 8);
     assert.ok(entAccessRes.body.data.availableProfiles.every((p) => p.unlocked === true));
+  });
+
+  test("6. Hybrid WhatsApp -> Options -> Survya Web Chat -> WhatsApp Confirmation works end-to-end", async () => {
+    const flowEngine = require("../src/services/conversationFlowEngine");
+    const flowService = require("../src/services/conversationFlowService");
+
+    const clinicExpRes = await requestJson(server, "GET", "/api/v1/studio/experiences", { token: clinicToken });
+    assert.equal(clinicExpRes.status, 200);
+    const clinicExp = clinicExpRes.body.data.find((e) => e.slug.includes("clinic") || e.domain_type === "HEALTHCARE") || clinicExpRes.body.data[0];
+    assert.ok(clinicExp?.slug, "Expected published clinic Studio experience");
+
+    const flowList = flowService.listFlows(clinicTenantId, { limit: 10 });
+    const clinicFlow = flowList.flows.find((f) => String(f.category || "").toUpperCase().includes("CLINIC")) || flowList.flows[0];
+    assert.ok(clinicFlow?.id, "Expected auto-provisioned clinic flow");
+
+    const flowDetails = flowService.getFlowById(clinicFlow.id, clinicTenantId);
+    const nodes = flowDetails.publishedVersion?.nodes || flowDetails.draftVersion?.nodes || [];
+    const survyaNode = nodes.find((n) => n.type === "OPEN_INAPP_EXPERIENCE");
+    assert.ok(survyaNode, "Seeded flow must include OPEN_INAPP_EXPERIENCE node for Visual Canvas");
+    assert.equal(survyaNode.config?.experienceSlug, clinicExp.slug);
+
+    const customerPhone = `919876${String(uniqueSuffix).slice(-6)}`;
+
+    // Turn 1: Customer sends first greeting on WhatsApp -> receives business welcome + options
+    const turn1 = await flowEngine.processTurn({
+      senderPhone: customerPhone,
+      userInput: "Hi",
+      startFlowId: clinicFlow.id,
+      context: {
+        tenantId: clinicTenantId,
+        channel: "WHATSAPP",
+        isSimulation: false,
+        transportSimulation: true
+      }
+    });
+    assert.equal(turn1.handled, true);
+    assert.ok(turn1.replyText.includes("Sunrise PolyClinic"), "Welcome reply must include business name");
+    assert.ok(turn1.replyInteractive?.options?.some((o) => o.id === "opt_survya"), "Welcome options must expose Survya entry option");
+
+    // Turn 2: Customer taps Survya option -> receives /x/<slug>?ct=<token> link
+    const turn2 = await flowEngine.processTurn({
+      senderPhone: customerPhone,
+      userInput: "Book Slot (Survya)",
+      userPayload: { id: "opt_survya", title: "Book Slot (Survya)" },
+      startFlowId: clinicFlow.id,
+      context: {
+        tenantId: clinicTenantId,
+        channel: "WHATSAPP",
+        isSimulation: false,
+        transportSimulation: true
+      }
+    });
+    assert.equal(turn2.handled, true);
+    assert.ok(turn2.replyText.includes(`/x/${clinicExp.slug}?ct=`), "Turn 2 must return personalized Survya continuation URL");
+
+    const ctMatch = turn2.replyText.match(/\?ct=([A-Za-z0-9_.-]+)/);
+    assert.ok(ctMatch && ctMatch[1], "Expected opaque continuation token ?ct=");
+    const ct = ctMatch[1];
+
+    // Turn 3: Customer opens Survya URL -> redeems opaque token
+    const redeemRes = await requestJson(server, "POST", `/api/v1/public/x/${clinicExp.slug}/continuation/redeem`, {
+      body: { ct }
+    });
+    assert.equal(redeemRes.status, 200);
+    const { sessionToken } = redeemRes.body.data;
+    let lockVer = redeemRes.body.data.optimisticLockVersion;
+
+    // Turn 4+: Customer completes full appointment journey inside Survya web chat
+    const step1 = await requestJson(server, "POST", `/api/v1/public/x/${clinicExp.slug}/navigate`, {
+      body: {
+        sessionToken,
+        action: "NEXT",
+        formValues: { consultation_type: "In-Clinic Visit" },
+        expectedLockVersion: lockVer,
+        isSimulation: true
+      }
+    });
+    assert.equal(step1.status, 200);
+    lockVer = step1.body.data.optimisticLockVersion;
+
+    const step2 = await requestJson(server, "POST", `/api/v1/public/x/${clinicExp.slug}/navigate`, {
+      body: {
+        sessionToken,
+        action: "NEXT",
+        formValues: { selected_date: "2026-12-28" },
+        expectedLockVersion: lockVer,
+        isSimulation: true
+      }
+    });
+    assert.equal(step2.status, 200);
+    lockVer = step2.body.data.optimisticLockVersion;
+
+    const step3 = await requestJson(server, "POST", `/api/v1/public/x/${clinicExp.slug}/navigate`, {
+      body: {
+        sessionToken,
+        action: "NEXT",
+        formValues: { selected_slot: "10:00 AM" },
+        expectedLockVersion: lockVer,
+        isSimulation: true
+      }
+    });
+    assert.equal(step3.status, 200);
+    lockVer = step3.body.data.optimisticLockVersion;
+
+    const finalStep = await requestJson(server, "POST", `/api/v1/public/x/${clinicExp.slug}/navigate`, {
+      body: {
+        sessionToken,
+        action: "NEXT",
+        formValues: { phone: customerPhone },
+        expectedLockVersion: lockVer,
+        isSimulation: true
+      }
+    });
+    assert.equal(finalStep.status, 200);
+    assert.equal(finalStep.body.data.currentScreenKey, "confirmation");
+    assert.equal(finalStep.body.data.goalStatus, "COMPLETED");
+    assert.equal(finalStep.body.data.channelOwner, "WHATSAPP");
+    assert.equal(finalStep.body.data.stateData.whatsapp_confirmation_sent, true);
+    assert.ok(finalStep.body.data.whatsappConfirmation?.body, "Expected WhatsApp confirmation message payload");
+
+    // Verify WhatsApp flow session advanced to node_confirm & confirmation was persisted cleanly
+    const updatedFlowSess = db.prepare(`
+      SELECT current_node_id, session_status
+      FROM conversation_flow_sessions
+      WHERE tenant_id = ? AND sender_phone = ?
+      ORDER BY id DESC LIMIT 1
+    `).get(clinicTenantId, customerPhone);
+    assert.equal(updatedFlowSess?.current_node_id, "node_confirm");
+    assert.equal(updatedFlowSess?.session_status, "COMPLETED");
+
+    const waConfirmRow = db.prepare(`
+      SELECT source, message_body FROM customer_replies
+      WHERE tenant_id = ? AND from_phone = ? AND source = 'SURVYA_INAPP_CONFIRMATION'
+      ORDER BY id DESC LIMIT 1
+    `).get(clinicTenantId, customerPhone);
+    assert.ok(waConfirmRow && waConfirmRow.message_body.length > 10, "Expected recorded WhatsApp confirmation message");
   });
 });

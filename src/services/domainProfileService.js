@@ -257,20 +257,14 @@ function provisionTenantDomainProfile(tenantId, {
     `).run(resolvedDomain, JSON.stringify(nextAllowed), numericTenantId);
   }
 
-  // Provision full pre-built sector suite (masters, catalog entity + items, addons, pricing, flow)
+  // 1. Ensure matching pre-built Studio Conversational Experience exists BEFORE seeding flow so link resolves directly
   const bp = SECTOR_BLUEPRINTS[resolvedDomain];
-  const suiteResult = importFullIndustrySuite(numericTenantId, {
-    sectorCode: resolvedDomain,
-    businessName: businessName || `${tenant.name?.replace(/'s Workspace$/i, "") || bp?.entity?.name || resolvedDomain}`,
-    phone: phone || bp?.entity?.phone_e164 || "+919999900000",
-    city: city || bp?.entity?.city || "Mumbai"
-  }, userId);
+  const resolvedBizName = businessName || `${tenant.name?.replace(/'s Workspace$/i, "") || bp?.entity?.name || resolvedDomain}`;
 
-  // Ensure matching pre-built Studio Conversational Experience exists for immediate testing
   let studioExp = db.prepare(`
     SELECT * FROM inapp_experiences
     WHERE tenant_id = ? AND delete_status = 0
-    ORDER BY id ASC LIMIT 1
+    ORDER BY (status = 'PUBLISHED') DESC, id ASC LIMIT 1
   `).get(numericTenantId);
 
   if (!studioExp) {
@@ -280,13 +274,22 @@ function provisionTenantDomainProfile(tenantId, {
         numericTenantId,
         domainMeta.studioBlueprintKey,
         {
-          name: `${suiteResult.businessName || domainMeta.name} Concierge`,
+          name: `${resolvedBizName || domainMeta.name} Concierge`,
           publishImmediately: true
         },
         userId
       );
     }
   }
+
+  // 2. Provision full pre-built sector suite (masters, catalog entity + items, addons, pricing, hybrid flow)
+  const suiteResult = importFullIndustrySuite(numericTenantId, {
+    sectorCode: resolvedDomain,
+    businessName: resolvedBizName,
+    phone: phone || bp?.entity?.phone_e164 || "+919999900000",
+    city: city || bp?.entity?.city || "Mumbai",
+    experienceSlug: studioExp?.slug || ""
+  }, userId);
 
   const updatedAccess = getTenantDomainAccess(numericTenantId, { isPlatformAdmin });
   return {
@@ -337,9 +340,31 @@ function activateDomainForTenant(tenantId, domain, { makePrimary = false, busine
     WHERE id = ?
   `).run(nextPrimary, JSON.stringify(nextAllowed), numericTenantId);
 
+  let domainExp = db.prepare(`
+    SELECT * FROM inapp_experiences
+    WHERE tenant_id = ? AND delete_status = 0
+    ORDER BY (status = 'PUBLISHED') DESC, id ASC LIMIT 1
+  `).get(numericTenantId);
+
+  if (!domainExp) {
+    const domainMeta = DOMAIN_CATALOG.find((d) => d.code === resolvedDomain);
+    if (domainMeta?.studioBlueprintKey) {
+      domainExp = industryBlueprintService.cloneBlueprintToTenant(
+        numericTenantId,
+        domainMeta.studioBlueprintKey,
+        {
+          name: `${businessName || domainMeta.name} Concierge`,
+          publishImmediately: true
+        },
+        userId
+      );
+    }
+  }
+
   const suiteResult = importFullIndustrySuite(numericTenantId, {
     sectorCode: resolvedDomain,
-    businessName: businessName || undefined
+    businessName: businessName || undefined,
+    experienceSlug: domainExp?.slug || ""
   }, userId);
 
   return {

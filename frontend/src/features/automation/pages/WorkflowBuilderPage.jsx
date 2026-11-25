@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import { Button, Badge } from '../../../components/ui/Primitives';
 import FlowCanvas from '../../../components/flow-studio/FlowCanvas';
-import NodePaletteSidebar from '../../../components/flow-studio/NodePaletteSidebar';
 import NodeInspectorDrawer from '../../../components/flow-studio/NodeInspectorDrawer';
 import { SimulationPanel } from '../components/SimulationPanel';
 import { automationApi } from '../api/automationApi';
@@ -46,19 +45,27 @@ export function WorkflowBuilderPage({ flowId, onBack, onSaved }) {
           setFlowName(loadedFlow.name || 'Untitled Automation');
           setTriggerKeyword(loadedFlow.trigger_keyword || '');
 
-          // Parse graph
+          // Parse graph (support canonical draftVersion/publishedVersion nodes + legacy draft_graph_json)
           let graphNodes = [];
           let graphTransitions = [];
 
-          const graphData = loadedFlow.draft_graph_json || loadedFlow.graph_json;
-          if (graphData) {
-            const parsed = typeof graphData === 'string' ? JSON.parse(graphData) : graphData;
-            graphNodes = parsed.nodes || [];
-            graphTransitions = parsed.transitions || parsed.edges || [];
+          const ver = (res.draftVersion?.nodes || res.draftVersion?.nodes_json)
+            ? res.draftVersion
+            : (res.publishedVersion || null);
+          if (ver) {
+            graphNodes = ver.nodes || (ver.nodes_json ? JSON.parse(ver.nodes_json) : []);
+            graphTransitions = ver.transitions || (ver.transitions_json ? JSON.parse(ver.transitions_json) : []);
+          } else {
+            const graphData = loadedFlow.draft_graph_json || loadedFlow.graph_json;
+            if (graphData) {
+              const parsed = typeof graphData === 'string' ? JSON.parse(graphData) : graphData;
+              graphNodes = parsed.nodes || [];
+              graphTransitions = parsed.transitions || parsed.edges || [];
+            }
           }
 
-          setNodes(graphNodes);
-          setTransitions(graphTransitions);
+          setNodes(Array.isArray(graphNodes) ? graphNodes : []);
+          setTransitions(Array.isArray(graphTransitions) ? graphTransitions : []);
         } else {
           setErrorMsg(res?.error || 'Failed to load flow data');
         }
@@ -123,18 +130,6 @@ export function WorkflowBuilderPage({ flowId, onBack, onSaved }) {
     }
   };
 
-  const handleAddNode = (nodeType) => {
-    const id = `node_${Date.now()}`;
-    const newNode = {
-      id,
-      type: nodeType,
-      title: nodeType,
-      config: {}
-    };
-    setNodes((prev) => [...prev, newNode]);
-    setSelectedNodeId(id);
-  };
-
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) || null;
 
   const handleUpdateNode = (updatedNode) => {
@@ -143,7 +138,7 @@ export function WorkflowBuilderPage({ flowId, onBack, onSaved }) {
 
   const handleDeleteNode = (nodeId) => {
     setNodes((prev) => prev.filter((n) => n.id !== nodeId));
-    setTransitions((prev) => prev.filter((t) => t.from !== nodeId && t.to !== nodeId));
+    setTransitions((prev) => prev.filter((t) => t.source !== nodeId && t.target !== nodeId && t.from !== nodeId && t.to !== nodeId));
     if (selectedNodeId === nodeId) setSelectedNodeId(null);
   };
 
@@ -245,12 +240,9 @@ export function WorkflowBuilderPage({ flowId, onBack, onSaved }) {
       </div>
 
       {/* Main Canvas + Panels Container */}
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Left Node Palette */}
-        <NodePaletteSidebar onAddNode={handleAddNode} />
-
-        {/* Center Visual Graph Canvas */}
-        <div className="flex-1 relative overflow-hidden bg-slate-100">
+      <div className="flex-1 min-h-[560px] flex overflow-hidden relative">
+        {/* Center Visual Graph Canvas (includes integrated Step Palette) */}
+        <div className="flex-1 min-w-0 min-h-[560px] flex flex-col relative overflow-hidden bg-slate-100">
           <FlowCanvas
             nodes={nodes}
             transitions={transitions}
@@ -269,7 +261,7 @@ export function WorkflowBuilderPage({ flowId, onBack, onSaved }) {
             transitions={transitions}
             variables={{}}
             onClose={() => setSelectedNodeId(null)}
-            onUpdate={handleUpdateNode}
+            onUpdateNode={handleUpdateNode}
             onDeleteNode={handleDeleteNode}
           />
         )}

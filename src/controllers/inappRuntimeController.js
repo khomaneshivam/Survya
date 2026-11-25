@@ -76,6 +76,21 @@ async function handleNavigate(req, res) {
       expectedLockVersion
     });
 
+    if (data && data.goalStatus === "COMPLETED") {
+      try {
+        const waConf = await inappRuntimeService.dispatchWhatsappConfirmation(
+          sessionToken,
+          data,
+          { isSimulation: Boolean(req.body?.isSimulation) }
+        );
+        data.whatsappConfirmation = waConf;
+        if (waConf?.success && data.stateData) {
+          data.stateData.whatsapp_confirmation_sent = true;
+          if (waConf.body) data.stateData.whatsapp_confirmation_text = waConf.body;
+        }
+      } catch (_) {}
+    }
+
     return res.status(200).json({ success: true, data });
   } catch (err) {
     const statusCode = err.statusCode || 500;

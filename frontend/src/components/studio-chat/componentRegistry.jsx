@@ -331,12 +331,15 @@ export function renderConversationalStep({
           <p style={{ margin: 0, fontSize: '13px', color: '#334155' }}>
             {screen.subtitle || 'Your request has been recorded and synced.'}
           </p>
-          {(stateData.referenceCode || stateData.transaction_ref || stateData.selectedItemTitle) && (
-            <div style={{ padding: '10px 12px', borderRadius: '10px', background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: '12.5px', color: '#166534' }}>
+          {(stateData.referenceCode || stateData.transaction_ref || stateData.selectedItemTitle || stateData.whatsapp_confirmation_sent || channelOwner === 'WHATSAPP') && (
+            <div style={{ padding: '10px 12px', borderRadius: '10px', background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: '12.5px', color: '#166534', display: 'flex', flexDirection: 'column', gap: '4px' }}>
               {stateData.referenceCode || stateData.transaction_ref ? (
                 <div>Reference: <strong>{stateData.referenceCode || stateData.transaction_ref}</strong></div>
               ) : null}
               {stateData.selectedItemTitle && <div>Selected: <strong>{stateData.selectedItemTitle}</strong></div>}
+              {(stateData.whatsapp_confirmation_sent || channelOwner === 'WHATSAPP') && (
+                <div style={{ fontWeight: 600 }}>Confirmation details have been shared on WhatsApp.</div>
+              )}
             </div>
           )}
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>

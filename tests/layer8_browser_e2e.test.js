@@ -209,11 +209,20 @@ describe("Layer 8: Real Headless Browser E2E Verification", { concurrency: 1 }, 
       const tid = createdTenantId || ownerRow?.tenant_id;
       if (tid && Number(tid) > 1) {
         for (const tbl of [
+          "customer_replies",
+          "business_goal_outcomes",
+          "experience_continuation_tokens",
           "inapp_sessions",
           "inapp_form_fields",
           "inapp_screens",
           "inapp_experiences",
+          "conversation_flow_events",
+          "conversation_flow_sessions",
+          "workflow_triggers",
+          "conversation_flow_versions",
           "conversation_flows",
+          "flow_global_settings",
+          "properties",
           "pricing_rules",
           "catalog_addons",
           "catalog_addon_groups",
@@ -320,9 +329,19 @@ describe("Layer 8: Real Headless Browser E2E Verification", { concurrency: 1 }, 
     assert.ok(dbEmp && Number(dbEmp.tenant_id) === Number(createdTenantId));
     assert.equal(dbEmp.role, "USER");
 
-    // 3. Open Flow Builder via live Sidebar click & confirm clean render (no TDZ/null errors)
+    // 3. Open Flow Builder via live Sidebar click & verify Visual Canvas actually renders seeded flow nodes with non-zero bounding box
     await browser.clickButtonByText("Flow Builder");
     await browser.waitForText("Flows Directory");
+    await browser.clickButtonByText("Visual Canvas");
+    await browser.waitForText("Open in Survya Studio");
+    const canvasMetrics = await browser.evalJs(`
+      const rf = document.querySelector('.react-flow');
+      const rect = rf ? rf.getBoundingClientRect() : { width: 0, height: 0 };
+      const nodeCount = document.querySelectorAll('.react-flow__node').length;
+      return { width: rect.width, height: rect.height, nodeCount };
+    `);
+    assert.ok(canvasMetrics.width > 200 && canvasMetrics.height > 200, `Expected non-zero Flow Canvas viewport, got ${JSON.stringify(canvasMetrics)}`);
+    assert.ok(canvasMetrics.nodeCount >= 5, `Expected seeded flow nodes in Visual Canvas, got ${canvasMetrics.nodeCount}`);
 
     // 3b. Open Catalog & Menu + 4-Mode Availability & Slots -> verify pre-built clinic items & zero DataTable React crash
     await browser.clickButtonByText("Catalog & Menu");

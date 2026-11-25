@@ -92,6 +92,20 @@ export function toReactFlowGraph(sarvyaNodes = [], sarvyaTransitions = [], optio
   let rfNodes = safeNodes.map((node, index) => {
     const nodeDef = nodeDefMap.get(String(node.id)) || getNodeDefinition(node.type);
     const rawClone = JSON.parse(JSON.stringify(node));
+    const normalizedConfig = {
+      ...(node.data || {}),
+      ...(node.config || {})
+    };
+    if (!normalizedConfig.options && Array.isArray(normalizedConfig.buttons)) {
+      normalizedConfig.options = normalizedConfig.buttons.map((b, i) => ({
+        id: b.id || `opt_${i + 1}`,
+        title: b.title || b.label || `Option ${i + 1}`,
+        value: b.value || b.id || `opt_${i + 1}`
+      }));
+    }
+    if (normalizedConfig.messageType === 'INTERACTIVE_BUTTONS') {
+      normalizedConfig.messageType = 'BUTTONS';
+    }
 
     const pos = (node.position && typeof node.position.x === 'number' && typeof node.position.y === 'number')
       ? { x: node.position.x, y: node.position.y }
@@ -107,7 +121,7 @@ export function toReactFlowGraph(sarvyaNodes = [], sarvyaTransitions = [], optio
         type: node.type,
         resolvedType: nodeDef.canonicalType || nodeDef.type,
         title: node.title || nodeDef.label || node.type,
-        config: node.config || {},
+        config: normalizedConfig,
         category: node.category || nodeDef.category || 'MESSAGING',
         raw: rawClone
       }
@@ -141,6 +155,10 @@ export function toReactFlowGraph(sarvyaNodes = [], sarvyaTransitions = [], optio
       else if (sourceHandle === 'early_reply' || sourceHandle === 'replied_early') label = 'Replied Early';
       else if (sourceHandle === 'success') label = 'Success';
       else if (sourceHandle === 'failure' || sourceHandle === 'error') label = 'Error';
+      else if (sourceHandle === 'completed') label = 'Completed';
+      else if (sourceHandle === 'cancelled') label = 'Cancelled';
+      else if (sourceHandle === 'confirmed') label = 'Confirmed';
+      else if (sourceHandle === 'item_selected') label = 'Selected';
     }
 
     return {

@@ -29,7 +29,6 @@ import {
 } from 'lucide-react';
 import DataTable from '../components/ui/DataTable';
 import FlowCanvas from '../components/flow-studio/FlowCanvas';
-import NodePaletteSidebar from '../components/flow-studio/NodePaletteSidebar';
 import NodeInspectorDrawer from '../components/flow-studio/NodeInspectorDrawer';
 import { validateFlowGraph } from '../components/flow-studio/flowGraphValidator';
 import FlowSimulatorPanel from '../components/flow-studio/FlowSimulatorPanel';
@@ -157,6 +156,15 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
     }
   }, [activeTab, loadSessions]);
 
+  useEffect(() => {
+    if (activeTab === 'canvas' && !selectedFlowId && flows.length > 0) {
+      const preferred = flows.find((f) => f.status === 'PUBLISHED') || flows[0];
+      if (preferred?.id) {
+        setSelectedFlowId(preferred.id);
+      }
+    }
+  }, [activeTab, selectedFlowId, flows]);
+
   // Load single flow for Canvas
   useEffect(() => {
     async function loadCanvasFlow() {
@@ -166,14 +174,19 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
         if (res && res.success) {
           const f = res.flow;
           setSelectedFlow(f);
-          const ver = res.draftVersion || res.publishedVersion || {};
-          const n = ver.nodes || (ver.nodes_json ? JSON.parse(ver.nodes_json) : []);
-          const t = ver.transitions || (ver.transitions_json ? JSON.parse(ver.transitions_json) : []);
-          setCanvasNodes(n);
-          setCanvasTransitions(t);
+          const ver = (res.draftVersion?.nodes || res.draftVersion?.nodes_json)
+            ? res.draftVersion
+            : (res.publishedVersion || {});
+          const rawN = ver.nodes || (ver.nodes_json ? JSON.parse(ver.nodes_json) : []);
+          const rawT = ver.transitions || (ver.transitions_json ? JSON.parse(ver.transitions_json) : []);
+          setCanvasNodes(Array.isArray(rawN) ? rawN : []);
+          setCanvasTransitions(Array.isArray(rawT) ? rawT : []);
+        } else {
+          setBannerNotice({ type: 'error', text: res?.error || `Failed to load flow #${selectedFlowId} for canvas.` });
         }
       } catch (err) {
         console.warn('Failed to load flow for canvas:', err);
+        setBannerNotice({ type: 'error', text: err.message || 'Unable to load flow into canvas.' });
       }
     }
     loadCanvasFlow();
@@ -378,7 +391,23 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
         return (
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontWeight: 600, color: '#0F172A', fontSize: '0.82rem' }}>{flowName}</span>
+              <button
+                type="button"
+                onClick={() => handleOpenFlowInCanvas(r.id)}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  padding: 0,
+                  fontWeight: 600,
+                  color: '#0F172A',
+                  fontSize: '0.82rem',
+                  cursor: 'pointer',
+                  textAlign: 'left'
+                }}
+                title="Open flow in Visual Canvas"
+              >
+                {flowName}
+              </button>
               {r.is_root_menu === 1 && (
                 <span style={{ fontSize: '0.66rem', background: '#FEF3C7', color: '#92400E', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
                   ROOT MENU
@@ -1007,7 +1036,7 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
 
       {/* TAB 2: VISUAL CANVAS */}
       {activeTab === 'canvas' && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: 'calc(100vh - 52px)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 110px)', minHeight: '620px', overflow: 'hidden' }}>
           {/* Canvas Header */}
           <div style={{
             background: '#FFFFFF',
@@ -1018,7 +1047,7 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
             justifyContent: 'space-between',
             zIndex: 10
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={() => setActiveTab('flows')}
@@ -1027,6 +1056,32 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
               >
                 <ArrowLeft size={16} />
               </button>
+              {flows.length > 0 && (
+                <select
+                  aria-label="Select conversation flow"
+                  value={selectedFlowId || ''}
+                  onChange={(e) => {
+                    const nextId = Number(e.target.value) || e.target.value;
+                    if (nextId) handleOpenFlowInCanvas(nextId);
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    border: '1px solid #CBD5E1',
+                    borderRadius: '6px',
+                    background: '#F8FAFC',
+                    color: '#0F172A',
+                    maxWidth: '240px'
+                  }}
+                >
+                  {flows.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      #{f.id} · {f.name} ({f.status})
+                    </option>
+                  ))}
+                </select>
+              )}
               <div>
                 <input
                   type="text"
@@ -1117,29 +1172,14 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
           </div>
 
           {/* Canvas Working Area with Palette and Inspector */}
-          <div style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
-            <NodePaletteSidebar
-              onAddNode={(nodeType) => {
-                const id = `node_${Date.now().toString(36)}`;
-                const newNode = {
-                  id,
-                  type: nodeType,
-                  title: nodeType.replace(/_/g, ' '),
-                  config: {},
-                  position: { x: 300, y: 150 + canvasNodes.length * 50 }
-                };
-                setCanvasNodes(prev => [...prev, newNode]);
-                setSelectedNodeId(id);
-              }}
-            />
-
-            <div style={{ flex: 1, position: 'relative', height: '100%' }}>
+          <div style={{ flex: 1, minHeight: '560px', display: 'flex', alignItems: 'stretch', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ flex: 1, minWidth: 0, minHeight: '560px', display: 'flex', flexDirection: 'column', position: 'relative' }}>
               <FlowCanvas
                 nodes={canvasNodes}
                 transitions={canvasTransitions}
-                onNodesChange={setCanvasNodes}
-                onTransitionsChange={setCanvasTransitions}
-                onSelectNode={(node) => setSelectedNodeId(node?.id || null)}
+                onUpdateNodes={setCanvasNodes}
+                onUpdateTransitions={setCanvasTransitions}
+                onSelectNode={(nodeId) => setSelectedNodeId(typeof nodeId === 'object' ? (nodeId?.id || null) : (nodeId || null))}
                 selectedNodeId={selectedNodeId}
               />
             </div>
