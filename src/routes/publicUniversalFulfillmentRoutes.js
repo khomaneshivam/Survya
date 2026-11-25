@@ -29,7 +29,7 @@ router.get(["/receipt/:referenceCode", "/public/receipt/:referenceCode"], async 
         <html>
           <body style="font-family: sans-serif; text-align: center; padding: 40px; color: #444;">
             <h2>Invoice / Voucher Not Found</h2>
-            <p>The reference <strong>${referenceCode}</strong> does not exist or has expired.</p>
+            <p>The reference <strong>${escapeHtml(referenceCode)}</strong> does not exist or has expired.</p>
           </body>
         </html>
       `);
@@ -42,7 +42,7 @@ router.get(["/receipt/:referenceCode", "/public/receipt/:referenceCode"], async 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     return res.send(html);
   } catch (err) {
-    return res.status(500).send(`Server error: ${err.message}`);
+    return res.status(500).send(`Server error: ${escapeHtml(err.message)}`);
   }
 });
 
@@ -79,7 +79,7 @@ router.get(["/pay/:referenceCode", "/public/pay/:referenceCode"], async (req, re
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pay ${referenceCode} - ${tenant.name || "SARVYA Commerce"}</title>
+  <title>Pay ${escapeHtml(referenceCode)} - ${escapeHtml(tenant.name || "SARVYA Commerce")}</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #F8F9FA; color: #171719; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; box-sizing: border-box; }
     .checkout-box { background: #FFFFFF; border-radius: 16px; border: 1px solid #E5E5E8; box-shadow: 0 10px 25px rgba(0,0,0,0.08); width: 100%; maxWidth: 440px; padding: 28px; }
@@ -119,62 +119,11 @@ router.get(["/pay/:referenceCode", "/public/pay/:referenceCode"], async (req, re
         ${txn.service_date ? `<div>Date: <strong>${escapeHtml(txn.service_date)}</strong></div>` : ""}
       </div>
 
-      <button id="payBtn" class="btn-pay" onclick="simulatePayment()">
-        💳 Pay ₹${Number(amountToPay).toLocaleString("en-IN")} Now
-      </button>
-
       <a href="/api/v1/public/receipt/${escapeHtml(referenceCode)}" class="btn-receipt">📄 View Invoice Details</a>
 
-      <div style="font-size: 0.75rem; color: #96969C; text-align: center; margin-top: 16px;">
-        🔒 256-Bit SSL Encrypted Sandbox Gateway
+      <div style="font-size: 0.78rem; color: #52525B; text-align: center; margin-top: 16px; background: #F4F4F5; padding: 12px; border-radius: 10px;">
+        Payment confirmation is updated automatically once verified by your payment provider webhook.
       </div>
-
-      <script>
-        async function simulatePayment() {
-          const btn = document.getElementById('payBtn');
-          btn.disabled = true;
-          btn.innerText = 'Processing Payment...';
-
-          try {
-            const res = await fetch('/api/v1/public/pay/webhook/razorpay', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                event: 'payment_link.paid',
-                payload: {
-                  payment_link: {
-                    entity: {
-                      reference_id: '${escapeHtml(referenceCode)}',
-                      amount: ${Number(amountToPay) * 100},
-                      currency: 'INR'
-                    }
-                  },
-                  payment: {
-                    entity: {
-                      id: 'pay_sim_' + Date.now(),
-                      amount: ${Number(amountToPay) * 100},
-                      status: 'captured'
-                    }
-                  }
-                }
-              })
-            });
-
-            const data = await res.json();
-            if (data.success) {
-              window.location.reload();
-            } else {
-              alert(data.message || 'Payment simulation failed');
-              btn.disabled = false;
-              btn.innerText = '💳 Pay Now';
-            }
-          } catch (e) {
-            alert('Payment error: ' + e.message);
-            btn.disabled = false;
-            btn.innerText = '💳 Pay Now';
-          }
-        }
-      </script>
     `}
   </div>
 </body>
@@ -183,29 +132,35 @@ router.get(["/pay/:referenceCode", "/public/pay/:referenceCode"], async (req, re
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     return res.send(html);
   } catch (err) {
-    return res.status(500).send(`Server error: ${err.message}`);
+    return res.status(500).send(`Server error: ${escapeHtml(err.message)}`);
   }
 });
 
 /**
- * POST /pay/webhook/razorpay - Razorpay Webhook Auto-Reconciler (HMAC-SHA256 verified)
+ * POST /pay/webhook/razorpay - Razorpay Webhook Auto-Reconciler (Fail-Closed HMAC-SHA256 verified)
  */
 router.post(["/pay/webhook/razorpay", "/public/pay/webhook/razorpay"], async (req, res) => {
   try {
     const signature = req.headers["x-razorpay-signature"];
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
 
-    // Verify HMAC-SHA256 signature if secret is provided in environment
-    if (webhookSecret && signature) {
-      const rawBody = req.rawBody || JSON.stringify(req.body);
-      const expectedSignature = crypto
-        .createHmac("sha256", webhookSecret)
-        .update(rawBody)
-        .digest("hex");
+    if (!webhookSecret || !signature) {
+      return res.status(401).json({
+        success: false,
+        message: "Webhook signature verification required"
+      });
+    }
 
-      if (signature !== expectedSignature) {
-        return res.status(400).json({ success: false, message: "Invalid Razorpay webhook signature" });
-      }
+    const rawBody = req.rawBody ? Buffer.from(req.rawBody) : Buffer.from(JSON.stringify(req.body));
+    const expectedSignature = crypto
+      .createHmac("sha256", webhookSecret)
+      .update(rawBody)
+      .digest("hex");
+
+    const sigBuf = Buffer.from(String(signature), "utf8");
+    const expBuf = Buffer.from(expectedSignature, "utf8");
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return res.status(401).json({ success: false, message: "Invalid Razorpay webhook signature" });
     }
 
     const event = req.body.event || req.body.type || "payment_link.paid";

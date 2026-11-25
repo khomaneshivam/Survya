@@ -123,10 +123,12 @@ test('Unified Blueprint Importer: Full Industry Suite Provisioning & Profile Cus
     assert.equal(updated.fallbackMessage, 'Welcome to Azure Palm! Please send *menu* to explore our suites.');
     assert.deepEqual(updated.menuKeywords, ['menu', 'suites', 'home', 'restart']);
 
-    // Check settings sync via getSetting
+    // Verify tenant-scoped settings & isolation (must NOT overwrite Tenant 1's global BOT_BUSINESS_NAME)
+    const flowGlobalSettingsService = require('../src/services/flowGlobalSettingsService');
+    const tenantGlobal = flowGlobalSettingsService.getSettings(testTenantId, null);
+    assert.equal(tenantGlobal.fallback_message, 'Welcome to Azure Palm! Please send *menu* to explore our suites.');
     const { getSetting } = require('../src/config/database');
-    assert.equal(getSetting('BOT_BUSINESS_NAME'), 'Azure Palm Grand Heritage');
-    assert.equal(getSetting('BOT_HANDOFF_PHONE'), '+919111222333');
+    assert.notEqual(getSetting('BOT_BUSINESS_NAME'), 'Azure Palm Grand Heritage');
   });
 
   await t.test('4. Tenant Isolation: Separate Workspace Isolation', async () => {

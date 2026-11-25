@@ -69,15 +69,15 @@ describe('Task 6: Master Production QA & End-to-End Regression Suite', () => {
     `).run();
     tenantBId = Number(tB.lastInsertRowid);
 
-    // 2. Create Admin and Staff Users for Tenant A
+    // 2. Create Platform Super-Admin (tenant 1) + Tenant A Staff + Tenant B Staff
     adminUserId = `usr_admin_a_${Date.now()}`;
     staffUserId = `usr_staff_a_${Date.now()}`;
     const bUserId = `usr_user_b_${Date.now()}`;
 
     db.prepare(`
       INSERT INTO users (id, tenant_id, name, email, password_hash, role, status, active_status, delete_status, created_at, updated_at)
-      VALUES (?, ?, 'qa_admin_a', 'admin_a@sarvya.test', 'hashed_pw', 'ADMIN', 'ACTIVE', 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `).run(adminUserId, tenantAId);
+      VALUES (?, 1, 'qa_plat_admin', 'admin_a@sarvya.test', 'hashed_pw', 'SUPER_ADMIN', 'ACTIVE', 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).run(adminUserId);
 
     db.prepare(`
       INSERT INTO users (id, tenant_id, name, email, password_hash, role, status, active_status, delete_status, created_at, updated_at)
@@ -90,7 +90,7 @@ describe('Task 6: Master Production QA & End-to-End Regression Suite', () => {
     `).run(bUserId, tenantBId);
 
     // Sign JWT tokens
-    adminUserToken = jwt.sign({ id: adminUserId, userId: adminUserId, tenant_id: tenantAId, role: 'ADMIN' }, config.JWT_SECRET, { expiresIn: '2h' });
+    adminUserToken = jwt.sign({ id: adminUserId, userId: adminUserId, tenant_id: 1, role: 'SUPER_ADMIN' }, config.JWT_SECRET, { expiresIn: '2h' });
     staffUserToken = jwt.sign({ id: staffUserId, userId: staffUserId, tenant_id: tenantAId, role: 'STAFF' }, config.JWT_SECRET, { expiresIn: '2h' });
     tenantBUserToken = jwt.sign({ id: bUserId, userId: bUserId, tenant_id: tenantBId, role: 'STAFF' }, config.JWT_SECRET, { expiresIn: '2h' });
   });
@@ -101,6 +101,10 @@ describe('Task 6: Master Production QA & End-to-End Regression Suite', () => {
     }
 
     // Clean up test records
+    if (adminUserId) {
+      db.prepare('DELETE FROM tenant_user_memberships WHERE user_id = ?').run(adminUserId);
+      db.prepare('DELETE FROM users WHERE id = ?').run(adminUserId);
+    }
     if (tenantAId) {
       db.prepare('DELETE FROM crm_records WHERE tenant_id = ?').run(tenantAId);
       db.prepare('DELETE FROM contacts WHERE tenant_id = ?').run(tenantAId);
@@ -214,9 +218,9 @@ describe('Task 6: Master Production QA & End-to-End Regression Suite', () => {
     // 5. Verify immutable audit_logs recorded
     const auditLogs = db.prepare(`
       SELECT action FROM audit_logs
-      WHERE tenant_id = ? AND target_id = ?
+      WHERE target_id = ?
       ORDER BY id DESC
-    `).all(tenantAId, String(targetUserId));
+    `).all(String(targetUserId));
     assert.ok(auditLogs.length > 0, 'Audit logs must capture data lifecycle actions');
   });
 

@@ -13,7 +13,7 @@ import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage';
 import { TemplateAdminPage } from './pages/TemplateAdminPage';
 
 export default function AutomationStudio({ defaultView = 'my-automations', initialFlowId = null }) {
-  const { isAdmin } = useAuth();
+  const { isPlatformAdmin } = useAuth();
   const {
     automations,
     metrics,
@@ -68,7 +68,7 @@ export default function AutomationStudio({ defaultView = 'my-automations', initi
           onNewAutomation={() => setActiveView('templates')}
           onRefresh={refresh}
           loading={loading}
-          isAdmin={isAdmin}
+          isAdmin={isPlatformAdmin}
           metrics={metrics}
         />
       )}

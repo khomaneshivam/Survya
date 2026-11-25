@@ -3,6 +3,7 @@ const { db } = require("../config/database");
 const config = require("../config/env");
 const cryptoUtil = require("../utils/cryptoUtil");
 const timeUtil = require("../utils/timeUtil");
+const { getMetaBaseUrl } = require("./metaWhatsAppService");
 
 /**
  * Meta Embedded Signup v4 Service with Coexistence Mode Support
@@ -99,7 +100,7 @@ async function exchangeCode({
     accessToken = `EAAMock_${crypto.randomBytes(24).toString("hex")}`;
   } else {
     try {
-      const tokenUrl = new URL("https://graph.facebook.com/v21.0/oauth/access_token");
+      const tokenUrl = new URL(`${getMetaBaseUrl()}/oauth/access_token`);
       tokenUrl.searchParams.set("client_id", config.META_APP_ID || process.env.META_APP_ID);
       tokenUrl.searchParams.set("client_secret", config.META_APP_SECRET || process.env.META_APP_SECRET);
       tokenUrl.searchParams.set("code", String(code).trim());
@@ -126,7 +127,7 @@ async function exchangeCode({
   // 4. In non-simulation mode, subscribe webhooks for this WABA
   if (!isMockCode && cleanWabaId && accessToken) {
     try {
-      await fetch(`https://graph.facebook.com/v21.0/${cleanWabaId}/subscribed_apps`, {
+      await fetch(`${getMetaBaseUrl()}/${cleanWabaId}/subscribed_apps`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,

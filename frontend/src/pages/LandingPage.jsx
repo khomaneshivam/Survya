@@ -365,7 +365,7 @@ export default function LandingPage({ onGetStarted, onSignIn }) {
 
       {/* Oct 2026 India Zero-Markup Cost Calculator */}
       <section style={{ maxWidth: '1200px', marginInline: 'auto', padding: '24px 24px 48px' }}>
-        <Card style={{ borderColor: 'var(--sarvya-blue)', background: 'linear-gradient(180deg, #F8FAFD 0%, #FFFFFF 100%)' }}>
+        <Card style={{ borderColor: 'var(--sarvya-blue)', background: '#F8FAFD' }}>
           <CardBody style={{ padding: '32px 28px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
               <div>

@@ -24,11 +24,12 @@ router.get("/plans", (req, res) => {
 router.post("/webhook/razorpay", async (req, res) => {
   try {
     const signature = req.headers["x-razorpay-signature"];
-    const result = await billingService.handleRazorpayWebhook(req.body, signature, req.rawBody);
+    const result = await billingService.handleRazorpayWebhook(req.body, signature, req.rawBody, { requireSignature: true });
     return res.status(200).json(result);
   } catch (err) {
     console.error("[Razorpay Webhook Error]:", err.message);
-    return res.status(400).json({ success: false, message: err.message });
+    const code = /signature|secret/i.test(err.message) ? 401 : 400;
+    return res.status(code).json({ success: false, message: err.message });
   }
 });
 
@@ -42,27 +43,11 @@ router.use(authenticateToken);
 router.get("/subscription", (req, res) => {
   try {
     const tenantId = req.user.tenant_id;
-    const tenant = db.prepare(`
-      SELECT id, name, plan_code, subscription_status, trial_ends_at,
-             quota_monthly_messages, quota_waba_lines, gstin, billing_address
-      FROM tenants
-      WHERE id = ? AND delete_status = 0
-    `).get(tenantId);
+    const snap = billingService.getTenantEntitlementSnapshot(tenantId);
 
-    if (!tenant) {
+    if (!snap) {
       return res.status(404).json({ success: false, message: "Workspace not found." });
     }
-
-    const currentWabaLines = db.prepare(`
-      SELECT COUNT(*) as count FROM waba_phone_numbers
-      WHERE tenant_id = ? AND delete_status = 0
-    `).get(tenantId)?.count || 0;
-
-    // Count monthly messages dispatched
-    const monthlyMessages = db.prepare(`
-      SELECT COUNT(*) as count FROM whatsapp_messages
-      WHERE tenant_id = ? AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
-    `).get(tenantId)?.count || 0;
 
     const latestSub = db.prepare(`
       SELECT id, plan_code, billing_cycle, invoice_number, period_start, period_end, status
@@ -74,18 +59,19 @@ router.get("/subscription", (req, res) => {
     return res.status(200).json({
       success: true,
       data: {
-        tenantId,
-        tenantName: tenant.name,
-        planCode: tenant.plan_code,
-        subscriptionStatus: tenant.subscription_status,
-        trialEndsAt: tenant.trial_ends_at,
-        gstin: tenant.gstin,
-        billingAddress: tenant.billing_address,
+        tenantId: snap.tenantId,
+        tenantName: snap.tenantName,
+        planCode: snap.planCode,
+        subscriptionStatus: snap.subscriptionStatus,
+        trialEndsAt: snap.trialEndsAt,
+        trialExpired: snap.isTrialExpired,
+        gstin: snap.gstin,
+        billingAddress: snap.billingAddress,
         usage: {
-          wabaLinesUsed: currentWabaLines,
-          wabaLinesLimit: tenant.quota_waba_lines,
-          messagesUsed: monthlyMessages,
-          messagesLimit: tenant.quota_monthly_messages
+          wabaLinesUsed: snap.wabaLinesUsed,
+          wabaLinesLimit: snap.quotaWabaLines,
+          messagesUsed: snap.messagesUsed,
+          messagesLimit: snap.quotaMonthlyMessages
         },
         latestSubscription: latestSub || null
       }

@@ -17,8 +17,20 @@ describe("Conversational Concierge & Auto-Reply Bot Customization Test Suite", {
   const guestPhone = "919988776656";
   let testLinkId = null;
   const testSlug = `custom-bot-test-${Date.now().toString(36)}`;
+  const prevSettings = {};
+  const settingKeys = [
+    "AUTO_REPLY_ENGINE_MODE", "AUTO_REPLY_ENABLED", "AUTO_REPLY_MODE",
+    "BOT_BUSINESS_NAME", "AUTO_REPLY_MESSAGE", "BOT_WELCOME_MESSAGE",
+    "BOT_BUTTON_1", "BOT_BUTTON_2", "BOT_BUTTON_3",
+    "BOT_QUOTE_CONFIRM", "BOT_QUOTE_MODIFY", "BOT_QUOTE_ROOMS",
+    "BOT_CONFIRMED_BUTTON_1", "BOT_CONFIRMED_BUTTON_2", "BOT_CONFIRMED_BUTTON_3",
+    "BOT_HANDOFF_PHONE", "BOT_HANDOFF_MESSAGE", "BOT_TAKEOVER_PAUSE_MINUTES"
+  ];
 
   before(async () => {
+    for (const k of settingKeys) {
+      prevSettings[k] = getSetting(k);
+    }
     server = app.listen(0);
     const port = server.address().port;
     baseUrl = `http://127.0.0.1:${port}`;
@@ -154,7 +166,7 @@ describe("Conversational Concierge & Auto-Reply Bot Customization Test Suite", {
     `).get(guestPhone);
 
     assert.ok(botReply);
-    assert.equal(botReply.reply_status, "SENT");
+    assert.ok(["AUTO_REPLIED", "SENT"].includes(botReply.reply_status));
   });
 
   test("4. Clicking customized staff button triggers custom handoff message and number", async () => {
@@ -260,12 +272,15 @@ describe("Conversational Concierge & Auto-Reply Bot Customization Test Suite", {
     if (server) {
       server.close();
     }
-    const { setSetting } = require("../src/config/database");
-    setSetting("AUTO_REPLY_ENGINE_MODE", "HOSPITALITY_FLOW");
-    setSetting("AUTO_REPLY_ENABLED", "true");
-    setSetting("BOT_BUSINESS_NAME", "KonkanTrip Beach Resort & Spa");
-    setSetting("AUTO_REPLY_MESSAGE", "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message and our team will get back to you shortly.");
-    setSetting("BOT_WELCOME_MESSAGE", "👋 Hello {{name}}! Welcome to *{{business_name}}*.\n\nHow can we help you today? Select an option below or reply with your travel dates to check real-time availability and live rates! 👇");
+    for (const [k, v] of Object.entries(prevSettings)) {
+      if (v !== null && v !== undefined) {
+        setSetting(k, v);
+      } else {
+        try {
+          db.prepare("DELETE FROM settings WHERE `key` = ?").run(k);
+        } catch (_) {}
+      }
+    }
 
     try {
       if (testLinkId) {

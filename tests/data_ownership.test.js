@@ -22,13 +22,15 @@ describe("Multi-Tenant Data Ownership & Account Isolation Test Suite", () => {
   const testTimestamp = Date.now();
   let createdEnquiryId;
   let createdEntityId;
+  let prevFlowsEnabled = null;
 
   before(async () => {
     server = app.listen(0);
     const port = server.address().port;
     baseUrl = `http://127.0.0.1:${port}`;
 
-    const { setSetting } = require("../src/config/database");
+    const { getSetting, setSetting } = require("../src/config/database");
+    prevFlowsEnabled = getSetting("WHATSAPP_FLOWS_ENABLED");
     setSetting("WHATSAPP_FLOWS_ENABLED", "true");
 
     const hash = bcrypt.hashSync("SecurePass123!", 8);
@@ -74,6 +76,14 @@ describe("Multi-Tenant Data Ownership & Account Isolation Test Suite", () => {
   });
 
   after(() => {
+    try {
+      const { setSetting } = require("../src/config/database");
+      if (prevFlowsEnabled !== null && prevFlowsEnabled !== undefined) {
+        setSetting("WHATSAPP_FLOWS_ENABLED", prevFlowsEnabled);
+      } else {
+        setSetting("WHATSAPP_FLOWS_ENABLED", "false");
+      }
+    } catch (_) {}
     if (server) server.close();
   });
 

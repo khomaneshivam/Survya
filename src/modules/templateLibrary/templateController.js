@@ -10,6 +10,11 @@ const templateUpgradeService = require("./templateUpgradeService");
 const templateRepository = require("./templateRepository");
 const templateConfigValidator = require("./templateConfigValidator");
 const templateBindingService = require("./templateBindingService");
+const { isPlatformAdmin } = require("../../middleware/authMiddleware");
+
+function resolveTenantId(req) {
+  return Number(req.user?.tenant_id || req.user?.tenantId || 1);
+}
 
 class TemplateController {
   /**
@@ -18,7 +23,7 @@ class TemplateController {
    */
   async listCatalog(req, res) {
     try {
-      const tenantId = req.user?.tenantId || 1;
+      const tenantId = resolveTenantId(req);
       const { industry, category, search, limit, offset } = req.query;
       const templates = templateCatalogService.listCatalog(tenantId, {
         industry,
@@ -39,6 +44,9 @@ class TemplateController {
    */
   async listAllForAdmin(req, res) {
     try {
+      if (!isPlatformAdmin(req.user)) {
+        return res.status(403).json({ success: false, error: "Platform Administrator privileges required." });
+      }
       const templates = templateCatalogService.listAllForAdmin();
       res.json({ success: true, count: templates.length, templates });
     } catch (err) {
@@ -52,7 +60,7 @@ class TemplateController {
    */
   async getResources(req, res) {
     try {
-      const tenantId = req.user?.tenantId || 1;
+      const tenantId = resolveTenantId(req);
       const resources = templateBindingService.getAvailableTenantResources(tenantId);
       res.json({ success: true, resources });
     } catch (err) {
@@ -66,7 +74,7 @@ class TemplateController {
    */
   async getTemplate(req, res) {
     try {
-      const tenantId = req.user?.tenantId || 1;
+      const tenantId = resolveTenantId(req);
       const details = templateCatalogService.getTemplateDetails(req.params.id, tenantId);
       if (!details) {
         return res.status(404).json({ success: false, error: "Template not found" });
@@ -79,13 +87,24 @@ class TemplateController {
 
   /**
    * POST /api/v1/template-library
-   * Create a new template (Private or System)
+   * Create a new template (Private for workspace admin, or PUBLIC by Platform Admin only)
    */
   async createTemplate(req, res) {
     try {
-      const tenantId = req.user?.tenantId || 1;
+      const tenantId = resolveTenantId(req);
       const userId = req.user?.id || 'system';
-      const template = templateCatalogService.createTemplate(tenantId, userId, req.body);
+      const platformAdmin = isPlatformAdmin(req.user);
+      const requestedVisibility = req.body?.visibility ? String(req.body.visibility).toUpperCase() : null;
+
+      if (requestedVisibility === 'PUBLIC' && !platformAdmin) {
+        return res.status(403).json({ success: false, error: "Only Platform Administrators may publish PUBLIC templates." });
+      }
+
+      const payload = {
+        ...(req.body || {}),
+        visibility: platformAdmin ? (requestedVisibility || 'PUBLIC') : 'PRIVATE'
+      };
+      const template = templateCatalogService.createTemplate(tenantId, userId, payload);
       res.status(201).json({ success: true, template });
     } catch (err) {
       res.status(400).json({ success: false, error: err.message });
@@ -98,8 +117,15 @@ class TemplateController {
    */
   async createVersion(req, res) {
     try {
-      const tenantId = req.user?.tenantId || 1;
+      const tenantId = resolveTenantId(req);
       const userId = req.user?.id || 'system';
+      const existing = templateRepository.findTemplateByIdOrKey(req.params.id, tenantId);
+      if (!existing) {
+        return res.status(404).json({ success: false, error: "Template not found or not accessible." });
+      }
+      if (!isPlatformAdmin(req.user) && (existing.visibility === 'PUBLIC' || Number(existing.owner_tenant_id) !== tenantId)) {
+        return res.status(403).json({ success: false, error: "Forbidden: Only Platform Administrators may release versions for shared master templates." });
+      }
       const version = templateCatalogService.createReleaseVersion(req.params.id, tenantId, userId, req.body);
       res.status(201).json({ success: true, version });
     } catch (err) {
@@ -113,7 +139,7 @@ class TemplateController {
    */
   async installTemplate(req, res) {
     try {
-      const tenantId = req.user?.tenantId || 1;
+      const tenantId = resolveTenantId(req);
       const userId = req.user?.id || 'system';
       const { customFlowName, configValues, bindings, activateImmediately } = req.body;
 
@@ -139,7 +165,7 @@ class TemplateController {
    */
   async listInstallations(req, res) {
     try {
-      const tenantId = req.user?.tenantId || 1;
+      const tenantId = resolveTenantId(req);
       const installations = templateRepository.listInstallations(tenantId);
       res.json({ success: true, count: installations.length, installations });
     } catch (err) {
@@ -153,7 +179,7 @@ class TemplateController {
    */
   async getInstallation(req, res) {
     try {
-      const tenantId = req.user?.tenantId || 1;
+      const tenantId = resolveTenantId(req);
       const installation = templateRepository.findInstallationById(req.params.id, tenantId);
       if (!installation) {
         return res.status(404).json({ success: false, error: "Installation not found" });
@@ -180,7 +206,7 @@ class TemplateController {
    */
   async updateConfig(req, res) {
     try {
-      const tenantId = req.user?.tenantId || 1;
+      const tenantId = resolveTenantId(req);
       const userId = req.user?.id || 'system';
       const installation = templateRepository.findInstallationById(req.params.id, tenantId);
       if (!installation) {
@@ -197,11 +223,18 @@ class TemplateController {
       if (configValues !== undefined) {
         const merged = { ...installation.config_values, ...configValues };
         const validation = templateConfigValidator.validate(installation.config_schema, merged);
+        if (!validation.isValid) {
+          return res.status(400).json({ success: false, error: validation.errors.join("; "), errors: validation.errors });
+        }
         updates.config_values_json = validation.cleanConfig;
       }
 
       if (Array.isArray(bindings)) {
-        templateRepository.saveBindings(installation.id, tenantId, bindings, userId);
+        const bindingValidation = templateBindingService.validateBindings(installation.required_bindings, bindings, tenantId);
+        if (!bindingValidation.isValid) {
+          return res.status(400).json({ success: false, error: bindingValidation.errors.join("; "), errors: bindingValidation.errors });
+        }
+        templateRepository.saveBindings(installation.id, tenantId, bindingValidation.resolvedBindings.length ? bindingValidation.resolvedBindings : bindings, userId);
       }
 
       const updated = templateRepository.updateInstallation(installation.id, tenantId, updates);
@@ -221,7 +254,7 @@ class TemplateController {
    */
   async validateInstallation(req, res) {
     try {
-      const tenantId = req.user?.tenantId || 1;
+      const tenantId = resolveTenantId(req);
       const installation = templateRepository.findInstallationById(req.params.id, tenantId);
       if (!installation) {
         return res.status(404).json({ success: false, error: "Installation not found" });
@@ -252,7 +285,7 @@ class TemplateController {
    */
   async activateInstallation(req, res) {
     try {
-      const tenantId = req.user?.tenantId || 1;
+      const tenantId = resolveTenantId(req);
       const userId = req.user?.id || 'system';
       const result = templateInstallService.validateAndActivateInstallation(req.params.id, tenantId, userId);
       res.json(result);
@@ -267,7 +300,7 @@ class TemplateController {
    */
   async checkUpgrade(req, res) {
     try {
-      const tenantId = req.user?.tenantId || 1;
+      const tenantId = resolveTenantId(req);
       const result = templateUpgradeService.checkUpgradeAvailability(req.params.id, tenantId);
       res.json({ success: true, ...result });
     } catch (err) {
@@ -281,10 +314,16 @@ class TemplateController {
    */
   async upgradeInstallation(req, res) {
     try {
-      const tenantId = req.user?.tenantId || 1;
+      const tenantId = resolveTenantId(req);
       const userId = req.user?.id || 'system';
-      const { targetVersionNumber } = req.body;
-      const result = templateUpgradeService.upgradeInstallation(req.params.id, tenantId, userId, targetVersionNumber);
+      const { targetVersionNumber, preserveCustomizations = true } = req.body || {};
+      const result = templateUpgradeService.upgradeInstallation(
+        req.params.id,
+        tenantId,
+        userId,
+        targetVersionNumber,
+        { preserveCustomizations: preserveCustomizations !== false }
+      );
       res.json(result);
     } catch (err) {
       res.status(400).json({ success: false, error: err.message });

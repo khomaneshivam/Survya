@@ -27,29 +27,29 @@ import {
 const MODULE_SEARCH_INDEX = [
   { id: 'dashboard', label: 'Overview', group: 'SARVYA Insights', keywords: 'overview dashboard metrics kpi summary' },
   { id: 'enquiries', label: 'CRM & Booking Pipeline', group: 'SARVYA CRM', keywords: 'crm contacts leads pipeline enquiries quotes' },
-  { id: 'flows', label: 'Forms Builder', group: 'SARVYA Forms', keywords: 'forms flows builder interactive json publish' },
-  { id: 'automation', label: 'Workflows & Lifecycle', group: 'SARVYA Flow', keywords: 'workflows automation sheets triggers lifecycle' },
+  { id: 'flows', label: 'Flow Builder', group: 'SARVYA Flow', keywords: 'flow builder forms workflows interactive json publish studio' },
   { id: 'inbox', label: 'Shared Conversations', group: 'SARVYA Connect', keywords: 'inbox chat messages conversations whatsapp replies' },
-  { id: 'autoreply', label: 'Conversational Concierge & Auto-Reply Bot', group: 'SARVYA Connect', keywords: 'auto reply bot concierge automated replies interactive flows handoff rules dynamic cost safety' },
+  { id: 'autoreply', label: 'Automation Studio', group: 'Workspace Controls', keywords: 'auto reply bot concierge automated templates visual workflow', workspaceAdminOnly: true },
   { id: 'broadcast', label: 'Campaigns Studio', group: 'SARVYA Connect', keywords: 'campaigns broadcast bulk template send' },
   { id: 'ai', label: 'AI Assistant & Guardrails', group: 'SARVYA AI', keywords: 'ai assistant auto reply rules prompts safety' },
   { id: 'reports', label: 'Insights & Telemetry', group: 'SARVYA Insights', keywords: 'insights analytics reports export logs' },
   { id: 'catalog', label: 'Catalog, Menu & Inventory', group: 'Industry Module', keywords: 'catalog menu dishes rooms items 86 stock inventory' },
   { id: 'inventory', label: 'Hospitality Inventory', group: 'Industry Module', keywords: 'hospitality rooms inventory calendar rates' },
   { id: 'links', label: 'Chat Links & In-App Chat', group: 'SARVYA Connect', keywords: 'chat links qr codes customer landing conversations' },
-  { id: 'settings', label: 'My Account & Preferences', group: 'Account', keywords: 'profile settings password waba line greeting auto-reply' },
-  { id: 'payouts', label: 'Payouts & Bank Settlements', group: 'System Governance', keywords: 'payouts bank settlements imps utr balance penny drop', adminOnly: true },
+  { id: 'connect', label: 'Connect & Integrations', group: 'Workspace Controls', keywords: 'connect waba templates webhooks sheets integrations', workspaceAdminOnly: true },
+  { id: 'settings', label: 'Team & Settings', group: 'Account', keywords: 'profile settings password team users billing waba line auto-reply' },
+  { id: 'payouts', label: 'Payouts & Bank Settlements', group: 'Platform Governance', keywords: 'payouts bank settlements imps utr balance penny drop', adminOnly: true, platformAdminOnly: true },
   { id: 'pricing', label: 'Enterprise Plans', group: 'SARVYA Core', keywords: 'plans pricing tiers billing' },
-  { id: 'admin', label: 'System Admin Panel', group: 'System Governance', keywords: 'admin users roles tokens meta waba audit logs system', adminOnly: true }
+  { id: 'admin', label: 'System Admin Panel', group: 'Platform Governance', keywords: 'admin users roles tokens meta waba audit logs system', adminOnly: true, platformAdminOnly: true }
 ];
 
 const TAB_META = {
   dashboard: { module: 'Insights', title: 'Overview' },
   enquiries: { module: 'CRM', title: 'Contacts & Pipeline' },
-  flows: { module: 'Forms', title: 'Form Builder' },
-  automation: { module: 'Flow', title: 'Workflows' },
+  flows: { module: 'Flow', title: 'Flow Builder' },
+  automation: { module: 'Flow', title: 'Flow Builder' },
   inbox: { module: 'Connect', title: 'Conversations' },
-  autoreply: { module: 'Connect', title: 'Auto-Reply Bot & Concierge' },
+  autoreply: { module: 'Connect', title: 'Automation Studio' },
   broadcast: { module: 'Connect', title: 'Campaigns' },
   ai: { module: 'AI', title: 'Assistant & Safety' },
   reports: { module: 'Insights', title: 'Analytics & Reports' },
@@ -59,12 +59,12 @@ const TAB_META = {
   links: { module: 'Connect', title: 'Chat Links' },
   pricing: { module: 'Core', title: 'Plans & Modules' },
   admin: { module: 'Governance', title: 'System Admin Panel' },
-  settings: { module: 'Account', title: 'My Account & Preferences' },
-  connect: { module: 'Connect', title: 'Integrations & Settings' }
+  settings: { module: 'Account', title: 'Team & Settings' },
+  connect: { module: 'Connect', title: 'Connect & Integrations' }
 };
 
 export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
-  const { token, user, isAdmin, logout, switchWorkspace } = useAuth();
+  const { token, user, isPlatformAdmin, isWorkspaceAdmin, logout, switchWorkspace } = useAuth();
   const [metaStatus, setMetaStatus] = useState({ connected: false, loading: true });
   const [phoneNumbers, setPhoneNumbers] = useState([]);
   const [workspaces, setWorkspaces] = useState([]);
@@ -197,7 +197,7 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
 
   async function switchDefaultLine(lineId) {
     try {
-      const endpoint = isAdmin
+      const endpoint = isPlatformAdmin
         ? `/api/admin/phone-numbers/${lineId}/default`
         : `/api/phone-numbers/${lineId}/default`;
       const res = await fetch(endpoint, {
@@ -217,7 +217,8 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
   const currentMeta = TAB_META[activeTab] || TAB_META.dashboard;
   const searchMatches = globalQuery.trim()
     ? MODULE_SEARCH_INDEX.filter((m) => {
-        if (m.adminOnly && !isAdmin) return false;
+        if ((m.platformAdminOnly || m.adminOnly) && !isPlatformAdmin) return false;
+        if (m.workspaceAdminOnly && !isWorkspaceAdmin) return false;
         const q = globalQuery.toLowerCase();
         return m.label.toLowerCase().includes(q) || m.keywords.includes(q);
       })
@@ -311,14 +312,14 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
                           {ws.connectedLinesCount} WhatsApp {ws.connectedLinesCount === 1 ? 'Line' : 'Lines'}
                         </div>
                       </div>
-                      {isCurrent && <Check size={14} color="#10b981" style={{ flexShrink: 0 }} />}
+                      {isCurrent && <Check size={14} color="#2F5219" style={{ flexShrink: 0 }} />}
                     </button>
                   );
                 })
               )}
 
-              {/* Add Client Workspace button (Enterprise or Master Admin) */}
-              {(isAdmin || user?.tenant?.plan_code === 'ENTERPRISE') && (
+              {/* Add Client Workspace button (Enterprise or Platform Admin) */}
+              {(isPlatformAdmin || user?.tenant?.plan_code === 'ENTERPRISE') && (
                 <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '6px' }}>
                   <button
                     type="button"
@@ -363,20 +364,22 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
                 ))
               )}
 
-              <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '6px' }}>
-                <button
-                  type="button"
-                  className="sarvya-menu-item"
-                  onClick={() => {
-                    setOpenMenu(null);
-                    setShowAddPhoneModal(true);
-                  }}
-                  style={{ color: '#10b981', fontWeight: 600 }}
-                >
-                  <Plus size={14} />
-                  <span>Connect WhatsApp Line</span>
-                </button>
-              </div>
+              {isWorkspaceAdmin && (
+                <div style={{ borderTop: '1px solid var(--border-subtle)', padding: '6px' }}>
+                  <button
+                    type="button"
+                    className="sarvya-menu-item"
+                    onClick={() => {
+                      setOpenMenu(null);
+                      setShowAddPhoneModal(true);
+                    }}
+                    style={{ color: '#2F5219', fontWeight: 600 }}
+                  >
+                    <Plus size={14} />
+                    <span>Connect WhatsApp Line</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -426,8 +429,8 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
           )}
         </div>
 
-        {/* Meta API Health: Full Controls for Admin, Subtle Indicator for Non-Admin */}
-        {isAdmin ? (
+        {/* Meta API Health: Interactive Check for Workspace/Platform Admins, Subtle Indicator for Agents */}
+        {isWorkspaceAdmin ? (
           <button
             type="button"
             onClick={checkMetaHealth}
@@ -456,8 +459,8 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
           </div>
         )}
 
-        {/* Dedicated Admin Panel Quick Access Button for Admins */}
-        {isAdmin && (
+        {/* Dedicated Admin Panel Quick Access Button strictly for Platform Super-Admins */}
+        {isPlatformAdmin && (
           <button
             type="button"
             className="sarvya-btn sarvya-btn-secondary sarvya-btn-sm"
@@ -516,7 +519,7 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
                 <FileSpreadsheet size={14} color="var(--sarvya-blue)" />
                 <span>Interactive Form / Flow</span>
               </button>
-              {isAdmin && (
+              {isWorkspaceAdmin && (
                 <button
                   type="button"
                   className="sarvya-menu-item"
@@ -648,8 +651,8 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
                 <div style={{ fontWeight: 600, fontSize: '13px' }}>{user?.name || 'Authorized User'}</div>
                 <div style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>{user?.email || ''}</div>
                 <div style={{ marginTop: '4px' }}>
-                  <span className={`sarvya-badge ${isAdmin ? 'sarvya-badge-blue' : 'sarvya-badge-neutral'}`} style={{ fontSize: '10.5px' }}>
-                    {isAdmin ? 'System Administrator' : 'Operator'}
+                  <span className={`sarvya-badge ${isPlatformAdmin ? 'sarvya-badge-blue' : 'sarvya-badge-neutral'}`} style={{ fontSize: '10.5px' }}>
+                    {isPlatformAdmin ? 'Platform Super-Admin' : isWorkspaceAdmin ? 'Workspace Owner' : 'Operator'}
                   </span>
                 </div>
               </div>
@@ -659,9 +662,9 @@ export default function Topbar({ activeTab, setActiveTab, setMobileOpen }) {
                 onClick={() => { setOpenMenu(null); setActiveTab('settings'); }}
               >
                 <Settings size={14} />
-                <span>My Account &amp; Preferences</span>
+                <span>{isWorkspaceAdmin ? 'Team & Settings' : 'My Account & Preferences'}</span>
               </button>
-              {isAdmin && (
+              {isPlatformAdmin && (
                 <button
                   type="button"
                   className="sarvya-menu-item"

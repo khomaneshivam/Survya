@@ -14,14 +14,16 @@ const webhookWorker = new JobWorkerEngine({ queueName: "webhook", pollIntervalMs
 const apiRoutes = require("./src/routes/apiRoutes");
 const webhookController = require("./src/controllers/webhookController");
 const securityHeaders = require("./src/middleware/securityHeaders");
+const { correlationMiddleware } = require("./src/utils/logger");
 
 const app = express();
 
 // Disable X-Powered-By header to prevent fingerprinting
 app.disable("x-powered-by");
 
-// Apply enterprise HTTP security headers (OWASP compliant)
+// Apply enterprise HTTP security headers (OWASP compliant) & correlation request tracking
 app.use(securityHeaders);
+app.use(correlationMiddleware);
 
 // Response compression middleware (gzip & brotli via built-in Node zlib)
 app.use((req, res, next) => {
@@ -170,6 +172,24 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 const distPath = path.join(__dirname, "frontend", "dist");
 const publicPath = path.join(__dirname, "public");
 
+// Uploads Path Traversal Guard & File Execution Defense (must execute BEFORE /uploads/inbound auth)
+app.use("/uploads", (req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  let decodedUrl = "";
+  try {
+    decodedUrl = decodeURIComponent(req.url || "");
+  } catch (e) {
+    return res.status(400).json({ success: false, message: "Malformed URI." });
+  }
+  if (req.url.includes("..") || decodedUrl.includes("..") || decodedUrl.includes("\\")) {
+    return res.status(403).json({ success: false, message: "Forbidden: Path traversal detected." });
+  }
+  if (/\.(svg|html|htm|xhtml|xml|js|exe|bat|cmd|sh|php)$/i.test(decodedUrl)) {
+    return res.status(403).json({ success: false, message: "Forbidden: Insecure file access prohibited." });
+  }
+  next();
+});
+
 // Private inbound media must never be served by Express static without tenant
 // authentication and an ownership lookup. This gate runs before publicPath.
 const { authenticateToken } = require("./src/middleware/authMiddleware");
@@ -218,24 +238,6 @@ const inboundUploadsPath = path.join(uploadsPath, "inbound");
 if (!fs.existsSync(inboundUploadsPath)) {
   fs.mkdirSync(inboundUploadsPath, { recursive: true });
 }
-
-// 3. Uploads Path Traversal Guard & File Execution Defense
-app.use("/uploads", (req, res, next) => {
-  res.setHeader("X-Content-Type-Options", "nosniff");
-  let decodedUrl = "";
-  try {
-    decodedUrl = decodeURIComponent(req.url || "");
-  } catch (e) {
-    return res.status(400).json({ success: false, message: "Malformed URI." });
-  }
-  if (req.url.includes("..") || decodedUrl.includes("..") || decodedUrl.includes("\\")) {
-    return res.status(403).json({ success: false, message: "Forbidden: Path traversal detected." });
-  }
-  if (/\.(svg|html|htm|xhtml|xml|js|exe|bat|cmd|sh|php)$/i.test(decodedUrl)) {
-    return res.status(403).json({ success: false, message: "Forbidden: Insecure file access prohibited." });
-  }
-  next();
-});
 
 // 4. Inbound Media On-Demand with Path Traversal Protection
 app.get("/uploads/inbound/:filename", async (req, res, next) => {
@@ -326,9 +328,33 @@ app.get(["/c/:slug", "/chat/:slug"], (req, res, next) => {
   next();
 });
 
-// 4b. Health Check Endpoint
+// 4b. Database-Verified Readiness & Health Check Endpoint
 app.get(["/api/health", "/health"], (req, res) => {
-  res.status(200).json({ status: "healthy", timestamp: new Date().toISOString() });
+  const startedAt = process.hrtime.bigint();
+  try {
+    const { db } = require("./src/config/database");
+    const row = db.prepare("SELECT 1 as ok").get();
+    const dbLatencyMs = Math.round((Number(process.hrtime.bigint() - startedAt) / 1e6) * 100) / 100;
+    if (!row || Number(row.ok) !== 1) {
+      throw new Error("Database probe did not return expected sentinel.");
+    }
+    return res.status(200).json({
+      status: "healthy",
+      database: "connected",
+      dbLatencyMs,
+      uptimeSeconds: Math.round(process.uptime()),
+      requestId: req.requestId || null,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    return res.status(503).json({
+      status: "unhealthy",
+      database: "disconnected",
+      error: config.NODE_ENV === "production" ? "Database unreachable" : err.message,
+      requestId: req.requestId || null,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // 4c. In-App Experience Studio API

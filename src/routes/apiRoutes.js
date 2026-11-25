@@ -10,9 +10,10 @@ const campaignController = require("../controllers/campaignController");
 const settingsController = require("../controllers/settingsController");
 const authController = require("../controllers/authController");
 const adminController = require("../controllers/adminController");
+const workspaceTeamController = require("../controllers/workspaceTeamController");
 const reportsController = require("../controllers/reportsController");
 const resortController = require("../controllers/resortController");
-const { authenticateToken, requireAdmin, authenticateStreamToken, optionalAuth } = require("../middleware/authMiddleware");
+const { authenticateToken, requireAdmin, requireWorkspaceAdmin, authenticateStreamToken, optionalAuth } = require("../middleware/authMiddleware");
 const { authLimiter, broadcastLimiter, uploadLimiter, apiLimiter } = require("../middleware/rateLimiter");
 const broadcastEngine = require("../services/broadcastEngine");
 const metaWhatsAppService = require("../services/metaWhatsAppService");
@@ -52,6 +53,12 @@ router.post("/admin/impersonate/:userId", authenticateToken, requireAdmin, admin
 router.get("/admin/overview", authenticateToken, requireAdmin, adminController.getSystemOverview);
 router.get("/admin/audit-logs", authenticateToken, requireAdmin, adminController.getAuditLogs);
 router.post("/admin/backup", authenticateToken, requireAdmin, adminController.exportBackup);
+
+// Workspace Team Management (Tenant-Scoped Owner/Admin Only)
+router.get("/v1/workspace/users", authenticateToken, requireWorkspaceAdmin, workspaceTeamController.listWorkspaceUsers);
+router.post("/v1/workspace/users", authenticateToken, requireWorkspaceAdmin, workspaceTeamController.createWorkspaceUser);
+router.patch("/v1/workspace/users/:userId", authenticateToken, requireWorkspaceAdmin, workspaceTeamController.updateWorkspaceUser);
+router.delete("/v1/workspace/users/:userId", authenticateToken, requireWorkspaceAdmin, workspaceTeamController.deleteWorkspaceUser);
 
 // WhatsApp Phone Number Registry (Protected & Admin Only for mutations)
 router.get("/admin/phone-numbers", authenticateToken, adminController.listPhoneNumbers);
@@ -497,14 +504,11 @@ router.get("/media/inbound/:mediaId", authenticateToken, async (req, res) => {
   }
 });
 
-// Direct inbox reply by phone/contact (Protected)
+// Direct inbox reply by phone/contact (Tenant-Scoped Channel Dispatch)
 router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async (req, res) => {
   try {
-    // Legacy direct-send uses platform credentials; no cross-tenant sends.
-    if (Number(req.user?.tenant_id) !== 1) return res.status(403).json({
-      success: false, message: "Tenant-owned channel messaging is required."
-    });
-    const { to, message, replyId, mediaUrl, mediaId, mediaType: clientMediaType } = req.body || {};
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const { to, message, replyId, mediaUrl, mediaId, mediaType: clientMediaType, phoneNumberId: requestedPhoneId } = req.body || {};
     const text = message !== undefined ? String(message) : (req.body?.replyText !== undefined ? String(req.body.replyText) : "");
 
     const targetPhone = metaWhatsAppService.cleanPhone(to || "", getSetting("DEFAULT_COUNTRY_CODE") || "91");
@@ -526,9 +530,40 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
       SELECT id, source, link_id FROM customer_replies 
       WHERE tenant_id = ? AND deleted_at IS NULL AND from_phone = ? AND (source = 'CHAT_LINK' OR from_phone LIKE '919000%')
       ORDER BY id DESC LIMIT 1
-    `).get(req.user.tenant_id, targetPhone);
+    `).get(tenantId, targetPhone);
 
     const isWebChat = Boolean(recentWebMessage || targetPhone.startsWith("919000"));
+
+    // Resolve tenant-owned WhatsApp channel for outbound dispatch
+    let resolvedChannelPhoneId = null;
+    if (!isWebChat) {
+      if (requestedPhoneId) {
+        const line = db.prepare(`
+          SELECT phone_number_id FROM waba_phone_numbers
+          WHERE (phone_number_id = ? OR id = ?) AND tenant_id = ? AND COALESCE(delete_status, 0) = 0
+          LIMIT 1
+        `).get(String(requestedPhoneId).trim(), String(requestedPhoneId).trim(), tenantId);
+        if (!line) {
+          return res.status(403).json({ success: false, message: "Selected WhatsApp channel does not belong to your workspace." });
+        }
+        resolvedChannelPhoneId = line.phone_number_id;
+      } else if (tenantId > 1) {
+        const tenantLine = db.prepare(`
+          SELECT phone_number_id FROM waba_phone_numbers
+          WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0
+          ORDER BY is_default DESC, id ASC LIMIT 1
+        `).get(tenantId);
+        if (!tenantLine?.phone_number_id) {
+          return res.status(400).json({ success: false, message: "No WhatsApp Business channel is connected for your workspace." });
+        }
+        resolvedChannelPhoneId = tenantLine.phone_number_id;
+      }
+    }
+
+    const customCredentials = {
+      tenantId,
+      ...(resolvedChannelPhoneId ? { phoneNumberId: resolvedChannelPhoneId } : {})
+    };
 
     if (isWebChat) {
       metaMessageId = `out_web_${Date.now()}`;
@@ -548,7 +583,8 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
         const metaUp = await metaWhatsAppService.uploadMedia({
           fileBuffer,
           fileName: req.file.originalname,
-          mimeType: req.file.mimetype
+          mimeType: req.file.mimetype,
+          customCredentials
         });
         if (metaUp?.mediaId) {
           metaMediaId = metaUp.mediaId;
@@ -562,7 +598,8 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
         type: finalMediaType,
         mediaId: metaMediaId || null,
         mediaUrl: !metaMediaId ? fullUrl : null,
-        caption: text.trim() ? text : ""
+        caption: text.trim() ? text : "",
+        customCredentials
       });
       metaMessageId = sendRes.messageId;
     } else if (finalMediaUrl || mediaId) {
@@ -574,11 +611,12 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
         type: finalMediaType,
         mediaId: mediaId || null,
         mediaUrl: finalMediaUrl || null,
-        caption: text.trim() ? text : ""
+        caption: text.trim() ? text : "",
+        customCredentials
       });
       metaMessageId = sendRes.messageId;
     } else {
-      sendRes = await metaWhatsAppService.sendTextMessage({ to: targetPhone, body: text });
+      sendRes = await metaWhatsAppService.sendTextMessage({ to: targetPhone, body: text, customCredentials });
       metaMessageId = sendRes.messageId;
     }
 
@@ -587,7 +625,7 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
     const replyUserId = req.user?.id || null;
     let existingGuestName = "Customer";
     try {
-      const prior = db.prepare("SELECT customer_name FROM customer_replies WHERE tenant_id = ? AND deleted_at IS NULL AND from_phone = ? AND customer_name NOT IN ('Customer', 'Demo Customer') AND customer_name IS NOT NULL ORDER BY id DESC LIMIT 1").get(req.user.tenant_id, targetPhone);
+      const prior = db.prepare("SELECT customer_name FROM customer_replies WHERE tenant_id = ? AND deleted_at IS NULL AND from_phone = ? AND customer_name NOT IN ('Customer', 'Demo Customer') AND customer_name IS NOT NULL ORDER BY id DESC LIMIT 1").get(tenantId, targetPhone);
       if (prior?.customer_name) {
         existingGuestName = prior.customer_name;
       } else {
@@ -595,7 +633,7 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
           SELECT cr.contact_name FROM campaign_recipients cr
           JOIN campaigns c ON c.id = cr.campaign_id
           WHERE c.tenant_id = ? AND cr.clean_phone = ? AND cr.contact_name IS NOT NULL LIMIT 1
-        `).get(req.user.tenant_id, targetPhone);
+        `).get(tenantId, targetPhone);
         if (recip?.contact_name) {
           existingGuestName = recip.contact_name;
         }
@@ -605,9 +643,14 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
     const replySource = isWebChat ? "CHAT_LINK" : "WHATSAPP";
     const replyLinkId = recentWebMessage?.link_id || null;
 
-    // Staff Takeover: Automatically pause bot for 60 minutes for this contact
+    // Staff Takeover: Automatically pause bot for 60 minutes in DB for this tenant + contact
     try {
-      webhookService.pauseBotForPhone(targetPhone, 60 * 60 * 1000);
+      webhookService.pauseBotForPhone(targetPhone, 60 * 60 * 1000, {
+        tenantId,
+        phoneNumberId: resolvedChannelPhoneId || "",
+        pausedBy: replyUserId || "agent",
+        reason: "MANUAL_INBOX_REPLY"
+      });
     } catch (e) {}
 
     db.prepare(`
@@ -629,11 +672,12 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
       replyUserId,
       replySource,
       replyLinkId,
-      req.user.tenant_id
+      tenantId
     );
 
     try {
       broadcastEngine.emit("webhook:reply_updated", {
+        tenant_id: tenantId,
         wa_message_id: assignedId,
         from_phone: targetPhone,
         message_type: "outbound",
@@ -659,31 +703,35 @@ router.post("/inbox/reply", authenticateToken, mediaUpload.single("file"), async
   }
 });
 
-// Get Bot Pause / Takeover status for a contact
+// Get Bot Pause / Takeover status for a contact (Tenant-Scoped)
 router.get(["/inbox/bot-status/:phone", "/replies/bot-status/:phone"], authenticateToken, (req, res) => {
   try {
-    if (Number(req.user?.tenant_id) !== 1) return res.status(403).json({ success: false, message: "Legacy takeover controls unavailable for this workspace." });
+    const tenantId = Number(req.user?.tenant_id || 1);
     const phone = req.params.phone;
-    const status = webhookService.getBotStatus(phone);
+    const status = webhookService.getBotStatus(phone, { tenantId });
     return res.status(200).json({ success: true, data: status });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// Set Bot Pause / Resume status for a contact
+// Set Bot Pause / Resume status for a contact (Tenant-Scoped)
 router.post(["/inbox/bot-status/:phone", "/replies/bot-status/:phone", "/replies/bot-status"], authenticateToken, (req, res) => {
   try {
-    if (Number(req.user?.tenant_id) !== 1) return res.status(403).json({ success: false, message: "Legacy takeover controls unavailable for this workspace." });
+    const tenantId = Number(req.user?.tenant_id || 1);
     const phone = req.params.phone || req.body?.phone;
     const { paused, durationMinutes } = req.body || {};
     if (paused === false || paused === "false") {
-      webhookService.resumeBotForPhone(phone);
+      webhookService.resumeBotForPhone(phone, { tenantId });
     } else {
       const durationMs = Math.max(1, parseInt(durationMinutes, 10) || 60) * 60 * 1000;
-      webhookService.pauseBotForPhone(phone, durationMs);
+      webhookService.pauseBotForPhone(phone, durationMs, {
+        tenantId,
+        pausedBy: req.user?.id || "agent",
+        reason: "MANUAL_AGENT_PAUSE"
+      });
     }
-    const status = webhookService.getBotStatus(phone);
+    const status = webhookService.getBotStatus(phone, { tenantId });
     return res.status(200).json({ success: true, data: status });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });

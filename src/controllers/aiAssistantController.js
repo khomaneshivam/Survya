@@ -258,6 +258,19 @@ class AiAssistantController {
   }
 
   /**
+   * GET /api/v1/ai/usage
+   */
+  async getUsage(req, res) {
+    try {
+      const tenantId = Number(req.user?.tenant_id || 1);
+      const summary = taskScopedAiAgentService.getAiUsageSummary(tenantId);
+      return res.json({ success: true, data: summary });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  }
+
+  /**
    * POST /api/v1/ai/copilot/draft-reply
    */
   async copilotDraftReply(req, res) {

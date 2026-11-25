@@ -89,13 +89,31 @@ class TemplateCatalogService {
       throw new Error("Template key and title are required.");
     }
 
-    return templateRepository.createTemplate({
+    const created = templateRepository.createTemplate({
       ...data,
       owner_tenant_id: data.visibility === 'PUBLIC' ? null : tenantId,
       tenant_id: tenantId,
       created_by: userId,
       updated_by: userId
     });
+
+    const hasInitialGraph = Boolean(data.graph_json || data.graph || data.config_schema || data.config_schema_json || data.required_bindings || data.required_bindings_json);
+    if (hasInitialGraph) {
+      templateRepository.createVersion({
+        template_id: created.id,
+        tenant_id: tenantId,
+        version_number: data.current_version || '1.0.0',
+        status: 'PUBLISHED',
+        graph_json: data.graph_json || data.graph || { nodes: [], transitions: [], variables: {} },
+        config_schema_json: data.config_schema_json || data.config_schema || {},
+        required_bindings_json: data.required_bindings_json || data.required_bindings || [],
+        changelog: data.changelog || 'Initial release',
+        created_by: userId,
+        updated_by: userId
+      });
+    }
+
+    return templateRepository.findTemplateByIdOrKey(created.id, tenantId) || created;
   }
 
   /**
@@ -111,8 +129,15 @@ class TemplateCatalogService {
       throw new Error("Version number is required (e.g. 1.1.0).");
     }
 
+    const prevVersion = templateRepository.findVersion(template.id);
+    const configSchema = versionData.config_schema_json ?? versionData.config_schema ?? (prevVersion?.config_schema_json || {});
+    const requiredBindings = versionData.required_bindings_json ?? versionData.required_bindings ?? (prevVersion?.required_bindings_json || []);
+
     return templateRepository.createVersion({
       ...versionData,
+      graph_json: versionData.graph_json || versionData.graph || {},
+      config_schema_json: configSchema,
+      required_bindings_json: requiredBindings,
       template_id: template.id,
       tenant_id: tenantId,
       created_by: userId,

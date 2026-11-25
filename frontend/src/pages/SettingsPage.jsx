@@ -33,14 +33,16 @@ import {
   FileText,
   Download,
   Sparkles,
-  Zap
+  Zap,
+  Users,
+  Trash2
 } from 'lucide-react';
 import { formatIndianDate } from '../utils/indianTime';
 import AddPhoneNumberModal from '../components/AddPhoneNumberModal';
 
 export default function SettingsPage() {
-  const { user, token, refreshUser } = useAuth();
-  const [activeTab, setActiveTab] = useState('lines'); // lines | profile | security | autoreply
+  const { user, token, refreshUser, isWorkspaceAdmin } = useAuth();
+  const [activeTab, setActiveTab] = useState(() => (isWorkspaceAdmin ? 'lines' : 'profile')); // lines | team | billing | profile | security | autoreply
   const [savingProfile, setSavingProfile] = useState(false);
   const [successMsg, setSuccessMsg] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -92,6 +94,19 @@ export default function SettingsPage() {
   const [checkoutBreakdown, setCheckoutBreakdown] = useState(null);
   const [processingCheckout, setProcessingCheckout] = useState(false);
 
+  // Workspace Team State (/api/v1/workspace/users)
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [loadingTeam, setLoadingTeam] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [invitingMember, setInvitingMember] = useState(false);
+  const [inviteForm, setInviteForm] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    password: '',
+    workspaceRole: 'USER'
+  });
+
   function flashSuccess(msg) {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(null), 4000);
@@ -122,11 +137,35 @@ export default function SettingsPage() {
     }
   }, [token]);
 
+  const loadTeamMembers = useCallback(async () => {
+    if (!token || !isWorkspaceAdmin) return;
+    setLoadingTeam(true);
+    try {
+      const res = await fetch('/api/v1/workspace/users', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        setTeamMembers(data.data);
+      }
+    } catch (err) {
+      console.warn('[WorkspaceTeam] Failed to load members:', err);
+    } finally {
+      setLoadingTeam(false);
+    }
+  }, [token, isWorkspaceAdmin]);
+
   useEffect(() => {
-    if (activeTab === 'billing') {
+    if (!isWorkspaceAdmin && ['lines', 'team', 'billing', 'autoreply'].includes(activeTab)) {
+      setActiveTab('profile');
+    }
+    if (activeTab === 'billing' && isWorkspaceAdmin) {
       loadBillingData();
     }
-  }, [activeTab, loadBillingData]);
+    if (activeTab === 'team' && isWorkspaceAdmin) {
+      loadTeamMembers();
+    }
+  }, [activeTab, isWorkspaceAdmin, loadBillingData, loadTeamMembers]);
 
   useEffect(() => {
     if (user) {
@@ -176,9 +215,13 @@ export default function SettingsPage() {
   }, [token]);
 
   useEffect(() => {
-    loadPhoneNumbers();
-    loadAutoReplySettings();
-  }, [loadPhoneNumbers, loadAutoReplySettings]);
+    if (isWorkspaceAdmin) {
+      loadPhoneNumbers();
+      loadAutoReplySettings();
+    } else {
+      setLoadingPhones(false);
+    }
+  }, [isWorkspaceAdmin, loadPhoneNumbers, loadAutoReplySettings]);
 
   // Test live connection with Meta Graph API
   async function handleTestLine(line) {
@@ -445,13 +488,118 @@ export default function SettingsPage() {
     }
   }
 
-  const tabs = [
-    { id: 'lines', label: 'WhatsApp Sender Lines & Tokens', icon: Smartphone },
-    { id: 'billing', label: 'Billing & GST Invoices', icon: CreditCard },
-    { id: 'profile', label: 'My Profile', icon: User },
-    { id: 'security', label: 'Security & Password', icon: Key },
-    { id: 'autoreply', label: 'Inbound Auto-Reply', icon: Bot }
-  ];
+  async function handleInviteMember(e) {
+    e.preventDefault();
+    setInvitingMember(true);
+    try {
+      const res = await fetch('/api/v1/workspace/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(inviteForm)
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Failed to add team member.');
+      }
+      flashSuccess(data.message || 'Team member added to workspace.');
+      setShowInviteModal(false);
+      setInviteForm({ name: '', email: '', phone: '', password: '', workspaceRole: 'USER' });
+      loadTeamMembers();
+    } catch (err) {
+      flashError(err.message);
+    } finally {
+      setInvitingMember(false);
+    }
+  }
+
+  async function handleToggleMemberStatus(member) {
+    const nextStatus = member.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+    try {
+      const res = await fetch(`/api/v1/workspace/users/${member.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: nextStatus })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Failed to update status.');
+      flashSuccess(`Updated ${member.name} to ${nextStatus}.`);
+      loadTeamMembers();
+    } catch (err) {
+      flashError(err.message);
+    }
+  }
+
+  async function handleRemoveMember(member) {
+    try {
+      const res = await fetch(`/api/v1/workspace/users/${member.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Failed to remove team member.');
+      flashSuccess(data.message || 'Team member removed.');
+      loadTeamMembers();
+    } catch (err) {
+      flashError(err.message);
+    }
+  }
+
+  const tabs = isWorkspaceAdmin
+    ? [
+        { id: 'lines', label: 'WhatsApp Sender Lines & Tokens', icon: Smartphone },
+        { id: 'team', label: 'Team & Access', icon: Users },
+        { id: 'billing', label: 'Billing & GST Invoices', icon: CreditCard },
+        { id: 'profile', label: 'My Profile', icon: User },
+        { id: 'security', label: 'Security & Password', icon: Key },
+        { id: 'autoreply', label: 'Inbound Auto-Reply', icon: Bot }
+      ]
+    : [
+        { id: 'profile', label: 'My Profile', icon: User },
+        { id: 'security', label: 'Security & Password', icon: Key }
+      ];
+
+  const teamColumns = useMemo(() => [
+    {
+      key: 'name',
+      header: 'Member',
+      sortable: true,
+      render: (v, m) => (
+        <div>
+          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{v}</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{m.email}</div>
+        </div>
+      )
+    },
+    {
+      key: 'workspaceRole',
+      header: 'Workspace Role',
+      render: (v) => <Badge variant={v === 'OWNER' || v === 'ADMIN' ? 'info' : 'neutral'}>{v || 'USER'}</Badge>
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (v) => <Badge variant={v === 'ACTIVE' ? 'success' : 'danger'}>{v}</Badge>
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      align: 'right',
+      render: (_, m) => (
+        m.id === user?.id || m.workspaceRole === 'OWNER' ? (
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Protected</span>
+        ) : (
+          <div style={{ display: 'inline-flex', gap: '6px' }}>
+            <Button variant="secondary" size="sm" onClick={() => handleToggleMemberStatus(m)}>
+              {m.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => handleRemoveMember(m)} title="Remove member">
+              <Trash2 size={14} />
+            </Button>
+          </div>
+        )
+      )
+    }
+  ], [user?.id]);
 
   const invoiceColumns = useMemo(() => [
     {
@@ -926,7 +1074,7 @@ export default function SettingsPage() {
                           style={{
                             width: `${Math.min(100, ((billingData?.usage?.messagesUsed || 0) / (billingData?.usage?.messagesLimit || 1000)) * 100)}%`,
                             height: '100%',
-                            background: '#10b981'
+                            background: '#2F5219'
                           }}
                         />
                       </div>
@@ -1139,6 +1287,109 @@ export default function SettingsPage() {
           </Modal>
         </div>
       )}
+      {/* =========================================================================
+          TAB 2: WORKSPACE TEAM & ACCESS (Owner / Workspace Admin Only)
+          ========================================================================= */}
+      {isWorkspaceAdmin && activeTab === 'team' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                Workspace Team Members
+              </h3>
+              <p style={{ margin: '3px 0 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                Invite operators and workspace managers scoped strictly to your workspace.
+              </p>
+            </div>
+            <Button variant="primary" size="sm" onClick={() => setShowInviteModal(true)}>
+              <Plus size={14} /> Invite Member
+            </Button>
+          </div>
+          <Card>
+            <CardBody style={{ padding: 0 }}>
+              <DataTable
+                columns={teamColumns}
+                data={teamMembers}
+                loading={loadingTeam}
+                emptyMessage="No team members added yet."
+              />
+            </CardBody>
+          </Card>
+
+          <Modal
+            isOpen={showInviteModal}
+            onClose={() => setShowInviteModal(false)}
+            title="Invite Workspace Member"
+          >
+            <form onSubmit={handleInviteMember} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Full Name</label>
+                <input
+                  type="text"
+                  className="sarvya-input"
+                  style={{ width: '100%' }}
+                  value={inviteForm.name}
+                  onChange={(e) => setInviteForm(f => ({ ...f, name: e.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Work Email</label>
+                <input
+                  type="email"
+                  className="sarvya-input"
+                  style={{ width: '100%' }}
+                  value={inviteForm.email}
+                  onChange={(e) => setInviteForm(f => ({ ...f, email: e.target.value }))}
+                  required
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Phone (Optional)</label>
+                <input
+                  type="text"
+                  className="sarvya-input"
+                  style={{ width: '100%' }}
+                  value={inviteForm.phone}
+                  onChange={(e) => setInviteForm(f => ({ ...f, phone: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Temporary Password (min 8 chars)</label>
+                <input
+                  type="password"
+                  className="sarvya-input"
+                  style={{ width: '100%' }}
+                  value={inviteForm.password}
+                  onChange={(e) => setInviteForm(f => ({ ...f, password: e.target.value }))}
+                  minLength={8}
+                  required
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Workspace Role</label>
+                <select
+                  className="sarvya-input"
+                  style={{ width: '100%' }}
+                  value={inviteForm.workspaceRole}
+                  onChange={(e) => setInviteForm(f => ({ ...f, workspaceRole: e.target.value }))}
+                >
+                  <option value="USER">Operator (USER)</option>
+                  <option value="AGENT">Inbox Agent (AGENT)</option>
+                  <option value="ADMIN">Workspace Admin (ADMIN)</option>
+                </select>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', paddingTop: '6px' }}>
+                <Button type="button" variant="secondary" onClick={() => setShowInviteModal(false)}>Cancel</Button>
+                <Button type="submit" variant="primary" disabled={invitingMember}>
+                  {invitingMember ? 'Inviting...' : 'Add Member'}
+                </Button>
+              </div>
+            </form>
+          </Modal>
+        </div>
+      )}
+
       {activeTab === 'profile' && (
         <Card style={{ maxWidth: '560px' }}>
           <CardHeader title="Account Details" icon={User} />

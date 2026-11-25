@@ -188,7 +188,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
       const interceptedCalls = [];
 
       global.fetch = async (url, options = {}) => {
-        if (typeof url === "string" && url.includes("graph.facebook.com")) {
+        if (typeof url === "string" && (url.includes("graph.facebook.com") || (config.META_API_URL && url.startsWith(config.META_API_URL)))) {
           interceptedCalls.push({ url, options });
           return {
             ok: true,
@@ -232,7 +232,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
 
     test("Registers via /api/settings/register-phone with Admin authentication", async () => {
       global.fetch = async (url, options = {}) => {
-        if (typeof url === "string" && url.includes("graph.facebook.com")) {
+        if (typeof url === "string" && (url.includes("graph.facebook.com") || (config.META_API_URL && url.startsWith(config.META_API_URL)))) {
           return {
             ok: true,
             status: 200,
@@ -271,7 +271,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
 
     test("Registers via /api/admin/phone-numbers/register-meta with alias", async () => {
       global.fetch = async (url, options = {}) => {
-        if (typeof url === "string" && url.includes("graph.facebook.com")) {
+        if (typeof url === "string" && (url.includes("graph.facebook.com") || (config.META_API_URL && url.startsWith(config.META_API_URL)))) {
           return {
             ok: true,
             status: 200,
@@ -306,7 +306,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
   describe("3. Meta Cloud API Error Mapping & Hints", () => {
     test("Translates code 133005 into 'Two-step verification PIN is incorrect'", async () => {
       global.fetch = async (url, options = {}) => {
-        if (typeof url === "string" && url.includes("graph.facebook.com")) {
+        if (typeof url === "string" && (url.includes("graph.facebook.com") || (config.META_API_URL && url.startsWith(config.META_API_URL)))) {
           return {
             ok: false,
             status: 400,
@@ -341,7 +341,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
 
     test("Translates code 190 into 'Access Token expired or invalid'", async () => {
       global.fetch = async (url, options = {}) => {
-        if (typeof url === "string" && url.includes("graph.facebook.com")) {
+        if (typeof url === "string" && (url.includes("graph.facebook.com") || (config.META_API_URL && url.startsWith(config.META_API_URL)))) {
           return {
             ok: false,
             status: 401,
@@ -384,7 +384,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
       let deregOptions = null;
 
       global.fetch = async (url, options = {}) => {
-        if (typeof url === "string" && url.includes("graph.facebook.com")) {
+        if (typeof url === "string" && (url.includes("graph.facebook.com") || (config.META_API_URL && url.startsWith(config.META_API_URL)))) {
           deregUrl = url;
           deregOptions = options;
           return {
@@ -447,7 +447,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
 
     test("Registers line with auto-fetch from Meta when display_name and phone_number are omitted", async () => {
       global.fetch = async (url, options = {}) => {
-        if (typeof url === "string" && url.includes("graph.facebook.com")) {
+        if (typeof url === "string" && (url.includes("graph.facebook.com") || (config.META_API_URL && url.startsWith(config.META_API_URL)))) {
           return {
             ok: true,
             status: 200,
@@ -492,7 +492,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
 
     test("Updates existing sender line (UPSERT) instead of returning 409 Conflict", async () => {
       global.fetch = async (url, options = {}) => {
-        if (typeof url === "string" && url.includes("graph.facebook.com")) {
+        if (typeof url === "string" && (url.includes("graph.facebook.com") || (config.META_API_URL && url.startsWith(config.META_API_URL)))) {
           return {
             ok: true,
             status: 200,
@@ -535,7 +535,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
 
     test("Tests line verification via POST /api/admin/phone-numbers/:id/test", async () => {
       global.fetch = async (url, options = {}) => {
-        if (typeof url === "string" && url.includes("graph.facebook.com")) {
+        if (typeof url === "string" && (url.includes("graph.facebook.com") || (config.META_API_URL && url.startsWith(config.META_API_URL)))) {
           return {
             ok: true,
             status: 200,

@@ -119,10 +119,28 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('orig_admin_token');
   }
 
-  // Admin account inspection / impersonation
+  const resolvedTenantId = Number(user?.tenant_id || 1);
+  const isPlatformAdmin = Boolean(
+    user && (
+      user.is_platform_admin === true ||
+      user.role === 'SUPER_ADMIN' ||
+      (user.role === 'ADMIN' && resolvedTenantId === 1)
+    )
+  );
+  const isWorkspaceAdmin = Boolean(
+    user && (
+      isPlatformAdmin ||
+      user.is_workspace_admin === true ||
+      ['OWNER', 'ADMIN', 'AGENCY_ADMIN'].includes(String(user.workspace_role || '').toUpperCase()) ||
+      user.role === 'ADMIN'
+    )
+  );
+  const isEmployee = Boolean(user && !isWorkspaceAdmin && !isPlatformAdmin);
+
+  // Admin account inspection / impersonation (Platform Super-Admin only)
   async function impersonateUser(targetUserId) {
-    if (!user || user.role !== 'ADMIN') {
-      throw new Error('Only Master Admins can inspect accounts.');
+    if (!user || !isPlatformAdmin) {
+      throw new Error('Only Platform Super-Admins can inspect accounts.');
     }
     const currentAdminToken = token;
     const res = await fetch(`/api/admin/impersonate/${targetUserId}`, {
@@ -175,7 +193,10 @@ export function AuthProvider({ children }) {
     token,
     loading,
     isAuthenticated: Boolean(token && user),
-    isAdmin: user?.role === 'ADMIN',
+    isAdmin: isPlatformAdmin,
+    isPlatformAdmin,
+    isWorkspaceAdmin,
+    isEmployee,
     isImpersonating,
     activeWorkspaceId,
     switchWorkspace,

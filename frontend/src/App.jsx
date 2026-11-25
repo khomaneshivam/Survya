@@ -158,7 +158,7 @@ function getInitialActiveTab() {
 }
 
 function AppContent() {
-  const { isAuthenticated, loading, isAdmin } = useAuth();
+  const { isAuthenticated, loading, isPlatformAdmin, isWorkspaceAdmin } = useAuth();
   const [activeTab, setActiveTabState] = useState(getInitialActiveTab);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -196,12 +196,16 @@ function AppContent() {
     };
   }, [activeTab]);
 
-  // Client-side RBAC Guard: non-admins cannot stay on admin-exclusive views
+  // Client-side RBAC Guard: enforce Platform Super-Admin & Workspace Admin view separation
   useEffect(() => {
-    if (!isAdmin && (activeTab === 'admin' || activeTab === 'payouts' || activeTab === 'connect')) {
+    if (!isPlatformAdmin && (activeTab === 'admin' || activeTab === 'payouts')) {
+      setActiveTab('dashboard');
+      return;
+    }
+    if (!isWorkspaceAdmin && (activeTab === 'connect' || activeTab === 'inapp_studio' || activeTab === 'autoreply' || activeTab === 'flowStudio')) {
       setActiveTab('dashboard');
     }
-  }, [isAdmin, activeTab, setActiveTab]);
+  }, [isPlatformAdmin, isWorkspaceAdmin, activeTab, setActiveTab]);
 
   // Intercept public customer chat links (/c/:slug or /chat/:slug) without requiring login
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';

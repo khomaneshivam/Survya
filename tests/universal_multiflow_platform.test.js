@@ -23,6 +23,8 @@ describe("Universal Multi-Flow Hub, O(1) Compiled Trigger Router & AI Architect 
   let authToken = null;
   const testTenantId = 988;
   const testUserId = "flow_test_admin";
+  let createdTestUser = false;
+  let prevAiFlowEnabled = null;
 
   let testCategory = null;
   let testUnit = null;
@@ -34,19 +36,31 @@ describe("Universal Multi-Flow Hub, O(1) Compiled Trigger Router & AI Architect 
   let testAddonGroup = null;
 
   before(async () => {
-    // 1. Ensure test tenant & user exist
-    testUser = db.prepare("SELECT id, name, email, role, status FROM users WHERE status = 'ACTIVE' LIMIT 1").get();
-    if (!testUser) {
-      const uId = "test_user_flow_" + Date.now();
-      db.prepare(`
-        INSERT INTO users (id, name, email, password_hash, role, status, created_at, updated_at)
-        VALUES (?, 'Flow Test Admin', 'flowtest@example.com', 'dummy_hash', 'SUPERADMIN', 'ACTIVE', NOW(), NOW())
-      `).run(uId);
-      testUser = db.prepare("SELECT id, name, email, role, status FROM users WHERE id = ?").get(uId);
-    }
+    const { getSetting, setSetting } = require("../src/config/database");
+    prevAiFlowEnabled = getSetting("AI_FLOW_BUILDER_ENABLED");
+    setSetting("AI_FLOW_BUILDER_ENABLED", "true");
+
+    // 1. Ensure test tenant & OWNER user exist on testTenantId
+    db.prepare(`
+      INSERT IGNORE INTO tenants (id, name, slug, status)
+      VALUES (?, 'Flow Test Workspace', 'flow-test-988', 'ACTIVE')
+    `).run(testTenantId);
+
+    const uId = `flow_owner_${testTenantId}_${Date.now()}`;
+    db.prepare(`
+      INSERT INTO users (id, name, email, password_hash, role, status, tenant_id, created_at, updated_at)
+      VALUES (?, 'Flow Test Owner', ?, 'dummy_hash', 'USER', 'ACTIVE', ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    `).run(uId, `flow_owner_${Date.now()}@test.local`, testTenantId);
+    db.prepare(`
+      INSERT INTO tenant_user_memberships (tenant_id, user_id, role)
+      VALUES (?, ?, 'OWNER')
+      ON DUPLICATE KEY UPDATE role = 'OWNER'
+    `).run(testTenantId, uId);
+    testUser = db.prepare("SELECT id, name, email, role, status, tenant_id FROM users WHERE id = ?").get(uId);
+    createdTestUser = true;
 
     authToken = jwt.sign(
-      { userId: testUser.id, email: testUser.email, role: "SUPERADMIN", tenantId: testTenantId },
+      { id: testUser.id, userId: testUser.id, email: testUser.email, role: testUser.role, tenant_id: testTenantId },
       config.JWT_SECRET,
       { expiresIn: "2h" }
     );
@@ -161,6 +175,18 @@ describe("Universal Multi-Flow Hub, O(1) Compiled Trigger Router & AI Architect 
   });
 
   after(async () => {
+    const { setSetting } = require("../src/config/database");
+    if (prevAiFlowEnabled !== null && prevAiFlowEnabled !== undefined) {
+      setSetting("AI_FLOW_BUILDER_ENABLED", prevAiFlowEnabled);
+    } else {
+      setSetting("AI_FLOW_BUILDER_ENABLED", "false");
+    }
+    if (createdTestUser && testUser?.id) {
+      try {
+        db.prepare("DELETE FROM tenant_user_memberships WHERE user_id = ?").run(testUser.id);
+        db.prepare("DELETE FROM users WHERE id = ?").run(testUser.id);
+      } catch (_) {}
+    }
     if (serverInstance) {
       await new Promise(resolve => serverInstance.close(resolve));
     }

@@ -45,10 +45,48 @@ function extractRequestToken(req) {
   return null;
 }
 
+function isPlatformAdmin(user) {
+  if (!user) return false;
+  if (user.role === "SUPER_ADMIN") return true;
+  if (user.role === "ADMIN") {
+    const homeTenantId = Number(user.original_tenant_id || user.tenant_id || 1);
+    return homeTenantId === 1;
+  }
+  return false;
+}
+
+function isWorkspaceAdmin(user) {
+  if (!user) return false;
+  if (isPlatformAdmin(user)) return true;
+  const wsRole = String(user.workspace_role || "").toUpperCase();
+  if (["OWNER", "ADMIN", "AGENCY_ADMIN"].includes(wsRole)) return true;
+  if (user.role === "ADMIN" && Number(user.tenant_id || 1) === Number(user.original_tenant_id || user.tenant_id || 1)) {
+    return true;
+  }
+  return false;
+}
+
 function resolveWorkspaceAccess(user, req) {
   if (!user) return user;
   user.tenant_id = user.tenant_id ? Number(user.tenant_id) : 1;
   user.original_tenant_id = user.tenant_id;
+  user.is_platform_admin = isPlatformAdmin(user);
+
+  try {
+    const homeMembership = db.prepare(`
+      SELECT role FROM tenant_user_memberships
+      WHERE user_id = ? AND tenant_id = ?
+    `).get(user.id, user.tenant_id);
+    if (homeMembership?.role) {
+      user.workspace_role = String(homeMembership.role).toUpperCase();
+    } else if (user.is_platform_admin || user.role === "ADMIN") {
+      user.workspace_role = "OWNER";
+    } else {
+      user.workspace_role = "USER";
+    }
+  } catch (e) {
+    user.workspace_role = user.is_platform_admin || user.role === "ADMIN" ? "OWNER" : "USER";
+  }
 
   const requestedWorkspaceId = req.headers?.["x-workspace-id"] || req.headers?.["x-tenant-id"];
   if (requestedWorkspaceId && String(requestedWorkspaceId).trim()) {
@@ -56,10 +94,11 @@ function resolveWorkspaceAccess(user, req) {
     if (!isNaN(targetTid) && targetTid > 0) {
       if (targetTid === user.tenant_id) {
         // Same workspace
-      } else if (user.role === "ADMIN") {
+      } else if (user.is_platform_admin) {
         const targetTenant = db.prepare("SELECT id, status, delete_status FROM tenants WHERE id = ?").get(targetTid);
         if (targetTenant && targetTenant.delete_status === 0) {
           user.tenant_id = targetTid;
+          user.workspace_role = "OWNER";
           user.is_switched_workspace = true;
         }
       } else {
@@ -70,7 +109,7 @@ function resolveWorkspaceAccess(user, req) {
 
         if (membership) {
           user.tenant_id = targetTid;
-          user.workspace_role = membership.role;
+          user.workspace_role = String(membership.role).toUpperCase();
           user.is_switched_workspace = true;
         } else {
           const childTenant = db.prepare(`
@@ -85,7 +124,7 @@ function resolveWorkspaceAccess(user, req) {
               WHERE user_id = ? AND tenant_id = ?
             `).get(user.id, childTenant.parent_agency_tenant_id);
 
-            if (agencyMembership && ["OWNER", "ADMIN", "AGENCY_ADMIN"].includes(agencyMembership.role)) {
+            if (agencyMembership && ["OWNER", "ADMIN", "AGENCY_ADMIN"].includes(String(agencyMembership.role).toUpperCase())) {
               user.tenant_id = targetTid;
               user.workspace_role = "AGENCY_ADMIN";
               user.is_switched_workspace = true;
@@ -95,6 +134,8 @@ function resolveWorkspaceAccess(user, req) {
       }
     }
   }
+
+  user.is_workspace_admin = isWorkspaceAdmin(user);
   return user;
 }
 
@@ -194,8 +235,8 @@ function authenticateStreamToken(req, res, next) {
 }
 
 /**
- * Strictly ensures authenticated user has Master Admin role.
- * Fails closed with 401 if unauthenticated and 403 if user is not an administrator.
+ * Strictly ensures authenticated user has Platform Master Administrator privileges.
+ * Fails closed with 401 if unauthenticated and 403 if not a platform super-admin.
  */
 function requireAdmin(req, res, next) {
   if (!req.user) {
@@ -205,10 +246,32 @@ function requireAdmin(req, res, next) {
     });
   }
 
-  if (req.user.role !== "ADMIN") {
+  if (!isPlatformAdmin(req.user)) {
     return res.status(403).json({
       success: false,
       message: "Forbidden. Master Administrator privileges required."
+    });
+  }
+
+  return next();
+}
+
+/**
+ * Ensures authenticated user has administrative authority within their own active workspace
+ * (Workspace OWNER/ADMIN/AGENCY_ADMIN or Platform Master Admin). Rejects employees/regular USERs with 403.
+ */
+function requireWorkspaceAdmin(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required."
+    });
+  }
+
+  if (!isWorkspaceAdmin(req.user)) {
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden. Workspace Administrator privileges required."
     });
   }
 
@@ -259,9 +322,9 @@ function optionalAuth(req, res, next) {
  */
 function getScopedUserId(req) {
   if (!req.user) return null;
-  if (req.user.role === "ADMIN") {
+  if (isPlatformAdmin(req.user)) {
     const requested = req.query?.userId || req.body?.userId || req.headers["x-target-user-id"];
-    return requested ? String(requested).trim() : null; // null means all users for admin
+    return requested ? String(requested).trim() : null; // null means all users for platform admin
   }
   return req.user.id;
 }
@@ -270,6 +333,9 @@ module.exports = {
   authenticateToken,
   authenticateStreamToken,
   requireAdmin,
+  requireWorkspaceAdmin,
+  isPlatformAdmin,
+  isWorkspaceAdmin,
   optionalAuth,
   getScopedUserId
 };

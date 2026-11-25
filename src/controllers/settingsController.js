@@ -7,6 +7,7 @@ const {
   deregisterPhoneNumberWithMeta,
   getTemplateDetails
 } = require("../services/metaWhatsAppService");
+const billingService = require("../services/billingService");
 
 /**
  * Masks sensitive secret strings for secure API presentation
@@ -292,6 +293,17 @@ async function registerMetaPhone(req, res) {
     }
 
     const cleanPhoneId = String(id).trim();
+    const tenantId = Number(req.user?.tenant_id || 1);
+
+    try {
+      billingService.assertCanConnectWabaLine(tenantId, cleanPhoneId);
+    } catch (quotaErr) {
+      return res.status(quotaErr.statusCode || 402).json({
+        success: false,
+        code: quotaErr.code || "WABA_LINE_QUOTA_EXCEEDED",
+        message: quotaErr.message
+      });
+    }
 
     // Call Meta Graph API registration service
     const metaResult = await registerPhoneNumberWithMeta({
@@ -301,7 +313,7 @@ async function registerMetaPhone(req, res) {
       dataLocalizationRegion
     });
 
-    if (customToken && !customToken.startsWith("EAAX_") && !customToken.includes("placeholder")) {
+    if (tenantId === 1 && customToken && !customToken.startsWith("EAAX_") && !customToken.includes("placeholder")) {
       try {
         setSetting("WHATSAPP_API_TOKEN", customToken);
       } catch (e) {
@@ -311,7 +323,7 @@ async function registerMetaPhone(req, res) {
 
     // Attempt to retrieve phone metadata from Meta Graph API using the token
     let phoneMetaInfo = null;
-    const activeToken = customToken || getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN;
+    const activeToken = customToken || (tenantId === 1 ? (getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN) : null);
     if (activeToken && !activeToken.startsWith("EAAX_") && !activeToken.includes("••••")) {
       try {
         phoneMetaInfo = await testConnection({ token: activeToken, phoneNumberId: cleanPhoneId });
@@ -320,11 +332,14 @@ async function registerMetaPhone(req, res) {
       }
     }
 
-    // Sync with local waba_phone_numbers database table
+    // Sync with local waba_phone_numbers database table (tenant-scoped)
     let localRecord = null;
     try {
       const existing = db.prepare("SELECT * FROM waba_phone_numbers WHERE phone_number_id = ?").get(cleanPhoneId);
       if (existing) {
+        if (Number(existing.tenant_id || 1) !== tenantId) {
+          return res.status(403).json({ success: false, message: "Forbidden: Phone line belongs to another workspace." });
+        }
         db.prepare(`
           UPDATE waba_phone_numbers 
           SET status = 'REGISTERED',
@@ -332,40 +347,43 @@ async function registerMetaPhone(req, res) {
               phone_number = COALESCE(?, phone_number),
               quality_rating = COALESCE(?, quality_rating),
               updated_at = CURRENT_TIMESTAMP
-          WHERE phone_number_id = ?
+          WHERE phone_number_id = ? AND COALESCE(tenant_id, 1) = ?
         `).run(
           displayName?.trim() || phoneMetaInfo?.verifiedName || null,
           phoneNumber?.trim() || phoneMetaInfo?.displayPhoneNumber || null,
           phoneMetaInfo?.qualityRating || null,
-          cleanPhoneId
+          cleanPhoneId,
+          tenantId
         );
         localRecord = db.prepare("SELECT * FROM waba_phone_numbers WHERE phone_number_id = ?").get(cleanPhoneId);
       } else {
         const newId = crypto.randomUUID();
         const cleanDisplay = (displayName && String(displayName).trim()) || phoneMetaInfo?.verifiedName || `WhatsApp (${cleanPhoneId})`;
         const cleanPhoneStr = (phoneNumber && String(phoneNumber).trim()) || phoneMetaInfo?.displayPhoneNumber || cleanPhoneId;
-        const phoneCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers").get().count;
+        const phoneCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers WHERE COALESCE(tenant_id, 1) = ? AND COALESCE(delete_status, 0) = 0").get(tenantId).count;
         const shouldBeDefault = Boolean(isDefault) || phoneCount === 0;
 
         if (shouldBeDefault) {
-          db.prepare("UPDATE waba_phone_numbers SET is_default = 0").run();
-          setSetting("WHATSAPP_PHONE_NUMBER_ID", cleanPhoneId);
+          db.prepare("UPDATE waba_phone_numbers SET is_default = 0 WHERE COALESCE(tenant_id, 1) = ?").run(tenantId);
+          if (tenantId === 1) setSetting("WHATSAPP_PHONE_NUMBER_ID", cleanPhoneId);
         }
 
         db.prepare(`
           INSERT INTO waba_phone_numbers (
-            id, display_name, phone_number, phone_number_id, waba_id,
-            quality_rating, status, is_default, registered_by
-          ) VALUES (?, ?, ?, ?, ?, ?, 'REGISTERED', ?, ?)
+            id, tenant_id, display_name, phone_number, phone_number_id, waba_id,
+            quality_rating, status, is_default, registered_by, access_token
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'REGISTERED', ?, ?, ?)
         `).run(
           newId,
+          tenantId,
           cleanDisplay,
           cleanPhoneStr,
           cleanPhoneId,
           wabaId ? String(wabaId).trim() : null,
           phoneMetaInfo?.qualityRating || "GREEN",
           shouldBeDefault ? 1 : 0,
-          req.user ? req.user.id : null
+          req.user ? req.user.id : null,
+          (customToken && !customToken.startsWith("EAAX_") && !customToken.includes("placeholder")) ? customToken : null
         );
         localRecord = db.prepare("SELECT * FROM waba_phone_numbers WHERE id = ?").get(newId);
       }
@@ -373,8 +391,8 @@ async function registerMetaPhone(req, res) {
       console.warn("[Register Meta Phone] Local database sync note:", dbErr.message);
     }
 
-    // Set default setting if requested or if none set yet
-    if (isDefault || !getSetting("WHATSAPP_PHONE_NUMBER_ID")) {
+    // Set default setting only for Tenant 1
+    if (tenantId === 1 && (isDefault || !getSetting("WHATSAPP_PHONE_NUMBER_ID"))) {
       setSetting("WHATSAPP_PHONE_NUMBER_ID", cleanPhoneId);
     }
 

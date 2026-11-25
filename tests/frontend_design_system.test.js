@@ -60,7 +60,7 @@ describe('SARVYA Master UI/UX Design System Verification', () => {
     const sidebar = fs.readFileSync(path.join(FRONTEND, 'components', 'Sidebar.jsx'), 'utf8');
     const app = fs.readFileSync(path.join(FRONTEND, 'App.jsx'), 'utf8');
 
-    for (const label of ['Overview', 'CRM', 'Forms', 'Workflows', 'Conversations', 'Campaigns', 'Chat Links', 'SARVYA AI', 'Insights', 'Connect', 'Hospitality']) {
+    for (const label of ['Overview', 'CRM', 'Flow Builder', 'Conversations', 'Campaigns', 'Chat Links', 'SARVYA AI', 'Insights', 'Connect', 'Hospitality']) {
       assert.ok(sidebar.includes(label), `Sidebar must expose "${label}"`);
     }
 
@@ -74,6 +74,22 @@ describe('SARVYA Master UI/UX Design System Verification', () => {
     assert.ok(fs.existsSync(path.join(ROOT, 'docs', 'SARVYA_CONNECT_PRD.md')), 'SARVYA_CONNECT_PRD.md must exist in docs/');
   });
 
+  it('enforces 3-tier role separation (Platform Super-Admin, Workspace Owner, Employee) & team UI wiring', () => {
+    const authCode = fs.readFileSync(path.join(FRONTEND, 'context', 'AuthProvider.jsx'), 'utf8');
+    const sidebarCode = fs.readFileSync(path.join(FRONTEND, 'components', 'Sidebar.jsx'), 'utf8');
+    const pageSystemCode = fs.readFileSync(path.join(FRONTEND, 'components', 'PageSystem.jsx'), 'utf8');
+    const settingsCode = fs.readFileSync(path.join(FRONTEND, 'pages', 'SettingsPage.jsx'), 'utf8');
+
+    assert.match(authCode, /isPlatformAdmin/);
+    assert.match(authCode, /isWorkspaceAdmin/);
+    assert.match(authCode, /isEmployee/);
+    assert.match(sidebarCode, /Platform Governance/);
+    assert.match(sidebarCode, /Workspace Controls/);
+    assert.match(pageSystemCode, /platformAdminOnly/);
+    assert.match(pageSystemCode, /workspaceAdminOnly/);
+    assert.match(settingsCode, /\/api\/v1\/workspace\/users/);
+  });
+
   it('eliminates dark gradient banners and legacy Emerald accents from pages', () => {
     const filesToCheck = [
       'App.jsx',
@@ -85,11 +101,12 @@ describe('SARVYA Master UI/UX Design System Verification', () => {
       'pages/DashboardPage.jsx',
       'pages/EnquiriesPage.jsx',
       'pages/AiAssistantPage.jsx',
+      'pages/FlowBuilderPage.jsx',
       'pages/FlowsPage.jsx',
       'pages/AutomationPage.jsx',
       'pages/InventoryCalendarPage.jsx',
       'pages/SettingsPage.jsx',
-      'pages/AdminPage.jsx',
+      'pages/SystemAdminPanel.jsx',
       'pages/LandingPage.jsx',
       'pages/LoginPage.jsx',
       'pages/RegisterPage.jsx'

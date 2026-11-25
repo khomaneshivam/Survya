@@ -7,6 +7,7 @@
  */
 const knowledgeRetrievalService = require('./knowledgeRetrievalService');
 const voiceTranscriptionService = require('./voiceTranscriptionService');
+const taskScopedAiAgentService = require('./taskScopedAiAgentService');
 const config = require('../../config/env');
 
 class InboxCopilotService {
@@ -25,9 +26,10 @@ class InboxCopilotService {
     const lastInbound = [...recent].reverse().find(m => !m.is_outbound) || recent[recent.length - 1];
     const userQuery = lastInbound?.text || lastInbound?.message_body || '';
     const detectedLang = voiceTranscriptionService.detectLanguageFromText(userQuery);
+    const profile = taskScopedAiAgentService.resolveTenantAiProfile(tenantId);
 
     // Retrieve relevant knowledge
-    const searchRes = knowledgeRetrievalService.search(userQuery || 'hotel room tariff', tenantId, { topK: 3 });
+    const searchRes = knowledgeRetrievalService.search(userQuery || profile.domainLabel, tenantId, { topK: 3 });
     const topKnowledge = searchRes.matches[0];
     const topDetail = topKnowledge ? `${topKnowledge.title}: ${topKnowledge.content}` : '';
 
@@ -35,14 +37,14 @@ class InboxCopilotService {
 
     if (geminiKey && userQuery) {
       try {
-        const prompt = `You are an expert hospitality customer service manager.
+        const prompt = `You are ${profile.businessName}'s customer service ${profile.staffTitle} specializing in ${profile.domainLabel}.
 Context from conversation:
 Customer Name: ${customerName}
 Last Message: "${userQuery}"
 Detected Language: ${detectedLang}
 
 Grounded Knowledge:
-${searchRes.contextText || 'Standard resort policies and room tariffs apply.'}
+${searchRes.contextText || 'Standard business policies and catalog pricing apply.'}
 
 Task: Provide 2 distinct reply suggestions in the customer's language (${detectedLang}).
 Format strictly as JSON with keys:
@@ -283,7 +285,7 @@ Task: Return strictly JSON with:
       bullets,
       urgency: inboundCount > outboundCount ? 'HIGH' : 'MEDIUM',
       sentiment: 'NEUTRAL',
-      nextAction: 'Confirm guest room preference and dispatch booking quote.'
+      nextAction: 'Confirm customer selection and dispatch verified quote or details.'
     };
   }
 }

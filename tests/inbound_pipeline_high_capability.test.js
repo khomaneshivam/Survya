@@ -15,7 +15,10 @@ test("High-Capability Inbound Message & Trigger Pipeline Test Suite", async (t) 
   const origSendList = metaWhatsAppService.sendInteractiveList;
   const origSendFlow = metaWhatsAppService.sendFlowMessage;
 
+  let prevFlowsEnabled = null;
+
   t.before(() => {
+    prevFlowsEnabled = getSetting("WHATSAPP_FLOWS_ENABLED");
     setSetting("AUTO_REPLY_ENABLED", "true");
     setSetting("AUTO_REPLY_ENGINE_MODE", "HOSPITALITY_FLOW");
     setSetting("WHATSAPP_FLOWS_ENABLED", "true");
@@ -39,6 +42,11 @@ test("High-Capability Inbound Message & Trigger Pipeline Test Suite", async (t) 
   });
 
   t.after(() => {
+    if (prevFlowsEnabled !== null && prevFlowsEnabled !== undefined) {
+      setSetting("WHATSAPP_FLOWS_ENABLED", prevFlowsEnabled);
+    } else {
+      setSetting("WHATSAPP_FLOWS_ENABLED", "false");
+    }
     metaWhatsAppService.sendTextMessage = origSendText;
     metaWhatsAppService.sendInteractiveButtons = origSendButtons;
     metaWhatsAppService.sendInteractiveList = origSendList;
@@ -163,18 +171,25 @@ test("High-Capability Inbound Message & Trigger Pipeline Test Suite", async (t) 
     const port = testServer.address().port;
 
     try {
+      const crypto = require("crypto");
+      const config = require("../src/config/env");
       const postReq = (path) => {
         return new Promise((resolve, reject) => {
           const payload = JSON.stringify({
             object: "whatsapp_business_account",
             entry: [{ id: "1064803546265989", changes: [{ value: { messages: [] }, field: "messages" }] }]
           });
+          const secret = config.META_APP_SECRET || getSetting("META_APP_SECRET") || "";
+          const headers = { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) };
+          if (secret && !/placeholder|your_meta_app_secret|your_app_secret|dummy|optional/i.test(secret)) {
+            headers["x-hub-signature-256"] = "sha256=" + crypto.createHmac("sha256", secret).update(payload).digest("hex");
+          }
           const req = http.request({
             hostname: "127.0.0.1",
             port,
             path,
             method: "POST",
-            headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) }
+            headers
           }, (res) => {
             let data = "";
             res.on("data", c => data += c);

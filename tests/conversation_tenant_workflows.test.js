@@ -78,6 +78,7 @@ test('publish validation rejects unsupported node types', () => {
     if (name === 'crypto') return require('node:crypto');
     if (name === '../config/database') return { db: {} };
     if (name === './workflow/runtimeCache') return { invalidateFlow() {}, invalidateTriggers() {} };
+    if (name === './flowApprovalService') return {};
     if (name === './workflow/nodeExecutors') return registry;
     throw new Error('Unexpected dependency: ' + name);
   });

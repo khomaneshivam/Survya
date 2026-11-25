@@ -217,6 +217,19 @@ describe("Dynamic Multi-Industry Workflow Platform Test Suite (Phases 2, 3 & 4)"
   // 4. MULTI-CHANNEL TRIGGER INDEXING & INBOUND WEBHOOK EXECUTION
   // =========================================================================
   describe("4. Multi-Channel Trigger Indexing & Inbound Webhooks", () => {
+    let createdTriggerFlowId = null;
+
+    after(() => {
+      if (createdTriggerFlowId) {
+        try {
+          db.prepare("DELETE FROM workflow_triggers WHERE flow_id = ?").run(String(createdTriggerFlowId));
+          db.prepare("DELETE FROM conversation_flow_versions WHERE flow_id = ?").run(createdTriggerFlowId);
+          db.prepare("DELETE FROM conversation_flows WHERE id = ?").run(createdTriggerFlowId);
+          require("../src/services/workflow/runtimeCache").invalidateTriggers(1);
+        } catch (_) {}
+      }
+    });
+
     test("A. Trigger sync indexes keywords and external webhook triggers", () => {
       const sampleNodes = [
         {
@@ -239,16 +252,28 @@ describe("Dynamic Multi-Industry Workflow Platform Test Suite (Phases 2, 3 & 4)"
         }
       ];
 
-      workflowTriggerService.syncFlowTriggers(1, "test_flow_99", sampleNodes);
+      const flowCreated = flowService.createFlow({
+        tenant_id: 1,
+        name: "Dynamic Platform Trigger Test Flow",
+        description: "Temporary trigger verification flow",
+        nodes: sampleNodes,
+        transitions: []
+      }, { id: testUserId });
+      createdTriggerFlowId = flowCreated.flow.id;
+      const verId = flowCreated.draftVersion.id;
+      db.prepare("UPDATE conversation_flow_versions SET status = 'PUBLISHED' WHERE id = ?").run(verId);
+      db.prepare("UPDATE conversation_flows SET status = 'PUBLISHED', published_version_id = ? WHERE id = ?").run(verId, createdTriggerFlowId);
+
+      workflowTriggerService.syncFlowTriggers(1, createdTriggerFlowId, sampleNodes);
 
       // Verify keyword match
       const kwMatch = workflowTriggerService.matchInboundTrigger(1, { text: "I want a alpha_custom_trigger_xyz please" });
       assert.ok(kwMatch);
-      assert.equal(kwMatch.flowId, "test_flow_99");
+      assert.equal(Number(kwMatch.flowId), Number(createdTriggerFlowId));
       assert.equal(kwMatch.nodeId, "node_trg_wa");
 
       // Verify no match on random text
-      const noMatch = workflowTriggerService.matchInboundTrigger(1, { text: "Good morning resort" });
+      const noMatch = workflowTriggerService.matchInboundTrigger(1, { text: "Unrelated afternoon greeting xyz999" });
       assert.equal(noMatch, null);
     });
 
@@ -306,16 +331,16 @@ describe("Dynamic Multi-Industry Workflow Platform Test Suite (Phases 2, 3 & 4)"
         INSERT INTO conversation_flow_sessions (
           tenant_id, property_id, flow_id, flow_version_id, current_node_id,
           session_key, sender_phone, session_status, last_interaction_at, created_at
-        ) VALUES (1, 1, '1', 1, 'node_welcome', ?, ?, 'ACTIVE', DATE_SUB(NOW(), INTERVAL 25 HOUR), NOW())
+        ) VALUES (1, 1, '1', 1, 'node_welcome', ?, ?, 'ACTIVE', DATE_SUB(UTC_TIMESTAMP(), INTERVAL 25 HOUR), UTC_TIMESTAMP())
       `).run(sessKey, testPhone);
       const sessId = sessRes.lastInsertRowid;
 
-      // Insert scheduled job for this session whose run_at <= NOW()
+      // Insert scheduled job for this session whose run_at <= UTC_TIMESTAMP()
       const jobRes = db.prepare(`
         INSERT INTO workflow_scheduled_jobs (
           tenant_id, session_id, flow_id, resume_node_id, resume_handle,
           job_type, cancel_on_reply, run_at, status
-        ) VALUES (1, ?, '1', 'node_welcome', 'default', 'DELAY_RESUME', 1, DATE_SUB(NOW(), INTERVAL 1 MINUTE), 'PENDING')
+        ) VALUES (1, ?, '1', 'node_welcome', 'default', 'DELAY_RESUME', 1, DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 MINUTE), 'PENDING')
       `).run(String(sessId));
 
       // Trigger scheduler worker sweep

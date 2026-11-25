@@ -1,13 +1,16 @@
 const paymentPayoutService = require("../services/paymentPayoutService");
 const unifiedOrderService = require("../services/unifiedOrderService");
 const catalogService = require("../services/catalogService");
+const { db } = require("../config/database");
+const { isPlatformAdmin } = require("../middleware/authMiddleware");
 
 function checkEntityAccess(entityId, user) {
-  if (!user || user.role === "ADMIN") return true;
+  if (!user) return false;
+  if (isPlatformAdmin(user)) return true;
   const entity = catalogService.getEntityById(entityId);
   if (!entity) return false;
-  const userTenant = user.tenant_id || 1;
-  return entity.tenant_id === userTenant;
+  const userTenant = Number(user.tenant_id || 1);
+  return Number(entity.tenant_id || 1) === userTenant;
 }
 
 async function getPaymentConfig(req, res) {
@@ -46,7 +49,17 @@ async function createCheckoutSession(req, res) {
 
 async function capturePayment(req, res) {
   try {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: "Authentication required to capture payments." });
+    }
     const { orderNumber } = req.params;
+    const order = db.prepare("SELECT id, entity_id, tenant_id FROM unified_orders WHERE order_number = ?").get(orderNumber);
+    if (!order) {
+      return res.status(404).json({ success: false, message: `Order ${orderNumber} not found.` });
+    }
+    if (!checkEntityAccess(order.entity_id, req.user)) {
+      return res.status(403).json({ success: false, message: "Unauthorized access to capture payment for this order." });
+    }
     const { paymentMethod, paymentReference, amountPaid } = req.body;
     const result = paymentPayoutService.captureOrderPayment({
       orderNumber,
@@ -63,12 +76,16 @@ async function capturePayment(req, res) {
 async function handleRazorpayWebhook(req, res) {
   try {
     const signature = req.headers["x-razorpay-signature"];
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET || "mock_webhook_secret";
-    const rawPayload = JSON.stringify(req.body);
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!webhookSecret || !signature) {
+      return res.status(401).json({ success: false, message: "Missing webhook signature or verification secret." });
+    }
+    const rawPayload = req.rawBody ? Buffer.from(req.rawBody) : JSON.stringify(req.body);
 
     const isValid = paymentPayoutService.verifyPaymentWebhook(rawPayload, signature, webhookSecret);
-    if (!isValid && signature) {
+    if (!isValid) {
       console.warn("[Payment Webhook] Invalid signature rejected");
+      return res.status(401).json({ success: false, message: "Invalid webhook signature." });
     }
 
     const event = req.body.event;
@@ -118,6 +135,13 @@ async function addBeneficiary(req, res) {
 
 async function verifyPennyDrop(req, res) {
   try {
+    const beneficiary = db.prepare("SELECT id, entity_id FROM merchant_payout_beneficiaries WHERE id = ?").get(req.params.id);
+    if (!beneficiary) {
+      return res.status(404).json({ success: false, message: "Beneficiary not found." });
+    }
+    if (!checkEntityAccess(beneficiary.entity_id, req.user)) {
+      return res.status(403).json({ success: false, message: "Unauthorized access to verify this beneficiary." });
+    }
     const result = paymentPayoutService.verifyPennyDrop(req.params.id);
     res.json(result);
   } catch (err) {

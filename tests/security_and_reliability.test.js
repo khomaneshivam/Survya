@@ -720,9 +720,11 @@ describe("Security, Multi-Tenant Isolation & WhatsApp Broadcast Reliability Test
       const data = await res.json();
       assert.strictEqual(data.success, true);
 
-      // Verify records removed
-      const remaining = db.prepare("SELECT COUNT(*) as c FROM customer_replies WHERE from_phone = ?").get(inboxTestPhone);
+      // Verify active records soft-deleted from inbox view (retained only with deleted_at for audit/DPDP)
+      const remaining = db.prepare("SELECT COUNT(*) as c FROM customer_replies WHERE from_phone = ? AND deleted_at IS NULL").get(inboxTestPhone);
       assert.strictEqual(remaining.c, 0);
+      const archived = db.prepare("SELECT COUNT(*) as c FROM customer_replies WHERE from_phone = ? AND deleted_at IS NOT NULL").get(inboxTestPhone);
+      assert.ok(archived.c >= 1);
     });
   });
 

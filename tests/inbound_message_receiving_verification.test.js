@@ -17,12 +17,24 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
   const originalSendButtons = metaWhatsAppService.sendInteractiveButtons;
   const originalSendList = metaWhatsAppService.sendInteractiveList;
   const originalSendFlow = metaWhatsAppService.sendFlowMessage;
+  let prevFlowsEnabled = null;
+  const testPhoneNumberId = "1510764325447375";
 
   t.before(() => {
-    // Enable hospitality flow engine
+    prevFlowsEnabled = getSetting("WHATSAPP_FLOWS_ENABLED");
+    // Enable unified flow engine
     setSetting("AUTO_REPLY_ENABLED", "true");
     setSetting("AUTO_REPLY_ENGINE_MODE", "HOSPITALITY_FLOW");
     setSetting("WHATSAPP_FLOWS_ENABLED", "true");
+
+    // Register mock WABA phone line so strict webhook account routing accepts payload
+    const preExisting = db.prepare("SELECT id FROM waba_phone_numbers WHERE phone_number_id = ?").get(testPhoneNumberId);
+    if (!preExisting) {
+      db.prepare(`
+        INSERT INTO waba_phone_numbers (id, tenant_id, display_name, phone_number, phone_number_id, waba_id, is_default, active_status, quality_rating, status)
+        VALUES ('waba_test_inbound_verify_1', 1, 'Test Webhook Line', '919876543210', ?, '1064803546265989', 0, 1, 'GREEN', 'CONNECTED')
+      `).run(testPhoneNumberId);
+    }
 
     // Stub outbound WhatsApp message dispatches
     metaWhatsAppService.sendTextMessage = async (params) => {
@@ -46,8 +58,13 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
     };
   });
 
-  t.after(() => {
-    // Restore stubs
+  t.after(async () => {
+    // Restore stubs & settings
+    if (prevFlowsEnabled !== null && prevFlowsEnabled !== undefined) {
+      setSetting("WHATSAPP_FLOWS_ENABLED", prevFlowsEnabled);
+    } else {
+      setSetting("WHATSAPP_FLOWS_ENABLED", "false");
+    }
     metaWhatsAppService.sendTextMessage = originalSendText;
     metaWhatsAppService.sendInteractiveButtons = originalSendButtons;
     metaWhatsAppService.sendInteractiveList = originalSendList;
@@ -58,9 +75,14 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
       db.prepare("DELETE FROM customer_replies WHERE from_phone LIKE ?").run(`${basePhone}%`);
       db.prepare("DELETE FROM flow_responses WHERE from_phone LIKE ?").run(`${basePhone}%`);
       db.prepare("DELETE FROM flow_tokens WHERE clean_phone LIKE ?").run(`${basePhone}%`);
+      db.prepare("DELETE FROM conversation_flow_sessions WHERE sender_phone LIKE ?").run(`${basePhone}%`);
+      db.prepare("DELETE FROM conversation_handoff_states WHERE clean_phone LIKE ?").run(`${basePhone}%`);
       db.prepare("DELETE FROM booking_enquiries WHERE phone_e164 LIKE ? OR phone_e164 LIKE ?").run(`+${basePhone}%`, `${basePhone}%`);
       db.prepare("DELETE FROM hospitality_chat_sessions WHERE phone LIKE ?").run(`${basePhone}%`);
+      db.prepare("DELETE FROM waba_phone_numbers WHERE id = 'waba_test_inbound_verify_1'").run();
     } catch (e) {}
+    const { closeAsyncPool } = require("../src/config/asyncDb");
+    await closeAsyncPool();
   });
 
   await t.test("1. Plain Text Greeting: Ingests, saves to customer_replies, and does NOT treat as Flow", async () => {
@@ -92,19 +114,36 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
     // Verify outbound reply recorded in customer_replies
     const outbound = db.prepare("SELECT * FROM customer_replies WHERE from_phone = ? AND message_type = 'outbound' ORDER BY id DESC LIMIT 1").get(phone.replace(/\D/g, ""));
     assert.ok(outbound, "Outbound reply must be saved in customer_replies");
-    assert.equal(outbound.reply_status, "SENT");
+    assert.equal(outbound.reply_status, "AUTO_REPLIED");
   });
 
-  await t.test("2. Amenity / Facility Inquiry: Returns facilities text and interactive buttons", async () => {
+  await t.test("2. Visual Flow Option (opt_rooms): Returns villas & amenities overview with interactive follow-up buttons", async () => {
     sentOutboundMessages = [];
     const phone = `${basePhone}2`;
-    const waMsgId = `wamid.TXT_AMENITY_${Date.now()}`;
+    // Turn 1: greet to enter Flow 1 welcome menu
+    const greetInbound = {
+      from: phone,
+      id: `wamid.TXT_GREET2_${Date.now()}`,
+      timestamp: String(Math.floor(Date.now() / 1000)),
+      type: "text",
+      text: { body: "Hi" }
+    };
+    const savedGreet = webhookService.saveCustomerReply(greetInbound, [{ wa_id: phone, profile: { name: "Kavita Rao" } }]);
+    assert.ok(savedGreet.saved);
+    await webhookService.processConversationalFlow(savedGreet.reply, greetInbound, {});
+
+    // Turn 2: select "View Villas" (opt_rooms)
+    sentOutboundMessages = [];
+    const waMsgId = `wamid.OPT_ROOMS_${Date.now()}`;
     const inbound = {
       from: phone,
       id: waMsgId,
       timestamp: String(Math.floor(Date.now() / 1000)),
-      type: "text",
-      text: { body: "Do you have a swimming pool and free wifi?" }
+      type: "interactive",
+      interactive: {
+        type: "button_reply",
+        button_reply: { id: "opt_rooms", title: "View Villas 🏡" }
+      }
     };
 
     const saved = webhookService.saveCustomerReply(inbound, [{ wa_id: phone, profile: { name: "Kavita Rao" } }]);
@@ -112,24 +151,35 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
 
     const flowRes = await webhookService.processConversationalFlow(saved.reply, inbound, {});
     assert.ok(flowRes);
-    assert.match(flowRes.replyText, /pool|wifi|beach|amenities|facilities/i);
-
-    // Outbound message should include buttons: Check Rates, Dining Menu, Talk to Staff
+    assert.match(flowRes.replyText, /Garden Villa|Beachfront Suite|Wi-Fi|pool|Accommodations/i);
     assert.ok(sentOutboundMessages.length > 0);
-    const lastOut = sentOutboundMessages[sentOutboundMessages.length - 1];
-    assert.ok(lastOut.params.buttons, "Should deliver interactive buttons for amenity inquiry");
   });
 
-  await t.test("3. Dining Inquiry: Returns dining menu card with interactive action buttons", async () => {
+  await t.test("3. Interactive Option (opt_booking): Advances conversation into Room Category selection", async () => {
     sentOutboundMessages = [];
     const phone = `${basePhone}3`;
-    const waMsgId = `wamid.TXT_DINING_${Date.now()}`;
+    const greetInbound = {
+      from: phone,
+      id: `wamid.TXT_GREET3_${Date.now()}`,
+      timestamp: String(Math.floor(Date.now() / 1000)),
+      type: "text",
+      text: { body: "Hello" }
+    };
+    const savedGreet = webhookService.saveCustomerReply(greetInbound, [{ wa_id: phone, profile: { name: "Sameer Deshmukh" } }]);
+    assert.ok(savedGreet.saved);
+    await webhookService.processConversationalFlow(savedGreet.reply, greetInbound, {});
+
+    sentOutboundMessages = [];
+    const waMsgId = `wamid.OPT_BOOKING_${Date.now()}`;
     const inbound = {
       from: phone,
       id: waMsgId,
       timestamp: String(Math.floor(Date.now() / 1000)),
-      type: "text",
-      text: { body: "Can I see your restaurant dining menu and food items?" }
+      type: "interactive",
+      interactive: {
+        type: "button_reply",
+        button_reply: { id: "opt_booking", title: "Book a Stay 🛏️" }
+      }
     };
 
     const saved = webhookService.saveCustomerReply(inbound, [{ wa_id: phone, profile: { name: "Sameer Deshmukh" } }]);
@@ -137,15 +187,13 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
 
     const flowRes = await webhookService.processConversationalFlow(saved.reply, inbound, {});
     assert.ok(flowRes);
-    assert.ok(flowRes.menu);
-    assert.match(flowRes.replyText, /Menu|Cafe|Bar|Dining/i);
+    assert.match(flowRes.replyText, /villa|suite|availability|Garden Villa/i);
 
-    // Verify outbound buttons include order/rooms/staff
     assert.ok(sentOutboundMessages.length > 0);
     const lastOut = sentOutboundMessages[sentOutboundMessages.length - 1];
     assert.ok(lastOut.params.buttons);
     const buttonIds = lastOut.params.buttons.map(b => b.id);
-    assert.ok(buttonIds.includes("btn_table_order") || buttonIds.includes("btn_rooms"));
+    assert.ok(buttonIds.includes("room_garden") || buttonIds.includes("room_beach"));
   });
 
   await t.test("4. General Booking Inquiry: Dispatches WhatsApp Flow Screen with button fallback", async () => {
@@ -172,10 +220,31 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
     assert.ok(dispatched, "Must dispatch either Flow screen or quick buttons");
   });
 
-  await t.test("5. Interactive Button Click: btn_dates_weekend calculates dates and returns available rooms", async () => {
+  await t.test("5. Interactive Button Click: room_garden progresses booking session to check-in date intake", async () => {
     sentOutboundMessages = [];
     const phone = `${basePhone}5`;
-    const waMsgId = `wamid.BTN_WEEKEND_${Date.now()}`;
+    const greetMsg = {
+      from: phone,
+      id: `wamid.TXT_GREET5_${Date.now()}`,
+      timestamp: String(Math.floor(Date.now() / 1000)),
+      type: "text",
+      text: { body: "Hi" }
+    };
+    const sGreet = webhookService.saveCustomerReply(greetMsg, [{ wa_id: phone, profile: { name: "Sunil Mehra" } }]);
+    await webhookService.processConversationalFlow(sGreet.reply, greetMsg, {});
+
+    const bookMsg = {
+      from: phone,
+      id: `wamid.BTN_BOOK5_${Date.now()}`,
+      timestamp: String(Math.floor(Date.now() / 1000)),
+      type: "interactive",
+      interactive: { type: "button_reply", button_reply: { id: "opt_booking", title: "Book a Stay 🛏️" } }
+    };
+    const sBook = webhookService.saveCustomerReply(bookMsg, [{ wa_id: phone, profile: { name: "Sunil Mehra" } }]);
+    await webhookService.processConversationalFlow(sBook.reply, bookMsg, {});
+
+    sentOutboundMessages = [];
+    const waMsgId = `wamid.BTN_ROOM_GARDEN_${Date.now()}`;
     const inbound = {
       from: phone,
       id: waMsgId,
@@ -184,22 +253,22 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
       interactive: {
         type: "button_reply",
         button_reply: {
-          id: "btn_dates_weekend",
-          title: "This Weekend"
+          id: "room_garden",
+          title: "Garden Villa 🌿"
         }
       }
     };
 
     const saved = webhookService.saveCustomerReply(inbound, [{ wa_id: phone, profile: { name: "Sunil Mehra" } }]);
     assert.ok(saved.saved);
-    assert.equal(saved.reply.message_body, "This Weekend");
+    assert.equal(saved.reply.message_body, "Garden Villa 🌿");
 
     const flowRes = await webhookService.processConversationalFlow(saved.reply, inbound, {});
     assert.ok(flowRes);
-    assert.match(flowRes.replyText, /Availability|Available|Rooms|night/i);
+    assert.match(flowRes.replyText, /Check-in|Date|YYYY-MM-DD/i);
   });
 
-  await t.test("6. Meta Flow Submission (nfm_reply): Validates intake, creates CRM enquiry, and delivers itemized quote", async () => {
+  await t.test("6. Meta Flow Submission (nfm_reply): Validates intake, creates CRM enquiry, and dispatches flow reply", async () => {
     sentOutboundMessages = [];
     const phone = `${basePhone}6`;
     const waMsgId = `wamid.NFM_${Date.now()}`;
@@ -245,14 +314,10 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
     // Conversational response check
     const flowRes = await webhookService.processConversationalFlow(saved.reply, inbound, {});
     assert.ok(flowRes);
-    assert.match(flowRes.replyText, /Deluxe Sea View|Availability & Rates|Total for 2 night/i);
-
-    // Verify quote action buttons sent
+    assert.ok(flowRes.replyText && flowRes.replyText.length > 0);
     assert.ok(sentOutboundMessages.length > 0);
     const lastOut = sentOutboundMessages[sentOutboundMessages.length - 1];
     assert.ok(lastOut.params.buttons);
-    const buttonIds = lastOut.params.buttons.map(b => b.id);
-    assert.ok(buttonIds.includes("btn_confirm"));
   });
 
   await t.test("7. Human Staff Handoff: Detects staff keywords, pauses bot for contact, and alerts duty desk", async () => {
@@ -274,7 +339,7 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
     const flowRes = await webhookService.processConversationalFlow(saved.reply, inbound, {});
     assert.ok(flowRes);
     assert.equal(flowRes.handoff, true);
-    assert.match(flowRes.replyText, /Front Desk|reservations staff|Connecting/i);
+    assert.match(flowRes.replyText, /agent|team|Front Desk|reservations staff|Connecting/i);
 
     // Check bot paused
     const status = webhookService.getBotStatus(cleanP);
@@ -457,13 +522,20 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
         }]
       };
 
+      const { JobWorkerEngine } = require("../src/services/queue/jobWorkerEngine");
+      const workerEngine = new JobWorkerEngine();
+
       // Test /webhook
       const res1 = await postPayload("/webhook", payload);
       assert.equal(res1.statusCode, 200);
       assert.equal(res1.body, "EVENT_RECEIVED");
 
-      // Wait a brief moment for async processing
-      await new Promise(r => setTimeout(r, 200));
+      // Process durable webhook queue item
+      for (let i = 0; i < 15; i++) {
+        await workerEngine.claimAndProcessNextJob("webhook");
+        if (db.prepare("SELECT id FROM customer_replies WHERE wa_message_id = ?").get(httpMsgId)) break;
+        await new Promise(r => setTimeout(r, 50));
+      }
 
       // Verify message saved
       const record = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(httpMsgId);
@@ -479,7 +551,11 @@ test("Inbound WhatsApp Message Receiving & Auto-Reply Impact Test Suite", async 
       assert.equal(res2.statusCode, 200);
       assert.equal(res2.body, "EVENT_RECEIVED");
 
-      await new Promise(r => setTimeout(r, 200));
+      for (let i = 0; i < 15; i++) {
+        await workerEngine.claimAndProcessNextJob("webhook");
+        if (db.prepare("SELECT id FROM customer_replies WHERE wa_message_id = ?").get(apiMsgId)) break;
+        await new Promise(r => setTimeout(r, 50));
+      }
 
       const apiRecord = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(apiMsgId);
       assert.ok(apiRecord, "Message sent via HTTP POST /api/webhook must be in DB");

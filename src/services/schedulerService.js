@@ -290,13 +290,13 @@ class SchedulerService {
         if (job.session_status !== "ACTIVE") {
           db.prepare(`
             UPDATE workflow_scheduled_jobs
-            SET status = 'CANCELLED', last_error = 'Session no longer active', updated_at = NOW()
+            SET status = 'CANCELLED', last_error = 'Session no longer active', updated_at = UTC_TIMESTAMP()
             WHERE id = ?
           `).run(job.id);
           continue;
         }
 
-        // 2. Opt-out suppression check
+        // 2. Opt-out suppression & revoked DPDP consent check
         const suppression = db.prepare(`
           SELECT id FROM contact_suppressions
           WHERE clean_phone = ?
@@ -306,7 +306,26 @@ class SchedulerService {
         if (suppression) {
           db.prepare(`
             UPDATE workflow_scheduled_jobs
-            SET status = 'CANCELLED', last_error = 'Recipient phone is in contact_suppressions (opt-out)', updated_at = NOW()
+            SET status = 'CANCELLED', last_error = 'Recipient phone is in contact_suppressions (opt-out)', updated_at = UTC_TIMESTAMP()
+            WHERE id = ?
+          `).run(job.id);
+          continue;
+        }
+
+        const revokedConsent = db.prepare(`
+          SELECT cc.id
+          FROM contact_consents cc
+          JOIN contacts c ON cc.contact_id = c.id
+          WHERE COALESCE(cc.tenant_id, 1) = COALESCE(?, 1)
+            AND REPLACE(REPLACE(REPLACE(c.phone_e164, '+', ''), '-', ''), ' ', '') = ?
+            AND UPPER(cc.status) IN ('REVOKED', 'OPTED_OUT', 'UNSUBSCRIBED', 'DENIED')
+          LIMIT 1
+        `).get(job.tenant_id || 1, cleanPhone);
+
+        if (revokedConsent) {
+          db.prepare(`
+            UPDATE workflow_scheduled_jobs
+            SET status = 'CANCELLED', last_error = 'Recipient revoked consent (DPDP / opt-out)', updated_at = UTC_TIMESTAMP()
             WHERE id = ?
           `).run(job.id);
           continue;
@@ -316,14 +335,21 @@ class SchedulerService {
         let targetNodeType = "SEND_MESSAGE";
         try {
           const flow = db.prepare(`
-            SELECT v.nodes_json
+            SELECT v.nodes_json, v.transitions_json
             FROM conversation_flows f
             JOIN conversation_flow_versions v ON f.published_version_id = v.id
             WHERE f.id = ?
           `).get(job.flow_id);
           if (flow?.nodes_json) {
             const nodes = JSON.parse(flow.nodes_json || "[]");
-            const targetNode = nodes.find(n => n.id === job.resume_node_id);
+            const transitions = JSON.parse(flow.transitions_json || "[]");
+            const resumeHandle = job.resume_handle || "default";
+            const outgoing = transitions.find(t =>
+              t.source === job.resume_node_id && ((t.handle || "default") === resumeHandle || t.handle === "default")
+            ) || transitions.find(t => t.source === job.resume_node_id);
+            const targetNode = outgoing
+              ? nodes.find(n => n.id === outgoing.target)
+              : nodes.find(n => n.id === job.resume_node_id);
             if (targetNode) {
               targetNodeType = targetNode.type;
             }
@@ -357,7 +383,7 @@ class SchedulerService {
 
           db.prepare(`
             UPDATE workflow_scheduled_jobs
-            SET status = 'COMPLETED', updated_at = NOW()
+            SET status = 'COMPLETED', updated_at = UTC_TIMESTAMP()
             WHERE id = ?
           `).run(job.id);
 
@@ -366,7 +392,7 @@ class SchedulerService {
           console.error(`[Scheduler] Error resuming delay job #${job.id}:`, execErr.message);
           db.prepare(`
             UPDATE workflow_scheduled_jobs
-            SET status = 'FAILED', last_error = ?, updated_at = NOW()
+            SET status = 'FAILED', last_error = ?, updated_at = UTC_TIMESTAMP()
             WHERE id = ?
           `).run(execErr.message, job.id);
         }

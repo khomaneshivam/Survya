@@ -4,6 +4,13 @@
  * condition rule evaluation (ALL/ANY with 13 operators), and variable mutations.
  */
 
+const BLOCKED_PATH_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
+
+function hasOwnSafe(obj, key) {
+  if (!obj || typeof obj !== 'object' || BLOCKED_PATH_SEGMENTS.has(key)) return false;
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
 /**
  * Safely resolves a dot-separated path from context.
  * Falls back to checking sub-namespaces (session, contact, crm, catalog, trigger)
@@ -15,15 +22,17 @@ function getPath(context, path) {
   }
 
   const cleanPath = path.trim();
-  if (!cleanPath) return undefined;
+  if (!cleanPath || BLOCKED_PATH_SEGMENTS.has(cleanPath)) return undefined;
 
-  // Direct dot traversal
+  // Direct dot traversal (own properties only; blocks prototype-chain lookups)
   const parts = cleanPath.split('.');
+  if (parts.some(p => BLOCKED_PATH_SEGMENTS.has(p))) return undefined;
+
   let curr = context;
   let found = true;
 
   for (const part of parts) {
-    if (curr == null || typeof curr !== 'object' || !(part in curr)) {
+    if (!hasOwnSafe(curr, part)) {
       found = false;
       break;
     }
@@ -35,7 +44,7 @@ function getPath(context, path) {
   }
 
   // Direct flat key match on context (e.g. context['business.name'])
-  if (cleanPath in context && context[cleanPath] !== undefined) {
+  if (hasOwnSafe(context, cleanPath) && context[cleanPath] !== undefined) {
     return context[cleanPath];
   }
 
@@ -43,23 +52,25 @@ function getPath(context, path) {
   if (context.config && typeof context.config === 'object') {
     if (cleanPath.startsWith('config.')) {
       const sub = cleanPath.slice(7);
-      if (sub in context.config && context.config[sub] !== undefined) {
+      if (hasOwnSafe(context.config, sub) && context.config[sub] !== undefined) {
         return context.config[sub];
       }
       const subParts = sub.split('.');
       let ptr = context.config;
-      let ok = true;
-      for (const p of subParts) {
-        if (ptr == null || typeof ptr !== 'object' || !(p in ptr)) {
-          ok = false;
-          break;
+      let ok = !subParts.some(p => BLOCKED_PATH_SEGMENTS.has(p));
+      if (ok) {
+        for (const p of subParts) {
+          if (!hasOwnSafe(ptr, p)) {
+            ok = false;
+            break;
+          }
+          ptr = ptr[p];
         }
-        ptr = ptr[p];
       }
       if (ok && ptr !== undefined) {
         return ptr;
       }
-    } else if (cleanPath in context.config && context.config[cleanPath] !== undefined) {
+    } else if (hasOwnSafe(context.config, cleanPath) && context.config[cleanPath] !== undefined) {
       return context.config[cleanPath];
     }
   }
@@ -68,7 +79,7 @@ function getPath(context, path) {
   const namespaces = ['session', 'contact', 'crm', 'catalog', 'trigger', 'api', 'config'];
   for (const ns of namespaces) {
     if (context[ns] && typeof context[ns] === 'object') {
-      if (cleanPath in context[ns] && context[ns][cleanPath] !== undefined) {
+      if (hasOwnSafe(context[ns], cleanPath) && context[ns][cleanPath] !== undefined) {
         return context[ns][cleanPath];
       }
     }

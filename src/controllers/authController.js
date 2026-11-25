@@ -8,6 +8,39 @@ const timeUtil = require("../utils/timeUtil");
 const crmPipelineService = require("../services/crmPipelineService");
 
 /**
+ * Build safe workspace-aware user payload shared across register & login
+ */
+function buildSafeUser(user, defaultWorkspaceRole = null) {
+  const resolvedTenantId = user.tenant_id ? Number(user.tenant_id) : 1;
+  let workspaceRole = defaultWorkspaceRole || ((user.role === "ADMIN" || user.role === "SUPER_ADMIN") ? "OWNER" : "USER");
+  try {
+    const mem = db.prepare(`
+      SELECT role FROM tenant_user_memberships WHERE user_id = ? AND tenant_id = ?
+    `).get(user.id, resolvedTenantId);
+    if (mem?.role) workspaceRole = String(mem.role).toUpperCase();
+  } catch (_) {}
+
+  const isPlatformAdminFlag = user.role === "SUPER_ADMIN" || (user.role === "ADMIN" && resolvedTenantId === 1);
+  const isWorkspaceAdminFlag = isPlatformAdminFlag || ["OWNER", "ADMIN", "AGENCY_ADMIN"].includes(workspaceRole);
+
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+    role: user.role,
+    workspace_role: workspaceRole,
+    is_platform_admin: isPlatformAdminFlag,
+    is_workspace_admin: isWorkspaceAdminFlag,
+    status: user.status,
+    assigned_phone_id: user.assigned_phone_id,
+    tenant_id: resolvedTenantId,
+    created_at: user.created_at,
+    last_login_at: user.last_login_at || null
+  };
+}
+
+/**
  * Generates signed JWT session token
  */
 function generateToken(user) {
@@ -76,8 +109,9 @@ async function register(req, res) {
         role = "ADMIN";
         tenantId = 1;
       } else {
-        // Self-serve SaaS: create a dedicated workspace with 7-day TRIAL
-        role = "ADMIN"; // Workspace admin
+        // Self-serve SaaS: create a dedicated workspace with 7-day TRIAL.
+        // Assign platform user role 'USER' while recording workspace 'OWNER' in tenant_user_memberships.
+        role = "USER";
         let baseSlug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
         if (!baseSlug) baseSlug = "workspace";
         let uniqueSlug = baseSlug;
@@ -126,12 +160,13 @@ async function register(req, res) {
       }
     }
 
-    const newUser = db.prepare(`
+    const newUserRow = db.prepare(`
       SELECT id, name, email, phone, role, status, assigned_phone_id, tenant_id, created_at
       FROM users WHERE id = ?
     `).get(userId);
+    const safeNewUser = buildSafeUser(newUserRow, "OWNER");
 
-    const token = generateToken(newUser);
+    const token = generateToken(safeNewUser);
 
     try {
       res.cookie("token", token, {
@@ -146,7 +181,7 @@ async function register(req, res) {
       success: true,
       message: `Account created successfully! Welcome, ${cleanName}.`,
       token,
-      user: newUser
+      user: safeNewUser
     });
   } catch (error) {
     console.error("User registration error:", error);
@@ -190,17 +225,7 @@ async function login(req, res) {
     // Update last login timestamp
     db.prepare("UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?").run(user.id);
 
-    const safeUser = {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone,
-      role: user.role,
-      status: user.status,
-      assigned_phone_id: user.assigned_phone_id,
-      created_at: user.created_at,
-      last_login_at: user.last_login_at
-    };
+    const safeUser = buildSafeUser(user);
 
     const token = generateToken(safeUser);
 
@@ -354,8 +379,8 @@ async function forgotPassword(req, res) {
       });
     }
 
-    // Generate 6-digit numeric recovery code
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate 6-digit cryptographically random numeric recovery code
+    const code = crypto.randomInt(100000, 1000000).toString();
     const tokenHash = crypto.createHash("sha256").update(code).digest("hex");
     const expiresAt = config.DB_CLIENT === "mysql"
       ? timeUtil.getIndianTimestampString(new Date(Date.now() + 30 * 60 * 1000))
@@ -497,8 +522,8 @@ async function resetPassword(req, res) {
       // Invalidate recovery code
       db.prepare("UPDATE password_resets SET used = 1 WHERE id = ?").run(resetRecord.id);
 
-      // If user is ADMIN, backfill any legacy unassigned records
-      if (user.role === "ADMIN") {
+      // Only Platform Master Admin on Tenant 1 may backfill unassigned legacy root records
+      if (user.role === "ADMIN" && Number(user.tenant_id || 1) === 1) {
         db.prepare("UPDATE customer_replies SET user_id = ? WHERE user_id IS NULL OR user_id = '' OR user_id = 'admin_root'").run(user.id);
         db.prepare("UPDATE campaigns SET user_id = ? WHERE user_id IS NULL OR user_id = '' OR user_id = 'admin_root'").run(user.id);
         db.prepare("UPDATE automated_booking_dispatches SET user_id = ? WHERE user_id IS NULL OR user_id = '' OR user_id = 'admin_root'").run(user.id);

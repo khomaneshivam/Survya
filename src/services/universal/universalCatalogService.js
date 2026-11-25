@@ -1948,12 +1948,14 @@ function importFullIndustrySuite(tenantId = 1, options = {}, userId = "system") 
     handoff_keywords: ["agent", "human", "help", "support"]
   });
 
-  // 7. Update settings table
-  try {
-    const { setSetting } = require("../../config/database");
-    setSetting("BOT_BUSINESS_NAME", finalBizName);
-    if (finalPhone) setSetting("BOT_HANDOFF_PHONE", finalPhone);
-  } catch (_) {}
+  // 7. Update legacy Tenant-1 global settings table ONLY when modifying Tenant 1 (prevent cross-tenant pollution)
+  if (numericTenantId === 1) {
+    try {
+      const { setSetting } = require("../../config/database");
+      setSetting("BOT_BUSINESS_NAME", finalBizName);
+      if (finalPhone) setSetting("BOT_HANDOFF_PHONE", finalPhone);
+    } catch (_) {}
+  }
 
   const propId = db.prepare("SELECT id FROM properties WHERE tenant_id = ? ORDER BY id ASC LIMIT 1").get(numericTenantId)?.id || null;
 
@@ -2146,8 +2148,8 @@ function updateBusinessProfile(tenantId = 1, payload = {}, userId = "system") {
     flowGlobalSettingsService.updateSettings(numericTenantId, finalLine, updates);
   }
 
-  // Sync settings table
-  if (finalName) {
+  // Sync legacy Tenant-1 global settings ONLY when updating Tenant 1 (prevent cross-tenant pollution)
+  if (finalName && numericTenantId === 1) {
     try {
       const { setSetting } = require("../../config/database");
       setSetting("BOT_BUSINESS_NAME", finalName);

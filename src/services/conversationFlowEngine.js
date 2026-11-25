@@ -934,6 +934,19 @@ function executePureSimulationNode(node, context = {}) {
     };
   }
 
+  if (type === "PAYMENT" && options.length === 0) {
+    return {
+      action: "CONTINUE",
+      nextHandle: "default",
+      updatedData: {
+        payment_id: "pay_sim_9901",
+        payment_link: "https://survya.local/pay/SIM-9901",
+        payment_status: "PENDING"
+      },
+      traceNote: "[Simulation] Generated simulated payment link preview."
+    };
+  }
+
   if (["SEND_MESSAGE", "MESSAGE", "BUTTON_MENU", "SELECTION", "CONFIRMATION", "PAYMENT"].includes(type)) {
     if (context.isWaitingForThisNode && options.length > 0) {
       const payloadValue = context.userPayload?.id || context.userPayload?.payload || context.userPayload?.value || context.userPayload?.title || "";
@@ -1034,7 +1047,7 @@ function executePureSimulationNode(node, context = {}) {
       };
     }
 
-    const retryMessage = render(config.retryPrompt || config.retryMessage || config.errorMessage || `Please enter a valid ${variable}.`);
+    const retryMessage = render(config.retryPrompt || config.retryMessage || config.errorMessage || config.validation?.errorMessage || `Please enter a valid ${variable}.`);
     return {
       action: "WAIT_FOR_INPUT",
       replyMessages: retryMessage ? [retryMessage] : [],
@@ -1139,6 +1152,113 @@ function executePureSimulationNode(node, context = {}) {
       replyMessages: ["[Simulation only] WhatsApp Flow form was not opened or dispatched."],
       traceNote: "[Simulation] Blocked WhatsApp Flow form dispatch."
     };
+  }
+
+  if (type === "BUSINESS_ACTION") {
+    const action = String(config.action || "").toUpperCase();
+    if (action === "HOSPITALITY_CHECK_AVAILABILITY" || action === "CHECK_AVAILABILITY") {
+      const roomName = render(config.inputs?.room_name || session.selected_room_name || "Deluxe Villa");
+      return {
+        action: "CONTINUE",
+        nextHandle: "available",
+        updatedData: {
+          is_available: true,
+          available_qty: 2,
+          matched_room_id: 1,
+          matched_room_name: roomName,
+          simulation_last_mocked_node: node?.id || type
+        },
+        traceNote: `[Simulation] Checked availability preview locally for '${roomName}'.`
+      };
+    }
+    if (action === "HOSPITALITY_CALCULATE_QUOTE" || action === "CALCULATE_QUOTE") {
+      const ci = new Date(render(config.inputs?.check_in || session.check_in_date || ""));
+      const co = new Date(render(config.inputs?.check_out || session.check_out_date || ""));
+      let nights = (!isNaN(ci.getTime()) && !isNaN(co.getTime())) ? Math.round((co - ci) / 86400000) : 2;
+      if (!Number.isFinite(nights) || nights < 1) nights = 2;
+      const baseRate = Number(config.inputs?.unit_rate || session.unit_rate || 8500);
+      const subtotal = baseRate * nights;
+      const taxPercent = 12;
+      const taxTotal = Math.round((subtotal * taxPercent) / 100);
+      const total = subtotal + taxTotal;
+      return {
+        action: "CONTINUE",
+        nextHandle: "success",
+        updatedData: {
+          nights,
+          quote_subtotal: subtotal,
+          tax_percent: taxPercent,
+          tax_total: taxTotal,
+          quote_total: total,
+          pricing_breakdown: `${nights} night(s) × ₹${baseRate.toLocaleString("en-IN")} + ${taxPercent}% GST`,
+          simulation_last_mocked_node: node?.id || type
+        },
+        traceNote: `[Simulation] Computed quote preview locally (₹${total}).`
+      };
+    }
+    if (action === "B2B_CALCULATE_SALES_QUOTE") {
+      const teamSize = Math.max(1, Number(render(config.inputs?.team_size || session.team_size || 5)) || 5);
+      const monthlyVolume = Math.max(1000, Number(render(config.inputs?.monthly_volume || session.monthly_volume || 25000)) || 25000);
+      const planRaw = String(render(config.inputs?.plan_name || session.selected_plan || "GROWTH")).toUpperCase();
+      const planBase = planRaw.includes("ENTERPRISE") ? 19999 : (planRaw.includes("STARTER") ? 4999 : 9999);
+      const subtotal = planBase + (teamSize * 499) + Math.round((monthlyVolume / 1000) * 80);
+      const taxPercent = 18;
+      const taxTotal = Math.round((subtotal * taxPercent) / 100);
+      const total = subtotal + taxTotal;
+      return {
+        action: "CONTINUE",
+        nextHandle: "success",
+        updatedData: {
+          quote_subtotal: subtotal,
+          tax_percent: taxPercent,
+          tax_total: taxTotal,
+          quote_total: total,
+          deposit_amount: 5000,
+          simulation_last_mocked_node: node?.id || type
+        },
+        traceNote: `[Simulation] Computed B2B quote preview locally (₹${total}).`
+      };
+    }
+    if (action === "HOSPITALITY_CREATE_ENQUIRY" || action === "CREATE_BOOKING") {
+      return {
+        action: "CONTINUE",
+        nextHandle: "success",
+        replyMessages: ["✅ *Booking Enquiry #99001 Logged Successfully!*"],
+        updatedData: {
+          enquiry_id: 99001,
+          quote_id: 99001,
+          assigned_staff: "Duty Manager (Front Desk)",
+          simulation_last_mocked_node: node?.id || type
+        },
+        traceNote: "[Simulation] Simulated booking enquiry preview #99001 (no DB row created)."
+      };
+    }
+    if (action === "B2B_CREATE_SALES_DEAL") {
+      return {
+        action: "CONTINUE",
+        nextHandle: "success",
+        updatedData: {
+          deal_id: "9901",
+          assigned_executive: "Enterprise Solutions Architect",
+          deal_stage: "QUALIFIED_PROSPECT",
+          simulation_last_mocked_node: node?.id || type
+        },
+        traceNote: "[Simulation] Simulated CRM deal preview #DEAL-9901 (no DB row created)."
+      };
+    }
+    if (action === "GENERATE_PAYMENT_LINK" || action === "PROCESS_PAYMENT") {
+      return {
+        action: "CONTINUE",
+        nextHandle: "success",
+        updatedData: {
+          payment_id: "pay_sim_9901",
+          payment_link: "https://survya.local/pay/SIM-9901",
+          payment_status: "PENDING",
+          simulation_last_mocked_node: node?.id || type
+        },
+        traceNote: "[Simulation] Simulated payment link preview."
+      };
+    }
   }
 
   // Any remaining node is an integration-capable or unknown node.  Never use
@@ -1264,6 +1384,7 @@ async function processTurn({
       collectedData = { ...(session.collectedData || session.collected_data || {}) };
       nodes = flowOverride?.nodes || session.nodes || [];
       transitions = flowOverride?.transitions || session.transitions || [];
+      isResuming = Boolean(session.current_node_id);
     } else {
       session = null;
       nodes = flowOverride.nodes || [];
@@ -1402,7 +1523,7 @@ async function processTurn({
   // Load dynamic template configuration if flow was installed from a template
   let templateConfig = {};
   const effectiveFlowId = flow?.id || session?.flow_id;
-  if (effectiveFlowId) {
+  if (!isInMemorySimulation && effectiveFlowId) {
     try {
       const inst = db.prepare(`
         SELECT config_values_json, custom_flow_name 
@@ -1418,25 +1539,27 @@ async function processTurn({
 
   // Fetch tenant's minimum starting price from universal catalog or room types
   let startingPrice = null;
-  try {
-    const minCatItem = db.prepare(`
-      SELECT MIN(base_price) as min_price 
-      FROM catalog_items 
-      WHERE tenant_id = ? AND delete_status = 0 AND active_status = 1 AND (is_sold_out = 0 OR is_sold_out IS NULL)
-    `).get(tenantId);
-    if (minCatItem && minCatItem.min_price) {
-      startingPrice = `₹${minCatItem.min_price.toLocaleString('en-IN')}`;
-    } else {
-      const minRoom = db.prepare(`
-        SELECT MIN(base_rate) as min_price 
-        FROM room_types 
-        WHERE tenant_id = ? AND active = 1
+  if (!isInMemorySimulation) {
+    try {
+      const minCatItem = db.prepare(`
+        SELECT MIN(base_price) as min_price 
+        FROM catalog_items 
+        WHERE tenant_id = ? AND delete_status = 0 AND active_status = 1 AND (is_sold_out = 0 OR is_sold_out IS NULL)
       `).get(tenantId);
-      if (minRoom && minRoom.min_price) {
-        startingPrice = `₹${minRoom.min_price.toLocaleString('en-IN')}`;
+      if (minCatItem && minCatItem.min_price) {
+        startingPrice = `₹${minCatItem.min_price.toLocaleString('en-IN')}`;
+      } else {
+        const minRoom = db.prepare(`
+          SELECT MIN(base_rate) as min_price 
+          FROM room_types 
+          WHERE tenant_id = ? AND active = 1
+        `).get(tenantId);
+        if (minRoom && minRoom.min_price) {
+          startingPrice = `₹${minRoom.min_price.toLocaleString('en-IN')}`;
+        }
       }
-    }
-  } catch (_) {}
+    } catch (_) {}
+  }
 
   const resolvedBusinessName = templateConfig['business.name'] || templateConfig.business?.name || configuredBusinessName || prop.name;
   const resolvedPhone = templateConfig['business.phone'] || templateConfig.business?.phone || prop.phone;
@@ -1482,16 +1605,29 @@ async function processTurn({
 
   // 3. Global Escape Keywords Handling (cancel, restart, reset, menu, back, agent/help)
   const normInput = String(userInput || "").trim().toLowerCase();
-  const flowGlobalSettingsService = require("./flowGlobalSettingsService");
-  const globalSettings = flowGlobalSettingsService.getSettings(tenantId, effectivePhoneNumberId);
+  const payloadActionId = String(userPayload?.id || userPayload?.payload || "").trim().toLowerCase();
+  let globalSettings = {
+    root_flow_id: null,
+    menu_keywords: ["menu", "restart", "main menu"],
+    back_keywords: ["0", "back", "previous"],
+    handoff_keywords: ["agent", "human", "help", "support"],
+    session_ttl_minutes: 1440
+  };
+  if (!isInMemorySimulation) {
+    try {
+      const flowGlobalSettingsService = require("./flowGlobalSettingsService");
+      globalSettings = flowGlobalSettingsService.getSettings(tenantId, effectivePhoneNumberId) || globalSettings;
+    } catch (_) {}
+  }
 
   const isGlobalCancel = ["cancel", "stop", "exit"].includes(normInput);
   const isGlobalRestart = (globalSettings.menu_keywords || ["restart", "reset", "menu", "/start", "/menu", "main menu"])
     .some(kw => normInput === kw.toLowerCase() || (normInput.length > 2 && normInput === `/${kw.toLowerCase()}`));
   const isGlobalBack = (globalSettings.back_keywords || ["0", "back", "previous"])
     .some(kw => normInput === kw.toLowerCase());
+  const handoffPhrasePattern = /\b(talk\s+to\s+(a\s+|our\s+)?(human|staff|agent|person|reception|manager)|speak\s+(to|with)\s+(a\s+|our\s+)?(human|staff|agent|person|reception)|human\s+staff|live\s+agent|call\s+front\s+desk)\b/i;
   const isGlobalHandoff = (globalSettings.handoff_keywords || ["agent", "human", "help", "support"])
-    .some(kw => normInput === kw.toLowerCase());
+    .some(kw => normInput === kw.toLowerCase()) || handoffPhrasePattern.test(normInput) || payloadActionId === "btn_staff";
 
   if (isGlobalCancel) {
     if (!isInMemorySimulation && session?.id) {
@@ -1633,6 +1769,7 @@ async function processTurn({
 
   // 4. Strict Start-to-End State Machine Execution Loop
   isWaitingForThisNode = isResuming;
+  let hasFastForwardedInitialMenu = false;
   let hops = 0;
   const maxHops = 25;
   let accumulatedReplies = [];
@@ -1661,6 +1798,8 @@ async function processTurn({
       session: collectedData,
       userInput: isWaitingForThisNode ? userInput : "",
       userPayload: isWaitingForThisNode ? userPayload : null,
+      initialUserInput: (!isResuming && !hasFastForwardedInitialMenu) ? userInput : "",
+      initialUserPayload: (!isResuming && !hasFastForwardedInitialMenu) ? userPayload : null,
       variableContext,
       dryRun: isInMemorySimulation,
       isSimulation: isInMemorySimulation,
@@ -1681,6 +1820,9 @@ async function processTurn({
 
     // Key invariant: isWaitingForThisNode is only true for the initial resumed node in Turn 2+
     isWaitingForThisNode = false;
+    if (execRes.fastForwarded) {
+      hasFastForwardedInitialMenu = true;
+    }
 
     if (execRes.replyMessages && execRes.replyMessages.length > 0) {
       accumulatedReplies.push(...execRes.replyMessages);

@@ -40,6 +40,8 @@ test("WhatsApp Flow Screens: Data Collection, Validation & Automated Response Te
     testFlowId = "flow_hospitality_booking";
 
     // Set bot to HOSPITALITY_FLOW engine
+    const { getSetting } = require("../src/config/database");
+    t._prevFlowsEnabled = getSetting("WHATSAPP_FLOWS_ENABLED");
     setSetting("AUTO_REPLY_ENABLED", "true");
     setSetting("AUTO_REPLY_ENGINE_MODE", "HOSPITALITY_FLOW");
     setSetting("WHATSAPP_FLOWS_ENABLED", "true");
@@ -49,6 +51,7 @@ test("WhatsApp Flow Screens: Data Collection, Validation & Automated Response Te
   t.after(() => {
     // Cleanup records generated for testPhone
     try {
+      setSetting("WHATSAPP_FLOWS_ENABLED", t._prevFlowsEnabled ?? "false");
       db.prepare("DELETE FROM customer_replies WHERE from_phone = ? OR clean_phone = ?").run(testPhone, cleanPhone);
       db.prepare("DELETE FROM flow_responses WHERE from_phone = ? OR clean_phone = ?").run(testPhone, cleanPhone);
       db.prepare("DELETE FROM flow_tokens WHERE recipient_phone = ? OR clean_phone = ?").run(testPhone, cleanPhone);
@@ -96,13 +99,49 @@ test("WhatsApp Flow Screens: Data Collection, Validation & Automated Response Te
       return { success: true, messageId: `wamid.FLOW_DISPATCH_${Date.now()}` };
     };
 
+    const flowService = require("../src/services/conversationFlowService");
+    const createdFlow = flowService.createFlow({
+      tenant_id: 1,
+      name: "Meta Flow Screen Booking Trigger Test",
+      description: "Verifies SEND_WHATSAPP_FLOW node dispatch via conversationFlowEngine",
+      nodes: [
+        {
+          id: "trg_meta_flow",
+          type: "TRIGGER_WHATSAPP",
+          data: {
+            triggerType: "KEYWORD",
+            keywords: ["meta_flow_intake_card"],
+            matchType: "CONTAINS",
+            priority: 1
+          }
+        },
+        {
+          id: "node_send_meta_flow",
+          type: "SEND_WHATSAPP_FLOW",
+          config: {
+            flowTitle: "Stay Dates & Guests Form",
+            flowCta: "Select Dates & Guests",
+            metaFlowId: "887766554433221",
+            initialScreen: "BOOKING_ENQUIRY_SCREEN"
+          }
+        }
+      ],
+      transitions: [
+        { source: "trg_meta_flow", target: "node_send_meta_flow" }
+      ]
+    }, { id: "system" });
+    const verId = createdFlow.draftVersion.id;
+    db.prepare("UPDATE conversation_flow_versions SET status = 'PUBLISHED' WHERE id = ?").run(verId);
+    db.prepare("UPDATE conversation_flows SET status = 'PUBLISHED', published_version_id = ? WHERE id = ?").run(verId, createdFlow.flow.id);
+    require("../src/services/workflow/workflowTriggerService").syncFlowTriggers(1, createdFlow.flow.id, createdFlow.draftVersion.nodes);
+
     try {
       const inboundMsg = {
         from: testPhone,
         id: `wamid.INTAKE_REQ_${Date.now()}`,
         timestamp: String(Math.floor(Date.now() / 1000)),
         type: "text",
-        text: { body: "Hi, I want to book a room at your resort" }
+        text: { body: "Please send meta_flow_intake_card" }
       };
 
       const saved = webhookService.saveCustomerReply(inboundMsg, [{ wa_id: testPhone, profile: { name: "Ananya Roy" } }]);
@@ -125,6 +164,13 @@ test("WhatsApp Flow Screens: Data Collection, Validation & Automated Response Te
       assert.equal(tokenRow.clean_phone, cleanPhone);
     } finally {
       metaWhatsAppService.sendFlowMessage = originalSendFlow;
+      try {
+        db.prepare("DELETE FROM workflow_triggers WHERE flow_id = ?").run(String(createdFlow.flow.id));
+        db.prepare("DELETE FROM conversation_flow_sessions WHERE flow_id = ?").run(createdFlow.flow.id);
+        db.prepare("DELETE FROM conversation_flow_versions WHERE flow_id = ?").run(createdFlow.flow.id);
+        db.prepare("DELETE FROM conversation_flows WHERE id = ?").run(createdFlow.flow.id);
+        require("../src/services/workflow/runtimeCache").invalidateTriggers(1);
+      } catch (_) {}
     }
   });
 

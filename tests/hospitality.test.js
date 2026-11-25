@@ -554,78 +554,101 @@ describe("SARVYA Hospitality Inventory, Room & Rate Configuration Module Test Su
   // 11. Property & Resort Photo Gallery Management and Public Chat Integration
   // -------------------------------------------------------------------------
   test("11. Property photo gallery CRUD, public link attachment, and conversational gallery action", async () => {
-    // A: Admin retrieves property gallery
-    const galleryRes = await fetch(`${baseUrl}/api/v1/hospitality/properties/1/gallery`, {
-      headers: { Authorization: `Bearer ${adminToken}` }
-    });
-    assert.equal(galleryRes.status, 200);
-    const galleryData = await galleryRes.json();
-    assert.equal(galleryData.success, true);
-    assert.ok(Array.isArray(galleryData.all_photos));
-    assert.ok(galleryData.all_photos.length >= 5);
+    const origGalleryRow = db.prepare("SELECT gallery_json FROM properties WHERE id = 1").get();
+    try {
+      const existingGallery = (() => {
+        try { return JSON.parse(origGalleryRow?.gallery_json || "[]"); } catch { return []; }
+      })();
+      if (existingGallery.length < 5) {
+        const seedPhotos = [1, 2, 3, 4, 5].map((n) => ({
+          id: `seed_gallery_${n}`,
+          image_url: `https://images.unsplash.com/photo-1566073771259-6a8506099945?w=800&idx=${n}`,
+          caption: `Resort View ${n}`,
+          category: "Resort & Amenities",
+          alt_text: `Property Photo ${n}`,
+          is_primary: n === 1,
+          display_order: n - 1
+        }));
+        db.prepare("UPDATE properties SET gallery_json = ? WHERE id = 1").run(JSON.stringify(seedPhotos));
+      }
 
-    // B: Admin adds a new property gallery photo
-    const addPhotoRes = await fetch(`${baseUrl}/api/v1/hospitality/properties/1/gallery`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${adminToken}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        image_url: "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=80",
-        caption: "Ayurvedic Beach Spa & Wellness Sanctuary",
-        category: "Resort & Amenities",
-        alt_text: "Spa pavilion surrounded by coastal palm gardens"
-      })
-    });
-    assert.equal(addPhotoRes.status, 201);
-    const addPhotoData = await addPhotoRes.json();
-    assert.equal(addPhotoData.success, true);
-    const newImageId = addPhotoData.image.id;
-    assert.ok(newImageId);
+      // A: Admin retrieves property gallery
+      const galleryRes = await fetch(`${baseUrl}/api/v1/hospitality/properties/1/gallery`, {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+      assert.equal(galleryRes.status, 200);
+      const galleryData = await galleryRes.json();
+      assert.equal(galleryData.success, true);
+      assert.ok(Array.isArray(galleryData.all_photos));
+      assert.ok(galleryData.all_photos.length >= 5);
 
-    // C: Admin sets photo as primary
-    const setPrimaryRes = await fetch(`${baseUrl}/api/v1/hospitality/properties/1/gallery/${newImageId}/primary`, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${adminToken}` }
-    });
-    assert.equal(setPrimaryRes.status, 200);
+      // B: Admin adds a new property gallery photo
+      const addPhotoRes = await fetch(`${baseUrl}/api/v1/hospitality/properties/1/gallery`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          image_url: "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=1200&q=80",
+          caption: "Ayurvedic Beach Spa & Wellness Sanctuary",
+          category: "Resort & Amenities",
+          alt_text: "Spa pavilion surrounded by coastal palm gardens"
+        })
+      });
+      assert.equal(addPhotoRes.status, 201);
+      const addPhotoData = await addPhotoRes.json();
+      assert.equal(addPhotoData.success, true);
+      const newImageId = addPhotoData.image.id;
+      assert.ok(newImageId);
 
-    // D: Admin deletes the newly added photo to clean up
-    const deletePhotoRes = await fetch(`${baseUrl}/api/v1/hospitality/properties/1/gallery/${newImageId}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${adminToken}` }
-    });
-    assert.equal(deletePhotoRes.status, 200);
+      // C: Admin sets photo as primary
+      const setPrimaryRes = await fetch(`${baseUrl}/api/v1/hospitality/properties/1/gallery/${newImageId}/primary`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+      assert.equal(setPrimaryRes.status, 200);
 
-    // E: Public visitor retrieves property gallery without authentication
-    const pubGalleryRes = await fetch(`${baseUrl}/api/v1/public/hospitality/properties/1/gallery`);
-    assert.equal(pubGalleryRes.status, 200);
-    const pubGalleryData = await pubGalleryRes.json();
-    assert.equal(pubGalleryData.success, true);
-    assert.ok(pubGalleryData.photos.length >= 5);
+      // D: Admin deletes the newly added photo to clean up
+      const deletePhotoRes = await fetch(`${baseUrl}/api/v1/hospitality/properties/1/gallery/${newImageId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+      assert.equal(deletePhotoRes.status, 200);
 
-    // F: Public chat action get_property_gallery
-    const chatActionRes = await fetch(`${baseUrl}/api/v1/public/hospitality/chat-action`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "get_property_gallery",
-        payload: { propertyId: 1 }
-      })
-    });
-    assert.equal(chatActionRes.status, 200);
-    const chatActionData = await chatActionRes.json();
-    assert.equal(chatActionData.success, true);
-    assert.equal(chatActionData.interactive_type, "property_gallery");
-    assert.ok(chatActionData.whatsapp_text.includes("Photo Gallery"));
+      // E: Public visitor retrieves property gallery without authentication
+      const pubGalleryRes = await fetch(`${baseUrl}/api/v1/public/hospitality/properties/1/gallery`);
+      assert.equal(pubGalleryRes.status, 200);
+      const pubGalleryData = await pubGalleryRes.json();
+      assert.equal(pubGalleryData.success, true);
+      assert.ok(pubGalleryData.photos.length >= 5);
 
-    // G: Public chat link gallery endpoint (/api/v1/public/chat-links/:slug/gallery)
-    const linkGalleryRes = await fetch(`${baseUrl}/api/v1/public/chat-links/flex-us-329/gallery`);
-    assert.equal(linkGalleryRes.status, 200);
-    const linkGalleryData = await linkGalleryRes.json();
-    assert.equal(linkGalleryData.success, true);
-    assert.ok(Array.isArray(linkGalleryData.photos));
-    assert.ok(linkGalleryData.photos.length >= 5);
+      // F: Public chat action get_property_gallery
+      const chatActionRes = await fetch(`${baseUrl}/api/v1/public/hospitality/chat-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "get_property_gallery",
+          payload: { propertyId: 1 }
+        })
+      });
+      assert.equal(chatActionRes.status, 200);
+      const chatActionData = await chatActionRes.json();
+      assert.equal(chatActionData.success, true);
+      assert.equal(chatActionData.interactive_type, "property_gallery");
+      assert.ok(chatActionData.whatsapp_text.includes("Photo Gallery"));
+
+      // G: Public chat link gallery endpoint (/api/v1/public/chat-links/:slug/gallery)
+      const linkRow = db.prepare("SELECT slug FROM chat_links WHERE tenant_id = 1 AND status = 'ACTIVE' LIMIT 1").get();
+      const linkSlug = linkRow?.slug || "resort-inquiry";
+      const linkGalleryRes = await fetch(`${baseUrl}/api/v1/public/chat-links/${linkSlug}/gallery`);
+      assert.equal(linkGalleryRes.status, 200);
+      const linkGalleryData = await linkGalleryRes.json();
+      assert.equal(linkGalleryData.success, true);
+      assert.ok(Array.isArray(linkGalleryData.photos));
+      assert.ok(linkGalleryData.photos.length >= 5);
+    } finally {
+      db.prepare("UPDATE properties SET gallery_json = ? WHERE id = 1").run(origGalleryRow?.gallery_json ?? null);
+    }
   });
 });

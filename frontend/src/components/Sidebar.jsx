@@ -36,9 +36,9 @@ export default function Sidebar({
   mobileOpen,
   setMobileOpen
 }) {
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isPlatformAdmin, isWorkspaceAdmin, logout } = useAuth();
 
-  // Role-based segmented navigation
+  // Role-based segmented navigation (Platform Super-Admin vs Workspace Owner vs Employee)
   const sections = [
     {
       title: 'Operations & Messaging',
@@ -62,22 +62,29 @@ export default function Sidebar({
         { id: 'inventory', label: 'Hospitality', icon: BedDouble }
       ]
     },
-    ...(isAdmin ? [
+    ...(isWorkspaceAdmin ? [
       {
-        title: 'System Administration',
+        title: 'Workspace Controls',
+        items: [
+          { id: 'inapp_studio', label: 'In-App Studio', icon: Smartphone, badge: 'Dynamic' },
+          { id: 'connect', label: 'Connect', icon: Plug }
+        ]
+      }
+    ] : []),
+    ...(isPlatformAdmin ? [
+      {
+        title: 'Platform Governance',
         isAdminSection: true,
         items: [
           { id: 'admin', label: 'System Admin Panel', icon: ShieldCheck, highlight: true },
-          { id: 'inapp_studio', label: 'In-App Studio', icon: Smartphone, badge: 'Dynamic' },
-          { id: 'payouts', label: 'Payouts & Settlements', icon: Landmark },
-          { id: 'connect', label: 'Connect', icon: Plug }
+          { id: 'payouts', label: 'Payouts & Settlements', icon: Landmark }
         ]
       }
     ] : []),
     {
       title: 'Account',
       items: [
-        { id: 'settings', label: 'My Account', icon: Settings }
+        { id: 'settings', label: isWorkspaceAdmin ? 'Team & Settings' : 'My Account', icon: Settings }
       ]
     }
   ];
@@ -149,7 +156,7 @@ export default function Sidebar({
                   overflow: 'hidden',
                   textOverflow: 'ellipsis'
                 }}>
-                  {isAdmin ? 'System Admin Console' : 'Engagement Workspace'}
+                  {isPlatformAdmin ? 'System Admin Console' : isWorkspaceAdmin ? 'Workspace Admin Console' : 'Engagement Workspace'}
                 </div>
               </div>
             )}
@@ -288,9 +295,9 @@ export default function Sidebar({
                 width: '32px',
                 height: '32px',
                 borderRadius: '50%',
-                background: isAdmin ? 'var(--sarvya-blue)' : 'var(--sarvya-blue-soft)',
-                border: isAdmin ? '1px solid var(--sarvya-blue)' : '1px solid var(--sarvya-blue-border)',
-                color: isAdmin ? '#FFFFFF' : 'var(--sarvya-blue)',
+                background: isPlatformAdmin ? 'var(--sarvya-blue)' : 'var(--sarvya-blue-soft)',
+                border: isPlatformAdmin ? '1px solid var(--sarvya-blue)' : '1px solid var(--sarvya-blue-border)',
+                color: isPlatformAdmin ? '#FFFFFF' : 'var(--sarvya-blue)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -313,10 +320,10 @@ export default function Sidebar({
                 </div>
                 <div style={{
                   fontSize: '11px',
-                  color: isAdmin ? 'var(--sarvya-blue)' : 'var(--text-muted)',
-                  fontWeight: isAdmin ? 600 : 400
+                  color: isPlatformAdmin ? 'var(--sarvya-blue)' : 'var(--text-muted)',
+                  fontWeight: isPlatformAdmin || isWorkspaceAdmin ? 600 : 400
                 }}>
-                  {isAdmin ? 'System Administrator' : 'Workspace Operator'}
+                  {isPlatformAdmin ? 'Platform Super-Admin' : isWorkspaceAdmin ? 'Workspace Owner' : 'Workspace Agent'}
                 </div>
               </div>
             </div>
