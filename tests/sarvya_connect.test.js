@@ -33,7 +33,7 @@ describe("SARVYA Connect — WhatsApp Campaign, Custom Template Management & Rul
     prevAppSecretSetting = getSetting("META_APP_SECRET");
     origConfigAppSecret = config.META_APP_SECRET;
 
-    setSetting("WHATSAPP_API_TOKEN", "test_sarvya_meta_token_123456");
+    setSetting("WHATSAPP_API_TOKEN", "EAASarvyaTestMockToken_00000000000000000000000000000000");
     setSetting("WHATSAPP_BUSINESS_ACCOUNT_ID", "998877665544332");
     setSetting("META_APP_SECRET", "test_meta_app_secret_32_characters_long!");
     config.META_APP_SECRET = "test_meta_app_secret_32_characters_long!";
@@ -71,7 +71,7 @@ describe("SARVYA Connect — WhatsApp Campaign, Custom Template Management & Rul
     originalFetch = global.fetch;
     global.fetch = async (url, options = {}) => {
       const urlStr = String(url);
-      if (urlStr.startsWith("https://graph.facebook.com/")) {
+      if (urlStr.startsWith("https://graph.facebook.com/") || (config.META_API_URL && urlStr.startsWith(config.META_API_URL))) {
         if (urlStr.includes("/message_templates") && options.method === "POST") {
           return new Response(
             JSON.stringify({
@@ -148,6 +148,8 @@ describe("SARVYA Connect — WhatsApp Campaign, Custom Template Management & Rul
     config.META_APP_SECRET = origConfigAppSecret;
 
     if (server) server.close();
+    const { closeAsyncPool } = require("../src/config/asyncDb");
+    return closeAsyncPool();
   });
 
   test("1. Connect & list WhatsApp sender accounts once (/api/v1/channels/whatsapp/*)", async () => {
@@ -286,7 +288,10 @@ describe("SARVYA Connect — WhatsApp Campaign, Custom Template Management & Rul
     assert.equal(whRes.status, 200);
 
     // Wait for async webhook worker to process approval
+    const { JobWorkerEngine } = require("../src/services/queue/jobWorkerEngine");
+    const workerEngine = new JobWorkerEngine();
     for (let i = 0; i < 25; i++) {
+      await workerEngine.claimAndProcessNextJob("webhook");
       const checkTpl = db.prepare("SELECT status FROM templates WHERE id = ?").get(tplId);
       if (checkTpl && checkTpl.status === 'APPROVED') break;
       await new Promise(r => setTimeout(r, 100));

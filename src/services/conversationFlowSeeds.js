@@ -1625,7 +1625,7 @@ const PAYMENT_RECOVERY_RENEWAL_NODES = [
       variable: "renewal_choice",
       options: [
         { id: "opt_pay_now", title: "Pay Invoice Now 💳", value: "PAY_NOW" },
-        { id: "opt_extend", title: "Request 7-Day Grace ⏳", value: "EXTEND" },
+        { id: "opt_extend", title: "Request Grace ⏳", value: "EXTEND" },
         { id: "opt_agent", title: "Talk to Billing 💬", value: "BILLING_AGENT" }
       ]
     },
@@ -1781,9 +1781,9 @@ const EVENT_WEBINAR_REGISTRATION_NODES = [
       text: "💼 What best describes your primary business role?",
       variable: "attendee_role",
       options: [
-        { id: "role_cxo", title: "Founder / CEO / CXO 👑", value: "CXO" },
-        { id: "role_manager", title: "Product / Team Lead 🎯", value: "LEAD" },
-        { id: "role_individual", title: "Developer / Creator 💻", value: "CREATOR" }
+        { id: "role_cxo", title: "Founder / CXO 👑", value: "CXO" },
+        { id: "role_manager", title: "Team Lead 🎯", value: "LEAD" },
+        { id: "role_individual", title: "Developer 💻", value: "CREATOR" }
       ]
     },
     position: { x: 400, y: 430 }

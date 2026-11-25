@@ -17,6 +17,7 @@ describe("SARVYA In-Chat Meta-Flow Card & Interactive Data Collection", () => {
   const guestPhone = "919876543277";
   let createdLinkId;
   let testSlug;
+  const createdBlockIds = [];
 
   before(() => {
     server = app.listen(0);
@@ -42,12 +43,16 @@ describe("SARVYA In-Chat Meta-Flow Card & Interactive Data Collection", () => {
   after(() => {
     if (server) server.close();
     try {
+      if (createdBlockIds.length > 0) {
+        const placeholders = createdBlockIds.map(() => "?").join(",");
+        db.prepare(`DELETE FROM hospitality_inventory_blocks WHERE id IN (${placeholders})`).run(...createdBlockIds);
+      }
       if (createdLinkId) {
         db.prepare("DELETE FROM chat_links WHERE id = ?").run(createdLinkId);
       }
-      db.prepare("DELETE FROM hospitality_chat_sessions WHERE phone = ?").run(guestPhone);
-      db.prepare("DELETE FROM customer_replies WHERE from_phone = ?").run(guestPhone);
-      db.prepare("DELETE FROM booking_enquiries WHERE phone_e164 = ?").run(guestPhone);
+      db.prepare("DELETE FROM hospitality_chat_sessions WHERE phone IN (?, ?)").run(guestPhone, "919999888811");
+      db.prepare("DELETE FROM customer_replies WHERE from_phone IN (?, ?)").run(guestPhone, "919999888811");
+      db.prepare("DELETE FROM booking_enquiries WHERE phone_e164 IN (?, ?)").run(guestPhone, "919999888811");
       if (adminUser) db.prepare("DELETE FROM users WHERE id = ?").run(adminUser.id);
     } catch (e) {}
   });
@@ -254,6 +259,16 @@ describe("SARVYA In-Chat Meta-Flow Card & Interactive Data Collection", () => {
   });
 
   test("7. Real-Time Inventory Check: Sold-out / blocked dates reflect as Sold Out in chat options & text", async () => {
+    // Explicitly block all rooms in property 1 for 2026-11-16 to 2026-11-18 for self-contained isolation
+    const propRooms = db.prepare("SELECT id FROM room_types WHERE property_id = 1 AND tenant_id = 1").all();
+    for (const rt of propRooms) {
+      const blkRes = db.prepare(`
+        INSERT INTO hospitality_inventory_blocks (tenant_id, property_id, room_type_id, start_date, end_date, blocked_qty, reason, created_by, status)
+        VALUES (1, 1, ?, '2026-11-16', '2026-11-18', 20, 'Sold-out test block', 'test', 'ACTIVE')
+      `).run(rt.id);
+      if (blkRes?.lastInsertRowid) createdBlockIds.push(blkRes.lastInsertRowid);
+    }
+
     // Dates 2026-11-16 to 2026-11-18 have active blocks in hospitality_inventory_blocks
     const res = await fetch(`${baseUrl}/api/v1/public/chat-links/${testSlug}/send-message`, {
       method: "POST",

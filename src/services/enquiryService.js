@@ -354,11 +354,46 @@ function updateEnquiry(tenantId = 1, id, data = {}, userId = "system") {
   const lost_reason = data.lost_reason !== undefined ? String(data.lost_reason) : existing.lost_reason;
   const room_type_id = data.room_type_id !== undefined ? Number(data.room_type_id) : existing.room_type_id;
 
-  db.prepare(`
-    UPDATE booking_enquiries
-    SET status = ?, assigned_to = ?, follow_up_at = ?, notes = ?, lost_reason = ?, room_type_id = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE tenant_id = ? AND id = ?
-  `).run(newStatus, assigned_to, follow_up_at, notes, lost_reason, room_type_id, tenantId, id);
+  const isConfirmingNewRoomBooking =
+    (newStatus === "WON" || newStatus === "CONFIRMED") &&
+    existing.status !== "WON" &&
+    existing.status !== "CONFIRMED" &&
+    room_type_id &&
+    existing.check_in &&
+    existing.check_out;
+
+  db.prepare("START TRANSACTION").run();
+  try {
+    if (isConfirmingNewRoomBooking) {
+      db.prepare("SELECT id FROM room_types WHERE id = ? AND tenant_id = ? FOR UPDATE").get(room_type_id, tenantId);
+      const hospAvail = require("./hospitalityAvailabilityService");
+      const avail = hospAvail.checkRoomAvailability(
+        existing.property_id || 1,
+        room_type_id,
+        existing.check_in,
+        existing.check_out,
+        existing.rooms_requested || 1,
+        tenantId
+      );
+      if (!avail.available) {
+        const err = new Error("Overbooking prevented: Insufficient room availability for selected dates.");
+        err.statusCode = 409;
+        err.code = "OVERBOOKING_PREVENTED";
+        throw err;
+      }
+    }
+
+    db.prepare(`
+      UPDATE booking_enquiries
+      SET status = ?, assigned_to = ?, follow_up_at = ?, notes = ?, lost_reason = ?, room_type_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE tenant_id = ? AND id = ?
+    `).run(newStatus, assigned_to, follow_up_at, notes, lost_reason, room_type_id, tenantId, id);
+
+    db.prepare("COMMIT").run();
+  } catch (err) {
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
+    throw err;
+  }
 
   logAudit(tenantId, userId, "ENQUIRY_UPDATED", id, {
     old_status: existing.status,

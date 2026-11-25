@@ -1,15 +1,7 @@
 const crypto = require("crypto");
 const { db, getSetting } = require("../config/database");
 const config = require("../config/env");
-const { getActiveCredentials, resolveWabaId, cleanPhone } = require("./metaWhatsAppService");
-
-function getMetaGraphVersion() {
-  return getSetting("META_GRAPH_VERSION") || config.META_GRAPH_VERSION || "v21.0";
-}
-
-function getMetaBaseUrl() {
-  return `https://graph.facebook.com/${getMetaGraphVersion()}`;
-}
+const { getActiveCredentials, resolveWabaId, cleanPhone, getMetaBaseUrl, getMetaGraphVersion } = require("./metaWhatsAppService");
 
 class FlowService {
   /**

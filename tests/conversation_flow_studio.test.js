@@ -36,8 +36,17 @@ describe("Conversation Flow & Automation Studio Test Suite", () => {
   after(() => {
     if (server) server.close();
     try {
-      db.prepare("DELETE FROM users WHERE id = ?").run(testUserId);
+      const flowRows = db.prepare("SELECT id FROM conversation_flows WHERE name IN ('Test Cloned Hospitality Journey', 'Versioned Lifecycle Test Flow')").all();
+      for (const f of flowRows) {
+        try { db.prepare("DELETE FROM workflow_triggers WHERE flow_id = ?").run(f.id); } catch (e) {}
+        try { db.prepare("DELETE FROM conversation_flow_events WHERE flow_id = ?").run(f.id); } catch (e) {}
+        try { db.prepare("DELETE FROM conversation_flow_versions WHERE flow_id = ?").run(f.id); } catch (e) {}
+        try { db.prepare("DELETE FROM conversation_flow_sessions WHERE flow_id = ?").run(f.id); } catch (e) {}
+        try { db.prepare("DELETE FROM conversation_flows WHERE id = ?").run(f.id); } catch (e) {}
+      }
       db.prepare("DELETE FROM conversation_flow_sessions WHERE sender_phone LIKE '919400%'").run();
+      try { db.prepare("DELETE FROM customer_replies WHERE from_phone LIKE '919400%'").run(); } catch (e) {}
+      db.prepare("DELETE FROM users WHERE id = ?").run(testUserId);
     } catch (e) {}
   });
 

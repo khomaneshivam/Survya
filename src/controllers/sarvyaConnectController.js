@@ -6,6 +6,8 @@ const broadcastController = require("./broadcastController");
 const templateController = require("./templateController");
 const messagingService = require("../services/whatsappMessagingService");
 const metaRateService = require("../services/billing/metaRateService");
+const billingService = require("../services/billingService");
+const { isWorkspaceAdmin } = require("../middleware/authMiddleware");
 
 /**
  * Normalizes a SQLite template row for API responses
@@ -118,30 +120,52 @@ async function connectWhatsAppAccount(req, res) {
     const cleanPhone = String(phoneNumber).trim();
     const cleanPhoneId = String(phoneNumberId).trim();
     const cleanWabaId = wabaId ? String(wabaId).trim() : null;
+    const tenantId = Number(req.user?.tenant_id || 1);
 
-    // Persist global credentials if Admin supplies them during initial channel setup
-    if (accessToken && String(accessToken).trim() && !String(accessToken).includes("••••")) {
-      if (req.user?.role !== "ADMIN") {
-        return res.status(403).json({ success: false, message: "Only Administrators can update the Meta access token." });
-      }
-      setSetting("WHATSAPP_API_TOKEN", String(accessToken).trim());
+    if (!isWorkspaceAdmin(req.user)) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: Workspace Administrator privileges required to connect WhatsApp channels."
+      });
+    }
+
+    try {
+      billingService.assertCanConnectWabaLine(tenantId, cleanPhoneId);
+    } catch (quotaErr) {
+      return res.status(quotaErr.statusCode || 402).json({
+        success: false,
+        code: quotaErr.code || "WABA_LINE_QUOTA_EXCEEDED",
+        message: quotaErr.message
+      });
+    }
+
+    const suppliedToken = (accessToken && String(accessToken).trim() && !String(accessToken).includes("••••"))
+      ? String(accessToken).trim()
+      : null;
+
+    if (suppliedToken && !isWorkspaceAdmin(req.user)) {
+      return res.status(403).json({ success: false, message: "Only Workspace Administrators can configure Meta access tokens." });
     }
     if (appSecret && String(appSecret).trim() && !String(appSecret).includes("••••")) {
-      if (req.user?.role !== "ADMIN") {
-        return res.status(403).json({ success: false, message: "Only Administrators can update the Meta App Secret." });
+      if (!isWorkspaceAdmin(req.user)) {
+        return res.status(403).json({ success: false, message: "Only Workspace Administrators can update the Meta App Secret." });
       }
-      setSetting("META_APP_SECRET", String(appSecret).trim());
+      if (tenantId === 1) {
+        setSetting("META_APP_SECRET", String(appSecret).trim());
+      }
     }
-    if (cleanWabaId) {
-      setSetting("WHATSAPP_BUSINESS_ACCOUNT_ID", cleanWabaId);
+
+    // Persist global settings ONLY for Platform Tenant 1 (never overwrite from tenant > 1)
+    if (tenantId === 1) {
+      if (suppliedToken) setSetting("WHATSAPP_API_TOKEN", suppliedToken);
+      if (cleanWabaId) setSetting("WHATSAPP_BUSINESS_ACCOUNT_ID", cleanWabaId);
     }
 
     // Attempt live verification if token exists
     let qualityRating = "GREEN";
     let accountStatus = "ACTIVE";
-    const activeToken = (accessToken && !String(accessToken).includes("••••") ? String(accessToken).trim() : null)
-      || getSetting("WHATSAPP_API_TOKEN")
-      || config.WHATSAPP_API_TOKEN;
+    const activeToken = suppliedToken
+      || (tenantId === 1 ? (getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN) : null);
 
     if (activeToken) {
       try {
@@ -157,13 +181,16 @@ async function connectWhatsAppAccount(req, res) {
       }
     }
 
-    const existing = db.prepare("SELECT id, is_default FROM waba_phone_numbers WHERE phone_number_id = ?").get(cleanPhoneId);
-    const totalCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers").get()?.count || 0;
+    const existing = db.prepare("SELECT id, tenant_id, is_default FROM waba_phone_numbers WHERE phone_number_id = ?").get(cleanPhoneId);
+    if (existing && Number(existing.tenant_id || 1) !== tenantId) {
+      return res.status(403).json({ success: false, message: "Forbidden: Phone line belongs to another workspace." });
+    }
+    const totalCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers WHERE COALESCE(tenant_id, 1) = ? AND COALESCE(delete_status, 0) = 0").get(tenantId)?.count || 0;
     const makeDefault = Boolean(isDefault) || totalCount === 0 || Boolean(existing?.is_default);
 
     if (makeDefault) {
-      db.prepare("UPDATE waba_phone_numbers SET is_default = 0").run();
-      setSetting("WHATSAPP_PHONE_NUMBER_ID", cleanPhoneId);
+      db.prepare("UPDATE waba_phone_numbers SET is_default = 0 WHERE COALESCE(tenant_id, 1) = ?").run(tenantId);
+      if (tenantId === 1) setSetting("WHATSAPP_PHONE_NUMBER_ID", cleanPhoneId);
     }
 
     let accountId;
@@ -177,18 +204,20 @@ async function connectWhatsAppAccount(req, res) {
             quality_rating = ?,
             status = ?,
             is_default = ?,
+            access_token = COALESCE(?, access_token),
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(cleanDisplay, cleanPhone, cleanWabaId, qualityRating, accountStatus, makeDefault ? 1 : 0, accountId);
+        WHERE id = ? AND COALESCE(tenant_id, 1) = ?
+      `).run(cleanDisplay, cleanPhone, cleanWabaId, qualityRating, accountStatus, makeDefault ? 1 : 0, suppliedToken, accountId, tenantId);
     } else {
       accountId = crypto.randomUUID();
       db.prepare(`
         INSERT INTO waba_phone_numbers (
-          id, display_name, phone_number, phone_number_id, waba_id,
-          quality_rating, status, is_default, registered_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, tenant_id, display_name, phone_number, phone_number_id, waba_id,
+          quality_rating, status, is_default, registered_by, access_token
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         accountId,
+        tenantId,
         cleanDisplay,
         cleanPhone,
         cleanPhoneId,
@@ -196,7 +225,8 @@ async function connectWhatsAppAccount(req, res) {
         qualityRating,
         accountStatus,
         makeDefault ? 1 : 0,
-        req.user?.id || null
+        req.user?.id || null,
+        suppliedToken
       );
     }
 

@@ -105,6 +105,7 @@ const TABLE_SCHEMAS = {
   "template_catalog": "CREATE TABLE IF NOT EXISTS `template_catalog` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `uuid` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `template_key` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `owner_tenant_id` bigint DEFAULT NULL,\n  `visibility` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PUBLIC',\n  `industry` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'GENERAL',\n  `category` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'GENERAL',\n  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `description` text COLLATE utf8mb4_unicode_ci,\n  `icon` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT 'Bot',\n  `badge` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `capabilities_json` json DEFAULT NULL,\n  `current_version` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '1.0.0',\n  `status` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PUBLISHED',\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `active_status` tinyint NOT NULL DEFAULT '1',\n  `delete_status` tinyint NOT NULL DEFAULT '0',\n  `created_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `idx_template_catalog_uuid` (`uuid`),\n  UNIQUE KEY `idx_template_catalog_key` (`template_key`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "template_versions": "CREATE TABLE IF NOT EXISTS `template_versions` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `uuid` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `template_id` bigint NOT NULL,\n  `version_number` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '1.0.0',\n  `status` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PUBLISHED',\n  `graph_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `config_schema_json` longtext COLLATE utf8mb4_unicode_ci,\n  `required_bindings_json` longtext COLLATE utf8mb4_unicode_ci,\n  `checksum` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `changelog` text COLLATE utf8mb4_unicode_ci,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `active_status` tinyint NOT NULL DEFAULT '1',\n  `delete_status` tinyint NOT NULL DEFAULT '0',\n  `created_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `idx_tmpl_ver_uuid` (`uuid`),\n  UNIQUE KEY `idx_tmpl_ver_unique` (`template_id`, `version_number`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "template_installations": "CREATE TABLE IF NOT EXISTS `template_installations` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `uuid` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `tenant_id` bigint NOT NULL,\n  `template_id` bigint NOT NULL,\n  `installed_version_id` bigint NOT NULL,\n  `installed_version_number` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `flow_id` bigint NOT NULL,\n  `status` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'DRAFT',\n  `config_values_json` longtext COLLATE utf8mb4_unicode_ci,\n  `custom_flow_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `installation_notes` text COLLATE utf8mb4_unicode_ci,\n  `installed_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `activated_at` datetime DEFAULT NULL,\n  `active_status` tinyint NOT NULL DEFAULT '1',\n  `delete_status` tinyint NOT NULL DEFAULT '0',\n  `created_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `idx_tmpl_inst_uuid` (`uuid`),\n  KEY `idx_tmpl_inst_tenant_tmpl` (`tenant_id`, `template_id`),\n  KEY `idx_tmpl_inst_flow` (`flow_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "conversation_handoff_states": "CREATE TABLE IF NOT EXISTS `conversation_handoff_states` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `phone_number_id` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',\n  `clean_phone` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `is_paused` tinyint(1) NOT NULL DEFAULT '1',\n  `paused_until` datetime DEFAULT NULL,\n  `paused_by` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `reason` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uniq_handoff_tenant_line_phone` (`tenant_id`, `phone_number_id`, `clean_phone`),\n  KEY `idx_handoff_until` (`tenant_id`, `clean_phone`, `paused_until`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "template_bindings": "CREATE TABLE IF NOT EXISTS `template_bindings` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `installation_id` bigint NOT NULL,\n  `tenant_id` bigint NOT NULL,\n  `logical_key` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `resource_type` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `target_resource_id` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `target_resource_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `active_status` tinyint NOT NULL DEFAULT '1',\n  `delete_status` tinyint NOT NULL DEFAULT '0',\n  `created_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_tmpl_bind_inst` (`installation_id`, `delete_status`),\n  KEY `idx_tmpl_bind_tenant` (`tenant_id`, `resource_type`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
 };
 
@@ -113,6 +114,7 @@ const INDEXES = [
   "CREATE INDEX idx_recipients_status ON campaign_recipients (campaign_id, status)",
   "CREATE INDEX idx_recipients_meta_msg_id ON campaign_recipients (meta_message_id)",
   "CREATE INDEX idx_recipients_pending_batch ON campaign_recipients (campaign_id, status, id)",
+  "CREATE INDEX idx_incoming_webhook_event_id ON incoming_webhook_events (event_id)",
   "CREATE INDEX idx_campaigns_status_scheduled ON campaigns (status, scheduled_at)",
   "CREATE INDEX idx_campaigns_user ON campaigns (user_id)",
   "CREATE INDEX idx_templates_name ON templates (name(191))",
@@ -141,7 +143,7 @@ const INDEXES = [
   "CREATE INDEX idx_auto_booking_user ON automated_booking_dispatches (user_id)",
   "CREATE INDEX idx_contacts_tenant_phone ON contacts (tenant_id, phone_e164(64))",
   "CREATE INDEX idx_room_types_tenant_prop ON room_types (tenant_id, property_id)",
-  "CREATE INDEX idx_room_inventory_daily ON room_inventory_daily (room_type_id, inventory_date)",
+  "CREATE UNIQUE INDEX idx_room_inventory_daily ON room_inventory_daily (room_type_id, inventory_date)",
   "CREATE INDEX idx_enquiries_tenant_status ON booking_enquiries (tenant_id, status, created_at)",
   "CREATE INDEX idx_quotes_enquiry ON quotes (enquiry_id)",
   "CREATE INDEX idx_quote_items_quote ON quote_items (quote_id)",
@@ -225,7 +227,13 @@ const INDEXES = [
   "CREATE INDEX idx_tmpl_inst_tenant ON template_installations (tenant_id, template_id, status)",
   "CREATE INDEX idx_tmpl_inst_flow ON template_installations (flow_id)",
   "CREATE INDEX idx_tmpl_bind_inst ON template_bindings (installation_id, delete_status)",
-  "CREATE INDEX idx_tmpl_bind_tenant ON template_bindings (tenant_id, resource_type)"
+  "CREATE INDEX idx_tmpl_bind_tenant ON template_bindings (tenant_id, resource_type)",
+  "CREATE INDEX idx_campaigns_tenant_created ON campaigns (tenant_id, delete_status, created_at)",
+  "CREATE INDEX idx_wa_messages_tenant_created ON whatsapp_messages (tenant_id, created_at)",
+  "CREATE INDEX idx_wa_usage_tenant_created ON whatsapp_usage_ledger (tenant_id, billing_status, created_at)",
+  "CREATE INDEX idx_conv_flow_sessions_tenant_status ON conversation_flow_sessions (tenant_id, session_status, updated_at)",
+  "CREATE INDEX idx_contact_consents_tenant_contact ON contact_consents (tenant_id, contact_id, status)",
+  "CREATE INDEX idx_workflow_jobs_due ON workflow_scheduled_jobs (status, run_at)"
 ];
 
 function runColumnMigrations(db) {
@@ -599,6 +607,50 @@ function runColumnMigrations(db) {
     const isCols = db.prepare("DESCRIBE inapp_sessions").all().map(c => c.Field);
     if (!isCols.includes("flow_session_id")) {
       db.exec("ALTER TABLE inapp_sessions ADD COLUMN flow_session_id BIGINT NULL AFTER experience_id");
+    }
+  } catch (e) {}
+
+  // Ensure room_inventory_daily has UNIQUE (room_type_id, inventory_date) and remove any pre-existing duplicate rows
+  try {
+    const dupes = db.prepare(`
+      SELECT room_type_id, inventory_date, MAX(id) as keep_id, COUNT(*) as c
+      FROM room_inventory_daily
+      GROUP BY room_type_id, inventory_date
+      HAVING c > 1
+    `).all();
+    for (const d of dupes) {
+      db.prepare(`
+        DELETE FROM room_inventory_daily
+        WHERE room_type_id = ? AND inventory_date = ? AND id != ?
+      `).run(d.room_type_id, d.inventory_date, d.keep_id);
+    }
+    const idxRows = db.prepare("SHOW INDEX FROM room_inventory_daily WHERE Key_name = 'idx_room_inventory_daily'").all();
+    if (idxRows.length > 0 && Number(idxRows[0].Non_unique) === 1) {
+      db.exec("DROP INDEX idx_room_inventory_daily ON room_inventory_daily");
+    }
+    const uniqRows = db.prepare("SHOW INDEX FROM room_inventory_daily WHERE Key_name = 'idx_room_inventory_daily'").all();
+    if (uniqRows.length === 0) {
+      db.exec("CREATE UNIQUE INDEX idx_room_inventory_daily ON room_inventory_daily (room_type_id, inventory_date)");
+    }
+  } catch (e) {}
+
+  // Ensure ai_interaction_logs has per-tenant token metering and guardrail audit columns
+  try {
+    const aiLogCols = db.prepare("DESCRIBE ai_interaction_logs").all().map(c => c.Field);
+    if (!aiLogCols.includes("tokens_prompt")) {
+      db.exec("ALTER TABLE ai_interaction_logs ADD COLUMN tokens_prompt INT NOT NULL DEFAULT 0 AFTER latency_ms");
+    }
+    if (!aiLogCols.includes("tokens_completion")) {
+      db.exec("ALTER TABLE ai_interaction_logs ADD COLUMN tokens_completion INT NOT NULL DEFAULT 0 AFTER tokens_prompt");
+    }
+    if (!aiLogCols.includes("tokens_total")) {
+      db.exec("ALTER TABLE ai_interaction_logs ADD COLUMN tokens_total INT NOT NULL DEFAULT 0 AFTER tokens_completion");
+    }
+    if (!aiLogCols.includes("estimated_cost_inr")) {
+      db.exec("ALTER TABLE ai_interaction_logs ADD COLUMN estimated_cost_inr DOUBLE NOT NULL DEFAULT 0 AFTER tokens_total");
+    }
+    if (!aiLogCols.includes("blocked_reason")) {
+      db.exec("ALTER TABLE ai_interaction_logs ADD COLUMN blocked_reason VARCHAR(64) NULL AFTER estimated_cost_inr");
     }
   } catch (e) {}
 }
@@ -1200,11 +1252,11 @@ function seedDefaults(db, config) {
       `).run();
     }
 
-    // Ensure all existing users are enrolled in tenant_user_memberships
+    // Ensure all existing users are enrolled in tenant_user_memberships without privilege escalation
     const allUsers = db.prepare("SELECT id, role, tenant_id FROM users").all();
     for (const u of allUsers) {
       const tId = u.tenant_id || 1;
-      const memRole = u.role === 'ADMIN' ? 'OWNER' : 'ADMIN';
+      const memRole = (u.role === 'ADMIN' || u.role === 'SUPER_ADMIN') ? 'OWNER' : 'USER';
       const exists = db.prepare("SELECT id FROM tenant_user_memberships WHERE user_id = ? AND tenant_id = ?").get(u.id, tId);
       if (!exists) {
         db.prepare(`

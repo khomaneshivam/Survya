@@ -306,7 +306,7 @@ function getInventoryGrid(propertyId, startDate, endDate, tenantId = 1) {
 }
 
 /**
- * Bulk update daily inventory records
+ * Bulk update daily inventory records atomically
  */
 function bulkUpdateInventory(propertyId, roomTypeId, startDate, endDate, updates = {}, tenantId = 1, userId = null) {
   const dates = getDatesInRange(startDate, endDate, true);
@@ -319,47 +319,56 @@ function bulkUpdateInventory(propertyId, roomTypeId, startDate, endDate, updates
     throw new Error("Room category not found for this property.");
   }
 
-  for (const dateStr of dates) {
-    const existing = db.prepare(`
-      SELECT id, total_rooms, blocked_qty, out_of_service_qty, allocated_qty, is_closed, base_rate, notes
-      FROM room_inventory_daily
-      WHERE room_type_id = ? AND inventory_date = ? AND tenant_id = ?
-      LIMIT 1
-    `).get(roomTypeId, dateStr, tenantId);
+  db.prepare("START TRANSACTION").run();
+  try {
+    db.prepare("SELECT id FROM room_types WHERE id = ? AND tenant_id = ? FOR UPDATE").get(roomTypeId, tenantId);
+    for (const dateStr of dates) {
+      const existing = db.prepare(`
+        SELECT id, total_rooms, blocked_qty, out_of_service_qty, allocated_qty, is_closed, base_rate, notes
+        FROM room_inventory_daily
+        WHERE room_type_id = ? AND inventory_date = ? AND tenant_id = ?
+        LIMIT 1
+        FOR UPDATE
+      `).get(roomTypeId, dateStr, tenantId);
 
-    const totalRooms = updates.total_rooms !== undefined ? Number(updates.total_rooms) : (existing ? existing.total_rooms : 5);
-    const blockedQty = updates.blocked_qty !== undefined ? Number(updates.blocked_qty) : (existing ? existing.blocked_qty : 0);
-    const oosQty = updates.out_of_service_qty !== undefined ? Number(updates.out_of_service_qty) : (existing ? existing.out_of_service_qty : 0);
-    const allocatedQty = updates.allocated_qty !== undefined ? Number(updates.allocated_qty) : (existing ? existing.allocated_qty : 0);
-    const isClosed = updates.is_closed !== undefined ? (updates.is_closed ? 1 : 0) : (existing ? existing.is_closed : 0);
-    const baseRate = updates.base_rate !== undefined ? Number(updates.base_rate) : (existing ? existing.base_rate : null);
-    const notes = updates.notes !== undefined ? updates.notes : (existing ? existing.notes : null);
+      const totalRooms = updates.total_rooms !== undefined ? Number(updates.total_rooms) : (existing ? existing.total_rooms : 5);
+      const blockedQty = updates.blocked_qty !== undefined ? Number(updates.blocked_qty) : (existing ? existing.blocked_qty : 0);
+      const oosQty = updates.out_of_service_qty !== undefined ? Number(updates.out_of_service_qty) : (existing ? existing.out_of_service_qty : 0);
+      const allocatedQty = updates.allocated_qty !== undefined ? Number(updates.allocated_qty) : (existing ? existing.allocated_qty : 0);
+      const isClosed = updates.is_closed !== undefined ? (updates.is_closed ? 1 : 0) : (existing ? existing.is_closed : 0);
+      const baseRate = updates.base_rate !== undefined ? Number(updates.base_rate) : (existing ? existing.base_rate : null);
+      const notes = updates.notes !== undefined ? updates.notes : (existing ? existing.notes : null);
 
-    const sellable = Math.max(0, totalRooms - blockedQty - oosQty - allocatedQty);
+      const sellable = Math.max(0, totalRooms - blockedQty - oosQty - allocatedQty);
 
-    if (existing) {
-      db.prepare(`
-        UPDATE room_inventory_daily
-        SET total_rooms = ?, blocked_qty = ?, out_of_service_qty = ?, allocated_qty = ?,
-            available_qty = ?, is_closed = ?, base_rate = ?, notes = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(
-        totalRooms, blockedQty, oosQty, allocatedQty,
-        sellable, isClosed, baseRate, notes, userId ? String(userId) : "staff",
-        existing.id
-      );
-    } else {
-      db.prepare(`
-        INSERT INTO room_inventory_daily
-          (tenant_id, room_type_id, inventory_date, total_rooms, blocked_qty, out_of_service_qty, allocated_qty, available_qty, is_closed, base_rate, notes, updated_by, updated_at)
-        VALUES
-          (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      `).run(
-        tenantId, roomTypeId, dateStr,
-        totalRooms, blockedQty, oosQty, allocatedQty,
-        sellable, isClosed, baseRate, notes, userId ? String(userId) : "staff"
-      );
+      if (existing) {
+        db.prepare(`
+          UPDATE room_inventory_daily
+          SET total_rooms = ?, blocked_qty = ?, out_of_service_qty = ?, allocated_qty = ?,
+              available_qty = ?, is_closed = ?, base_rate = ?, notes = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(
+          totalRooms, blockedQty, oosQty, allocatedQty,
+          sellable, isClosed, baseRate, notes, userId ? String(userId) : "staff",
+          existing.id
+        );
+      } else {
+        db.prepare(`
+          INSERT INTO room_inventory_daily
+            (tenant_id, room_type_id, inventory_date, total_rooms, blocked_qty, out_of_service_qty, allocated_qty, available_qty, is_closed, base_rate, notes, updated_by, updated_at)
+          VALUES
+            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `).run(
+          tenantId, roomTypeId, dateStr,
+          totalRooms, blockedQty, oosQty, allocatedQty,
+          sellable, isClosed, baseRate, notes, userId ? String(userId) : "staff"
+        );
+      }
     }
+    db.prepare("COMMIT").run();
+  } catch (err) {
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
+    throw err;
   }
 
   logAudit(tenantId, userId, "HOSPITALITY_BULK_INVENTORY_UPDATE", roomTypeId, {
@@ -376,6 +385,78 @@ function bulkUpdateInventory(propertyId, roomTypeId, startDate, endDate, updates
     start_date: startDate,
     end_date: endDate
   };
+}
+
+/**
+ * Atomically reserves room inventory under an InnoDB row lock to prevent concurrent double-booking.
+ */
+function reserveConfirmedBookingAtomically({
+  tenantId = 1,
+  propertyId = 1,
+  roomTypeId,
+  checkInDate,
+  checkOutDate,
+  quantity = 1,
+  phoneE164,
+  guestName = "Guest",
+  notes = null,
+  flowSessionId = null,
+  createdBy = "system"
+}) {
+  const numericTenantId = Number(tenantId) || 1;
+  const numericPropId = Number(propertyId) || 1;
+  const numericRoomId = Number(roomTypeId);
+  const roomsReq = Math.max(1, Number(quantity) || 1);
+
+  if (!numericRoomId || !checkInDate || !checkOutDate || !phoneE164) {
+    throw new Error("roomTypeId, checkInDate, checkOutDate, and phoneE164 are required.");
+  }
+
+  const cleanPhone = String(phoneE164).replace(/\D/g, "");
+  const contact = require("./enquiryService").upsertContact(numericTenantId, cleanPhone, guestName);
+
+  db.prepare("START TRANSACTION").run();
+  try {
+    const lockedRoom = db.prepare(`
+      SELECT id, name FROM room_types WHERE id = ? AND property_id = ? AND tenant_id = ? FOR UPDATE
+    `).get(numericRoomId, numericPropId, numericTenantId);
+    if (!lockedRoom) {
+      const err = new Error("Room category not found for this property.");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const avail = checkRoomAvailability(numericPropId, numericRoomId, checkInDate, checkOutDate, roomsReq, numericTenantId);
+    if (!avail.available) {
+      const err = new Error(`Overbooking prevented: ${lockedRoom.name} has insufficient availability for ${checkInDate} to ${checkOutDate} (available: ${avail.available_rooms_count}).`);
+      err.statusCode = 409;
+      err.code = "OVERBOOKING_PREVENTED";
+      throw err;
+    }
+
+    const insertRes = db.prepare(`
+      INSERT INTO booking_enquiries (
+        tenant_id, property_id, contact_id, guest_name, phone_e164, check_in, check_out,
+        rooms_requested, room_type_id, room_preference, status, flow_session_id,
+        notes, assigned_to, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CONFIRMED', ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    `).run(
+      numericTenantId, numericPropId, contact.id, guestName, cleanPhone,
+      checkInDate, checkOutDate, roomsReq, numericRoomId, lockedRoom.name,
+      flowSessionId, notes, createdBy
+    );
+
+    db.prepare("COMMIT").run();
+    return {
+      success: true,
+      enquiryId: insertRes.lastInsertRowid,
+      roomTypeId: numericRoomId,
+      remainingAfterBooking: Math.max(0, avail.available_rooms_count - roomsReq)
+    };
+  } catch (err) {
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
+    throw err;
+  }
 }
 
 /**
@@ -475,6 +556,7 @@ module.exports = {
   bulkUpdateInventory,
   listInventoryBlocks,
   createInventoryBlock,
-  releaseInventoryBlock
+  releaseInventoryBlock,
+  reserveConfirmedBookingAtomically
 };
 

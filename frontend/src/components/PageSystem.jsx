@@ -152,7 +152,8 @@ export const PAGE_REGISTRY = {
     badgeTone: 'green',
     icon: BotMessageSquare,
     description: 'Universal conversational template library, client configurations, and visual workflow builder.',
-    adminOnly: true,
+    adminOnly: false,
+    workspaceAdminOnly: true,
     component: AutomationStudio
   },
   flowStudio: {
@@ -164,7 +165,8 @@ export const PAGE_REGISTRY = {
     badgeTone: 'purple',
     icon: BotMessageSquare,
     description: 'High-speed multi-flow control hub with O(1) trigger router, conflict detector, AI Architect & dual-mode editor.',
-    adminOnly: true,
+    adminOnly: false,
+    workspaceAdminOnly: true,
     component: AutomationStudio
   },
   broadcast: {
@@ -195,12 +197,13 @@ export const PAGE_REGISTRY = {
     id: 'inapp_studio',
     title: 'In-App Experience Studio',
     module: 'In-App',
-    group: 'System Administration',
+    group: 'Workspace Controls',
     badge: 'Dynamic',
     badgeTone: 'purple',
     icon: Smartphone,
     description: 'WhatsApp-Flows-style multi-screen web experiences with validated forms, catalog browsing, image galleries, price-range filters, rate discussions, and calls.',
-    adminOnly: true,
+    adminOnly: false,
+    workspaceAdminOnly: true,
     component: InAppStudioPage
   },
   ai: {
@@ -279,36 +282,39 @@ export const PAGE_REGISTRY = {
     id: 'admin',
     title: 'System Admin Panel & Security Governance',
     module: 'Governance',
-    group: 'System Administration',
-    badge: 'Admin Only',
+    group: 'Platform Governance',
+    badge: 'Super-Admin',
     badgeTone: 'coral',
     icon: ShieldCheck,
     description: 'User management, RBAC role permissions, WABA multi-number provisioning, audit trails, and server telemetry.',
     adminOnly: true,
+    platformAdminOnly: true,
     component: SystemAdminPanel
   },
   payouts: {
     id: 'payouts',
     title: 'Payouts & Bank Settlements',
     module: 'Governance',
-    group: 'System Administration',
+    group: 'Platform Governance',
     badge: 'IMPS/UTR',
     badgeTone: 'coral',
     icon: Landmark,
     description: 'Manage property bank accounts, penny-drop IFSC verification, settlement queues, and automated UTR reconciliations.',
     adminOnly: true,
+    platformAdminOnly: true,
     component: PayoutsPage
   },
   connect: {
     id: 'connect',
     title: 'Connect & Integration Hub',
     module: 'Connect',
-    group: 'System Administration',
+    group: 'Workspace Controls',
     badge: 'API Hub',
     badgeTone: 'coral',
     icon: Plug,
     description: 'Meta Graph API configurations, Google Sheets integrations, webhooks, and third-party webhook relays.',
-    adminOnly: true,
+    adminOnly: false,
+    workspaceAdminOnly: true,
     component: SarvyaConnectPage
   },
   settings: {
@@ -434,19 +440,22 @@ class PageErrorBoundary extends Component {
  * Wraps every sidebar tab view with unified layout, breadcrumb bar, navigation injection, and deep-linking.
  */
 export default function PageSystem({ activeTab, setActiveTab }) {
-  const { user, isAdmin } = useAuth();
+  const { user, isPlatformAdmin, isWorkspaceAdmin } = useAuth();
 
-  // Resolve active page configuration from registry with safe fallback to dashboard
+  // Resolve active page configuration from registry with 3-tier RBAC guard
   const activePage = useMemo(() => {
     const page = PAGE_REGISTRY[activeTab];
     if (page) {
-      if (page.adminOnly && !isAdmin) {
+      if ((page.platformAdminOnly || page.adminOnly) && !isPlatformAdmin) {
+        return PAGE_REGISTRY.dashboard;
+      }
+      if (page.workspaceAdminOnly && !isWorkspaceAdmin) {
         return PAGE_REGISTRY.dashboard;
       }
       return page;
     }
     return PAGE_REGISTRY.dashboard;
-  }, [activeTab, isAdmin]);
+  }, [activeTab, isPlatformAdmin, isWorkspaceAdmin]);
 
   // Update document metadata & noindex for authenticated app tabs
   usePageMeta({
@@ -460,10 +469,11 @@ export default function PageSystem({ activeTab, setActiveTab }) {
     if (!activePage) return [];
     return Object.values(PAGE_REGISTRY).filter(p => {
       if (p.id === activePage.id) return false;
-      if (p.adminOnly && !isAdmin) return false;
+      if ((p.platformAdminOnly || p.adminOnly) && !isPlatformAdmin) return false;
+      if (p.workspaceAdminOnly && !isWorkspaceAdmin) return false;
       return p.group === activePage.group || p.module === activePage.module;
     });
-  }, [activePage, isAdmin]);
+  }, [activePage, isPlatformAdmin, isWorkspaceAdmin]);
 
   // Universal Navigation Dispatcher
   const handleNavigate = useCallback((targetTab) => {
@@ -584,7 +594,9 @@ export default function PageSystem({ activeTab, setActiveTab }) {
               setActiveTab={handleNavigate}
               activeTab={activeTab}
               currentUser={user}
-              isAdmin={isAdmin}
+              isAdmin={isPlatformAdmin}
+              isPlatformAdmin={isPlatformAdmin}
+              isWorkspaceAdmin={isWorkspaceAdmin}
             />
           </Suspense>
         </PageErrorBoundary>

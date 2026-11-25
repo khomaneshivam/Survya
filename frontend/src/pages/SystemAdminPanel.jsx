@@ -700,7 +700,7 @@ export default function SystemAdminPanel({ onNavigate }) {
           padding: '12px 16px',
           borderRadius: '8px',
           background: 'var(--color-success-subtle, #ecfdf5)',
-          color: 'var(--color-success, #059669)',
+          color: 'var(--color-success, #2F5219)',
           border: '1px solid var(--color-success-border, #a7f3d0)',
           display: 'flex',
           alignItems: 'center',
@@ -1072,7 +1072,7 @@ export default function SystemAdminPanel({ onNavigate }) {
                           setTimeout(() => setCopiedPrimaryUrl(false), 2000);
                         }}
                       >
-                        {copiedPrimaryUrl ? <Check size={14} color="#059669" /> : <Copy size={14} />}
+                        {copiedPrimaryUrl ? <Check size={14} color="#2F5219" /> : <Copy size={14} />}
                       </Button>
                     </div>
                     <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
@@ -1105,7 +1105,7 @@ export default function SystemAdminPanel({ onNavigate }) {
                           setTimeout(() => setCopiedAltUrl(false), 2000);
                         }}
                       >
-                        {copiedAltUrl ? <Check size={14} color="#059669" /> : <Copy size={14} />}
+                        {copiedAltUrl ? <Check size={14} color="#2F5219" /> : <Copy size={14} />}
                       </Button>
                     </div>
                     <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
@@ -1210,7 +1210,7 @@ export default function SystemAdminPanel({ onNavigate }) {
                           setTimeout(() => setCopiedWebhookToken(false), 2000);
                         }}
                       >
-                        {copiedWebhookToken ? <Check size={14} color="#059669" /> : <Copy size={14} />}
+                        {copiedWebhookToken ? <Check size={14} color="#2F5219" /> : <Copy size={14} />}
                         {copiedWebhookToken ? 'Copied' : 'Copy Token'}
                       </Button>
                       <Button

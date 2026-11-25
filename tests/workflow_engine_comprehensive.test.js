@@ -86,7 +86,7 @@ test("Survya Workflow Engine - B2B Sales Journey Turn Execution Simulation", asy
 
   assert.equal(turn1.handled, true);
   assert.ok(turn1.replyText.includes("Welcome to Survya Enterprise Automation"));
-  assert.equal(turn1.replyInteractive?.type, "button");
+  assert.equal(turn1.replyInteractive?.type, "BUTTONS");
   assert.ok(turn1.replyInteractive.options.some(o => o.value === "GROWTH"));
   assert.equal(turn1.currentNodeId, "b2b_select_plan");
 
@@ -148,7 +148,7 @@ test("Survya Workflow Engine - B2B Sales Journey Turn Execution Simulation", asy
   assert.ok(turn4.collectedData.quote_total > 0, "Quotation total should be computed dynamically");
   assert.ok(turn4.replyText.includes("Survya Custom Quotation & Proposal"));
   assert.ok(turn4.replyText.includes("₹"));
-  assert.equal(turn4.replyInteractive?.type, "button");
+  assert.equal(turn4.replyInteractive?.type, "BUTTONS");
   assert.ok(turn4.replyInteractive.options.some(o => o.value === "CONFIRM"));
   assert.equal(turn4.currentNodeId, "b2b_confirm_quote");
 
@@ -187,4 +187,17 @@ test("Survya Workflow Engine - Execution History & Trace Logs", async (t) => {
     assert.ok(details.session, "Session details should exist");
     assert.ok(Array.isArray(details.events), "Session events trace should be an array");
   }
+});
+
+test.after(() => {
+  try {
+    const flows = db.prepare("SELECT id FROM conversation_flows WHERE name IN ('Enterprise Cloud Sales Flow (Test)', 'Resort Stay Journey for Clone', 'Resort Stay Journey (Copy Test)')").all();
+    for (const f of flows) {
+      try { db.prepare("DELETE FROM workflow_triggers WHERE flow_id = ?").run(String(f.id)); } catch (e) {}
+      try { db.prepare("DELETE FROM conversation_flow_events WHERE flow_id = ?").run(f.id); } catch (e) {}
+      try { db.prepare("DELETE FROM conversation_flow_sessions WHERE flow_id = ?").run(f.id); } catch (e) {}
+      try { db.prepare("DELETE FROM conversation_flow_versions WHERE flow_id = ?").run(f.id); } catch (e) {}
+      try { db.prepare("DELETE FROM conversation_flows WHERE id = ?").run(f.id); } catch (e) {}
+    }
+  } catch (e) {}
 });

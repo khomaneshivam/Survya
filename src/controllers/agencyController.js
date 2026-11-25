@@ -1,5 +1,6 @@
 const { db } = require("../config/database");
 const crmPipelineService = require("../services/crmPipelineService");
+const { isPlatformAdmin, isWorkspaceAdmin } = require("../middleware/authMiddleware");
 
 /**
  * Lists all workspaces accessible to the authenticated user.
@@ -9,9 +10,10 @@ async function listWorkspaces(req, res) {
   try {
     const user = req.user;
     const currentTenantId = user.tenant_id;
+    const platformAdmin = isPlatformAdmin(user);
     let tenants = [];
 
-    if (user.role === "ADMIN" && !user.is_switched_workspace) {
+    if (platformAdmin && !user.is_switched_workspace) {
       // Master Admin can view all non-deleted workspaces
       tenants = db.prepare(`
         SELECT id, name, slug, status, plan_code, subscription_status, trial_ends_at,
@@ -33,10 +35,14 @@ async function listWorkspaces(req, res) {
           AND (
             m.id IS NOT NULL
             OR t.id = ?
-            OR t.parent_agency_tenant_id = ?
+            OR (t.parent_agency_tenant_id = ? AND EXISTS (
+              SELECT 1 FROM tenant_user_memberships pm
+              WHERE pm.user_id = ? AND pm.tenant_id = t.parent_agency_tenant_id
+                AND UPPER(pm.role) IN ('OWNER', 'ADMIN', 'AGENCY_ADMIN')
+            ))
           )
         ORDER BY t.id ASC
-      `).all(user.id, currentTenantId, user.original_tenant_id || currentTenantId);
+      `).all(user.id, currentTenantId, user.original_tenant_id || currentTenantId, user.id);
     }
 
     const countStmt = db.prepare(`
@@ -68,7 +74,7 @@ async function listWorkspaces(req, res) {
         quotaWabaLines: t.quota_waba_lines,
         connectedLinesCount: linesCount,
         isCurrent: t.id === currentTenantId,
-        userRole: t.user_role || (user.role === "ADMIN" ? "OWNER" : "ADMIN")
+        userRole: t.user_role || (platformAdmin ? "OWNER" : (user.workspace_role || "USER"))
       };
     });
 
@@ -87,15 +93,15 @@ async function createWorkspace(req, res) {
     const user = req.user;
     const agencyTenantId = user.original_tenant_id || user.tenant_id;
 
-    // Check permissions: Master Admin or Enterprise plan
+    // Check permissions: Platform Admin or Enterprise Workspace Owner/Admin
     const agencyTenant = db.prepare(`
       SELECT id, plan_code, branding_json FROM tenants WHERE id = ?
     `).get(agencyTenantId);
 
     const isEnterprise = agencyTenant?.plan_code === "ENTERPRISE";
-    const isMasterAdmin = user.role === "ADMIN";
+    const isMasterAdmin = isPlatformAdmin(user);
 
-    if (!isEnterprise && !isMasterAdmin) {
+    if (!isMasterAdmin && (!isEnterprise || !isWorkspaceAdmin(user))) {
       return res.status(403).json({
         success: false,
         message: "Multi-workspace client management requires an ENTERPRISE plan or Master Admin privileges."
@@ -195,7 +201,7 @@ async function switchWorkspace(req, res) {
     let hasAccess = false;
     let role = "USER";
 
-    if (user.role === "ADMIN") {
+    if (isPlatformAdmin(user)) {
       hasAccess = true;
       role = "OWNER";
     } else {
@@ -209,7 +215,8 @@ async function switchWorkspace(req, res) {
         role = membership.role;
       } else if (
         targetTenant.parent_agency_tenant_id &&
-        targetTenant.parent_agency_tenant_id === (user.original_tenant_id || user.tenant_id)
+        targetTenant.parent_agency_tenant_id === (user.original_tenant_id || user.tenant_id) &&
+        isWorkspaceAdmin(user)
       ) {
         hasAccess = true;
         role = "AGENCY_ADMIN";

@@ -4,8 +4,11 @@ const jwt = require("jsonwebtoken");
 const config = require("../config/env");
 const { db, getSetting, setSetting } = require("../config/database");
 const webhookService = require("../services/webhookService");
+const metaWhatsAppService = require("../services/metaWhatsAppService");
 const recycleBinService = require("../services/recycleBinService");
 const complianceService = require("../services/complianceService");
+const billingService = require("../services/billingService");
+const { isPlatformAdmin } = require("../middleware/authMiddleware");
 
 /**
  * List all registered users with summary statistics (Admin Only)
@@ -314,8 +317,7 @@ async function registerPhoneNumber(req, res) {
 
     if (activeToken && !activeToken.startsWith("EAAX_") && !activeToken.includes("placeholder")) {
       try {
-        const graphVer = getSetting("META_GRAPH_VERSION") || config.META_GRAPH_VERSION || "v21.0";
-        const verifyRes = await fetch(`https://graph.facebook.com/${graphVer}/${cleanPhoneId}?fields=id,verified_name,display_phone_number,quality_rating,code_verification_status,status`, {
+        const verifyRes = await fetch(`${metaWhatsAppService.getMetaBaseUrl()}/${cleanPhoneId}?fields=id,verified_name,display_phone_number,quality_rating,code_verification_status,status`, {
           headers: { "Authorization": `Bearer ${activeToken}` },
           signal: AbortSignal.timeout(12000)
         });
@@ -341,6 +343,17 @@ async function registerPhoneNumber(req, res) {
     }
     if (!cleanPhone) {
       cleanPhone = cleanPhoneId;
+    }
+
+    const targetTenantId = Number(req.body?.tenantId || req.user?.tenant_id || 1);
+    try {
+      billingService.assertCanConnectWabaLine(targetTenantId, cleanPhoneId);
+    } catch (quotaErr) {
+      return res.status(quotaErr.statusCode || 402).json({
+        success: false,
+        code: quotaErr.code || "WABA_LINE_QUOTA_EXCEEDED",
+        message: quotaErr.message
+      });
     }
 
     // If PIN is provided, execute direct Meta Cloud API registration
@@ -372,12 +385,14 @@ async function registerPhoneNumber(req, res) {
 
     // Check if Phone Number ID already exists (UPSERT instead of 409)
     const existing = db.prepare("SELECT * FROM waba_phone_numbers WHERE phone_number_id = ?").get(cleanPhoneId);
-    const phoneCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers").get().count;
+    const phoneCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers WHERE COALESCE(tenant_id, 1) = ? AND COALESCE(delete_status, 0) = 0").get(targetTenantId).count;
     const shouldBeDefault = isDefault !== undefined ? Boolean(isDefault) : (existing ? existing.is_default === 1 : phoneCount === 0);
 
     if (shouldBeDefault) {
-      db.prepare("UPDATE waba_phone_numbers SET is_default = 0").run();
-      setSetting("WHATSAPP_PHONE_NUMBER_ID", cleanPhoneId);
+      db.prepare("UPDATE waba_phone_numbers SET is_default = 0 WHERE COALESCE(tenant_id, 1) = ?").run(targetTenantId);
+      if (targetTenantId === 1) {
+        setSetting("WHATSAPP_PHONE_NUMBER_ID", cleanPhoneId);
+      }
     }
 
     const tokenToSave = (customToken && String(customToken).trim() && !customToken.startsWith("EAAX_") && !customToken.includes("placeholder"))
@@ -428,11 +443,11 @@ async function registerPhoneNumber(req, res) {
     const newId = crypto.randomUUID();
     db.prepare(`
       INSERT INTO waba_phone_numbers (
-        id, display_name, phone_number, phone_number_id, waba_id,
+        id, tenant_id, display_name, phone_number, phone_number_id, waba_id,
         quality_rating, status, is_default, registered_by, access_token, token_type, last_verified_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PERMANENT', CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PERMANENT', CURRENT_TIMESTAMP)
     `).run(
-      newId, cleanDisplay, cleanPhone, cleanPhoneId, cleanWabaId,
+      newId, targetTenantId, cleanDisplay, cleanPhone, cleanPhoneId, cleanWabaId,
       qualityRating, metaStatus, shouldBeDefault ? 1 : 0, req.user ? req.user.id : null, tokenToSave || activeToken
     );
 
@@ -529,8 +544,7 @@ async function testPhoneNumber(req, res) {
       return res.status(400).json({ success: false, message: "No WhatsApp Cloud API token configured or provided." });
     }
 
-    const graphVer = getSetting("META_GRAPH_VERSION") || config.META_GRAPH_VERSION || "v21.0";
-    const resp = await fetch(`https://graph.facebook.com/${graphVer}/${phone.phone_number_id}?fields=id,verified_name,display_phone_number,quality_rating,code_verification_status,status`, {
+    const resp = await fetch(`${metaWhatsAppService.getMetaBaseUrl()}/${phone.phone_number_id}?fields=id,verified_name,display_phone_number,quality_rating,code_verification_status,status`, {
       headers: { Authorization: `Bearer ${activeToken}` },
       signal: AbortSignal.timeout(12000)
     });
@@ -596,8 +610,7 @@ async function updatePhoneNumberToken(req, res) {
     }
 
     // Live verification with Meta Graph API
-    const graphVer = getSetting("META_GRAPH_VERSION") || config.META_GRAPH_VERSION || "v21.0";
-    const resp = await fetch(`https://graph.facebook.com/${graphVer}/${phone.phone_number_id}?fields=id,verified_name,display_phone_number,quality_rating,code_verification_status,status`, {
+    const resp = await fetch(`${metaWhatsAppService.getMetaBaseUrl()}/${phone.phone_number_id}?fields=id,verified_name,display_phone_number,quality_rating,code_verification_status,status`, {
       headers: { Authorization: `Bearer ${cleanToken}` },
       signal: AbortSignal.timeout(12000)
     });
@@ -1235,9 +1248,11 @@ async function deleteUser(req, res) {
 async function listRecycleBin(req, res) {
   try {
     const { entityType = "ALL", limit = 100, offset = 0 } = req.query;
+    const isPlatform = isPlatformAdmin(req.user);
+    const reqTenantId = req.query.tenantId ? Number(req.query.tenantId) : null;
     const items = await recycleBinService.listDeletedItems({
       entityType,
-      tenantId: req.user?.tenant_id || 1,
+      tenantId: isPlatform ? reqTenantId : (req.user?.tenant_id || 1),
       limit: parseInt(limit, 10) || 100,
       offset: parseInt(offset, 10) || 0
     });

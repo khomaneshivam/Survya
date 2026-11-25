@@ -1,8 +1,9 @@
 const { db } = require("../config/database");
 const { generateCampaignReportExcel } = require("../services/excelService");
+const { isPlatformAdmin, isWorkspaceAdmin } = require("../middleware/authMiddleware");
 
 /**
- * Helper to check campaign ownership
+ * Helper to check campaign ownership with strict multi-tenant isolation
  */
 function checkCampaignAccess(campaign, user) {
   if (!campaign) {
@@ -11,13 +12,18 @@ function checkCampaignAccess(campaign, user) {
   if (!user) {
     return { allowed: false, status: 401, message: "Authentication required." };
   }
-  if (user.role === "ADMIN" || campaign.user_id === user.id) {
+  if (isPlatformAdmin(user)) {
     return { allowed: true };
   }
-  if (campaign.user_id !== user.id) {
-    return { allowed: false, status: 403, message: "Forbidden: You do not have access to this campaign." };
+  const userTenantId = Number(user.tenant_id || 1);
+  const campaignTenantId = Number(campaign.tenant_id || 1);
+  if (campaignTenantId !== userTenantId) {
+    return { allowed: false, status: 403, message: "Forbidden: Cross-tenant campaign access denied." };
   }
-  return { allowed: true };
+  if (isWorkspaceAdmin(user) || campaign.user_id === user.id) {
+    return { allowed: true };
+  }
+  return { allowed: false, status: 403, message: "Forbidden: You do not have access to this campaign." };
 }
 
 /**
@@ -44,18 +50,32 @@ async function listCampaigns(req, res) {
 
     const params = [];
 
-    // Non-admin users strictly see only their own campaigns
-    if (user.role !== "ADMIN") {
-      sql += " WHERE c.user_id = ?";
-      params.push(user.id);
+    const conditions = ["COALESCE(c.delete_status, 0) = 0"];
+    const targetUserId = req.query?.userId && String(req.query.userId).trim();
+
+    if (!isPlatformAdmin(user)) {
+      conditions.push("COALESCE(c.tenant_id, 1) = ?");
+      params.push(Number(user.tenant_id || 1));
+      if (!isWorkspaceAdmin(user)) {
+        conditions.push("c.user_id = ?");
+        params.push(user.id);
+      } else if (targetUserId && targetUserId !== "ALL") {
+        conditions.push("c.user_id = ?");
+        params.push(targetUserId);
+      }
     } else {
-      // Admins see all historical campaigns by default; can optionally filter by target userId if requested
-      const targetUserId = req.query?.userId;
-      if (targetUserId && String(targetUserId).trim() && String(targetUserId).trim() !== "ALL") {
-        sql += " WHERE c.user_id = ?";
-        params.push(String(targetUserId).trim());
+      const targetTenantId = req.query?.tenantId && String(req.query.tenantId).trim();
+      if (targetTenantId && targetTenantId !== "ALL") {
+        conditions.push("COALESCE(c.tenant_id, 1) = ?");
+        params.push(Number(targetTenantId));
+      }
+      if (targetUserId && targetUserId !== "ALL") {
+        conditions.push("c.user_id = ?");
+        params.push(targetUserId);
       }
     }
+
+    sql += " WHERE " + conditions.join(" AND ");
 
     sql += " ORDER BY c.created_at DESC";
 

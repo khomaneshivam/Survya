@@ -96,6 +96,58 @@ function handleIncomingEvent(req, res) {
 
     const rawBody = req.rawBody || Buffer.from(JSON.stringify(payload));
     const digest = crypto.createHash('sha256').update(rawBody).digest('hex');
+
+    // Record incoming webhook metadata & dedup identical deliveries durably
+    const entryIds = [];
+    const messageIds = [];
+    if (Array.isArray(payload.entry)) {
+      for (const entry of payload.entry) {
+        if (entry?.id) entryIds.push(String(entry.id));
+        const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+        for (const ch of changes) {
+          const msgs = Array.isArray(ch?.value?.messages) ? ch.value.messages : [];
+          for (const m of msgs) {
+            if (m?.id) messageIds.push(String(m.id));
+          }
+        }
+      }
+    }
+
+    const canUseDbDedup = db && typeof db.prepare === "function";
+    const digestKey = `digest_${digest}`;
+    if (canUseDbDedup) {
+      const existingDigest = db.prepare("SELECT id FROM incoming_webhook_events WHERE event_id = ? LIMIT 1").get(digestKey);
+      if (existingDigest) {
+        return res.status(200).send("EVENT_RECEIVED");
+      }
+
+      const insertEventStmt = db.prepare(`
+        INSERT INTO incoming_webhook_events (event_id, event_type, status)
+        VALUES (?, ?, 'RECEIVED')
+      `);
+      insertEventStmt.run(digestKey, payload.object || "whatsapp_business_account");
+
+      for (const eId of entryIds) {
+        const hasEntry = db.prepare("SELECT id FROM incoming_webhook_events WHERE event_id = ? LIMIT 1").get(eId);
+        if (!hasEntry) {
+          insertEventStmt.run(eId, payload.object || "whatsapp_business_account");
+        }
+      }
+
+      let allMessagesDuplicate = messageIds.length > 0;
+      for (const mId of messageIds) {
+        const mKey = `wamid_${mId}`;
+        const seenMsg = db.prepare("SELECT id FROM incoming_webhook_events WHERE event_id = ? LIMIT 1").get(mKey);
+        if (!seenMsg) {
+          allMessagesDuplicate = false;
+          insertEventStmt.run(mKey, "whatsapp_message");
+        }
+      }
+      if (allMessagesDuplicate) {
+        return res.status(200).send("EVENT_RECEIVED");
+      }
+    }
+
     const { enqueueJob } = require("../services/queue/jobQueueService");
     const queued = enqueueJob({
       tenantId: 0, // System-scoped ingress; individual messages resolve their tenant on processing.
@@ -543,13 +595,13 @@ function saveDynamicOptions(req, res) {
 }
 
 /**
- * Gets Bot Pause / Takeover status for a contact
+ * Gets Bot Pause / Takeover status for a contact (Tenant-Scoped)
  */
 function getBotStatus(req, res) {
-  if (!requireLegacyWorkspace(req, res)) return;
   try {
     const phone = req.params.phone || req.query.phone;
-    const status = webhookService.getBotStatus(phone);
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const status = webhookService.getBotStatus(phone, { tenantId });
     return res.status(200).json({ success: true, data: status });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -557,20 +609,24 @@ function getBotStatus(req, res) {
 }
 
 /**
- * Sets Bot Pause / Resume status for a contact
+ * Sets Bot Pause / Resume status for a contact (Tenant-Scoped)
  */
 function setBotStatus(req, res) {
-  if (!requireLegacyWorkspace(req, res)) return;
   try {
     const phone = req.params.phone || req.body?.phone;
+    const tenantId = Number(req.user?.tenant_id || 1);
     const { paused, durationMinutes } = req.body || {};
     if (paused === false || paused === "false") {
-      webhookService.resumeBotForPhone(phone);
+      webhookService.resumeBotForPhone(phone, { tenantId });
     } else {
       const durationMs = Math.max(1, parseInt(durationMinutes, 10) || 60) * 60 * 1000;
-      webhookService.pauseBotForPhone(phone, durationMs);
+      webhookService.pauseBotForPhone(phone, durationMs, {
+        tenantId,
+        pausedBy: req.user?.id || "agent",
+        reason: "MANUAL_AGENT_PAUSE"
+      });
     }
-    const status = webhookService.getBotStatus(phone);
+    const status = webhookService.getBotStatus(phone, { tenantId });
     return res.status(200).json({ success: true, data: status });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

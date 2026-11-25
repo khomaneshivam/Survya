@@ -185,179 +185,216 @@ function createInventoryHold(tenantId = 1, options = {}) {
   const cleanName = customerName ? String(customerName).trim() : null;
   const qty = Math.max(1, Number(quantity) || 1);
 
-  // 1. Time Slot Hold
-  if (slotId) {
-    const updateRes = db.prepare(`
-      UPDATE catalog_availability_slots
-      SET held_capacity = held_capacity + ?, updated_at = UTC_TIMESTAMP()
-      WHERE tenant_id = ? AND id = ?
-        AND (total_capacity - booked_capacity - held_capacity) >= ?
-    `).run(qty, numericTenantId, slotId, qty);
-
-    if (updateRes.changes === 0) {
-      throw new Error("Requested time slot no longer has sufficient capacity.");
-    }
-
-    const slot = db.prepare("SELECT master_resource_id FROM catalog_availability_slots WHERE id = ?").get(slotId);
-    const resolvedResId = masterResourceId || slot?.master_resource_id || null;
-
-    db.prepare(`
-      INSERT INTO catalog_inventory_holds (
-        tenant_id, catalog_item_id, slot_id, master_resource_id, hold_token, session_ref, hold_type,
-        quantity, status, expires_at, customer_phone, customer_name,
-        created_at, updated_at
-      ) VALUES (
-        ?, ?, ?, ?, ?, ?, 'SLOT',
-        ?, 'HELD', DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE), ?, ?,
-        UTC_TIMESTAMP(), UTC_TIMESTAMP()
-      )
-    `).run(numericTenantId, itemId || null, slotId, resolvedResId, holdToken, holdToken, qty, holdMinutes, cleanPhone, cleanName);
-
-    return {
-      success: true,
-      holdToken,
-      holdType: "SLOT",
-      slotId,
-      masterResourceId: resolvedResId,
-      quantity: qty,
-      expiresInMinutes: holdMinutes
-    };
-  }
-
-  // 2. Unit Stock Hold
-  if (itemId) {
-    const item = db.prepare("SELECT * FROM catalog_items WHERE tenant_id = ? AND id = ?").get(numericTenantId, itemId);
-    if (!item) throw new Error("Catalog item not found.");
-
-    if (item.track_inventory) {
+  db.prepare("START TRANSACTION").run();
+  try {
+    // 1. Time Slot Hold
+    if (slotId) {
+      const slot = db.prepare("SELECT master_resource_id FROM catalog_availability_slots WHERE tenant_id = ? AND id = ? FOR UPDATE").get(numericTenantId, slotId);
       const updateRes = db.prepare(`
-        UPDATE catalog_items
-        SET reserved_qty = reserved_qty + ?, updated_at = UTC_TIMESTAMP()
+        UPDATE catalog_availability_slots
+        SET held_capacity = held_capacity + ?, updated_at = UTC_TIMESTAMP()
         WHERE tenant_id = ? AND id = ?
-          AND (stock_qty - reserved_qty) >= ?
-      `).run(qty, numericTenantId, itemId, qty);
+          AND (total_capacity - booked_capacity - held_capacity) >= ?
+      `).run(qty, numericTenantId, slotId, qty);
 
       if (updateRes.changes === 0) {
-        throw new Error("Item has insufficient stock to hold.");
+        throw new Error("Requested time slot no longer has sufficient capacity.");
       }
+
+      const resolvedResId = masterResourceId || slot?.master_resource_id || null;
+
+      db.prepare(`
+        INSERT INTO catalog_inventory_holds (
+          tenant_id, catalog_item_id, slot_id, master_resource_id, hold_token, session_ref, hold_type,
+          quantity, status, expires_at, customer_phone, customer_name,
+          created_at, updated_at
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, 'SLOT',
+          ?, 'HELD', DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE), ?, ?,
+          UTC_TIMESTAMP(), UTC_TIMESTAMP()
+        )
+      `).run(numericTenantId, itemId || null, slotId, resolvedResId, holdToken, holdToken, qty, holdMinutes, cleanPhone, cleanName);
+
+      db.prepare("COMMIT").run();
+      return {
+        success: true,
+        holdToken,
+        holdType: "SLOT",
+        slotId,
+        masterResourceId: resolvedResId,
+        quantity: qty,
+        expiresInMinutes: holdMinutes
+      };
     }
 
-    db.prepare(`
-      INSERT INTO catalog_inventory_holds (
-        tenant_id, catalog_item_id, slot_id, master_resource_id, hold_token, session_ref, hold_type,
-        quantity, status, expires_at, customer_phone, customer_name,
-        created_at, updated_at
-      ) VALUES (
-        ?, ?, NULL, ?, ?, ?, 'ITEM_STOCK',
-        ?, 'HELD', DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE), ?, ?,
-        UTC_TIMESTAMP(), UTC_TIMESTAMP()
-      )
-    `).run(numericTenantId, itemId, masterResourceId, holdToken, holdToken, qty, holdMinutes, cleanPhone, cleanName);
+    // 2. Unit Stock Hold
+    if (itemId) {
+      const item = db.prepare("SELECT * FROM catalog_items WHERE tenant_id = ? AND id = ? FOR UPDATE").get(numericTenantId, itemId);
+      if (!item) throw new Error("Catalog item not found.");
 
-    return {
-      success: true,
-      holdToken,
-      holdType: "ITEM_STOCK",
-      itemId,
-      masterResourceId,
-      quantity: qty,
-      expiresInMinutes: holdMinutes
-    };
+      if (item.track_inventory) {
+        const updateRes = db.prepare(`
+          UPDATE catalog_items
+          SET reserved_qty = reserved_qty + ?, updated_at = UTC_TIMESTAMP()
+          WHERE tenant_id = ? AND id = ?
+            AND (stock_qty - reserved_qty) >= ?
+        `).run(qty, numericTenantId, itemId, qty);
+
+        if (updateRes.changes === 0) {
+          throw new Error("Item has insufficient stock to hold.");
+        }
+      }
+
+      db.prepare(`
+        INSERT INTO catalog_inventory_holds (
+          tenant_id, catalog_item_id, slot_id, master_resource_id, hold_token, session_ref, hold_type,
+          quantity, status, expires_at, customer_phone, customer_name,
+          created_at, updated_at
+        ) VALUES (
+          ?, ?, NULL, ?, ?, ?, 'ITEM_STOCK',
+          ?, 'HELD', DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE), ?, ?,
+          UTC_TIMESTAMP(), UTC_TIMESTAMP()
+        )
+      `).run(numericTenantId, itemId, masterResourceId, holdToken, holdToken, qty, holdMinutes, cleanPhone, cleanName);
+
+      db.prepare("COMMIT").run();
+      return {
+        success: true,
+        holdToken,
+        holdType: "ITEM_STOCK",
+        itemId,
+        masterResourceId,
+        quantity: qty,
+        expiresInMinutes: holdMinutes
+      };
+    }
+
+    throw new Error("Invalid hold parameters.");
+  } catch (err) {
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
+    throw err;
   }
-
-  throw new Error("Invalid hold parameters.");
 }
 
 /**
- * Confirms hold upon payment or booking completion
+ * Confirms hold upon payment or booking completion atomically
  */
 function confirmHold(tenantId = 1, holdIdentifier) {
   const numericTenantId = Number(tenantId) || 1;
   const isNumeric = typeof holdIdentifier === 'number' || /^\d+$/.test(String(holdIdentifier));
-  const hold = db.prepare(`
-    SELECT * FROM catalog_inventory_holds
-    WHERE tenant_id = ? AND (hold_token = ? OR id = ?) AND status = 'HELD'
-  `).get(numericTenantId, String(holdIdentifier), isNumeric ? Number(holdIdentifier) : 0);
 
-  if (!hold) {
-    return { success: false, reason: "Hold not found or already processed" };
+  db.prepare("START TRANSACTION").run();
+  try {
+    const hold = db.prepare(`
+      SELECT * FROM catalog_inventory_holds
+      WHERE tenant_id = ? AND (hold_token = ? OR id = ?) AND status = 'HELD'
+      FOR UPDATE
+    `).get(numericTenantId, String(holdIdentifier), isNumeric ? Number(holdIdentifier) : 0);
+
+    if (!hold) {
+      db.prepare("ROLLBACK").run();
+      return { success: false, reason: "Hold not found or already processed" };
+    }
+
+    const upd = db.prepare(`
+      UPDATE catalog_inventory_holds
+      SET status = 'CONFIRMED', updated_at = UTC_TIMESTAMP()
+      WHERE id = ? AND tenant_id = ? AND status = 'HELD'
+    `).run(hold.id, numericTenantId);
+
+    if (upd.changes !== 1) {
+      db.prepare("ROLLBACK").run();
+      return { success: false, reason: "Hold already processed concurrently" };
+    }
+
+    if (hold.hold_type === "ITEM_STOCK" && hold.catalog_item_id) {
+      db.prepare(`
+        UPDATE catalog_items
+        SET reserved_qty = GREATEST(0, reserved_qty - ?),
+            stock_qty = GREATEST(0, stock_qty - ?),
+            is_sold_out = CASE WHEN stock_qty - ? <= 0 THEN 1 ELSE is_sold_out END,
+            updated_at = UTC_TIMESTAMP()
+        WHERE tenant_id = ? AND id = ?
+      `).run(hold.quantity, hold.quantity, hold.quantity, numericTenantId, hold.catalog_item_id);
+    } else if (hold.hold_type === "SLOT" && hold.slot_id) {
+      db.prepare(`
+        UPDATE catalog_availability_slots
+        SET held_capacity = GREATEST(0, held_capacity - ?),
+            booked_capacity = booked_capacity + ?,
+            updated_at = UTC_TIMESTAMP()
+        WHERE tenant_id = ? AND id = ?
+      `).run(hold.quantity, hold.quantity, numericTenantId, hold.slot_id);
+    }
+
+    db.prepare("COMMIT").run();
+    return { success: true, holdToken: hold.hold_token, status: "CONFIRMED" };
+  } catch (err) {
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
+    throw err;
   }
-
-  // Transition to CONFIRMED
-  db.prepare(`
-    UPDATE catalog_inventory_holds
-    SET status = 'CONFIRMED', updated_at = UTC_TIMESTAMP()
-    WHERE id = ?
-  `).run(hold.id);
-
-  if (hold.hold_type === "ITEM_STOCK" && hold.catalog_item_id) {
-    db.prepare(`
-      UPDATE catalog_items
-      SET reserved_qty = GREATEST(0, reserved_qty - ?),
-          stock_qty = GREATEST(0, stock_qty - ?),
-          is_sold_out = CASE WHEN stock_qty - ? <= 0 THEN 1 ELSE is_sold_out END,
-          updated_at = UTC_TIMESTAMP()
-      WHERE tenant_id = ? AND id = ?
-    `).run(hold.quantity, hold.quantity, hold.quantity, numericTenantId, hold.catalog_item_id);
-  } else if (hold.hold_type === "SLOT" && hold.slot_id) {
-    db.prepare(`
-      UPDATE catalog_availability_slots
-      SET held_capacity = GREATEST(0, held_capacity - ?),
-          booked_capacity = booked_capacity + ?,
-          updated_at = UTC_TIMESTAMP()
-      WHERE tenant_id = ? AND id = ?
-    `).run(hold.quantity, hold.quantity, numericTenantId, hold.slot_id);
-  }
-
-  return { success: true, holdToken: hold.hold_token, status: "CONFIRMED" };
 }
 
 /**
- * Explicitly releases a hold before expiry
+ * Explicitly releases a hold before expiry atomically
  */
 function releaseHold(tenantId = 1, holdIdentifier) {
   const numericTenantId = Number(tenantId) || 1;
   const isNumeric = typeof holdIdentifier === 'number' || /^\d+$/.test(String(holdIdentifier));
-  const hold = db.prepare(`
-    SELECT * FROM catalog_inventory_holds
-    WHERE tenant_id = ? AND (hold_token = ? OR id = ?) AND status = 'HELD'
-  `).get(numericTenantId, String(holdIdentifier), isNumeric ? Number(holdIdentifier) : 0);
 
-  if (!hold) {
-    return { success: false, reason: "Hold not active" };
+  db.prepare("START TRANSACTION").run();
+  try {
+    const hold = db.prepare(`
+      SELECT * FROM catalog_inventory_holds
+      WHERE tenant_id = ? AND (hold_token = ? OR id = ?) AND status = 'HELD'
+      FOR UPDATE
+    `).get(numericTenantId, String(holdIdentifier), isNumeric ? Number(holdIdentifier) : 0);
+
+    if (!hold) {
+      db.prepare("ROLLBACK").run();
+      return { success: false, reason: "Hold not active" };
+    }
+
+    const upd = db.prepare(`
+      UPDATE catalog_inventory_holds
+      SET status = 'RELEASED', updated_at = UTC_TIMESTAMP()
+      WHERE id = ? AND tenant_id = ? AND status = 'HELD'
+    `).run(hold.id, numericTenantId);
+
+    if (upd.changes !== 1) {
+      db.prepare("ROLLBACK").run();
+      return { success: false, reason: "Hold already processed" };
+    }
+
+    if (hold.hold_type === "ITEM_STOCK" && hold.catalog_item_id) {
+      db.prepare(`
+        UPDATE catalog_items
+        SET reserved_qty = GREATEST(0, reserved_qty - ?),
+            updated_at = UTC_TIMESTAMP()
+        WHERE tenant_id = ? AND id = ?
+      `).run(hold.quantity, numericTenantId, hold.catalog_item_id);
+    } else if (hold.hold_type === "SLOT" && hold.slot_id) {
+      db.prepare(`
+        UPDATE catalog_availability_slots
+        SET held_capacity = GREATEST(0, held_capacity - ?),
+            updated_at = UTC_TIMESTAMP()
+        WHERE tenant_id = ? AND id = ?
+      `).run(hold.quantity, numericTenantId, hold.slot_id);
+    }
+
+    db.prepare("COMMIT").run();
+    return { success: true, holdToken: hold.hold_token, status: "RELEASED" };
+  } catch (err) {
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
+    throw err;
   }
-
-  db.prepare(`
-    UPDATE catalog_inventory_holds
-    SET status = 'RELEASED', updated_at = UTC_TIMESTAMP()
-    WHERE id = ?
-  `).run(hold.id);
-
-  if (hold.hold_type === "ITEM_STOCK" && hold.catalog_item_id) {
-    db.prepare(`
-      UPDATE catalog_items
-      SET reserved_qty = GREATEST(0, reserved_qty - ?),
-          updated_at = UTC_TIMESTAMP()
-      WHERE tenant_id = ? AND id = ?
-    `).run(hold.quantity, numericTenantId, hold.catalog_item_id);
-  } else if (hold.hold_type === "SLOT" && hold.slot_id) {
-    db.prepare(`
-      UPDATE catalog_availability_slots
-      SET held_capacity = GREATEST(0, held_capacity - ?),
-          updated_at = UTC_TIMESTAMP()
-      WHERE tenant_id = ? AND id = ?
-    `).run(hold.quantity, numericTenantId, hold.slot_id);
-  }
-
-  return { success: true, holdToken: hold.hold_token, status: "RELEASED" };
 }
 
 /**
- * Automatically releases all expired holds (Called by worker / cron)
+ * Automatically releases all expired holds atomically (Called by worker / cron)
  */
 function releaseExpiredHolds(tenantId = null) {
   let sql = `
-    SELECT * FROM catalog_inventory_holds
+    SELECT id FROM catalog_inventory_holds
     WHERE status = 'HELD' AND expires_at <= UTC_TIMESTAMP()
   `;
   const params = [];
@@ -366,16 +403,28 @@ function releaseExpiredHolds(tenantId = null) {
     params.push(Number(tenantId));
   }
 
-  const expired = db.prepare(sql).all(...params);
+  const expiredIds = db.prepare(sql).all(...params);
   let count = 0;
 
-  for (const hold of expired) {
+  for (const row of expiredIds) {
+    db.prepare("START TRANSACTION").run();
     try {
-      db.prepare(`
+      const hold = db.prepare("SELECT * FROM catalog_inventory_holds WHERE id = ? AND status = 'HELD' FOR UPDATE").get(row.id);
+      if (!hold) {
+        db.prepare("ROLLBACK").run();
+        continue;
+      }
+
+      const upd = db.prepare(`
         UPDATE catalog_inventory_holds
         SET status = 'EXPIRED', updated_at = UTC_TIMESTAMP()
-        WHERE id = ?
+        WHERE id = ? AND status = 'HELD'
       `).run(hold.id);
+
+      if (upd.changes !== 1) {
+        db.prepare("ROLLBACK").run();
+        continue;
+      }
 
       if (hold.hold_type === "ITEM_STOCK" && hold.catalog_item_id) {
         db.prepare(`
@@ -392,9 +441,11 @@ function releaseExpiredHolds(tenantId = null) {
           WHERE id = ?
         `).run(hold.quantity, hold.slot_id);
       }
+      db.prepare("COMMIT").run();
       count++;
     } catch (err) {
-      console.warn(`[UniversalAvailability] Failed to release hold #${hold.id}:`, err.message);
+      try { db.prepare("ROLLBACK").run(); } catch (_) {}
+      console.warn(`[UniversalAvailability] Failed to release hold #${row.id}:`, err.message);
     }
   }
 

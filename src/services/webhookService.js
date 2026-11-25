@@ -225,56 +225,146 @@ class WebhookService {
   }
 
   /**
-   * Pauses automated bot responses for a specific phone number (Staff Takeover)
+   * Pauses automated bot responses for a specific phone number (Durable DB Staff Takeover)
    */
-  pauseBotForPhone(phone, durationMs = 3600000) {
+  pauseBotForPhone(phone, durationMs = 3600000, options = {}) {
     const clean = String(phone || "").replace(/\D/g, "");
     if (!clean) return 0;
+    const tenantId = Number(options.tenantId || 1);
+    const phoneNumberId = String(options.phoneNumberId || "");
+    const pausedBy = options.pausedBy || null;
+    const reason = options.reason || "STAFF_TAKEOVER";
+    const durationSec = Math.max(1, Math.ceil(durationMs / 1000));
     const expiresAt = Date.now() + durationMs;
-    this.botPausedUntil.set(clean, expiresAt);
-    console.log(`[Webhook Flow] Bot paused for ${clean} for ${Math.round(durationMs / 60000)} minutes.`);
+
+    this.botPausedUntil.set(`${tenantId}:${clean}`, expiresAt);
+    try {
+      db.prepare(`
+        INSERT INTO conversation_handoff_states (
+          tenant_id, phone_number_id, clean_phone, is_paused, paused_until, paused_by, reason, updated_at
+        ) VALUES (?, ?, ?, 1, DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? SECOND), ?, ?, UTC_TIMESTAMP())
+        ON DUPLICATE KEY UPDATE
+          is_paused = 1,
+          paused_until = VALUES(paused_until),
+          paused_by = COALESCE(VALUES(paused_by), paused_by),
+          reason = COALESCE(VALUES(reason), reason),
+          updated_at = UTC_TIMESTAMP()
+      `).run(tenantId, phoneNumberId, clean, durationSec, pausedBy, reason);
+    } catch (e) {
+      console.warn("[Webhook Flow] DB handoff pause notice:", e.message);
+    }
+
+    console.log(`[Webhook Flow] Bot paused for ${clean} (tenant ${tenantId}) for ${Math.round(durationMs / 60000)} minutes.`);
     return expiresAt;
   }
 
   /**
-   * Resumes automated bot responses for a specific phone number
+   * Resumes automated bot responses for a specific phone number (Durable DB)
    */
-  resumeBotForPhone(phone) {
+  resumeBotForPhone(phone, options = {}) {
     const clean = String(phone || "").replace(/\D/g, "");
     if (!clean) return false;
+    const tenantId = Number(options.tenantId || 1);
+    const phoneNumberId = options.phoneNumberId ? String(options.phoneNumberId) : null;
+
+    this.botPausedUntil.delete(`${tenantId}:${clean}`);
     this.botPausedUntil.delete(clean);
-    console.log(`[Webhook Flow] Bot resumed for ${clean}.`);
+    try {
+      if (phoneNumberId) {
+        db.prepare(`
+          UPDATE conversation_handoff_states
+          SET is_paused = 0, paused_until = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP()
+          WHERE tenant_id = ? AND clean_phone = ? AND (phone_number_id = ? OR phone_number_id = '')
+        `).run(tenantId, clean, phoneNumberId);
+      } else {
+        db.prepare(`
+          UPDATE conversation_handoff_states
+          SET is_paused = 0, paused_until = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP()
+          WHERE tenant_id = ? AND clean_phone = ?
+        `).run(tenantId, clean);
+      }
+    } catch (e) {
+      console.warn("[Webhook Flow] DB handoff resume notice:", e.message);
+    }
+
+    console.log(`[Webhook Flow] Bot resumed for ${clean} (tenant ${tenantId}).`);
     return true;
   }
 
   /**
-   * Checks whether the bot is currently paused for a phone number
+   * Checks whether the bot is currently paused for a phone number (Durable DB lookup)
    */
-  isBotPausedForPhone(phone) {
+  isBotPausedForPhone(phone, options = {}) {
     const clean = String(phone || "").replace(/\D/g, "");
     if (!clean) return false;
-    const expiry = this.botPausedUntil.get(clean);
-    if (!expiry) return false;
-    if (Date.now() > expiry) {
-      this.botPausedUntil.delete(clean);
+    const tenantId = Number(options.tenantId || 1);
+    const phoneNumberId = String(options.phoneNumberId || "");
+
+    try {
+      const row = db.prepare(`
+        SELECT paused_until
+        FROM conversation_handoff_states
+        WHERE tenant_id = ?
+          AND clean_phone = ?
+          AND is_paused = 1
+          AND paused_until > UTC_TIMESTAMP()
+          AND (? = '' OR phone_number_id = '' OR phone_number_id = ?)
+        ORDER BY paused_until DESC LIMIT 1
+      `).get(tenantId, clean, phoneNumberId, phoneNumberId);
+      if (row) return true;
       return false;
+    } catch (_) {
+      const expiry = this.botPausedUntil.get(`${tenantId}:${clean}`) || this.botPausedUntil.get(clean);
+      if (!expiry) return false;
+      if (Date.now() > expiry) {
+        this.botPausedUntil.delete(`${tenantId}:${clean}`);
+        return false;
+      }
+      return true;
     }
-    return true;
   }
 
   /**
-   * Retrieves bot status and pause expiry for a phone number
+   * Retrieves bot status and pause expiry for a phone number (Durable DB lookup)
    */
-  getBotStatus(phone) {
+  getBotStatus(phone, options = {}) {
     const clean = String(phone || "").replace(/\D/g, "");
-    const isPaused = this.isBotPausedForPhone(clean);
-    const expiresAt = this.botPausedUntil.get(clean) || null;
+    const tenantId = Number(options.tenantId || 1);
+    const phoneNumberId = String(options.phoneNumberId || "");
+    let isPaused = false;
+    let expiresAtIso = null;
+    let remainingMinutes = 0;
+
+    try {
+      const row = db.prepare(`
+        SELECT paused_until
+        FROM conversation_handoff_states
+        WHERE tenant_id = ?
+          AND clean_phone = ?
+          AND is_paused = 1
+          AND paused_until > UTC_TIMESTAMP()
+          AND (? = '' OR phone_number_id = '' OR phone_number_id = ?)
+        ORDER BY paused_until DESC LIMIT 1
+      `).get(tenantId, clean, phoneNumberId, phoneNumberId);
+
+      if (row?.paused_until) {
+        isPaused = true;
+        const parsed = parseMysqlUtcTimestamp(row.paused_until);
+        if (parsed && !isNaN(parsed.getTime())) {
+          expiresAtIso = parsed.toISOString();
+          remainingMinutes = Math.max(0, Math.round((parsed.getTime() - Date.now()) / 60000));
+        }
+      }
+    } catch (_) {
+      isPaused = this.isBotPausedForPhone(clean, options);
+    }
+
     return {
       phone: clean,
       isPaused,
       paused: isPaused,
-      expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
-      remainingMinutes: expiresAt ? Math.max(0, Math.round((expiresAt - Date.now()) / 60000)) : 0
+      expiresAt: expiresAtIso,
+      remainingMinutes
     };
   }
 
@@ -2084,14 +2174,14 @@ class WebhookService {
       const resumeKeywords = ["START", "RESTART", "BOT", "MENU", "RESET", "UNPAUSE"];
       const isResumeKeyword = resumeKeywords.includes(upper) || upper.startsWith("BOT ") || upper.startsWith("/START") || upper.startsWith("/BOT");
       if (isResumeKeyword) {
-        if (this.isBotPausedForPhone(cleanPhone)) {
-          this.resumeBotForPhone(cleanPhone);
+        if (this.isBotPausedForPhone(cleanPhone, { tenantId, phoneNumberId: incomingPhoneId || "" })) {
+          this.resumeBotForPhone(cleanPhone, { tenantId, phoneNumberId: incomingPhoneId || "" });
           console.log(`[Webhook Flow] Customer ${cleanPhone} unpaused bot via intent keyword: "${upper}"`);
         }
       }
 
       // 4. Check Staff Takeover / Bot Pause
-      if (this.isBotPausedForPhone(cleanPhone)) {
+      if (this.isBotPausedForPhone(cleanPhone, { tenantId, phoneNumberId: incomingPhoneId || "" })) {
         console.log(`[Webhook Flow] Bot is currently paused for ${cleanPhone} (Staff Takeover active). Skipping automated response.`);
         return null;
       }
@@ -2197,6 +2287,30 @@ class WebhookService {
         }
       }
 
+      // 6b-pre. Explicit Admin Dynamic Rules take precedence on explicit dyn_ button clicks
+      // or when the user is outside any active Flow Studio session & didn't hit a specific keyword trigger.
+      const hasExplicitDynamicOptions = Boolean(getSetting("BOT_DYNAMIC_OPTIONS"));
+      if (
+        hasExplicitDynamicOptions &&
+        ((interactiveActionId && interactiveActionId.startsWith("dyn_")) || (!activeFlowSession && !matchedTrigger))
+      ) {
+        const preMatchedDyn = this.findMatchedDynamicOption(
+          autoReplySettings.dynamicOptions || [],
+          String(effectiveText || "").toLowerCase(),
+          interactiveActionId
+        );
+        if (preMatchedDyn) {
+          return await this.executeDynamicOptionRule(preMatchedDyn, {
+            replyRecord,
+            cleanPhone,
+            tenantId,
+            incomingPhoneId,
+            customCredentials,
+            autoReplySettings
+          });
+        }
+      }
+
       const isStudioMode = autoReplySettings.engineMode === "FLOW_STUDIO" || 
                            autoReplySettings.engineMode === "CONVERSATION_FLOW" ||
                            autoReplySettings.engineMode === "HOSPITALITY_FLOW";
@@ -2214,10 +2328,14 @@ class WebhookService {
       } catch (fErr) {}
 
       // STRICT ROUTING PRIORITY:
-      // 1. Any active session ALWAYS resumes its active flow.
-      // 2. Otherwise matched published flow trigger routes to that flow.
-      // 3. Otherwise if any published flow exists, routes to default published flow.
-      const shouldRunFlowEngine = Boolean(activeFlowSession || matchedTrigger || defaultPublishedFlow);
+      // 1. Standalone native Meta Flow nfm_reply submissions route directly to dedicated nfm_reply processors unless an active Flow Studio session is paused on a flow form node.
+      // 2. Any active session ALWAYS resumes its active flow.
+      // 3. Otherwise matched published flow trigger routes to that flow.
+      // 4. Otherwise if any published flow exists, routes to default published flow.
+      const isStandaloneNfmReply = Boolean(
+        isFlowReply && (!activeFlowSession || !String(activeFlowSession.current_node_id || "").toLowerCase().includes("flow"))
+      );
+      const shouldRunFlowEngine = !isStandaloneNfmReply && autoReplySettings.engineMode !== "SIMPLE_GREETING" && Boolean(activeFlowSession || matchedTrigger || defaultPublishedFlow);
 
       if (shouldRunFlowEngine) {
         // Universal Deduplication check for initial or repeated generic greeting:
@@ -2240,7 +2358,7 @@ class WebhookService {
             const prior = db.prepare(`
               SELECT id FROM customer_replies 
               WHERE from_phone = ? AND id != ? AND reply_status = 'AUTO_REPLIED'
-                AND received_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                AND received_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)
               LIMIT 1
             `).get(cleanPhone, replyRecord.id);
             if (prior) {
@@ -2265,14 +2383,43 @@ class WebhookService {
               propertyId: activeFlowSession?.property_id || defaultPublishedFlow?.property_id || propertyId,
               channel: "WHATSAPP",
               phoneNumberId: incomingPhoneId,
-              isSimulation: isSimulation,
+              isSimulation: false,
+              transportSimulation: isSimulation,
               triggerKey: matchedTrigger?.triggerKey || null
             }
           });
 
           if (flowResult && flowResult.handled && flowResult.replyText) {
             let sentMsgId = null;
-            if (flowResult.replyInteractive && flowResult.replyInteractive.options?.length > 0) {
+            if (flowResult.replyInteractive?.type === "FLOW" && flowResult.replyInteractive?.flowId) {
+              try {
+                const flowToken = `flow_${flowResult.replyInteractive.flowId}_${cleanPhone}_${Date.now()}`;
+                const bName = autoReplySettings.businessName || "Hotel Green Vally";
+                const fRes = await sendFlowMessage({
+                  to: cleanPhone,
+                  flowId: flowResult.replyInteractive.flowId,
+                  flowToken,
+                  headerText: shortenHeaderText(flowResult.replyInteractive.title || bName),
+                  bodyText: flowResult.replyText,
+                  footerText: shortenHeaderText(bName),
+                  ctaText: shortenButtonTitle(flowResult.replyInteractive.ctaText || "Open Form"),
+                  screen: flowResult.replyInteractive.screen || "START",
+                  customCredentials
+                });
+                sentMsgId = fRes?.messageId || null;
+                try {
+                  db.prepare(`
+                    INSERT INTO flow_tokens (token, flow_id, meta_flow_id, recipient_phone, clean_phone, meta_message_id, status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', UTC_TIMESTAMP())
+                  `).run(flowToken, String(flowResult.replyInteractive.flowId), String(flowResult.replyInteractive.flowId), cleanPhone, cleanPhone, sentMsgId);
+                } catch (_) {}
+              } catch (flowSendErr) {
+                try {
+                  const txtRes = await sendTextMessage({ to: cleanPhone, body: flowResult.replyText, customCredentials });
+                  sentMsgId = txtRes?.messageId || null;
+                } catch (_) {}
+              }
+            } else if (flowResult.replyInteractive && flowResult.replyInteractive.options?.length > 0) {
               // WhatsApp limits: Button title <= 20 chars, List row title <= 24 chars
               const buttons = flowResult.replyInteractive.options.map(o => ({
                 id: String(o.id || "").substring(0, 256),
@@ -2380,6 +2527,26 @@ class WebhookService {
               reply_status: "AUTO_REPLIED"
             };
 
+            const isHandoffState = flowResult.sessionStatus === "PAUSED_AGENT_HANDOFF";
+            let effectiveFlowReplyText = flowResult.replyText;
+            if (isHandoffState) {
+              const pauseMins = Math.max(1, Number(autoReplySettings?.takeoverPauseMinutes || 60));
+              this.pauseBotForPhone(cleanPhone, pauseMins * 60 * 1000, { tenantId, phoneNumberId: incomingPhoneId });
+              if (Number(tenantId) === 1 && autoReplySettings?.handoffMessage) {
+                effectiveFlowReplyText = String(autoReplySettings.handoffMessage)
+                  .replace(/\{\{phone\}\}/gi, autoReplySettings.handoffPhone || "+91 87665 90634")
+                  .replace(/\{\{business_name\}\}/gi, autoReplySettings.businessName || "Hotel Green Vally");
+              }
+              broadcastEngine.emit("inbox:handoff", {
+                tenantId,
+                phone: cleanPhone,
+                phoneNumberId: incomingPhoneId,
+                customerName: replyRecord.customer_name || "Guest",
+                sessionKey: flowResult.sessionKey,
+                flowId: targetFlowId
+              });
+            }
+
             broadcastEngine.emit("webhook:reply_updated", updatedRecord);
             if (this.answeredMessageKeys) {
               this.answeredMessageKeys.set(dispatchKey, Date.now());
@@ -2387,18 +2554,35 @@ class WebhookService {
             return {
               success: true,
               flowEngine: true,
+              handoff: isHandoffState,
+              sessionStatus: flowResult.sessionStatus || "ACTIVE",
               messageId: sentMsgId,
-              replyText: flowResult.replyText,
+              replyText: effectiveFlowReplyText,
               sessionKey: flowResult.sessionKey,
               currentNodeId: flowResult.currentNodeId
             };
           } else if (flowResult && flowResult.handled) {
+            const isHandoffState = flowResult.sessionStatus === "PAUSED_AGENT_HANDOFF";
+            if (isHandoffState) {
+              const pauseMins = Math.max(1, Number(autoReplySettings?.takeoverPauseMinutes || 60));
+              this.pauseBotForPhone(cleanPhone, pauseMins * 60 * 1000, { tenantId, phoneNumberId: incomingPhoneId });
+              broadcastEngine.emit("inbox:handoff", {
+                tenantId,
+                phone: cleanPhone,
+                phoneNumberId: incomingPhoneId,
+                customerName: replyRecord.customer_name || "Guest",
+                sessionKey: flowResult.sessionKey,
+                flowId: targetFlowId
+              });
+            }
             if (this.answeredMessageKeys) {
               this.answeredMessageKeys.set(dispatchKey, Date.now());
             }
             return {
               success: true,
               flowEngine: true,
+              handoff: isHandoffState,
+              sessionStatus: flowResult.sessionStatus || "ACTIVE",
               handled: true
             };
           }
@@ -2463,7 +2647,7 @@ class WebhookService {
             const prior = db.prepare(`
               SELECT id FROM customer_replies 
               WHERE from_phone = ? AND id != ? AND reply_status = 'AUTO_REPLIED'
-                AND received_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                AND received_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)
               LIMIT 1
             `).get(cleanPhone, replyRecord.id);
             if (prior) {
@@ -2606,7 +2790,7 @@ class WebhookService {
             if (flowSubmissionData.issue_description) ticketText += `📝 *Details*: _"${flowSubmissionData.issue_description}"_\n`;
             ticketText += `\n📞 Our front desk executive will contact you on this chat shortly.`;
 
-            this.pauseBotForPhone(cleanPhone, (autoReplySettings.takeoverPauseMinutes || 60) * 60 * 1000);
+            this.pauseBotForPhone(cleanPhone, (autoReplySettings.takeoverPauseMinutes || 60) * 60 * 1000, { tenantId, phoneNumberId: incomingPhoneId || "" });
 
             let sentMsgId = null;
             try {
@@ -2639,258 +2823,106 @@ class WebhookService {
             });
             return { success: true, supportTicket: true, replyText: ticketText, messageId: sentMsgId };
           }
+
+          // Case C: Stay Booking Form Intake (nfm_reply itemized quote)
+          if (flowIntakeData.check_in && flowIntakeData.check_out) {
+            const bName = autoReplySettings.businessName || "Hotel Green Vally";
+            const pricingService = require("./hospitalityPricingService");
+            const prefName = flowIntakeData.room_preference || "Deluxe Sea View Room";
+            let matchedRoom = null;
+            try {
+              matchedRoom = db.prepare(`
+                SELECT * FROM room_types
+                WHERE tenant_id = ? AND property_id = ? AND (name LIKE ? OR active = 1)
+                ORDER BY CASE WHEN name LIKE ? THEN 0 ELSE 1 END, id ASC
+                LIMIT 1
+              `).get(tenantId, propertyId || 1, `%${prefName}%`, `%${prefName}%`);
+            } catch (_) {}
+
+            let quote = { nights: flowIntakeData.nights || 2, subtotal: 7000, tax_total: 840, total: 7840 };
+            if (matchedRoom) {
+              try {
+                quote = pricingService.calculateQuote({
+                  propertyId: propertyId || 1,
+                  roomTypeId: matchedRoom.id,
+                  checkInDate: flowIntakeData.check_in,
+                  checkOutDate: flowIntakeData.check_out,
+                  adults: Number(flowIntakeData.adults || 2),
+                  children: Number(flowIntakeData.children || 0),
+                  rooms: 1,
+                  tenantId
+                });
+              } catch (_) {}
+            }
+
+            const displayRoom = matchedRoom?.name || prefName;
+            const quoteText = `✨ *Availability & Rates (${displayRoom})*\n\nHello *${flowIntakeData.guest_name || "Guest"}*, here is your instant stay quotation for *${flowIntakeData.check_in}* to *${flowIntakeData.check_out}* (*Total for ${quote.nights || flowIntakeData.nights || 2} night(s)*):\n\n🏡 *Room Category:* ${displayRoom}\n💵 *Subtotal:* ₹${Number(quote.subtotal || 0).toLocaleString("en-IN")}\n📊 *Taxes:* ₹${Number(quote.tax_total || 0).toLocaleString("en-IN")}\n🏷️ *Total Payable:* *₹${Number(quote.total || 0).toLocaleString("en-IN")}*\n\nWould you like to confirm this booking?`;
+
+            const buttons = [
+              { id: "btn_confirm", title: shortenButtonTitle(autoReplySettings.quoteConfirm || "Confirm Booking") },
+              { id: "btn_rooms", title: shortenButtonTitle(autoReplySettings.quoteRooms || "Other Rooms") },
+              { id: "btn_staff", title: shortenButtonTitle(autoReplySettings.button3 || "Talk to Staff") }
+            ];
+            let sentMsgId = null;
+            try {
+              const btnRes = await sendInteractiveButtons({
+                to: cleanPhone,
+                bodyText: quoteText.length > 1000 ? `${quoteText.substring(0, 990)}...` : quoteText,
+                buttons,
+                headerText: "Availability & Rates",
+                footerText: bName,
+                customCredentials
+              });
+              sentMsgId = btnRes?.messageId || null;
+            } catch (_) {
+              try {
+                const txtRes = await sendTextMessage({ to: cleanPhone, body: quoteText, customCredentials });
+                sentMsgId = txtRes?.messageId || null;
+              } catch (_) {}
+            }
+
+            const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+            const botReplyId = `bot_flow_quote_${Date.now()}`;
+            const rawPayloadJson = JSON.stringify({
+              interactive_type: "flow_step",
+              step: "ROOM_SELECTION",
+              selected_room: displayRoom,
+              options: buttons
+            });
+            db.prepare(`
+              INSERT INTO customer_replies (
+                wa_message_id, from_phone, customer_name, message_type,
+                message_body, reply_text, reply_sent_at, reply_status,
+                link_id, source, raw_payload, is_read, user_id, received_at
+              ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', ?, 1, 'bot', ?)
+            `).run(botReplyId, cleanPhone, flowIntakeData.guest_name || replyRecord.customer_name || "Guest", quoteText, quoteText, nowIso, replyRecord.link_id || null, rawPayloadJson, nowIso);
+
+            db.prepare(`
+              UPDATE customer_replies
+              SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED'
+              WHERE id = ?
+            `).run(quoteText, nowIso, replyRecord.id);
+
+            const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
+            broadcastEngine.emit("webhook:reply", savedBot);
+            return { success: true, quote: true, replyText: quoteText, messageId: sentMsgId };
+          }
         }
       }
 
       const lower = effectiveText.toLowerCase();
 
       // 5c. Dynamic Bot Options & Rules Engine (Admin Programmable Solutions)
-      const dynamicOptions = autoReplySettings.dynamicOptions || [];
-      let matchedDyn = null;
-
-      // A) Direct interactive button click
-      if (interactiveActionId && (interactiveActionId.startsWith("dyn_") || interactiveActionId.startsWith("opt_"))) {
-        const cleanOptId = interactiveActionId.replace(/^dyn_/, "").replace(/^opt_/, "");
-        matchedDyn = dynamicOptions.find(d => 
-          (d.id === cleanOptId || d.id === `opt_${cleanOptId}` || String(d.id) === String(interactiveActionId)) && 
-          d.active !== false && d.isActive !== false
-        );
-      }
-
-      // B) Trigger keyword or title match
-      if (!matchedDyn && lower) {
-        for (const opt of dynamicOptions) {
-          if (opt.active === false || opt.isActive === false) continue;
-
-          // Check if button title matches
-          if (opt.title && lower === opt.title.toLowerCase()) {
-            matchedDyn = opt;
-            break;
-          }
-          if (opt.buttonLabel && lower === opt.buttonLabel.toLowerCase()) {
-            matchedDyn = opt;
-            break;
-          }
-
-          // Check triggers (supporting triggers, matchTerms, and trigger aliases)
-          const rawTriggers = opt.triggers || opt.matchTerms || opt.trigger || "";
-          const triggers = String(rawTriggers)
-            .split(",")
-            .map(t => t.trim().toLowerCase())
-            .filter(Boolean);
-
-          if (triggers.length === 0) continue;
-
-          const matchType = (opt.matchType || opt.matcherType || "CONTAINS").toUpperCase();
-          let matched = false;
-
-          if (matchType === "EXACT") {
-            matched = triggers.some(t => lower === t);
-          } else if (matchType === "STARTS_WITH") {
-            matched = triggers.some(t => lower.startsWith(t));
-          } else if (matchType === "REGEX") {
-            matched = triggers.some(t => {
-              try { return new RegExp(t, "i").test(lower); } catch (e) { return false; }
-            });
-          } else { // CONTAINS / WORD BOUNDARY
-            matched = triggers.some(t => {
-              if (t.length <= 3) {
-                return new RegExp(`\\b${t}\\b`, "i").test(lower);
-              }
-              return lower.includes(t);
-            });
-          }
-
-          if (matched) {
-            matchedDyn = opt;
-            break;
-          }
-        }
-      }
-
+      const matchedDyn = this.findMatchedDynamicOption(autoReplySettings.dynamicOptions || [], lower, interactiveActionId);
       if (matchedDyn) {
-        const dynAction = (matchedDyn.actionType || matchedDyn.action || "REPLY_TEXT").toUpperCase();
-        console.log(`[Webhook Flow] Executing Dynamic Bot Option: '${matchedDyn.title}' (${dynAction}) for ${cleanPhone}`);
-        const bName = autoReplySettings.businessName || "Hotel Green Vally";
-        const cName = replyRecord.customer_name || "Guest";
-        const hPhone = autoReplySettings.handoffPhone || "+91 87665 90634";
-        const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
-
-        // Normalize response text from responseText or responsePayload
-        const rawResponse = matchedDyn.responseText || matchedDyn.responsePayload || matchedDyn.message ||
-          `Thank you for asking about ${matchedDyn.title}! Our team is delighted to assist you.`;
-
-        if (dynAction === "STAFF_TAKEOVER") {
-          const pauseMins = autoReplySettings.takeoverPauseMinutes || 60;
-          this.pauseBotForPhone(cleanPhone, pauseMins * 60 * 1000);
-          const customStaffMsg = (rawResponse || autoReplySettings.handoffMessage || "Connecting with our staff...")
-            .replace(/\{\{phone\}\}/gi, hPhone)
-            .replace(/\{\{business_name\}\}/gi, bName)
-            .replace(/\{\{name\}\}/gi, cName);
-
-          let sentMsgId = null;
-          try {
-            const s = await sendTextMessage({ to: cleanPhone, body: customStaffMsg, customCredentials });
-            sentMsgId = s?.messageId || null;
-          } catch (e) {}
-
-          db.prepare(`
-            UPDATE customer_replies 
-            SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
-            WHERE id = ?
-          `).run(customStaffMsg, nowIso, replyRecord.id);
-
-          const botReplyId = `bot_dyn_staff_${Date.now()}`;
-          try {
-            db.prepare(`
-              INSERT INTO customer_replies (
-                wa_message_id, from_phone, customer_name, message_type,
-                message_body, reply_text, reply_sent_at, reply_status,
-                link_id, source, is_read, user_id, received_at
-              ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
-            `).run(
-              botReplyId, cleanPhone, cName, customStaffMsg, customStaffMsg, nowIso, replyRecord.link_id || null, nowIso
-            );
-            const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
-            broadcastEngine.emit("webhook:reply", savedBot);
-          } catch (e) {}
-
-          broadcastEngine.emit("inbox:reply", {
-            replyId: replyRecord.id,
-            replyText: customStaffMsg,
-            replyStatus: "AUTO_REPLIED"
-          });
-          return { success: true, handledBy: "DYNAMIC_OPTION_STAFF", replyText: customStaffMsg, messageId: sentMsgId, handoff: true };
-        }
-
-        if (dynAction === "DISPATCH_FLOW" && getSetting("WHATSAPP_FLOWS_ENABLED") === "true") {
-          const targetFlowId = matchedDyn.flowId || matchedDyn.selectedFlowId || autoReplySettings.selectedFlowId;
-          const flow = targetFlowId ? db.prepare("SELECT * FROM whatsapp_flows WHERE (id = ? OR meta_flow_id = ?)").get(targetFlowId, targetFlowId) : null;
-          if (flow) {
-            const flowCta = shortenButtonTitle(matchedDyn.buttonLabel || flow.name || "Open Form");
-            const flowHeader = shortenHeaderText(bName);
-            const flowBody = rawResponse
-              ? rawResponse.replace(/\{\{name\}\}/gi, cName).replace(/\{\{business_name\}\}/gi, bName)
-              : `Hi ${cName}, please tap below to complete our ${flow.name} form:`;
-
-            let sentFlowRes = null;
-            try {
-              sentFlowRes = await sendFlowMessage({
-                to: cleanPhone,
-                flowId: flow.meta_flow_id || flow.id,
-                flowToken: `flow_${flow.id}_${cleanPhone}_${Date.now()}`,
-                headerText: flowHeader,
-                bodyText: flowBody,
-                footerText: "Official Resort Concierge",
-                ctaText: flowCta,
-                customCredentials
-              });
-            } catch (e) {}
-
-            // If Flow send succeeded
-            if (sentFlowRes && (sentFlowRes.success || sentFlowRes.messageId)) {
-              const sentSummary = `[Dispatched Flow: ${flow.name}]`;
-              db.prepare(`
-                UPDATE customer_replies 
-                SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
-                WHERE id = ?
-              `).run(sentSummary, nowIso, replyRecord.id);
-
-              const botReplyId = `bot_dyn_flow_${Date.now()}`;
-              try {
-                db.prepare(`
-                  INSERT INTO customer_replies (
-                    wa_message_id, from_phone, customer_name, message_type,
-                    message_body, reply_text, reply_sent_at, reply_status,
-                    link_id, source, is_read, user_id, received_at
-                  ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
-                `).run(
-                  botReplyId, cleanPhone, cName, sentSummary, sentSummary, nowIso, replyRecord.link_id || null, nowIso
-                );
-                const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
-                broadcastEngine.emit("webhook:reply", savedBot);
-              } catch (e) {}
-
-              broadcastEngine.emit("inbox:reply", {
-                replyId: replyRecord.id,
-                replyText: sentSummary,
-                replyStatus: "AUTO_REPLIED"
-              });
-              return { success: true, handledBy: "DYNAMIC_OPTION_FLOW", flowId: flow.id, messageId: sentFlowRes?.messageId };
-            } else {
-              console.warn(`[Webhook Flow] Dynamic option flow dispatch note: ${sentFlowRes?.error || "Meta flow not available"}. Falling back to text response.`);
-            }
-          }
-        }
-
-        let replyMsg = (rawResponse || `Thank you for asking about ${matchedDyn.title}! Our team is delighted to assist you.`)
-          .replace(/\{\{name\}\}/gi, cName)
-          .replace(/\{\{business_name\}\}/gi, bName)
-          .replace(/\{\{phone\}\}/gi, hPhone);
-
-        if ((dynAction === "OPEN_URL" || matchedDyn.url) && matchedDyn.url) {
-          replyMsg += `\n\n🌐 *Explore Link*: ${matchedDyn.url}`;
-        }
-
-        let buttons = [];
-        if (Array.isArray(matchedDyn.followUpButtons) && matchedDyn.followUpButtons.length > 0) {
-          buttons = matchedDyn.followUpButtons.slice(0, 3).map((b, idx) => ({
-            id: b.id || `dyn_btn_${idx}`,
-            title: shortenButtonTitle(b.title || b.label || "More Info")
-          }));
-        } else {
-          buttons = [
-            { id: "btn_check_avail", title: shortenButtonTitle("Check Rates") },
-            { id: "btn_staff", title: shortenButtonTitle(autoReplySettings.button3 || "Talk to Staff") }
-          ];
-        }
-
-        let sentRes = null;
-        try {
-          if (replyMsg.length <= 1000 && buttons.length > 0) {
-            sentRes = await sendInteractiveButtons({
-              to: cleanPhone,
-              bodyText: replyMsg,
-              buttons,
-              footerText: bName,
-              customCredentials
-            });
-          } else {
-            sentRes = await sendTextMessage({
-              to: cleanPhone,
-              body: replyMsg,
-              customCredentials
-            });
-          }
-        } catch (e) {}
-
-        db.prepare(`
-          UPDATE customer_replies 
-          SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
-          WHERE id = ?
-        `).run(replyMsg, nowIso, replyRecord.id);
-
-        const botReplyId = `bot_dyn_opt_${Date.now()}`;
-        try {
-          db.prepare(`
-            INSERT INTO customer_replies (
-              wa_message_id, from_phone, customer_name, message_type,
-              message_body, reply_text, reply_sent_at, reply_status,
-              link_id, source, is_read, user_id, received_at
-            ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
-          `).run(
-            botReplyId, cleanPhone, cName, replyMsg, replyMsg, nowIso, replyRecord.link_id || null, nowIso
-          );
-          const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
-          broadcastEngine.emit("webhook:reply", savedBot);
-        } catch (e) {}
-
-        broadcastEngine.emit("inbox:reply", {
-          replyId: replyRecord.id,
-          replyText: replyMsg,
-          replyStatus: "AUTO_REPLIED"
+        return await this.executeDynamicOptionRule(matchedDyn, {
+          replyRecord,
+          cleanPhone,
+          tenantId,
+          incomingPhoneId,
+          customCredentials,
+          autoReplySettings
         });
-        return { success: true, handledBy: "DYNAMIC_OPTION", replyText: replyMsg, messageId: sentRes?.messageId };
       }
 
       // 6. Action ID Normalization (supports both standard action IDs and user-customized button labels)
@@ -2947,7 +2979,7 @@ class WebhookService {
       ) {
         // Pause bot for configured duration for this contact
         const pauseMins = autoReplySettings.takeoverPauseMinutes || 60;
-        this.pauseBotForPhone(cleanPhone, pauseMins * 60 * 1000);
+        this.pauseBotForPhone(cleanPhone, pauseMins * 60 * 1000, { tenantId, phoneNumberId: incomingPhoneId || "" });
 
         const handoffPhone = autoReplySettings.handoffPhone || "+91 87665 90634";
         const bName = autoReplySettings.businessName || "Hotel Green Vally";
@@ -3131,7 +3163,7 @@ class WebhookService {
         const recentBot = db.prepare(`
           SELECT id FROM customer_replies 
           WHERE from_phone = ? AND id != ? AND reply_status = 'AUTO_REPLIED'
-            AND received_at > DATE_SUB(NOW(), INTERVAL 30 SECOND)
+            AND received_at > DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 SECOND)
           LIMIT 1
         `).get(cleanPhone, replyRecord.id);
         if (recentBot) {
@@ -3625,7 +3657,10 @@ class WebhookService {
 
     // Staff Takeover: Automatically pause automated bot responses for configured duration for this contact
     const pauseMins = parseInt(getSetting("BOT_TAKEOVER_PAUSE_MINUTES") || "60", 10);
-    this.pauseBotForPhone(cleanPhone, pauseMins * 60 * 1000);
+    this.pauseBotForPhone(cleanPhone, pauseMins * 60 * 1000, {
+      tenantId: Number(record.tenant_id || 1),
+      phoneNumberId: record.channel_account_id || ""
+    });
 
     const sendResult = await sendTextMessage({
       to: cleanPhone,
@@ -3939,6 +3974,190 @@ class WebhookService {
       }
     }
     return this.getAutoReplySettings();
+  }
+
+  /**
+   * Matches an inbound text or interactive action against active dynamic option rules.
+   */
+  findMatchedDynamicOption(dynamicOptions = [], lowerText = "", interactiveActionId = null) {
+    const lower = String(lowerText || "").toLowerCase();
+    if (interactiveActionId && (interactiveActionId.startsWith("dyn_") || interactiveActionId.startsWith("opt_"))) {
+      const cleanOptId = interactiveActionId.replace(/^dyn_/, "").replace(/^opt_/, "");
+      const directMatch = dynamicOptions.find((d) =>
+        (d.id === cleanOptId || d.id === `opt_${cleanOptId}` || String(d.id) === String(interactiveActionId)) &&
+        d.active !== false && d.isActive !== false
+      );
+      if (directMatch) return directMatch;
+    }
+
+    if (!lower) return null;
+
+    for (const opt of dynamicOptions) {
+      if (opt.active === false || opt.isActive === false) continue;
+      if (opt.title && lower === opt.title.toLowerCase()) return opt;
+      if (opt.buttonLabel && lower === opt.buttonLabel.toLowerCase()) return opt;
+
+      const rawTriggers = opt.triggers || opt.matchTerms || opt.trigger || "";
+      const triggers = String(rawTriggers)
+        .split(",")
+        .map((t) => t.trim().toLowerCase())
+        .filter(Boolean);
+      if (triggers.length === 0) continue;
+
+      const matchType = (opt.matchType || opt.matcherType || "CONTAINS").toUpperCase();
+      let matched = false;
+      if (matchType === "EXACT") {
+        matched = triggers.some((t) => lower === t);
+      } else if (matchType === "STARTS_WITH") {
+        matched = triggers.some((t) => lower.startsWith(t));
+      } else if (matchType === "REGEX") {
+        matched = triggers.some((t) => {
+          try { return new RegExp(t, "i").test(lower); } catch (_) { return false; }
+        });
+      } else {
+        matched = triggers.some((t) => {
+          if (t.length <= 3) return new RegExp(`\\b${t}\\b`, "i").test(lower);
+          return lower.includes(t);
+        });
+      }
+      if (matched) return opt;
+    }
+
+    return null;
+  }
+
+  /**
+   * Executes a matched dynamic option rule (STAFF_TAKEOVER, DISPATCH_FLOW, OPEN_URL, or REPLY_TEXT).
+   */
+  async executeDynamicOptionRule(matchedDyn, { replyRecord, cleanPhone, tenantId, incomingPhoneId, customCredentials, autoReplySettings }) {
+    const dynAction = (matchedDyn.actionType || matchedDyn.action || "REPLY_TEXT").toUpperCase();
+    console.log(`[Webhook Flow] Executing Dynamic Bot Option: '${matchedDyn.title}' (${dynAction}) for ${cleanPhone}`);
+    const bName = autoReplySettings.businessName || "Hotel Green Vally";
+    const cName = replyRecord.customer_name || "Guest";
+    const hPhone = autoReplySettings.handoffPhone || "+91 87665 90634";
+    const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
+
+    const rawResponse = matchedDyn.responseText || matchedDyn.responsePayload || matchedDyn.message ||
+      `Thank you for asking about ${matchedDyn.title}! Our team is delighted to assist you.`;
+
+    const persistDynamicReply = (idPrefix, text) => {
+      db.prepare(`
+        UPDATE customer_replies 
+        SET reply_text = ?, reply_sent_at = ?, reply_status = 'AUTO_REPLIED' 
+        WHERE id = ?
+      `).run(text, nowIso, replyRecord.id);
+
+      const botReplyId = `${idPrefix}_${Date.now()}`;
+      try {
+        db.prepare(`
+          INSERT INTO customer_replies (
+            wa_message_id, from_phone, customer_name, message_type,
+            message_body, reply_text, reply_sent_at, reply_status,
+            link_id, source, is_read, user_id, received_at
+          ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
+        `).run(botReplyId, cleanPhone, cName, text, text, nowIso, replyRecord.link_id || null, nowIso);
+        const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
+        broadcastEngine.emit("webhook:reply", savedBot);
+      } catch (_) {}
+
+      broadcastEngine.emit("inbox:reply", {
+        replyId: replyRecord.id,
+        replyText: text,
+        replyStatus: "AUTO_REPLIED"
+      });
+    };
+
+    if (dynAction === "STAFF_TAKEOVER") {
+      const pauseMins = autoReplySettings.takeoverPauseMinutes || 60;
+      this.pauseBotForPhone(cleanPhone, pauseMins * 60 * 1000, { tenantId, phoneNumberId: incomingPhoneId || "" });
+      const customStaffMsg = (rawResponse || autoReplySettings.handoffMessage || "Connecting with our staff...")
+        .replace(/\{\{phone\}\}/gi, hPhone)
+        .replace(/\{\{business_name\}\}/gi, bName)
+        .replace(/\{\{name\}\}/gi, cName);
+
+      let sentMsgId = null;
+      try {
+        const s = await sendTextMessage({ to: cleanPhone, body: customStaffMsg, customCredentials });
+        sentMsgId = s?.messageId || null;
+      } catch (_) {}
+
+      persistDynamicReply("bot_dyn_staff", customStaffMsg);
+      return { success: true, handledBy: "DYNAMIC_OPTION_STAFF", replyText: customStaffMsg, messageId: sentMsgId, handoff: true };
+    }
+
+    if (dynAction === "DISPATCH_FLOW" && getSetting("WHATSAPP_FLOWS_ENABLED") === "true") {
+      const targetFlowId = matchedDyn.flowId || matchedDyn.selectedFlowId || autoReplySettings.selectedFlowId;
+      const flow = targetFlowId ? db.prepare("SELECT * FROM whatsapp_flows WHERE (id = ? OR meta_flow_id = ?)").get(targetFlowId, targetFlowId) : null;
+      if (flow) {
+        const flowCta = shortenButtonTitle(matchedDyn.buttonLabel || flow.name || "Open Form");
+        const flowHeader = shortenHeaderText(bName);
+        const flowBody = rawResponse
+          ? rawResponse.replace(/\{\{name\}\}/gi, cName).replace(/\{\{business_name\}\}/gi, bName)
+          : `Hi ${cName}, please tap below to complete our ${flow.name} form:`;
+
+        let sentFlowRes = null;
+        try {
+          sentFlowRes = await sendFlowMessage({
+            to: cleanPhone,
+            flowId: flow.meta_flow_id || flow.id,
+            flowToken: `flow_${flow.id}_${cleanPhone}_${Date.now()}`,
+            headerText: flowHeader,
+            bodyText: flowBody,
+            footerText: "Official Resort Concierge",
+            ctaText: flowCta,
+            customCredentials
+          });
+        } catch (_) {}
+
+        if (sentFlowRes && (sentFlowRes.success || sentFlowRes.messageId)) {
+          const sentSummary = `[Dispatched Flow: ${flow.name}]`;
+          persistDynamicReply("bot_dyn_flow", sentSummary);
+          return { success: true, handledBy: "DYNAMIC_OPTION_FLOW", flowId: flow.id, messageId: sentFlowRes?.messageId };
+        }
+        console.warn(`[Webhook Flow] Dynamic option flow dispatch note: ${sentFlowRes?.error || "Meta flow not available"}. Falling back to text response.`);
+      }
+    }
+
+    let replyMsg = (rawResponse || `Thank you for asking about ${matchedDyn.title}! Our team is delighted to assist you.`)
+      .replace(/\{\{name\}\}/gi, cName)
+      .replace(/\{\{business_name\}\}/gi, bName)
+      .replace(/\{\{phone\}\}/gi, hPhone);
+
+    if ((dynAction === "OPEN_URL" || matchedDyn.url) && matchedDyn.url) {
+      replyMsg += `\n\n🌐 *Explore Link*: ${matchedDyn.url}`;
+    }
+
+    const buttons = (Array.isArray(matchedDyn.followUpButtons) && matchedDyn.followUpButtons.length > 0)
+      ? matchedDyn.followUpButtons.slice(0, 3).map((b, idx) => ({
+          id: b.id || `dyn_btn_${idx}`,
+          title: shortenButtonTitle(b.title || b.label || "More Info")
+        }))
+      : [
+          { id: "btn_check_avail", title: shortenButtonTitle("Check Rates") },
+          { id: "btn_staff", title: shortenButtonTitle(autoReplySettings.button3 || "Talk to Staff") }
+        ];
+
+    let sentRes = null;
+    try {
+      if (replyMsg.length <= 1000 && buttons.length > 0) {
+        sentRes = await sendInteractiveButtons({
+          to: cleanPhone,
+          bodyText: replyMsg,
+          buttons,
+          footerText: bName,
+          customCredentials
+        });
+      } else {
+        sentRes = await sendTextMessage({
+          to: cleanPhone,
+          body: replyMsg,
+          customCredentials
+        });
+      }
+    } catch (_) {}
+
+    persistDynamicReply("bot_dyn_opt", replyMsg);
+    return { success: true, handledBy: "DYNAMIC_OPTION", replyText: replyMsg, messageId: sentRes?.messageId };
   }
 }
 

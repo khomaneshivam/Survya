@@ -132,13 +132,23 @@ jobs:
         run: |
           node scripts/test_fresh_deployment.js
 
-      - name: Run Master Production QA Suite
+      - name: Run Master Production QA & Layer 1-10 Regression Suites
         run: |
           node tests/master_production_qa.test.js
+          node tests/layer1_security_foundation.test.js
+          node tests/layer2_communication_reliability.test.js
+          node tests/layer3_workflow_engine.test.js
+          node tests/layer4_template_studio.test.js
+          node tests/layer5_commerce_concurrency.test.js
+          node tests/layer6_ai_guardrails.test.js
+          node tests/layer7_campaigns_analytics.test.js
+          node tests/layer9_saas_sre.test.js
+          node tests/layer10_e2e_journeys.test.js
 
       - name: Run Core Multi-Domain Platform Regression Tests
         run: |
           node tests/security_and_reliability.test.js
+          node tests/frontend_design_system.test.js
           node tests/universal_autoreply_platform.test.js
           node tests/universal_masters_and_nodes.test.js
           node tests/universal_catalog_availability_pricing.test.js

@@ -48,6 +48,18 @@ class JobWorkerEngine extends EventEmitter {
       return webhookService.processIncomingPayload(payload);
     });
 
+    // Durable outbound message dispatch outbox (with automatic retries via JobWorkerEngine)
+    this.registerHandler("OUTBOUND_MESSAGE_DISPATCH", async (payload, job) => {
+      const messagingService = require("../whatsappMessagingService");
+      if (!payload || !payload.to) {
+        throw new Error("Malformed OUTBOUND_MESSAGE_DISPATCH payload: missing recipient 'to'");
+      }
+      return messagingService.sendOneToOneMessage({
+        ...payload,
+        tenantId: Number(payload.tenantId || job?.tenant_id || 1)
+      });
+    });
+
     // 1. Session Cleanup Handler
     this.registerHandler("SESSION_CLEANUP", async (payload, job) => {
       let expiredFlows = 0;

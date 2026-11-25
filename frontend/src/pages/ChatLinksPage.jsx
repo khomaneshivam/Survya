@@ -56,7 +56,7 @@ const DEFAULT_INTAKE_FIELDS = [
 ];
 
 export default function ChatLinksPage({ onNavigate }) {
-  const { token, user, isAdmin } = useAuth();
+  const { token, user, isWorkspaceAdmin } = useAuth();
   const [loading, setLoading] = useState(true);
   const [links, setLinks] = useState([]);
   const [summary, setSummary] = useState({
@@ -530,7 +530,7 @@ export default function ChatLinksPage({ onNavigate }) {
       header: 'Category',
       render: (r) => <Badge tone="neutral">{r.category || 'GENERAL'}</Badge>
     },
-    ...(isAdmin ? [{
+    ...(isWorkspaceAdmin ? [{
       key: 'creator',
       label: 'Created By',
       header: 'Created By',

@@ -420,6 +420,12 @@ class BroadcastEngine extends EventEmitter {
       throw new Error(`Campaign '${campaign.name}' is already currently running.`);
     }
 
+    // Enforce tenant SaaS trial validity & monthly message quota before dispatching
+    const billingService = require("./billingService");
+    const pendingRow = db.prepare("SELECT COUNT(*) as c FROM campaign_recipients WHERE campaign_id = ? AND status = 'PENDING'").get(campaignId);
+    const pendingCount = Number(pendingRow?.c || campaign.valid_contacts || 1);
+    billingService.assertCanSendMessages(Number(campaign.tenant_id || 1), Math.max(1, pendingCount));
+
     // Check IST Quiet Hours policy (21:00 - 09:00 IST) for MARKETING campaigns
     let isMarketing = true;
     if (campaign.message_type === "TEMPLATE") {
@@ -631,8 +637,20 @@ class BroadcastEngine extends EventEmitter {
       UPDATE campaigns SET unknown_count = COALESCE(unknown_count, 0) + 1 WHERE id = ?
     `);
 
+    const campaignTenantId = Number(campaign.tenant_id || 1);
+
     const checkSuppressed = db.prepare(`
       SELECT id FROM contact_suppressions WHERE clean_phone = ? LIMIT 1
+    `);
+
+    const checkRevokedConsent = db.prepare(`
+      SELECT cc.id, cc.purpose, cc.status
+      FROM contact_consents cc
+      JOIN contacts c ON cc.contact_id = c.id
+      WHERE COALESCE(cc.tenant_id, 1) = ?
+        AND REPLACE(REPLACE(REPLACE(c.phone_e164, '+', ''), '-', ''), ' ', '') = ?
+        AND UPPER(cc.status) IN ('REVOKED', 'OPTED_OUT', 'UNSUBSCRIBED', 'DENIED')
+      LIMIT 1
     `);
 
     const checkMarketingCooldown = db.prepare(`
@@ -706,6 +724,15 @@ class BroadcastEngine extends EventEmitter {
             continue;
           }
 
+          // Tenant-scoped DPDP / consent revocation check
+          const revokedConsent = checkRevokedConsent.get(campaignTenantId, recipient.clean_phone);
+          const revokedPurpose = String(revokedConsent?.purpose || "").toUpperCase();
+          if (revokedConsent && (isMarketingCampaign || !revokedPurpose || revokedPurpose === "ALL" || revokedPurpose === "WHATSAPP")) {
+            updateRecipientFail.run("Skipped: recipient revoked WhatsApp consent", "CONSENT_REVOKED", "", recipient.id);
+            incrementFailed.run(campaignId);
+            continue;
+          }
+
           // Marketing cooldown check (Meta 131049) - only for MARKETING campaigns
           if (isMarketingCampaign && checkMarketingCooldown.get(recipient.clean_phone)) {
             updateRecipientFail.run("Skipped: 24h Meta 131049 marketing cooldown active", "131049_COOLDOWN", "", recipient.id);
@@ -741,6 +768,10 @@ class BroadcastEngine extends EventEmitter {
           let lastErr = null;
           let isSuccess = false;
           attemptedInRun++;
+          const dispatchCredentials = {
+            ...(campaign.phone_number_id ? { phoneNumberId: campaign.phone_number_id } : {}),
+            tenantId: campaignTenantId
+          };
 
           for (let attempt = 0; attempt < 2; attempt++) {
             try {
@@ -762,7 +793,7 @@ class BroadcastEngine extends EventEmitter {
                   templateName: tplName,
                   languageCode: tplLang || "en",
                   components: components,
-                  customCredentials: campaign.phone_number_id ? { phoneNumberId: campaign.phone_number_id } : null,
+                  customCredentials: dispatchCredentials,
                   campaignId: campaign.id,
                   userId: campaign.user_id || "system"
                 });
@@ -806,7 +837,7 @@ class BroadcastEngine extends EventEmitter {
                   bodyText: interpolatedBody,
                   footerText: mappingConfig?.footerText || "",
                   ctaText: mappingConfig?.ctaText || "Open Form",
-                  customCredentials: campaign.phone_number_id ? { phoneNumberId: campaign.phone_number_id } : null
+                  customCredentials: dispatchCredentials
                 });
 
                 if (sendResult?.messageId) {
@@ -821,7 +852,7 @@ class BroadcastEngine extends EventEmitter {
                 sendResult = await metaWhatsAppService.sendTextMessage({
                   to: recipient.clean_phone,
                   body: renderedContent,
-                  customCredentials: campaign.phone_number_id ? { phoneNumberId: campaign.phone_number_id } : null
+                  customCredentials: dispatchCredentials
                 });
               }
               isSuccess = true;

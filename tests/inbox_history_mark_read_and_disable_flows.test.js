@@ -8,8 +8,11 @@ const whatsappFlowExecutor = require('../src/services/workflow/nodeExecutors/wha
 describe('Inbox History, Mark-as-Read & Disabled WhatsApp Flows Verification', () => {
   const testPhone = '919999000111';
   const insertedIds = [];
+  let prevFlowsEnabled = null;
 
   before(() => {
+    prevFlowsEnabled = getSetting('WHATSAPP_FLOWS_ENABLED');
+    setSetting('WHATSAPP_FLOWS_ENABLED', 'false');
     // Ensure test environment is clean
     db.prepare('DELETE FROM customer_replies WHERE from_phone = ?').run(testPhone);
 
@@ -38,6 +41,11 @@ describe('Inbox History, Mark-as-Read & Disabled WhatsApp Flows Verification', (
 
   after(() => {
     db.prepare('DELETE FROM customer_replies WHERE from_phone = ?').run(testPhone);
+    if (prevFlowsEnabled !== null && prevFlowsEnabled !== undefined) {
+      setSetting('WHATSAPP_FLOWS_ENABLED', prevFlowsEnabled);
+    } else {
+      setSetting('WHATSAPP_FLOWS_ENABLED', 'false');
+    }
   });
 
   test('1. getConversationMessages retrieves paginated history with total count', () => {

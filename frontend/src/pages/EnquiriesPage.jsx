@@ -767,7 +767,7 @@ export default function EnquiriesPage() {
                 const currentPipeline = pipelines.find(p => p.id === activePipelineId);
                 const stages = currentPipeline?.stages || [
                   { id: 'lead', name: 'Lead Inflow', color: '#3B82F6' },
-                  { id: 'qualified', name: 'Qualified', color: '#10B981' },
+                  { id: 'qualified', name: 'Qualified', color: '#2F5219' },
                   { id: 'proposal', name: 'Proposal Sent', color: '#8B5CF6' },
                   { id: 'won', name: 'Closed Won', color: '#16A34A' }
                 ];

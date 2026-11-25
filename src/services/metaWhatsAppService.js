@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const { getSetting, db } = require("../config/database");
 const config = require("../config/env");
+const cryptoUtil = require("../utils/cryptoUtil");
 
 function getMetaGraphVersion() {
   return getSetting("META_GRAPH_VERSION") || config.META_GRAPH_VERSION || "v21.0";
@@ -66,27 +67,76 @@ function resolveCredentials(customCredentials = null) {
   }
 
   let token = customCredentials?.token ? String(customCredentials.token).trim() : null;
+  const requestedTenantId = customCredentials?.tenantId ? Number(customCredentials.tenantId) : null;
   let phoneNumberId = customCredentials?.phoneNumberId
     ? String(customCredentials.phoneNumberId).trim()
-    : (active.phoneNumberId || "");
+    : "";
 
-  // 1. If line-specific token wasn't explicitly passed, look up in waba_phone_numbers table
-  if (!token && phoneNumberId && db) {
+  // If no explicit phoneNumberId supplied and tenantId > 1, resolve only from that tenant's registered WABA lines
+  if (!phoneNumberId && requestedTenantId && requestedTenantId > 1 && db) {
     try {
-      const line = db.prepare("SELECT access_token FROM waba_phone_numbers WHERE phone_number_id = ? OR id = ? LIMIT 1").get(phoneNumberId, phoneNumberId);
-      if (line?.access_token && line.access_token.trim()) {
-        token = line.access_token.trim();
+      const tenantLine = db.prepare(`
+        SELECT phone_number_id, access_token, access_token_enc
+        FROM waba_phone_numbers
+        WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0
+        ORDER BY is_default DESC, id ASC LIMIT 1
+      `).get(requestedTenantId);
+      if (tenantLine?.phone_number_id) {
+        phoneNumberId = String(tenantLine.phone_number_id).trim();
       }
-    } catch (e) {}
+    } catch (_) {}
   }
 
-  // 2. Fall back to active global token from settings or .env
-  if (!token) {
+  if (!phoneNumberId && (!requestedTenantId || requestedTenantId === 1)) {
+    phoneNumberId = active.phoneNumberId || "";
+  }
+
+  // 1. If line-specific token wasn't explicitly passed, look up in waba_phone_numbers table
+  let resolvedLineTenantId = null;
+  let lineFound = false;
+  if (phoneNumberId && db) {
+    try {
+      const line = db.prepare(`
+        SELECT tenant_id, access_token, access_token_enc
+        FROM waba_phone_numbers
+        WHERE (phone_number_id = ? OR id = ?) AND COALESCE(delete_status, 0) = 0
+        LIMIT 1
+      `).get(phoneNumberId, phoneNumberId);
+      if (line) {
+        lineFound = true;
+        resolvedLineTenantId = Number(line.tenant_id || 1);
+        if (requestedTenantId && resolvedLineTenantId !== requestedTenantId) {
+          throw new Error(`Channel line '${phoneNumberId}' does not belong to tenant #${requestedTenantId}.`);
+        }
+        if (!token) {
+          if (line.access_token_enc && String(line.access_token_enc).trim()) {
+            try {
+              const dec = cryptoUtil.decrypt(String(line.access_token_enc).trim());
+              if (dec && dec.trim()) token = dec.trim();
+            } catch (_) {}
+          }
+          if (!token && line.access_token && String(line.access_token).trim()) {
+            token = String(line.access_token).trim();
+          }
+        }
+      }
+    } catch (e) {
+      if (/does not belong to tenant/i.test(e.message)) throw e;
+    }
+  }
+
+  // 2. Fall back to active global token from settings/.env ONLY for Tenant 1 (never for tenant_id > 1 channels)
+  const effectiveTenantId = resolvedLineTenantId || requestedTenantId || 1;
+  if (!token && effectiveTenantId === 1 && (!lineFound || resolvedLineTenantId === 1)) {
     token = active.token;
   }
 
   if (!token) {
-    throw new Error("Meta WhatsApp API Token is missing. Configure it in Settings or Sender Lines.");
+    throw new Error(
+      effectiveTenantId > 1
+        ? `Meta WhatsApp API Token is missing for tenant #${effectiveTenantId} line '${phoneNumberId || 'default'}'. Connect your own WhatsApp token.`
+        : "Meta WhatsApp API Token is missing. Configure it in Settings or Sender Lines."
+    );
   }
   if (!phoneNumberId) {
     throw new Error("Meta WhatsApp Phone Number ID is missing. Please add a WhatsApp Phone Number in Settings or Topbar.");
@@ -1169,6 +1219,7 @@ async function sendFlowMessage({
   metaFlowId,
   flowToken,
   headerText = "",
+  headerMediaUrl = null,
   bodyText,
   footerText = "",
   ctaText = "Open Form",
@@ -1646,6 +1697,8 @@ async function ensureWabaSubscribedApp(customCredentials = null) {
 }
 
 module.exports = {
+  getMetaGraphVersion,
+  getMetaBaseUrl,
   getActiveCredentials,
   resolveCredentials,
   testConnection,

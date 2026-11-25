@@ -1,5 +1,6 @@
 const universalCatalogService = require("../../universal/universalCatalogService");
 const universalAvailabilityService = require("../../universal/universalAvailabilityService");
+const taskScopedAiAgentService = require("../../ai/taskScopedAiAgentService");
 const { db } = require("../../../config/database");
 
 /**
@@ -14,8 +15,20 @@ module.exports = {
     const { session = {}, userInput = "", tenantId = 1, isWaitingForThisNode } = context;
     const cfg = { ...(node.config || {}), ...(node.data || {}) };
 
-    const query = String(userInput || "").trim();
+    const { cleanInput: query, injectionDetected } = taskScopedAiAgentService.sanitizeAiUserInput(String(userInput || ""));
     const qLower = query.toLowerCase();
+    const profile = taskScopedAiAgentService.resolveTenantAiProfile(tenantId);
+
+    if (injectionDetected) {
+      return {
+        action: "CONTINUE",
+        nextHandle: "handoff",
+        replyMessages: [
+          `Pricing and bookings can only be confirmed through authorized workflows. Connecting you with our ${profile.staffTitle}.`
+        ],
+        traceNote: `AI Hybrid Assist blocked prompt-injection/mutation attempt and routed to handoff.`
+      };
+    }
 
     // Check if customer asked for human agent
     const isHandoff = qLower.includes("human") || qLower.includes("agent") || qLower.includes("talk to") ||
@@ -80,9 +93,11 @@ module.exports = {
 
     let answer = "";
     if (entity && (qLower.includes("time") || qLower.includes("hour") || qLower.includes("location") || qLower.includes("city") || qLower.includes("address"))) {
-      answer = `Here are our details:\n• *Location:* ${entity.city || "Alibaug"}, ${entity.state || "Maharashtra"}\n• *Check-in / Opening:* ${entity.checkin_time || entity.opening_time || "14:00"}\n• *Contact:* ${entity.phone_e164 || "our front desk"}`;
+      const locationStr = [entity.city, entity.state].filter(Boolean).join(", ") || "Not specified";
+      const timingStr = entity.checkin_time || entity.opening_time || "Standard business hours";
+      answer = `Here are our details for *${entity.name || profile.businessName}*:\n• *Location:* ${locationStr}\n• *Hours / Timing:* ${timingStr}\n• *Contact:* ${entity.phone_e164 || `our ${profile.staffTitle}`}`;
     } else {
-      answer = cfg.fallbackAnswer || `Our team is available to assist you with "${query}". Our live catalog and booking options are right here.`;
+      answer = cfg.fallbackAnswer || `Our team is available to assist you with "${query}". Our live catalog and options are right here.`;
     }
 
     const resumePrompt = cfg.resumePrompt || "👉 To proceed with your request, please choose an option or enter the requested detail:";

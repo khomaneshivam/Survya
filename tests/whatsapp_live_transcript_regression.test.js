@@ -1,4 +1,4 @@
-const { test, describe, before, beforeEach } = require("node:test");
+const { test, describe, before, beforeEach, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { db, getSetting, setSetting } = require("../src/config/database");
 const webhookService = require("../src/services/webhookService");
@@ -211,5 +211,23 @@ describe("WhatsApp Live Transcript Regression Suite: Zero Double Messages, Zero 
     assert.ok(tHi.result, "Should handle turn");
     assert.ok(tHi.result.replyText.includes("valid date") || tHi.result.replyText.includes("tomorrow"), "Must prompt for valid date");
     assert.ok(tHi.result.replyText.toLowerCase().includes("menu"), "Must provide guidance on how to reply 'menu' to return to main menu");
+  });
+
+  after(() => {
+    try {
+      const flowRows = db.prepare("SELECT id FROM conversation_flows WHERE name = 'Enterprise B2B Automated Quoting Regression'").all();
+      for (const f of flowRows) {
+        try { db.prepare("DELETE FROM workflow_triggers WHERE flow_id = ?").run(f.id); } catch (e) {}
+        try { db.prepare("DELETE FROM conversation_flow_events WHERE flow_id = ?").run(f.id); } catch (e) {}
+        try { db.prepare("DELETE FROM conversation_flow_versions WHERE flow_id = ?").run(f.id); } catch (e) {}
+        try { db.prepare("DELETE FROM conversation_flow_sessions WHERE flow_id = ?").run(f.id); } catch (e) {}
+        try { db.prepare("DELETE FROM conversation_flows WHERE id = ?").run(f.id); } catch (e) {}
+      }
+      [hospitalityPhone, b2bPhone, dedupPhone, escapePhone, "919911993344", "919955883311"].forEach((phone) => {
+        try { webhookService.resumeBotForPhone(phone); } catch (e) {}
+        try { db.prepare("DELETE FROM conversation_flow_sessions WHERE sender_phone = ?").run(phone); } catch (e) {}
+        try { db.prepare("DELETE FROM customer_replies WHERE from_phone = ?").run(phone); } catch (e) {}
+      });
+    } catch (e) {}
   });
 });

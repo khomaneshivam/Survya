@@ -100,7 +100,7 @@ describe("Permanent Meta Token Storage & Line Management Test Suite", () => {
     const updatedToken = "EAAVnewPermanentToken987654321";
 
     global.fetch = async (url, options = {}) => {
-      if (typeof url === "string" && url.includes("graph.facebook.com")) {
+      if (typeof url === "string" && (url.includes("graph.facebook.com") || (config.META_API_URL && url.startsWith(config.META_API_URL)))) {
         return {
           ok: true,
           status: 200,
@@ -143,7 +143,7 @@ describe("Permanent Meta Token Storage & Line Management Test Suite", () => {
     let capturedAuthHeader = null;
 
     global.fetch = async (url, options = {}) => {
-      if (typeof url === "string" && url.includes("graph.facebook.com")) {
+      if (typeof url === "string" && (url.includes("graph.facebook.com") || (config.META_API_URL && url.startsWith(config.META_API_URL)))) {
         capturedAuthHeader = options.headers?.Authorization;
         return {
           ok: true,

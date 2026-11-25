@@ -15,7 +15,12 @@ async function runMasterTest() {
   console.log("SARVYA MASTER TEST: UNIVERSAL MULTI-SECTOR AUTO-REPLY & FLOW STUDIO");
   console.log("================================================================================\n");
 
-  const tenantId = 1;
+  const tenantId = 90000 + (Date.now() % 9000);
+  try {
+    db.prepare(`
+      INSERT IGNORE INTO tenants (id, name, slug, status)
+      VALUES (?, ?, ?, 'ACTIVE')
+    `).run(tenantId, `Univ Test ${tenantId}`, `univ-test-${tenantId}`);
 
   // ---------------------------------------------------------------------------
   // TEST 1: Universal 8-Sector Industry Blueprints Seeding
@@ -326,6 +331,27 @@ async function runMasterTest() {
   console.log("\n================================================================================");
   console.log("🎉 ALL 7 PRODUCTION ENGINEERING SUITES PASSED WITH 100% SUCCESS!");
   console.log("================================================================================");
+  } finally {
+    try {
+      const fIds = db.prepare("SELECT id FROM conversation_flows WHERE tenant_id = ?").all(tenantId).map(r => r.id);
+      for (const fid of fIds) {
+        try { runtimeCache.invalidateFlow(fid); } catch (e) {}
+        try { db.prepare("DELETE FROM conversation_flow_events WHERE flow_id = ?").run(fid); } catch (e) {}
+        try { db.prepare("DELETE FROM conversation_flow_sessions WHERE flow_id = ?").run(fid); } catch (e) {}
+        try { db.prepare("DELETE FROM conversation_flow_versions WHERE flow_id = ?").run(fid); } catch (e) {}
+      }
+      db.prepare("DELETE FROM workflow_triggers WHERE tenant_id = ?").run(tenantId);
+      db.prepare("DELETE FROM conversation_flows WHERE tenant_id = ?").run(tenantId);
+      db.prepare("DELETE FROM catalog_inventory_holds WHERE tenant_id = ?").run(tenantId);
+      db.prepare("DELETE FROM catalog_availability_slots WHERE tenant_id = ?").run(tenantId);
+      db.prepare("DELETE FROM catalog_pricing_rules WHERE tenant_id = ?").run(tenantId);
+      db.prepare("DELETE FROM catalog_addons WHERE tenant_id = ?").run(tenantId);
+      db.prepare("DELETE FROM catalog_addon_groups WHERE tenant_id = ?").run(tenantId);
+      db.prepare("DELETE FROM catalog_items WHERE tenant_id = ?").run(tenantId);
+      try { db.prepare("DELETE FROM tenants WHERE id = ?").run(tenantId); } catch (e) {}
+      try { runtimeCache.invalidateTriggers(tenantId); } catch (e) {}
+    } catch (cleanErr) {}
+  }
 }
 
 runMasterTest().catch(err => {

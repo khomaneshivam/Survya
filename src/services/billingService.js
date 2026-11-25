@@ -189,16 +189,26 @@ function createCheckout({
 /**
  * Handle Razorpay Payment Webhook & Generate GST Tax Invoice
  */
-async function handleRazorpayWebhook(payload, signature, rawBody = null) {
-  // Webhook signature verification
-  const secret = process.env.RAZORPAY_WEBHOOK_SECRET || "sarvya_rzp_webhook_secret_local";
-  if (signature && rawBody && !String(signature).startsWith("mock_")) {
+async function handleRazorpayWebhook(payload, signature, rawBody = null, options = {}) {
+  const { requireSignature = false } = options;
+  const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+  // Unit tests that directly invoke handleRazorpayWebhook in Node without HTTP rawBody may pass mock_signature
+  const allowDirectTestMock = !requireSignature && !rawBody && signature === "mock_signature" && process.env.NODE_ENV === "test";
+
+  if (!allowDirectTestMock) {
+    if (!secret || !signature) {
+      throw new Error("Missing Razorpay webhook signature or verification secret.");
+    }
+    const payloadToSign = rawBody ? Buffer.from(rawBody) : Buffer.from(JSON.stringify(payload || {}));
     const expectedSignature = crypto
       .createHmac("sha256", secret)
-      .update(rawBody)
+      .update(payloadToSign)
       .digest("hex");
 
-    if (expectedSignature !== signature && process.env.NODE_ENV !== "test") {
+    const sigBuf = Buffer.from(String(signature), "utf8");
+    const expBuf = Buffer.from(expectedSignature, "utf8");
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
       throw new Error("Invalid Razorpay webhook signature.");
     }
   }
@@ -424,9 +434,169 @@ function getInvoiceHtml(invoiceId, tenantId) {
 </html>`;
 }
 
+/**
+ * Compute real-time tenant entitlement snapshot from DB (trial expiry, WABA lines, monthly messages).
+ * Returns null only when tenantId does not correspond to a persisted tenants row (e.g. synthetic test fixture).
+ */
+function getTenantEntitlementSnapshot(tenantId) {
+  const numericTenantId = Number(tenantId || 1);
+  const tenant = db.prepare(`
+    SELECT id, name, plan_code, subscription_status, trial_ends_at,
+           quota_monthly_messages, quota_waba_lines, status, gstin, billing_address
+    FROM tenants
+    WHERE id = ? AND COALESCE(delete_status, 0) = 0
+    LIMIT 1
+  `).get(numericTenantId);
+
+  if (!tenant) {
+    return null;
+  }
+
+  let isTrialExpired = false;
+  if (String(tenant.subscription_status || "").toUpperCase() === "TRIALING" && tenant.trial_ends_at) {
+    const parsedEnd = timeUtil.parseMysqlUtcTimestamp(tenant.trial_ends_at);
+    if (parsedEnd && !isNaN(parsedEnd.getTime()) && parsedEnd.getTime() <= Date.now()) {
+      isTrialExpired = true;
+    }
+  }
+
+  const subStatus = String(tenant.subscription_status || "ACTIVE").toUpperCase();
+  const accountStatus = String(tenant.status || "ACTIVE").toUpperCase();
+  const isInactive = (
+    accountStatus !== "ACTIVE" ||
+    ["SUSPENDED", "CANCELLED", "EXPIRED", "PAST_DUE"].includes(subStatus) ||
+    isTrialExpired
+  );
+
+  const wabaLinesUsed = db.prepare(`
+    SELECT COUNT(*) as count FROM waba_phone_numbers
+    WHERE COALESCE(tenant_id, 1) = ? AND COALESCE(delete_status, 0) = 0
+  `).get(numericTenantId)?.count || 0;
+
+  const messagesUsed = db.prepare(`
+    SELECT COUNT(*) as count FROM whatsapp_messages
+    WHERE COALESCE(tenant_id, 1) = ? AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
+  `).get(numericTenantId)?.count || 0;
+
+  return {
+    tenantId: numericTenantId,
+    tenantName: tenant.name,
+    planCode: tenant.plan_code,
+    subscriptionStatus: tenant.subscription_status,
+    accountStatus: tenant.status,
+    trialEndsAt: tenant.trial_ends_at,
+    gstin: tenant.gstin,
+    billingAddress: tenant.billing_address,
+    quotaMonthlyMessages: Number(tenant.quota_monthly_messages || 0),
+    quotaWabaLines: Number(tenant.quota_waba_lines || 0),
+    wabaLinesUsed: Number(wabaLinesUsed || 0),
+    messagesUsed: Number(messagesUsed || 0),
+    isTrialExpired,
+    isInactive
+  };
+}
+
+/**
+ * Enforces tenant trial/subscription validity and monthly message quota before outbound dispatch.
+ */
+function assertCanSendMessages(tenantId, requestedCount = 1) {
+  const snap = getTenantEntitlementSnapshot(tenantId);
+  if (!snap) {
+    return { allowed: true, synthetic: true };
+  }
+
+  if (snap.isTrialExpired) {
+    const err = new Error("Workspace trial has expired. Please upgrade to a paid plan to continue sending messages.");
+    err.statusCode = 402;
+    err.code = "TRIAL_EXPIRED";
+    err.usage = snap;
+    throw err;
+  }
+
+  if (snap.isInactive) {
+    const err = new Error(`Workspace subscription is '${snap.subscriptionStatus || snap.accountStatus}'. Active subscription required.`);
+    err.statusCode = 402;
+    err.code = "SUBSCRIPTION_INACTIVE";
+    err.usage = snap;
+    throw err;
+  }
+
+  const count = Math.max(0, Number(requestedCount || 0));
+  if (snap.quotaMonthlyMessages > 0 && (snap.messagesUsed + count) > snap.quotaMonthlyMessages) {
+    const err = new Error(
+      `Monthly message quota exceeded (${snap.messagesUsed}/${snap.quotaMonthlyMessages} used; requested ${count}). Upgrade your plan to dispatch more messages.`
+    );
+    err.statusCode = 402;
+    err.code = "MESSAGE_QUOTA_EXCEEDED";
+    err.usage = snap;
+    throw err;
+  }
+
+  return { allowed: true, snapshot: snap };
+}
+
+/**
+ * Enforces WABA line quota and prevents hijacking a phone_number_id already owned by another tenant.
+ */
+function assertCanConnectWabaLine(tenantId, phoneNumberId = null) {
+  const numericTenantId = Number(tenantId || 1);
+  if (phoneNumberId) {
+    const existing = db.prepare(`
+      SELECT id, tenant_id FROM waba_phone_numbers
+      WHERE phone_number_id = ? AND COALESCE(delete_status, 0) = 0
+      LIMIT 1
+    `).get(String(phoneNumberId).trim());
+    if (existing) {
+      if (Number(existing.tenant_id || 1) !== numericTenantId) {
+        const err = new Error("Forbidden: This WhatsApp Business Phone Number ID is already registered to another workspace.");
+        err.statusCode = 403;
+        err.code = "WABA_LINE_OWNED_BY_OTHER_TENANT";
+        throw err;
+      }
+      return { allowed: true, isUpdate: true };
+    }
+  }
+
+  const snap = getTenantEntitlementSnapshot(numericTenantId);
+  if (!snap) {
+    return { allowed: true, synthetic: true };
+  }
+
+  if (snap.isTrialExpired) {
+    const err = new Error("Workspace trial has expired. Upgrade your plan before connecting new WhatsApp lines.");
+    err.statusCode = 402;
+    err.code = "TRIAL_EXPIRED";
+    err.usage = snap;
+    throw err;
+  }
+
+  if (snap.isInactive) {
+    const err = new Error(`Workspace subscription is '${snap.subscriptionStatus || snap.accountStatus}'. Active subscription required.`);
+    err.statusCode = 402;
+    err.code = "SUBSCRIPTION_INACTIVE";
+    err.usage = snap;
+    throw err;
+  }
+
+  if (snap.quotaWabaLines > 0 && snap.wabaLinesUsed >= snap.quotaWabaLines) {
+    const err = new Error(
+      `Workspace WABA line quota reached (${snap.wabaLinesUsed}/${snap.quotaWabaLines} lines). Upgrade your subscription to connect additional numbers.`
+    );
+    err.statusCode = 402;
+    err.code = "WABA_LINE_QUOTA_EXCEEDED";
+    err.usage = snap;
+    throw err;
+  }
+
+  return { allowed: true, snapshot: snap };
+}
+
 module.exports = {
   PLANS,
   getPlans,
+  getTenantEntitlementSnapshot,
+  assertCanSendMessages,
+  assertCanConnectWabaLine,
   createCheckout,
   handleRazorpayWebhook,
   getInvoices,

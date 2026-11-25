@@ -14,8 +14,17 @@ describe("Dynamic Bot Options & Programmable Concierge Rules Test Suite", { conc
   let testUserId = `admin_dyn_${Date.now()}`;
   const testPhone = "919307382099";
   const guestPhone = "919988776622";
+  let origAutoReplyEnabled;
+  let origEngineMode;
+  let origBusinessName;
+  let origDynamicOptions;
 
   before(async () => {
+    origAutoReplyEnabled = getSetting("AUTO_REPLY_ENABLED");
+    origEngineMode = getSetting("AUTO_REPLY_ENGINE_MODE");
+    origBusinessName = getSetting("BOT_BUSINESS_NAME");
+    origDynamicOptions = getSetting("BOT_DYNAMIC_OPTIONS");
+
     server = app.listen(0);
     const port = server.address().port;
     baseUrl = `http://127.0.0.1:${port}`;
@@ -35,9 +44,9 @@ describe("Dynamic Bot Options & Programmable Concierge Rules Test Suite", { conc
     // Ensure bot is enabled and test phone data is fresh
     webhookService.resumeBotForPhone(guestPhone);
     try {
-      db.prepare("DELETE FROM customer_replies WHERE from_phone = ? OR from_phone = ?").run(guestPhone, `+${guestPhone}`);
-      db.prepare("DELETE FROM conversation_flow_sessions WHERE sender_phone = ?").run(guestPhone);
-      db.prepare("DELETE FROM hospitality_chat_sessions WHERE phone = ?").run(guestPhone);
+      db.prepare("DELETE FROM customer_replies WHERE from_phone IN (?, ?, ?, ?, ?)").run(guestPhone, `+${guestPhone}`, "919988776633", "919988776644", "919988776677");
+      db.prepare("DELETE FROM conversation_flow_sessions WHERE sender_phone IN (?, ?, ?, ?)").run(guestPhone, "919988776633", "919988776644", "919988776677");
+      db.prepare("DELETE FROM hospitality_chat_sessions WHERE phone IN (?, ?, ?, ?)").run(guestPhone, "919988776633", "919988776644", "919988776677");
     } catch (e) {}
 
     webhookService.saveAutoReplySettings({
@@ -51,10 +60,15 @@ describe("Dynamic Bot Options & Programmable Concierge Rules Test Suite", { conc
     if (server) {
       server.close();
     }
-    // Clean up test settings & replies
-    setSetting("BOT_DYNAMIC_OPTIONS", "");
+    // Restore original settings so downstream tests remain isolated
+    setSetting("BOT_DYNAMIC_OPTIONS", origDynamicOptions || "");
+    setSetting("BOT_BUSINESS_NAME", origBusinessName || "Hotel Green Vally");
+    if (origEngineMode !== undefined) setSetting("AUTO_REPLY_ENGINE_MODE", origEngineMode || "HOSPITALITY_FLOW");
+    if (origAutoReplyEnabled !== undefined) setSetting("AUTO_REPLY_ENABLED", origAutoReplyEnabled || "true");
     try {
-      db.prepare("DELETE FROM customer_replies WHERE from_phone = ?").run(guestPhone);
+      db.prepare("DELETE FROM customer_replies WHERE from_phone IN (?, ?, ?, ?)").run(guestPhone, "919988776633", "919988776644", "919988776677");
+      db.prepare("DELETE FROM conversation_flow_sessions WHERE sender_phone IN (?, ?, ?, ?)").run(guestPhone, "919988776633", "919988776644", "919988776677");
+      db.prepare("DELETE FROM users WHERE id = ?").run(testUserId);
     } catch (e) {}
   });
 

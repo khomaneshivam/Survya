@@ -8,19 +8,57 @@ async function execute(node, context) {
   const config = { ...(node.data || {}), ...(node.config || {}) };
   const options = Array.isArray(config.options) ? config.options : [];
 
+  // Shared emoji/punctuation normalization for button title comparisons
+  const cleanEmoji = str => String(str || '')
+    .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F600}-\u{1F6FF}]/gu, '')
+    .replace(/[^\w\s]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+  // Fast-forward first menu when Turn 1 already contains an explicit option click or quoted button text
+  if (!isWaitingForThisNode && options.length > 0 && (context.initialUserPayload || context.initialUserInput)) {
+    const initInput = String(context.initialUserInput || '').trim().toLowerCase();
+    const initCleanInput = cleanEmoji(initInput);
+    const initPayloadId = String(context.initialUserPayload?.id || context.initialUserPayload?.payload || '').trim().toLowerCase();
+    const initPayloadTitle = cleanEmoji(context.initialUserPayload?.title || '');
+
+    let initMatched = null;
+    if (initPayloadId) {
+      initMatched = options.find(opt =>
+        String(opt.id || '').toLowerCase() === initPayloadId ||
+        String(opt.value || '').toLowerCase() === initPayloadId
+      );
+    }
+    if (!initMatched && initPayloadTitle) {
+      initMatched = options.find(opt => cleanEmoji(opt.title) === initPayloadTitle);
+    }
+    if (!initMatched && initCleanInput) {
+      initMatched = options.find(opt => {
+        const oClean = cleanEmoji(opt.title);
+        return oClean.length >= 5 && (initCleanInput === oClean || initCleanInput.includes(oClean));
+      });
+    }
+
+    if (initMatched) {
+      return {
+        action: 'CONTINUE',
+        nextHandle: initMatched.id,
+        fastForwarded: true,
+        updatedData: {
+          [config.variable || 'selected_option']: initMatched.value || initMatched.id,
+          'selected_option_title': initMatched.title
+        },
+        traceNote: `Fast-forwarded initial option: "${initMatched.title}" [Handle: ${initMatched.id}]`
+      };
+    }
+  }
+
   // If we were already waiting at this message node for an option click / reply:
   if (isWaitingForThisNode && options.length > 0) {
     const rawInput = String(userInput || '').trim().toLowerCase();
     const payloadId = userPayload?.id || userPayload?.payload || '';
     const payloadTitle = (userPayload?.title || '').trim().toLowerCase();
-
-    // Helper: strip emojis & punctuation for fuzzy button title comparison
-    const cleanEmoji = str => String(str || '')
-      .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F600}-\u{1F6FF}]/gu, '')
-      .replace(/[^\w\s]/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .toLowerCase();
 
     const cleanInput = cleanEmoji(rawInput);
     const cleanPayloadTitle = cleanEmoji(payloadTitle);

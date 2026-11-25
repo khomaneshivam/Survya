@@ -401,72 +401,82 @@ function getPayoutSummary(entityId) {
 }
 
 function triggerInstantPayout(entityId, requestedAmount = null, tenantId = 1) {
-  const summary = getPayoutSummary(entityId);
-  const beneficiary = summary.primaryBeneficiary;
+  db.prepare("START TRANSACTION").run();
+  try {
+    // Acquire exclusive entity row lock so concurrent payout calls cannot overspend unsettled revenue
+    db.prepare("SELECT id FROM business_entities WHERE id = ? AND tenant_id = ? FOR UPDATE").get(entityId, tenantId);
+    const summary = getPayoutSummary(entityId);
+    const beneficiary = summary.primaryBeneficiary;
 
-  if (!beneficiary) {
-    throw new Error("No settlement bank account configured. Please add a bank account first.");
+    if (!beneficiary) {
+      throw new Error("No settlement bank account configured. Please add a bank account first.");
+    }
+    if (beneficiary.verificationStatus !== "PENNY_VERIFIED" && beneficiary.verificationStatus !== "MANUAL_VERIFIED") {
+      throw new Error("Settlement bank account is not verified. Complete Penny-Drop verification first.");
+    }
+
+    const parsedRequested = requestedAmount !== null ? parseFloat(requestedAmount) : summary.unsettledGrossRevenue;
+    const grossToDisperse = Math.round(parsedRequested * 100) / 100;
+    if (!Number.isFinite(grossToDisperse) || grossToDisperse <= 0) {
+      throw new Error("No unsettled cleared balance available for payout");
+    }
+    if (grossToDisperse > summary.unsettledGrossRevenue) {
+      throw new Error(`Requested payout ₹${grossToDisperse} exceeds available unsettled balance ₹${summary.unsettledGrossRevenue}`);
+    }
+
+    const platformFee = Math.round(grossToDisperse * PLATFORM_FEE_RATE * 100) / 100;
+    const taxOnFee = Math.round(platformFee * GST_ON_FEE_RATE * 100) / 100;
+    const netPayoutAmount = Math.round((grossToDisperse - (platformFee + taxOnFee)) * 100) / 100;
+
+    const batchId = `BATCH_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}_${Math.floor(Math.random() * 900 + 100)}`;
+    const bankUtr = `4319${Date.now().toString().slice(-8)}`;
+
+    const stmt = db.prepare(`
+      INSERT INTO merchant_payout_ledger (
+        tenant_id, entity_id, beneficiary_id, payout_batch_id,
+        gross_amount, platform_fee, tax_on_fee, net_payout_amount,
+        currency, status, bank_utr, dispatched_at, settled_at
+      ) VALUES (
+        ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        'INR', 'SETTLED', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+    `);
+
+    const info = stmt.run(
+      tenantId,
+      entityId,
+      beneficiary.id,
+      batchId,
+      grossToDisperse,
+      platformFee,
+      taxOnFee,
+      netPayoutAmount,
+      bankUtr
+    );
+
+    db.prepare("COMMIT").run();
+
+    return {
+      success: true,
+      ledgerId: info.lastInsertRowid,
+      batchId,
+      bankUtr,
+      grossAmount: grossToDisperse,
+      platformFee,
+      taxOnFee,
+      netPayoutAmount,
+      status: "SETTLED",
+      beneficiary: {
+        bankName: beneficiary.bankName,
+        accountNumberMasked: beneficiary.accountNumberMasked
+      },
+      message: `Payout of ₹${netPayoutAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} successfully dispatched via IMPS. Bank UTR: ${bankUtr}`
+    };
+  } catch (err) {
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
+    throw err;
   }
-  if (beneficiary.verificationStatus !== "PENNY_VERIFIED" && beneficiary.verificationStatus !== "MANUAL_VERIFIED") {
-    throw new Error("Settlement bank account is not verified. Complete Penny-Drop verification first.");
-  }
-
-  const parsedRequested = requestedAmount !== null ? parseFloat(requestedAmount) : summary.unsettledGrossRevenue;
-  const grossToDisperse = Math.round(parsedRequested * 100) / 100;
-  if (!Number.isFinite(grossToDisperse) || grossToDisperse <= 0) {
-    throw new Error("No unsettled cleared balance available for payout");
-  }
-  if (grossToDisperse > summary.unsettledGrossRevenue) {
-    throw new Error(`Requested payout ₹${grossToDisperse} exceeds available unsettled balance ₹${summary.unsettledGrossRevenue}`);
-  }
-
-  const platformFee = Math.round(grossToDisperse * PLATFORM_FEE_RATE * 100) / 100;
-  const taxOnFee = Math.round(platformFee * GST_ON_FEE_RATE * 100) / 100;
-  const netPayoutAmount = Math.round((grossToDisperse - (platformFee + taxOnFee)) * 100) / 100;
-
-  const batchId = `BATCH_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}_${Math.floor(Math.random() * 900 + 100)}`;
-  const bankUtr = `4319${Date.now().toString().slice(-8)}`;
-
-  const stmt = db.prepare(`
-    INSERT INTO merchant_payout_ledger (
-      tenant_id, entity_id, beneficiary_id, payout_batch_id,
-      gross_amount, platform_fee, tax_on_fee, net_payout_amount,
-      currency, status, bank_utr, dispatched_at, settled_at
-    ) VALUES (
-      ?, ?, ?, ?,
-      ?, ?, ?, ?,
-      'INR', 'SETTLED', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-    )
-  `);
-
-  const info = stmt.run(
-    tenantId,
-    entityId,
-    beneficiary.id,
-    batchId,
-    grossToDisperse,
-    platformFee,
-    taxOnFee,
-    netPayoutAmount,
-    bankUtr
-  );
-
-  return {
-    success: true,
-    ledgerId: info.lastInsertRowid,
-    batchId,
-    bankUtr,
-    grossAmount: grossToDisperse,
-    platformFee,
-    taxOnFee,
-    netPayoutAmount,
-    status: "SETTLED",
-    beneficiary: {
-      bankName: beneficiary.bankName,
-      accountNumberMasked: beneficiary.accountNumberMasked
-    },
-    message: `Payout of ₹${netPayoutAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} successfully dispatched via IMPS. Bank UTR: ${bankUtr}`
-  };
 }
 
 function getPayoutLedger(entityId, options = {}) {

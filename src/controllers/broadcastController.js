@@ -8,9 +8,11 @@ const { cleanPhone, sendTemplateMessage, sendTextMessage, getTemplateDetails } =
 const timeUtil = require("../utils/timeUtil");
 const schedulerService = require("../services/schedulerService");
 const metaRateService = require("../services/billing/metaRateService");
+const billingService = require("../services/billingService");
+const { isPlatformAdmin, isWorkspaceAdmin } = require("../middleware/authMiddleware");
 
 /**
- * Helper to check campaign ownership
+ * Helper to check campaign ownership with strict multi-tenant isolation
  */
 function checkCampaignAccess(campaign, user) {
   if (!campaign) {
@@ -19,13 +21,18 @@ function checkCampaignAccess(campaign, user) {
   if (!user) {
     return { allowed: false, status: 401, message: "Authentication required." };
   }
-  if (user.role === "ADMIN") {
+  if (isPlatformAdmin(user)) {
     return { allowed: true };
   }
-  if (campaign.user_id && campaign.user_id !== user.id) {
-    return { allowed: false, status: 403, message: "Forbidden: You do not own this campaign." };
+  const userTenantId = Number(user.tenant_id || 1);
+  const campaignTenantId = Number(campaign.tenant_id || 1);
+  if (campaignTenantId !== userTenantId) {
+    return { allowed: false, status: 403, message: "Forbidden: Cross-tenant campaign access denied." };
   }
-  return { allowed: true };
+  if (isWorkspaceAdmin(user) || !campaign.user_id || campaign.user_id === user.id) {
+    return { allowed: true };
+  }
+  return { allowed: false, status: 403, message: "Forbidden: You do not own this campaign." };
 }
 
 /**
@@ -122,26 +129,49 @@ async function createCampaign(req, res) {
     const rawDelay = delayMs ? parseInt(delayMs, 10) : parseInt(getSetting("BROADCAST_DELAY_MS") || "250", 10);
     const resolvedDelay = Math.min(Math.max(isNaN(rawDelay) ? 250 : rawDelay, 50), 10000);
 
-    // Multi-tenant user assignment
+    // Multi-tenant workspace & user assignment
     const userId = req.user?.id || null;
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const platformAdmin = isPlatformAdmin(req.user);
 
-    // Enforce phone ownership / assignment
+    // Enforce phone ownership / tenant assignment
     let assignedPhoneId = null;
     const requestedPhone = phoneId ? String(phoneId).trim() : null;
     if (requestedPhone) {
-      const match = db.prepare("SELECT phone_number_id FROM waba_phone_numbers WHERE id = ? OR phone_number_id = ?").get(requestedPhone, requestedPhone);
+      const match = db.prepare("SELECT phone_number_id, tenant_id FROM waba_phone_numbers WHERE id = ? OR phone_number_id = ? LIMIT 1").get(requestedPhone, requestedPhone);
+      if (match && !platformAdmin && Number(match.tenant_id || 1) !== tenantId) {
+        return res.status(403).json({ success: false, message: "Forbidden: Sender phone line belongs to another workspace." });
+      }
       assignedPhoneId = match ? match.phone_number_id : requestedPhone;
     } else if (req.user?.assigned_phone_id) {
-      const match = db.prepare("SELECT phone_number_id FROM waba_phone_numbers WHERE id = ? OR phone_number_id = ?").get(req.user.assigned_phone_id, req.user.assigned_phone_id);
-      assignedPhoneId = match ? match.phone_number_id : req.user.assigned_phone_id;
+      const match = db.prepare("SELECT phone_number_id, tenant_id FROM waba_phone_numbers WHERE id = ? OR phone_number_id = ? LIMIT 1").get(req.user.assigned_phone_id, req.user.assigned_phone_id);
+      if (!match || platformAdmin || Number(match.tenant_id || 1) === tenantId) {
+        assignedPhoneId = match ? match.phone_number_id : req.user.assigned_phone_id;
+      }
     } else {
-      const defaultPhone = db.prepare("SELECT phone_number_id FROM waba_phone_numbers WHERE is_default = 1 LIMIT 1").get();
-      assignedPhoneId = defaultPhone ? defaultPhone.phone_number_id : (config.WHATSAPP_PHONE_NUMBER_ID || null);
+      const defaultPhone = db.prepare("SELECT phone_number_id FROM waba_phone_numbers WHERE is_default = 1 AND COALESCE(tenant_id, 1) = ? AND COALESCE(delete_status, 0) = 0 LIMIT 1").get(tenantId);
+      assignedPhoneId = defaultPhone ? defaultPhone.phone_number_id : (tenantId === 1 ? (config.WHATSAPP_PHONE_NUMBER_ID || null) : null);
     }
 
-    // Fetch suppression list (opted-out numbers)
+    // Fetch suppression list + revoked tenant consents
     const suppressions = db.prepare("SELECT clean_phone FROM contact_suppressions").all();
-    const suppressedPhones = new Set(suppressions.map(s => s.clean_phone));
+    const suppressedPhones = new Set(suppressions.map(s => String(s.clean_phone || "").replace(/\D/g, "")).filter(Boolean));
+    try {
+      const revokedConsents = db.prepare(`
+        SELECT c.phone_e164, cc.purpose
+        FROM contact_consents cc
+        JOIN contacts c ON cc.contact_id = c.id
+        WHERE COALESCE(cc.tenant_id, 1) = ?
+          AND UPPER(cc.status) IN ('REVOKED', 'OPTED_OUT', 'UNSUBSCRIBED', 'DENIED')
+      `).all(tenantId);
+      for (const rc of revokedConsents) {
+        const purpose = String(rc.purpose || "").toUpperCase();
+        if (type !== "TEXT" || !purpose || purpose === "ALL" || purpose === "WHATSAPP") {
+          const norm = cleanPhone(rc.phone_e164 || "", defaultCountry);
+          if (norm) suppressedPhones.add(norm);
+        }
+      }
+    } catch (e) {}
 
     let validCount = 0;
     let invalidCount = 0;
@@ -192,6 +222,18 @@ async function createCampaign(req, res) {
       });
     }
 
+    // Enforce tenant SaaS trial validity & monthly message quota before creating campaign
+    try {
+      billingService.assertCanSendMessages(tenantId, validCount);
+    } catch (quotaErr) {
+      return res.status(quotaErr.statusCode || 402).json({
+        success: false,
+        code: quotaErr.code || "QUOTA_EXCEEDED",
+        message: quotaErr.message,
+        usage: quotaErr.usage || null
+      });
+    }
+
     // Resolve template name if numeric template number/ID provided
     let resolvedTplName = templateName || null;
     let resolvedTplLang = templateLanguage || "en";
@@ -218,20 +260,21 @@ async function createCampaign(req, res) {
 
     const costPreview = calculateCostEstimate(validCount, type);
 
-    // Insert campaign record with user_id, phone_number_id, and estimated_cost
+    // Insert campaign record with tenant_id, user_id, phone_number_id, and estimated_cost
     const insertCampaign = db.prepare(`
       INSERT INTO campaigns (
-        id, name, file_name, total_contacts, valid_contacts, invalid_contacts,
+        id, tenant_id, name, file_name, total_contacts, valid_contacts, invalid_contacts,
         sent_count, failed_count, status, message_type, template_name,
         template_language, message_body, mapping_config, delay_ms, scheduled_at,
         user_id, phone_number_id, estimated_cost, created_at
       ) VALUES (
-        ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP
+        ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP
       )
     `);
 
     insertCampaign.run(
       campaignId,
+      tenantId,
       name.trim(),
       fileName || "contacts.xlsx",
       contacts.length,
@@ -585,6 +628,7 @@ function getStreamToken(req, res) {
     const streamToken = jwt.sign(
       {
         userId: req.user.id,
+        tenantId: Number(req.user.tenant_id || 1),
         role: req.user.role,
         purpose: "sse_stream"
       },

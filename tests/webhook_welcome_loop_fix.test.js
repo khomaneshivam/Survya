@@ -11,7 +11,7 @@ test("Conversation Flow - Initial intent 'Ask Concierge 💬' transfers directly
     senderPhone: phone,
     userInput: "Ask Concierge 💬",
     userPayload: { id: "opt_concierge", title: "Ask Concierge 💬" },
-    context: { tenantId: 1, propertyId: 1, channel: "WHATSAPP", isSimulation: true }
+    context: { tenantId: 1, propertyId: 1, channel: "WHATSAPP", transportSimulation: true }
   });
 
   assert.equal(res.handled, true);
@@ -32,7 +32,7 @@ test("Conversation Flow - Quoted text with 'Book a Stay 🛏️' advances immedi
     senderPhone: phone,
     userInput: quotedText,
     userPayload: null,
-    context: { tenantId: 1, propertyId: 1, channel: "WHATSAPP", isSimulation: true }
+    context: { tenantId: 1, propertyId: 1, channel: "WHATSAPP", transportSimulation: true }
   });
 
   assert.equal(res.handled, true);

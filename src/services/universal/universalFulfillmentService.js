@@ -381,40 +381,48 @@ async function reconcilePaymentSuccess({
     throw new Error("Reference code is required for payment reconciliation");
   }
 
-  const txn = db.prepare(`
-    SELECT * FROM universal_transactions
-    WHERE tenant_id = ? AND reference_code = ? AND delete_status = 0
-  `).get(numericTenantId, cleanRef);
-
-  if (!txn) {
-    throw new Error(`Transaction ${cleanRef} not found`);
-  }
-
-  // Idempotency: If already paid or already recorded with this exact gatewayRef
-  if (
-    txn.payment_status === "PAID" ||
-    (gatewayRef && txn.payment_gateway_ref === gatewayRef && txn.fulfillment_status === "CONFIRMED")
-  ) {
-    return {
-      success: true,
-      alreadyProcessed: true,
-      message: "Transaction is already paid and reconciled",
-      transaction: getTransactionById(numericTenantId, txn.id)
-    };
-  }
-
-  const paymentToCredit = paidAmount != null
-    ? Number(paidAmount)
-    : (Number(txn.deposit_due) > 0 ? Number(txn.deposit_due) : Number(txn.grand_total));
-
-  const newAmountPaid = Number(txn.amount_paid || 0) + paymentToCredit;
-  const newBalanceDue = Math.max(0, Number(txn.grand_total) - newAmountPaid);
-  const newPaymentStatus = newBalanceDue <= 0 ? "PAID" : "PARTIALLY_PAID";
+  let txn = null;
+  let newAmountPaid = 0;
+  let newBalanceDue = 0;
+  let newPaymentStatus = "UNPAID";
   const newFulfillmentStatus = "CONFIRMED";
 
   db.prepare("START TRANSACTION").run();
 
   try {
+    txn = db.prepare(`
+      SELECT * FROM universal_transactions
+      WHERE tenant_id = ? AND reference_code = ? AND delete_status = 0
+      FOR UPDATE
+    `).get(numericTenantId, cleanRef);
+
+    if (!txn) {
+      db.prepare("ROLLBACK").run();
+      throw new Error(`Transaction ${cleanRef} not found`);
+    }
+
+    // Idempotency inside exclusive row lock: prevent concurrent webhook double-crediting
+    if (
+      txn.payment_status === "PAID" ||
+      (gatewayRef && txn.payment_gateway_ref === gatewayRef && txn.fulfillment_status === "CONFIRMED")
+    ) {
+      db.prepare("COMMIT").run();
+      return {
+        success: true,
+        alreadyProcessed: true,
+        message: "Transaction is already paid and reconciled",
+        transaction: getTransactionById(numericTenantId, txn.id)
+      };
+    }
+
+    const paymentToCredit = paidAmount != null
+      ? Number(paidAmount)
+      : (Number(txn.deposit_due) > 0 ? Number(txn.deposit_due) : Number(txn.grand_total));
+
+    newAmountPaid = Number(txn.amount_paid || 0) + paymentToCredit;
+    newBalanceDue = Math.max(0, Number(txn.grand_total) - newAmountPaid);
+    newPaymentStatus = newBalanceDue <= 0 ? "PAID" : "PARTIALLY_PAID";
+
     // 1. Update Transaction
     db.prepare(`
       UPDATE universal_transactions
@@ -434,7 +442,7 @@ async function reconcilePaymentSuccess({
       txn.id
     );
 
-    // 2. Permanently commit stock/slot hold
+    // 2. Permanently commit stock/slot hold atomically
     if (txn.hold_id) {
       universalAvailabilityService.confirmHold(numericTenantId, txn.hold_id);
     }
@@ -450,7 +458,7 @@ async function reconcilePaymentSuccess({
 
     db.prepare("COMMIT").run();
   } catch (err) {
-    db.prepare("ROLLBACK").run();
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
     throw err;
   }
 
