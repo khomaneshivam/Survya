@@ -93,11 +93,15 @@ export function AuthProvider({ children }) {
     return data;
   }
 
-  async function register(name, email, phone, password) {
+  async function register(nameOrPayload, email, phone, password) {
+    const payload = (typeof nameOrPayload === 'object' && nameOrPayload !== null)
+      ? nameOrPayload
+      : { name: nameOrPayload, email, phone, password };
+
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, phone, password })
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (!res.ok || !data.success) {
@@ -188,6 +192,32 @@ export function AuthProvider({ children }) {
     await verifyAndFetchUser(token);
   }
 
+  const domainAccess = user?.domain_access || {
+    planCode: String(user?.tenant?.plan_code || 'TRIAL').toUpperCase(),
+    primaryDomain: user?.primary_domain || 'HOSPITALITY',
+    allowedDomains: Array.isArray(user?.allowed_domains) && user.allowed_domains.length > 0
+      ? user.allowed_domains
+      : [user?.primary_domain || 'HOSPITALITY'],
+    maxDomains: isPlatformAdmin ? 8 : 1,
+    multiDomainEnabled: Boolean(isPlatformAdmin),
+    policyLabel: isPlatformAdmin ? 'Platform Super-Admin — All Domains' : 'Starter Plan — 1 Pre-built Domain',
+    activeProfile: null,
+    availableProfiles: []
+  };
+  const primaryDomain = domainAccess.primaryDomain || user?.primary_domain || 'HOSPITALITY';
+  const allowedDomains = isPlatformAdmin
+    ? ['HOSPITALITY', 'RESTAURANT_FOOD', 'RETAIL_ECOM', 'CLINIC_HEALTH', 'SALON_WELLNESS', 'REAL_ESTATE', 'EDUCATION_COACHING', 'B2B_WHOLESALE']
+    : (Array.isArray(domainAccess.allowedDomains) && domainAccess.allowedDomains.length > 0
+      ? domainAccess.allowedDomains
+      : [primaryDomain]);
+  const planCode = String(domainAccess.planCode || user?.tenant?.plan_code || 'TRIAL').toUpperCase();
+  const activeDomainProfile = domainAccess.activeProfile || null;
+
+  function hasDomainAccess(domainCode) {
+    if (isPlatformAdmin || !domainCode) return true;
+    return allowedDomains.includes(String(domainCode).toUpperCase());
+  }
+
   const value = {
     user,
     token,
@@ -200,6 +230,12 @@ export function AuthProvider({ children }) {
     isImpersonating,
     activeWorkspaceId,
     switchWorkspace,
+    primaryDomain,
+    allowedDomains,
+    domainAccess,
+    activeDomainProfile,
+    planCode,
+    hasDomainAccess,
     login,
     register,
     logout,

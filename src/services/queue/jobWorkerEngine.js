@@ -129,6 +129,12 @@ class JobWorkerEngine extends EventEmitter {
       return { expiredNegotiations: res.changes || 0 };
     });
 
+    // 4. Business Email Notification Dispatch Handler (Layer 4 Studio Engine)
+    this.registerHandler("EMAIL_NOTIFICATION_DISPATCH", async (payload, job) => {
+      const emailNotificationService = require("../studio/emailNotificationService");
+      return emailNotificationService.dispatchEmailJob(payload);
+    });
+
     // 4. Abandoned In-App Session Nudge Handler
     this.registerHandler("ABANDONED_INAPP_NUDGE", async (payload, job) => {
       const abandoned = db.prepare(`

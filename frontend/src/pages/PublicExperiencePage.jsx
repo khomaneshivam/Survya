@@ -1,19 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import usePageMeta from '../utils/usePageMeta';
-import ExperienceShell from '../components/inapp-runtime/ExperienceShell';
-import HeroWelcomeScreen from '../components/inapp-runtime/HeroWelcomeScreen';
-import CatalogExplorerScreen from '../components/inapp-runtime/CatalogExplorerScreen';
-import ItemDetailScreen from '../components/inapp-runtime/ItemDetailScreen';
-import DynamicFormScreen from '../components/inapp-runtime/DynamicFormScreen';
-import ConfirmationScreen from '../components/inapp-runtime/ConfirmationScreen';
-import RateNegotiationScreen from '../components/inapp-runtime/RateNegotiationScreen';
-import CallConnectScreen from '../components/inapp-runtime/CallConnectScreen';
-import LiveChatScreen from '../components/inapp-runtime/LiveChatScreen';
-import { AlertCircle, Clock, RotateCcw } from 'lucide-react';
+import ConversationalRenderer from '../components/studio-chat/ConversationalRenderer';
+import { AlertCircle, Clock, MessageCircle, RotateCcw } from 'lucide-react';
 
 export default function PublicExperiencePage({
   slug,
   isPreview = false,
+  demoMode = false,
   previewExperience = null,
   previewScreens = null,
   previewFields = null
@@ -29,27 +22,25 @@ export default function PublicExperiencePage({
   const [catalogMeta, setCatalogMeta] = useState({});
   const [catalogItems, setCatalogItems] = useState([]);
 
-  // Session State
+  // Session & Conversational Transcript State
   const [sessionToken, setSessionToken] = useState(null);
   const [currentScreenKey, setCurrentScreenKey] = useState(null);
   const [navigationStack, setNavigationStack] = useState([]);
   const [stateData, setStateData] = useState({});
-
-  // Dynamic Item Detail View Override (when user taps an item in catalog)
-  const [viewingItem, setViewingItem] = useState(null);
+  const [transcript, setTranscript] = useState([]);
+  const [channelOwner, setChannelOwner] = useState('SURVYA');
+  const [optimisticLockVersion, setOptimisticLockVersion] = useState(1);
 
   // Form Submitting & Field Errors
   const [submittingForm, setSubmittingForm] = useState(false);
   const [serverFieldErrors, setServerFieldErrors] = useState({});
 
-  // SEO: Ensure search engines do not index customer runtime links
   usePageMeta({
-    title: experience?.title || 'Experience',
-    description: experience?.description || 'Interactive WhatsApp Multi-Screen Experience',
+    title: experience?.name || experience?.title || 'Survya Chat Experience',
+    description: experience?.description || 'Interactive Conversational Experience',
     noindex: true
   });
 
-  // 1. Fetch Experience Definition & Catalog
   const loadExperienceData = useCallback(async () => {
     if (previewExperience && previewScreens) {
       setExperience(previewExperience);
@@ -58,6 +49,16 @@ export default function PublicExperiencePage({
       const entryKey = previewExperience.entryScreenKey || previewScreens[0]?.screenKey || 'welcome';
       setCurrentScreenKey(entryKey);
       setNavigationStack([entryKey]);
+      const entryScr = previewScreens.find((s) => s.screenKey === entryKey) || previewScreens[0];
+      if (entryScr) {
+        setTranscript([{
+          id: 'preview_init',
+          role: 'assistant',
+          screenKey: entryScr.screenKey,
+          title: entryScr.title,
+          message: entryScr.subtitle || entryScr.title
+        }]);
+      }
       setLoading(false);
       return;
     }
@@ -67,7 +68,7 @@ export default function PublicExperiencePage({
       setError(null);
       setErrorCode(null);
 
-      // GET Experience & Screens
+      // 1. Load published Experience Definition
       const res = await fetch(`/api/v1/public/x/${slug}`);
       const data = await res.json();
 
@@ -83,18 +84,52 @@ export default function PublicExperiencePage({
       setFormFieldsByScreen(expData.formFieldsByScreen || {});
       setCatalogMeta(expData.catalogMeta || {});
 
-      // GET Catalog Items
+      // 2. Load Catalog Items if applicable
       try {
         const catRes = await fetch(`/api/v1/public/x/${slug}/catalog`);
         const catData = await catRes.json();
         if (catData.success) {
           setCatalogItems(catData.items || []);
         }
-      } catch (catErr) {
-        console.warn('[PublicExperiencePage] Catalog load warning:', catErr.message);
+      } catch (_) {}
+
+      // 3. Redeem opaque ?ct= continuation token if present in URL, then strip query param from URL
+      const urlParams = new URLSearchParams(window.location.search || '');
+      const continuationToken = urlParams.get('ct');
+
+      if (continuationToken) {
+        try {
+          window.history.replaceState({}, '', window.location.pathname);
+        } catch (_) {}
+
+        const redeemRes = await fetch(`/api/v1/public/x/${slug}/continuation/redeem`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ct: continuationToken })
+        });
+        const redeemData = await redeemRes.json();
+
+        if (!redeemRes.ok || !redeemData.success) {
+          setErrorCode(redeemRes.status);
+          setError(redeemData.message || 'This WhatsApp continuation link is invalid or has expired.');
+          return;
+        }
+
+        const rData = redeemData.data;
+        setSessionToken(rData.sessionToken);
+        setCurrentScreenKey(rData.currentScreenKey);
+        setNavigationStack(rData.navigationStack || [rData.currentScreenKey]);
+        setStateData(rData.stateData || {});
+        setTranscript(rData.transcript || []);
+        setChannelOwner(rData.channelOwner || 'SURVYA');
+        setOptimisticLockVersion(rData.optimisticLockVersion || 1);
+        try {
+          sessionStorage.setItem(`sarvya_inapp_session_${slug}`, rData.sessionToken);
+        } catch (_) {}
+        return;
       }
 
-      // Initialize or Resume Session
+      // 4. Otherwise start or resume standard customer session
       let existingToken = null;
       try {
         existingToken = sessionStorage.getItem(`sarvya_inapp_session_${slug}`);
@@ -103,45 +138,37 @@ export default function PublicExperiencePage({
       const sessRes = await fetch(`/api/v1/public/x/${slug}/session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionToken: existingToken })
+        body: JSON.stringify({ sessionToken: existingToken, demoMode })
       });
       const sessData = await sessRes.json();
 
       if (sessData.success && sessData.data) {
-        const { sessionToken: token, currentScreenKey: scrKey, navigationStack: stack, stateData: sData } = sessData.data;
-        setSessionToken(token);
-        setCurrentScreenKey(scrKey);
-        setNavigationStack(stack || [scrKey]);
-        setStateData(sData || {});
+        const s = sessData.data;
+        setSessionToken(s.sessionToken);
+        setCurrentScreenKey(s.currentScreenKey);
+        setNavigationStack(s.navigationStack || [s.currentScreenKey]);
+        setStateData(s.stateData || {});
+        setTranscript(s.transcript || []);
+        setChannelOwner(s.channelOwner || 'SURVYA');
+        setOptimisticLockVersion(s.optimisticLockVersion || 1);
         try {
-          sessionStorage.setItem(`sarvya_inapp_session_${slug}`, token);
+          sessionStorage.setItem(`sarvya_inapp_session_${slug}`, s.sessionToken);
         } catch (_) {}
       }
     } catch (err) {
-      console.error('[PublicExperiencePage] Load error:', err);
-      setError(err.message || 'Network error loading experience');
+      setError(err.message || 'Network error loading conversational experience');
     } finally {
       setLoading(false);
     }
-  }, [slug, previewExperience, previewScreens, previewFields]);
+  }, [slug, demoMode, previewExperience, previewScreens, previewFields]);
 
   useEffect(() => {
     loadExperienceData();
   }, [loadExperienceData]);
 
-  // 2. Navigation Action Handler (NEXT, BACK, JUMP)
   const handleAction = async (action, payload = {}) => {
-    // If user is currently looking at item detail overlay and clicks Back
-    if (viewingItem && action === 'BACK') {
-      setViewingItem(null);
-      return;
-    }
+    if (action === 'BACK' && navigationStack.length <= 1) return;
 
-    if (action === 'BACK' && navigationStack.length <= 1) {
-      return;
-    }
-
-    // Client-side preview mode handling
     if (isPreview && !sessionToken) {
       if (action === 'BACK') {
         const newStack = [...navigationStack];
@@ -153,34 +180,27 @@ export default function PublicExperiencePage({
         }
         return;
       }
+      const curIdx = screens.findIndex((s) => s.screenKey === currentScreenKey);
+      const nextKey = payload.targetScreenKey || screens[Math.min(curIdx + 1, screens.length - 1)]?.screenKey || currentScreenKey;
+      const nextScr = screens.find((s) => s.screenKey === nextKey);
 
-      const targetKey = payload.targetScreenKey || null;
-      let nextKey = targetKey;
-      if (!nextKey) {
-        const curIdx = screens.findIndex(s => s.screenKey === currentScreenKey);
-        if (curIdx >= 0 && curIdx < screens.length - 1) {
-          nextKey = screens[curIdx + 1].screenKey;
-        } else {
-          nextKey = currentScreenKey;
-        }
-      }
-
-      if (payload.formValues) {
-        setStateData(prev => ({ ...prev, ...payload.formValues }));
-      }
+      if (payload.formValues) setStateData((prev) => ({ ...prev, ...payload.formValues }));
       if (payload.selectedItemId) {
-        const item = catalogItems.find(i => String(i.id) === String(payload.selectedItemId));
-        setStateData(prev => ({ ...prev, selectedItemId: payload.selectedItemId, selectedItem: item }));
+        const item = catalogItems.find((i) => String(i.id) === String(payload.selectedItemId));
+        setStateData((prev) => ({ ...prev, selectedItemId: payload.selectedItemId, selectedItem: item, selectedItemTitle: item?.title }));
       }
-
-      setNavigationStack(prev => [...prev, nextKey]);
+      setTranscript((prev) => [
+        ...prev,
+        { id: `p_u_${Date.now()}`, role: 'customer', summary: payload.selectedItemId ? 'Selected item' : 'Submitted step' },
+        ...(nextScr && nextScr.screenKey !== currentScreenKey ? [{ id: `p_a_${Date.now()}`, role: 'assistant', screenKey: nextScr.screenKey, title: nextScr.title, message: nextScr.subtitle || nextScr.title }] : [])
+      ]);
+      setNavigationStack((prev) => [...prev, nextKey]);
       setCurrentScreenKey(nextKey);
       return;
     }
 
-    // Live Server Navigation
     try {
-      if (payload.formValues) setSubmittingForm(true);
+      setSubmittingForm(true);
       setServerFieldErrors({});
 
       const res = await fetch(`/api/v1/public/x/${slug}/navigate`, {
@@ -192,53 +212,75 @@ export default function PublicExperiencePage({
           action,
           targetScreenKey: payload.targetScreenKey,
           formValues: payload.formValues,
-          selectedItemId: payload.selectedItemId
+          selectedItemId: payload.selectedItemId,
+          expectedLockVersion: optimisticLockVersion
         })
       });
-
       const data = await res.json();
 
-      if (!res.ok) {
+      if (!res.ok || !data.success) {
         if (res.status === 422 && data.fieldErrors) {
           setServerFieldErrors(data.fieldErrors);
           return;
         }
-        if (res.status === 401) {
-          // Session expired: restart
-          sessionStorage.removeItem(`sarvya_inapp_session_${slug}`);
+        if (res.status === 409) {
           await loadExperienceData();
           return;
         }
-        alert(data.message || 'Navigation error');
+        alert(data.message || 'Unable to process step');
         return;
       }
 
-      if (data.success && data.data) {
-        setCurrentScreenKey(data.data.currentScreenKey);
-        setNavigationStack(data.data.navigationStack || []);
-        setStateData(data.data.stateData || {});
-        setViewingItem(null);
-      }
+      const d = data.data;
+      setCurrentScreenKey(d.currentScreenKey);
+      setNavigationStack(d.navigationStack || []);
+      setStateData(d.stateData || {});
+      if (Array.isArray(d.transcript)) setTranscript(d.transcript);
+      if (d.channelOwner) setChannelOwner(d.channelOwner);
+      if (d.optimisticLockVersion) setOptimisticLockVersion(d.optimisticLockVersion);
     } catch (err) {
-      console.error('[PublicExperiencePage] Navigation error:', err);
-      alert(err.message || 'Network error navigating');
+      alert(err.message || 'Network error');
     } finally {
       setSubmittingForm(false);
     }
   };
 
-  const handleSelectItem = (item) => {
-    // Check if an ITEM_DETAIL screen exists in the flow
-    const detailScreen = screens.find(s => s.screenType === 'ITEM_DETAIL');
-    if (detailScreen) {
-      handleAction('JUMP', {
-        targetScreenKey: detailScreen.screenKey,
-        selectedItemId: item.id
+  const handleSelectItem = (item, targetScreen = null) => {
+    const detailScreen = screens.find((s) => s.screenType === 'ITEM_DETAIL');
+    const target = targetScreen || (detailScreen ? detailScreen.screenKey : null);
+    setStateData((prev) => ({
+      ...prev,
+      selectedItemId: item.id,
+      selectedItem: item,
+      selectedItemTitle: item.title,
+      selectedItemPrice: item.price
+    }));
+    handleAction(target ? 'JUMP' : 'NEXT', {
+      targetScreenKey: target,
+      selectedItemId: item.id
+    });
+  };
+
+  const handleSwitchChannel = async (targetChannel) => {
+    if (isPreview || !sessionToken) return;
+    try {
+      const res = await fetch(`/api/v1/public/x/${slug}/channel-switch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionToken, targetChannel })
       });
-    } else {
-      // Use built-in item detail modal/overlay
-      setViewingItem(item);
-    }
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setChannelOwner(data.data.channelOwner);
+        if (data.data.optimisticLockVersion) setOptimisticLockVersion(data.data.optimisticLockVersion);
+        if (targetChannel === 'HUMAN') {
+          const supportScreen = screens.find((s) => s.screenType === 'LIVE_CHAT' || s.screenType === 'CALL_CONNECT');
+          if (supportScreen) {
+            await handleAction('JUMP', { targetScreenKey: supportScreen.screenKey });
+          }
+        }
+      }
+    } catch (_) {}
   };
 
   const handleResetSession = () => {
@@ -248,215 +290,71 @@ export default function PublicExperiencePage({
     loadExperienceData();
   };
 
-  // 3. Loading State
   if (loading) {
     return (
-      <div
-        style={{
-          minHeight: isPreview ? '100%' : '100dvh',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '12px',
-          backgroundColor: '#f8fafc',
-          color: '#64748b'
-        }}
-      >
-        <div
-          style={{
-            width: '36px',
-            height: '36px',
-            borderRadius: '50%',
-            border: '3px solid #e2e8f0',
-            borderTopColor: '#2F5219',
-            animation: 'spin 0.8s linear infinite'
-          }}
-        />
-        <span style={{ fontSize: '13px', fontWeight: 600 }}>Loading Experience...</span>
-        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-      </div>
-    );
-  }
-
-  // 4. Error / Paused State
-  if (error || !experience) {
-    return (
-      <div
-        style={{
-          minHeight: isPreview ? '100%' : '100dvh',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '24px',
-          backgroundColor: '#f8fafc',
-          color: '#334155',
-          textAlign: 'center'
-        }}
-      >
-        <div
-          style={{
-            width: '56px',
-            height: '56px',
-            borderRadius: '50%',
-            backgroundColor: errorCode === 410 ? '#fef3c7' : '#fee2e2',
-            color: errorCode === 410 ? '#d97706' : '#dc2626',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: '16px'
-          }}
-        >
-          {errorCode === 410 ? <Clock size={28} /> : <AlertCircle size={28} />}
+      <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F6F8F7' }}>
+        <div style={{ textAlign: 'center', color: '#475569', fontSize: '14px', fontWeight: 600 }}>
+          Opening conversation...
         </div>
-        <h2 style={{ fontSize: '18px', fontWeight: 800, margin: '0 0 8px 0', color: '#0f172a' }}>
-          {errorCode === 410 ? 'Experience Currently Unavailable' : 'Experience Not Found'}
-        </h2>
-        <p style={{ fontSize: '13.5px', color: '#64748b', maxWidth: '380px', margin: '0 0 20px 0', lineHeight: 1.5 }}>
-          {error || 'The requested interactive experience could not be loaded.'}
-        </p>
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          style={{
-            padding: '8px 18px',
-            borderRadius: '10px',
-            backgroundColor: '#0f172a',
-            color: '#ffffff',
-            border: 'none',
-            fontSize: '13px',
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}
-        >
-          <RotateCcw size={14} />
-          <span>Retry</span>
-        </button>
       </div>
     );
   }
 
-  // 5. Render Active Screen
-  const activeScreen = screens.find(s => s.screenKey === currentScreenKey) || screens[0] || {};
-  const currentStepIndex = screens.findIndex(s => s.screenKey === currentScreenKey);
-  const totalSteps = screens.length;
+  if (error) {
+    return (
+      <div style={{ minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F6F8F7', padding: '20px' }}>
+        <div style={{ maxWidth: '400px', width: '100%', background: '#FFFFFF', borderRadius: '16px', padding: '28px 22px', textAlign: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.06)' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: errorCode === 410 ? '#FEF3C7' : '#FEE2E2', color: errorCode === 410 ? '#D97706' : '#DC2626', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px auto' }}>
+            {errorCode === 410 ? <Clock size={22} /> : <AlertCircle size={22} />}
+          </div>
+          <h2 style={{ margin: '0 0 8px 0', fontSize: '17px', fontWeight: 700, color: '#0F172A' }}>
+            {errorCode === 401 ? 'Continuation Link Expired' : errorCode === 410 ? 'Experience Paused' : 'Experience Unavailable'}
+          </h2>
+          <p style={{ margin: '0 0 18px 0', fontSize: '13.5px', color: '#475569', lineHeight: 1.5 }}>{error}</p>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={handleResetSession}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '10px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#334155', fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}
+            >
+              <RotateCcw size={14} /> Start Fresh
+            </button>
+            <a
+              href="https://wa.me/"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '9px 14px', borderRadius: '10px', background: '#25D366', color: '#FFFFFF', textDecoration: 'none', fontWeight: 700, fontSize: '13px' }}
+            >
+              <MessageCircle size={14} /> Back to WhatsApp
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const activeScreen = screens.find((s) => s.screenKey === currentScreenKey) || screens[0] || null;
 
   return (
-    <ExperienceShell
-      theme={experience.theme || {}}
-      title={experience.name}
-      navigationStack={viewingItem ? [...navigationStack, 'item_detail'] : navigationStack}
-      currentStepIndex={currentStepIndex >= 0 ? currentStepIndex : 0}
-      totalSteps={totalSteps}
-      onNavigateBack={() => handleAction('BACK')}
+    <ConversationalRenderer
+      experience={experience}
+      screens={screens}
+      formFieldsByScreen={formFieldsByScreen}
+      catalogItems={catalogItems}
+      catalogMeta={catalogMeta}
+      activeScreen={activeScreen}
+      navigationStack={navigationStack}
+      stateData={stateData}
+      transcript={transcript}
+      channelOwner={channelOwner}
+      demoMode={demoMode}
       isPreview={isPreview}
-    >
-      {/* If an item detail overlay is active */}
-      {viewingItem ? (
-        <ItemDetailScreen
-          item={viewingItem}
-          experience={experience}
-          onAction={(act, payload) => {
-            if (act === 'NEXT') {
-              // Proceed from item detail into next screen
-              setViewingItem(null);
-              handleAction('NEXT', { selectedItemId: viewingItem.id, ...payload });
-            } else {
-              handleAction(act, payload);
-            }
-          }}
-        />
-      ) : activeScreen.screenType === 'HERO_WELCOME' ? (
-        <HeroWelcomeScreen
-          screen={activeScreen}
-          experience={experience}
-          onAction={handleAction}
-        />
-      ) : activeScreen.screenType === 'CATALOG_EXPLORER' ? (
-        <CatalogExplorerScreen
-          screen={activeScreen}
-          experience={experience}
-          catalogItems={catalogItems}
-          catalogMeta={catalogMeta}
-          onSelectItem={handleSelectItem}
-          onAction={handleAction}
-        />
-      ) : activeScreen.screenType === 'ITEM_DETAIL' ? (
-        <ItemDetailScreen
-          item={stateData.selectedItem || catalogItems[0] || {}}
-          experience={experience}
-          onAction={handleAction}
-        />
-      ) : activeScreen.screenType === 'DYNAMIC_FORM' ? (
-        <DynamicFormScreen
-          screen={activeScreen}
-          fields={formFieldsByScreen[activeScreen.id] || []}
-          initialValues={stateData}
-          serverFieldErrors={serverFieldErrors}
-          experience={experience}
-          submitting={submittingForm}
-          onSubmit={(formValues) => handleAction('NEXT', { formValues })}
-        />
-      ) : activeScreen.screenType === 'CONFIRMATION' ? (
-        <ConfirmationScreen
-          screen={activeScreen}
-          stateData={stateData}
-          experience={experience}
-          onReset={handleResetSession}
-        />
-      ) : activeScreen.screenType === 'RATE_NEGOTIATION' ? (
-        <RateNegotiationScreen
-          screen={activeScreen}
-          experience={experience}
-          item={stateData.selectedItem || catalogItems[0] || {}}
-          sessionToken={sessionToken}
-          slug={slug}
-          onAction={handleAction}
-        />
-      ) : activeScreen.screenType === 'CALL_CONNECT' ? (
-        <CallConnectScreen
-          screen={activeScreen}
-          experience={experience}
-          sessionToken={sessionToken}
-          slug={slug}
-          onAction={handleAction}
-        />
-      ) : activeScreen.screenType === 'LIVE_CHAT' ? (
-        <LiveChatScreen
-          screen={activeScreen}
-          experience={experience}
-          sessionToken={sessionToken}
-          slug={slug}
-          onAction={handleAction}
-        />
-      ) : (
-        /* Fallback renderer for other screen types */
-        <div style={{ padding: '24px 0', textAlign: 'center' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: 700 }}>{activeScreen.title || 'Screen'}</h2>
-          <p style={{ color: '#64748b', fontSize: '13.5px' }}>{activeScreen.subtitle || ''}</p>
-          <button
-            type="button"
-            onClick={() => handleAction('NEXT')}
-            style={{
-              marginTop: '16px',
-              padding: '10px 24px',
-              borderRadius: '10px',
-              backgroundColor: experience.theme?.primaryColor || '#2F5219',
-              color: '#ffffff',
-              border: 'none',
-              fontWeight: 700,
-              cursor: 'pointer'
-            }}
-          >
-            Continue
-          </button>
-        </div>
-      )}
-    </ExperienceShell>
+      sessionToken={sessionToken}
+      slug={slug}
+      submitting={submittingForm}
+      serverFieldErrors={serverFieldErrors}
+      onSelectItem={handleSelectItem}
+      onAction={handleAction}
+      onSwitchChannel={handleSwitchChannel}
+      onReset={handleResetSession}
+    />
   );
 }
-

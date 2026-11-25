@@ -1,0 +1,65 @@
+# SURVYA — Conversational Business Studio: Implementation Status
+
+- **Current layer:** `Layer 7 — Integration, Regression, Frontend Lint/Build Verification` (**ALL LAYERS 0–7 COMPLETED**)
+- **Completed requirements:**
+  - **Layer 0 (Discovery & Architecture):**
+    - Audited codebase & ran isolated baseline (`516 tests / 89 suites -> 515 passed, 0 failed, 1 opt-in skipped`).
+    - Authored [REUSE_ASSESSMENT.md](file:///d:/whatsapp_bulk/docs/studio/REUSE_ASSESSMENT.md), [DATA_AND_MODULE_ARCHITECTURE.md](file:///d:/whatsapp_bulk/docs/studio/DATA_AND_MODULE_ARCHITECTURE.md), and [REQUIREMENTS_TRACEABILITY.md](file:///d:/whatsapp_bulk/docs/studio/REQUIREMENTS_TRACEABILITY.md).
+  - **Layer 1 (Conversational Experience Foundation):**
+    - Added `experience_continuation_tokens` table & 7 coordination/transcript columns on `inapp_sessions`.
+    - Implemented [conversationalComponentRegistry.js](file:///d:/whatsapp_bulk/src/services/studio/conversationalComponentRegistry.js), [transcriptHelper.js](file:///d:/whatsapp_bulk/src/services/studio/transcriptHelper.js), and [continuationTokenService.js](file:///d:/whatsapp_bulk/src/services/studio/continuationTokenService.js).
+    - Implemented atomic single-use `?ct=` token issuance/redemption, SHA-256 token storage, expiry/revocation/cross-tenant guards, CAS optimistic concurrency locks (`optimistic_lock_version`), and `channel_owner` coordination across `inappRuntimeService.js`, `inappRuntimeController.js`, `publicInappRoutes.js`, and `inappBridgeExecutor.js`.
+    - Enabled `requireWorkspaceAdmin` RBAC on `inappExperienceRoutes.js` and `/api/v1/studio`.
+    - Refactored [PublicExperiencePage.jsx](file:///d:/whatsapp_bulk/frontend/src/pages/PublicExperiencePage.jsx) + created shared [ConversationalRenderer.jsx](file:///d:/whatsapp_bulk/frontend/src/components/studio-chat/ConversationalRenderer.jsx) and [componentRegistry.jsx](file:///d:/whatsapp_bulk/frontend/src/components/studio-chat/componentRegistry.jsx) (mobile-first full-screen chat UX with `?ct=` exchange & URL cleanup).
+  - **Layer 2 (Studio Management, Guided Mode & WhatsApp Entry):**
+    - Implemented [studioExperienceService.js](file:///d:/whatsapp_bulk/src/services/studio/studioExperienceService.js), [studioController.js](file:///d:/whatsapp_bulk/src/controllers/studio/studioController.js), and [studioRoutes.js](file:///d:/whatsapp_bulk/src/routes/studioRoutes.js) mounted at `/api/v1/studio`.
+    - Built **Mode A: Guided Business Setup** ([GuidedStudioWizard.jsx](file:///d:/whatsapp_bulk/frontend/src/components/inapp-studio/GuidedStudioWizard.jsx)) + WhatsApp Share Links (`https://wa.me/...?text=...`, `/c/:slug`, SVG QR, editable first reply) + Chat Simulator + Execution History inside [InAppStudioPage.jsx](file:///d:/whatsapp_bulk/frontend/src/pages/InAppStudioPage.jsx) and labeled `Survya Studio` in [Sidebar.jsx](file:///d:/whatsapp_bulk/frontend/src/components/Sidebar.jsx).
+  - **Layer 3 (Industry Experience Library & Isolated Interactive Try Demo):**
+    - Implemented extensible [industryBlueprintService.js](file:///d:/whatsapp_bulk/src/services/studio/industryBlueprintService.js) with 7 industry blueprints + plugin registration + isolated in-memory **Try Demo** session runner (zero WA/email/payment/DB side effects) + 1-click template installation.
+    - Built [IndustryTemplatesTab.jsx](file:///d:/whatsapp_bulk/frontend/src/components/inapp-studio/IndustryTemplatesTab.jsx) powered directly by the shared `ConversationalRenderer`.
+  - **Layer 4 (Business Goals, Server Pricing & Durable Email Notifications):**
+    - Implemented [businessGoalService.js](file:///d:/whatsapp_bulk/src/services/studio/businessGoalService.js) with authoritative server-side pricing recalculation (`universalPricingService` fallback to `catalog_items.tax_rate`) and idempotent `business_goal_outcomes` emission.
+    - Implemented [emailNotificationService.js](file:///d:/whatsapp_bulk/src/services/studio/emailNotificationService.js) (`nodemailer` SMTP adapter, secret masking, `UNCONFIGURED` explicit warnings, per-tenant recipients/templates, manual retry) + registered `EMAIL_NOTIFICATION_DISPATCH` worker in [jobWorkerEngine.js](file:///d:/whatsapp_bulk/src/services/queue/jobWorkerEngine.js) + `.env.example` SMTP placeholders.
+    - Built [EmailGoalsTab.jsx](file:///d:/whatsapp_bulk/frontend/src/components/inapp-studio/EmailGoalsTab.jsx).
+  - **Layer 5 & 6 (Governance, Versioning, Rollback & Analytics):**
+    - Implemented [experienceGovernanceService.js](file:///d:/whatsapp_bulk/src/services/studio/experienceGovernanceService.js) (BFS validation, approval gate, immutable `experience_versions` snapshots, version pinning for in-flight customer sessions, safe rollback, `studio_audit_logs`) and [studioAnalyticsService.js](file:///d:/whatsapp_bulk/src/services/studio/studioAnalyticsService.js) (funnel metrics excluding demo sessions).
+    - Built [AnalyticsGovernanceTab.jsx](file:///d:/whatsapp_bulk/frontend/src/components/inapp-studio/AnalyticsGovernanceTab.jsx).
+  - **Layer 7 (End-to-End Integration & Regression Verification):**
+    - Verified Journeys A–J in [studio_layer7_e2e_journeys.test.js](file:///d:/whatsapp_bulk/tests/studio_layer7_e2e_journeys.test.js) and executed the complete test suite + frontend lint/build.
+- **Pending requirements:**
+  - Production staging cutover requires user authorization to provision `.env` SMTP credentials (`EMAIL_ENABLED=true`, `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM_ADDRESS`) on the deployment host.
+- **Existing functionality reused:**
+  - `authMiddleware.js`, `inapp_experiences` / `inapp_screens` / `inapp_form_fields` / `inapp_sessions`, `inappExperienceService`, `inappRuntimeService`, `inappBridgeExecutor`, `conversationFlowEngine`, `workflowTriggerService`, `templateCatalogService`, `chatLinkService`, `universalPricingService`, `jobQueueService` / `jobWorkerEngine`.
+- **Files changed:**
+  - `.env.example`, `package.json`, `package-lock.json`, `server.js`
+  - `src/config/schema.js`
+  - `src/services/studio/{conversationalComponentRegistry,continuationTokenService,transcriptHelper,studioExperienceService,industryBlueprintService,emailNotificationService,businessGoalService,experienceGovernanceService,studioAnalyticsService}.js`
+  - `src/controllers/{inappRuntimeController,studio/studioController}.js`
+  - `src/routes/{inappExperienceRoutes,publicInappRoutes,studioRoutes}.js`
+  - `src/services/inapp/inappRuntimeService.js`
+  - `src/services/queue/jobWorkerEngine.js`
+  - `src/services/universal/universalPricingService.js`
+  - `src/services/workflow/nodeExecutors/inappBridgeExecutor.js`
+  - `frontend/src/components/Sidebar.jsx`
+  - `frontend/src/components/studio-chat/{componentRegistry,ConversationalRenderer}.jsx`
+  - `frontend/src/components/inapp-studio/{GuidedStudioWizard,IndustryTemplatesTab,EmailGoalsTab,AnalyticsGovernanceTab}.jsx`
+  - `frontend/src/pages/{InAppStudioPage,PublicExperiencePage}.jsx`
+  - `tests/{hybrid_inapp_bridge_and_analytics,studio_layer1_foundation,studio_layer2_management,studio_layer3_templates_demo,studio_layer4_goals_email,studio_layer5_6_governance_analytics,studio_layer7_e2e_journeys}.test.js`
+- **Migrations:**
+  - Tables: `experience_continuation_tokens`, `business_goal_outcomes`, `tenant_email_settings`, `email_notification_logs`, `experience_versions`, `studio_audit_logs` (`109` tables total).
+  - Columns: `inapp_sessions` (`channel_owner`, `optimistic_lock_version`, `demo_mode`, `goal_status`, `experience_version_id`, `experience_version_number`, `transcript_json`), `inapp_experiences` (`studio_mode`, `goal_type`, `goal_config_json`, `initial_reply_config_json`, `published_version_id`, `published_version_number`, `approval_required`, `approval_state`), `chat_links` (`experience_id`).
+- **Tests executed:**
+  - Full repository suite (`85` test files under `tests/*.test.js` against sandbox MySQL 8.0.44 on `127.0.0.1:13306`)
+  - `npm --prefix frontend run lint` (`oxlint` across `132` files)
+  - `npm --prefix frontend run build` (`vite build`)
+- **Test results:**
+  - Backend full suite: `531 tests / 95 suites -> 530 passed, 0 failed, 1 skipped (opt-in skip)` in `162.50s`.
+  - Frontend lint (`oxlint`): `0 errors` (`655` pre-existing warnings, `132` files).
+  - Frontend production build (`vite`): succeeded cleanly in `1.52s`.
+- **Known limitations:**
+  - Email delivery runs with mock transport in test/dev environments unless `EMAIL_ENABLED=true` and `SMTP_*` environment variables are configured in `.env`.
+  - Live WhatsApp message dispatch intentionally blocked in sandbox tests per safety rules (`META_API_URL=http://127.0.0.1:9`).
+- **External dependencies:**
+  - Production SMTP provider (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM_ADDRESS`) configured via environment variables when deploying live notifications.
+- **Next executable task:**
+  - Review Studio UI locally or authorize staging deployment + configure `.env` SMTP settings.

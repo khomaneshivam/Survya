@@ -3,6 +3,17 @@ const { db } = require("../../config/database");
 const inappValidator = require("./inappValidator");
 const expressionEvaluator = require("../workflow/expressionEvaluator");
 const crmPipelineService = require("../crmPipelineService");
+const continuationTokenService = require("../studio/continuationTokenService");
+const {
+  mapLegacyScreenToComponent,
+  validateComponentTurnInput,
+  sanitizePayloadValue,
+  sanitizeText
+} = require("../studio/conversationalComponentRegistry");
+const {
+  buildTranscriptFromScreen,
+  appendConversationTurn
+} = require("../studio/transcriptHelper");
 
 /**
  * Dynamic Public Multi-Screen Runtime Service
@@ -12,7 +23,7 @@ const crmPipelineService = require("../crmPipelineService");
 /**
  * Load a published in-app experience by slug with screens, fields, and catalog bounds
  */
-function getPublicExperience(slug) {
+function getPublicExperience(slug, { versionId = null } = {}) {
   if (!slug || typeof slug !== "string") {
     const err = new Error("Experience slug is required");
     err.statusCode = 400;
@@ -37,6 +48,63 @@ function getPublicExperience(slug) {
     throw err;
   }
 
+  // Prefer immutable published version snapshot (pinned session version or active published_version_id)
+  const effectiveVersionId = versionId || exp.published_version_id || null;
+  if (effectiveVersionId) {
+    try {
+      const verRow = db.prepare(`
+        SELECT * FROM experience_versions
+        WHERE id = ? AND experience_id = ?
+      `).get(effectiveVersionId, exp.id);
+      if (verRow?.snapshot_json) {
+        const snap = JSON.parse(verRow.snapshot_json);
+        const snapScreens = (snap.screens || []).map((s, idx) => {
+          const base = {
+            id: s.id,
+            screenKey: s.screenKey,
+            title: sanitizeText(s.title),
+            subtitle: sanitizeText(s.subtitle),
+            screenType: s.screenType,
+            config: sanitizePayloadValue(s.config || {}),
+            navigationRules: s.navigationRules || {},
+            sortOrder: s.displayOrder ?? idx,
+            displayOrder: s.displayOrder ?? idx
+          };
+          base.component = mapLegacyScreenToComponent(base, s.fields || []);
+          return base;
+        });
+        const snapFields = {};
+        for (const s of (snap.screens || [])) {
+          snapFields[s.id] = Array.isArray(s.fields) ? s.fields : [];
+        }
+        const catalogMeta = getExperienceCatalogMeta(exp);
+        const snapExp = snap.experience || {};
+        return {
+          experience: {
+            id: exp.id,
+            tenantId: exp.tenant_id,
+            slug: exp.slug,
+            name: snapExp.name || exp.name,
+            domainType: snapExp.domainType || exp.domain_type,
+            businessEntityId: exp.business_entity_id,
+            crmPipelineId: exp.crm_pipeline_id,
+            assignedPhoneNumberId: exp.assigned_phone_number_id,
+            entryScreenKey: snapExp.entryScreenKey || exp.entry_screen_key || snapScreens[0]?.screenKey || "welcome",
+            theme: snapExp.theme || JSON.parse(exp.theme_json || "{}"),
+            features: snapExp.features || JSON.parse(exp.features_json || "{}"),
+            businessHours: snapExp.businessHours || JSON.parse(exp.business_hours_json || "{}"),
+            status: exp.status,
+            publishedVersionId: verRow.id,
+            publishedVersionNumber: verRow.version_number
+          },
+          screens: snapScreens,
+          formFieldsByScreen: snapFields,
+          catalogMeta
+        };
+      }
+    } catch (_) {}
+  }
+
   // Fetch active screens in sort order
   const rawScreens = db.prepare(`
     SELECT * FROM inapp_screens
@@ -44,17 +112,21 @@ function getPublicExperience(slug) {
     ORDER BY display_order ASC, id ASC
   `).all(exp.id);
 
-  const screens = rawScreens.map(s => ({
-    id: s.id,
-    screenKey: s.screen_key,
-    title: s.title,
-    subtitle: s.subtitle,
-    screenType: s.screen_type,
-    config: JSON.parse(s.config_json || "{}"),
-    navigationRules: JSON.parse(s.navigation_rules_json || "{}"),
-    sortOrder: s.display_order,
-    displayOrder: s.display_order
-  }));
+  const screens = rawScreens.map(s => {
+    const parsedConfig = JSON.parse(s.config_json || "{}");
+    const parsedNav = JSON.parse(s.navigation_rules_json || "{}");
+    return {
+      id: s.id,
+      screenKey: s.screen_key,
+      title: sanitizeText(s.title),
+      subtitle: sanitizeText(s.subtitle),
+      screenType: s.screen_type,
+      config: sanitizePayloadValue(parsedConfig),
+      navigationRules: parsedNav,
+      sortOrder: s.display_order,
+      displayOrder: s.display_order
+    };
+  });
 
   // Fetch all active form fields for these screens
   const screenIds = screens.map(s => s.id);
@@ -107,6 +179,11 @@ function getPublicExperience(slug) {
     }
   }
 
+  // Enrich each screen with its authoritative Conversational Component definition
+  for (const scr of screens) {
+    scr.component = mapLegacyScreenToComponent(scr, formFieldsByScreen[scr.id] || []);
+  }
+
   // Calculate catalog metadata (minPrice, maxPrice, categories, totalItems)
   const catalogMeta = getExperienceCatalogMeta(exp);
 
@@ -116,6 +193,7 @@ function getPublicExperience(slug) {
   return {
     experience: {
       id: exp.id,
+      tenantId: exp.tenant_id,
       slug: exp.slug,
       name: exp.name,
       domainType: exp.domain_type,
@@ -201,7 +279,7 @@ function getExperienceCatalogMeta(exp) {
 /**
  * Starts or resumes a visitor session
  */
-function startOrResumeSession(slug, { sessionToken, contactPhone, contactName, initialData } = {}) {
+function startOrResumeSession(slug, { sessionToken, contactPhone, contactName, initialData, demoMode = false } = {}) {
   const { experience, screens } = getPublicExperience(slug);
   const entryScreenKey = experience.entryScreenKey || screens[0]?.screenKey || "welcome";
 
@@ -229,49 +307,74 @@ function startOrResumeSession(slug, { sessionToken, contactPhone, contactName, i
           WHERE id = ?
         `).run(session.id);
 
+        let transcript = [];
+        try {
+          transcript = JSON.parse(session.transcript_json || "[]");
+        } catch (_) {}
+        if (transcript.length === 0) {
+          transcript = buildTranscriptFromScreen(experience.id, session.current_screen_key || entryScreenKey);
+        }
+
         return {
           sessionToken: session.session_token,
           currentScreenKey: session.current_screen_key || entryScreenKey,
           navigationStack: JSON.parse(session.navigation_stack_json || "[]"),
-          stateData: JSON.parse(session.state_data_json || "{}")
+          stateData: JSON.parse(session.state_data_json || "{}"),
+          transcript,
+          channelOwner: session.channel_owner || "SURVYA",
+          optimisticLockVersion: Number(session.optimistic_lock_version || 1),
+          demoMode: Boolean(session.demo_mode)
         };
       }
     }
   }
 
-  // Create brand new session
+  // Create brand new session pinned to currently published version snapshot (if published via governance)
   const newToken = `exp_${crypto.randomBytes(16).toString("hex")}`;
   const navigationStack = [entryScreenKey];
-  const stateData = initialData && typeof initialData === "object" ? initialData : {};
+  const stateData = sanitizePayloadValue(initialData && typeof initialData === "object" ? initialData : {});
+  const initialTranscript = buildTranscriptFromScreen(experience.id, entryScreenKey);
 
   db.prepare(`
     INSERT INTO inapp_sessions (
       tenant_id, experience_id, session_token, visitor_phone, visitor_name,
-      current_screen_key, navigation_stack_json, state_data_json,
+      current_screen_key, navigation_stack_json, state_data_json, transcript_json,
+      channel_owner, optimistic_lock_version, demo_mode,
+      experience_version_id, experience_version_number,
       expires_at, last_activity_at, status, active_status, delete_status,
       created_at, updated_at
     ) VALUES (
       ?, ?, ?, ?, ?,
-      ?, ?, ?,
+      ?, ?, ?, ?,
+      'SURVYA', 1, ?,
+      ?, ?,
       DATE_ADD(UTC_TIMESTAMP(), INTERVAL 24 HOUR), UTC_TIMESTAMP(), 'ACTIVE', 1, 0,
       CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
     )
   `).run(
-    experience.tenant_id || 1,
+    experience.tenantId || experience.tenant_id || 1,
     experience.id,
     newToken,
     contactPhone || null,
     contactName || null,
     entryScreenKey,
     JSON.stringify(navigationStack),
-    JSON.stringify(stateData)
+    JSON.stringify(stateData),
+    JSON.stringify(initialTranscript),
+    demoMode ? 1 : 0,
+    experience.publishedVersionId || null,
+    experience.publishedVersionNumber || null
   );
 
   return {
     sessionToken: newToken,
     currentScreenKey: entryScreenKey,
     navigationStack,
-    stateData
+    stateData,
+    transcript: initialTranscript,
+    channelOwner: "SURVYA",
+    optimisticLockVersion: 1,
+    demoMode: Boolean(demoMode)
   };
 }
 
@@ -288,10 +391,11 @@ function getCatalogItems(slug, query = {}) {
 
   let items = [];
 
+  const expTenantId = experience.tenantId || experience.tenant_id || 1;
   if (experience.domainType === "HOSPITALITY") {
     let propId = experience.businessEntityId;
     if (!propId) {
-      const defaultProp = db.prepare("SELECT id FROM properties WHERE tenant_id = ? ORDER BY id ASC LIMIT 1").get(experience.tenant_id || 1);
+      const defaultProp = db.prepare("SELECT id FROM properties WHERE tenant_id = ? ORDER BY id ASC LIMIT 1").get(expTenantId);
       propId = defaultProp?.id || 1;
     }
 
@@ -301,7 +405,7 @@ function getCatalogItems(slug, query = {}) {
       LEFT JOIN properties p ON p.id = r.property_id
       WHERE r.tenant_id = ? AND r.property_id = ? AND r.active = 1
     `;
-    const params = [experience.tenant_id || 1, propId];
+    const params = [expTenantId, propId];
 
     if (minPrice !== null && !isNaN(minPrice)) {
       sql += " AND r.base_rate >= ?";
@@ -406,7 +510,7 @@ function getCatalogItems(slug, query = {}) {
     LEFT JOIN catalog_categories c ON i.category_id = c.id
     WHERE i.tenant_id = ? AND i.is_active = 1
   `;
-  const params = [experience.tenant_id || 1];
+  const params = [expTenantId];
 
   if (experience.businessEntityId) {
     sql += " AND i.entity_id = ?";
@@ -534,25 +638,46 @@ function navigateSession(slug, {
   action = "NEXT",
   targetScreenKey,
   formValues,
-  selectedItemId
+  selectedItemId,
+  expectedLockVersion
 } = {}) {
-  const { experience, screens, formFieldsByScreen } = getPublicExperience(slug);
-
   if (!sessionToken) {
     const err = new Error("sessionToken is required");
     err.statusCode = 400;
     throw err;
   }
 
-  // Load session
-  const session = db.prepare(`
-    SELECT * FROM inapp_sessions
-    WHERE session_token = ? AND experience_id = ? AND delete_status = 0
-  `).get(sessionToken.trim(), experience.id);
+  // Peek session to resolve pinned immutable experience_version_id before loading snapshot
+  const preSession = db.prepare(`
+    SELECT s.* FROM inapp_sessions s
+    JOIN inapp_experiences e ON e.id = s.experience_id
+    WHERE s.session_token = ? AND e.slug = ? AND s.delete_status = 0 AND e.delete_status = 0
+  `).get(sessionToken.trim(), String(slug || "").trim());
+
+  const { experience, screens, formFieldsByScreen } = getPublicExperience(slug, {
+    versionId: preSession?.experience_version_id || null
+  });
+
+  // Load session validated against experience
+  const session = preSession && preSession.experience_id === experience.id
+    ? preSession
+    : db.prepare(`
+      SELECT * FROM inapp_sessions
+      WHERE session_token = ? AND experience_id = ? AND delete_status = 0
+    `).get(sessionToken.trim(), experience.id);
 
   if (!session) {
     const err = new Error("Session expired or invalid. Please refresh.");
     err.statusCode = 401;
+    throw err;
+  }
+
+  // Optimistic concurrency lock check
+  const currentLockVersion = Number(session.optimistic_lock_version || 1);
+  if (expectedLockVersion !== undefined && expectedLockVersion !== null && Number(expectedLockVersion) !== currentLockVersion) {
+    const err = new Error("Session state changed concurrently in another tab or channel. Refreshing latest state.");
+    err.statusCode = 409;
+    err.code = "CONCURRENT_SESSION_UPDATE";
     throw err;
   }
 
@@ -570,6 +695,10 @@ function navigateSession(slug, {
 
   let navigationStack = JSON.parse(session.navigation_stack_json || "[]");
   let stateData = JSON.parse(session.state_data_json || "{}");
+  let transcript = [];
+  try {
+    transcript = JSON.parse(session.transcript_json || "[]");
+  } catch (_) {}
 
   // Handle BACK action: pop navigation stack while preserving stateData
   if (action === "BACK") {
@@ -578,33 +707,44 @@ function navigateSession(slug, {
     }
     const currentScreenKey = navigationStack[navigationStack.length - 1] || experience.entryScreenKey || screens[0]?.screenKey;
 
-    db.prepare(`
+    const backUpdate = db.prepare(`
       UPDATE inapp_sessions
       SET current_screen_key = ?,
           navigation_stack_json = ?,
+          optimistic_lock_version = optimistic_lock_version + 1,
           last_activity_at = UTC_TIMESTAMP(),
           updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(currentScreenKey, JSON.stringify(navigationStack), session.id);
+      WHERE id = ? AND optimistic_lock_version = ?
+    `).run(currentScreenKey, JSON.stringify(navigationStack), session.id, currentLockVersion);
+
+    if (!backUpdate || backUpdate.changes === 0) {
+      const err = new Error("Concurrent session update detected while navigating back.");
+      err.statusCode = 409;
+      err.code = "CONCURRENT_SESSION_UPDATE";
+      throw err;
+    }
 
     return {
       success: true,
       currentScreenKey,
       navigationStack,
-      stateData
+      stateData,
+      transcript,
+      channelOwner: session.channel_owner || "SURVYA",
+      optimisticLockVersion: currentLockVersion + 1
     };
   }
 
   // Find fromScreen
   const activeFromKey = fromScreenKey || session.current_screen_key;
   const fromScreen = screens.find(s => s.screenKey === activeFromKey);
+  const safeFormValues = sanitizePayloadValue(formValues && typeof formValues === "object" ? formValues : {});
 
   // Validate dynamic form if fromScreen is DYNAMIC_FORM or FORM
   if (fromScreen && (fromScreen.screenType === "DYNAMIC_FORM" || fromScreen.screenType === "FORM")) {
     const fields = formFieldsByScreen[fromScreen.id] || [];
     if (fields.length > 0) {
-      const submitted = formValues && typeof formValues === "object" ? formValues : {};
-      const validation = inappValidator.validateFormSubmission(fields, submitted);
+      const validation = inappValidator.validateFormSubmission(fields, safeFormValues);
 
       if (!validation.valid) {
         const err = new Error("Form validation failed");
@@ -613,11 +753,23 @@ function navigateSession(slug, {
         throw err;
       }
     }
+  } else if (fromScreen?.component?.componentType && Object.keys(safeFormValues).length > 0) {
+    const compValidation = validateComponentTurnInput(
+      fromScreen.component.componentType,
+      safeFormValues,
+      fromScreen.config || {}
+    );
+    if (!compValidation.valid) {
+      const err = new Error("Step input validation failed");
+      err.statusCode = 422;
+      err.fieldErrors = compValidation.fieldErrors;
+      throw err;
+    }
   }
 
   // Merge form values into stateData
-  if (formValues && typeof formValues === "object") {
-    stateData = { ...stateData, ...formValues };
+  if (Object.keys(safeFormValues).length > 0) {
+    stateData = { ...stateData, ...safeFormValues };
   }
 
   // Merge selected item into stateData
@@ -734,37 +886,93 @@ function navigateSession(slug, {
     }
   }
 
-  // Persist updated session
-  db.prepare(`
+  // Append conversational turn into transcript
+  const nextScreen = screens.find(s => s.screenKey === nextScreenKey) || null;
+  const userSummary = stateData.selectedItemTitle
+    || (Object.keys(safeFormValues).length > 0 ? Object.values(safeFormValues).slice(0, 3).join(", ") : action);
+  transcript = appendConversationTurn(transcript, {
+    userSummary,
+    userData: safeFormValues,
+    fromScreenKey: activeFromKey,
+    nextScreen,
+    nextFields: nextScreen ? (formFieldsByScreen[nextScreen.id] || []) : [],
+    channelOwner: session.channel_owner || "SURVYA"
+  });
+
+  // If linked to a flow session and reaching terminal or checkout confirmation screen
+  const isCompletionScreen = nextScreenKey === "confirmation" || nextScreenKey === "thank_you" || action === "COMPLETE" || (safeFormValues && safeFormValues.checkout_complete);
+  const nextChannelOwner = isCompletionScreen ? "WHATSAPP" : (session.channel_owner || "SURVYA");
+  const nextGoalStatus = isCompletionScreen ? "COMPLETED" : (session.goal_status || "PENDING");
+
+  // Persist updated session with optimistic CAS lock
+  const navUpdate = db.prepare(`
     UPDATE inapp_sessions
     SET current_screen_key = ?,
         navigation_stack_json = ?,
         state_data_json = ?,
+        transcript_json = ?,
         visitor_phone = COALESCE(?, visitor_phone),
         visitor_name = COALESCE(?, visitor_name),
         visitor_email = COALESCE(?, visitor_email),
         crm_record_id = COALESCE(?, crm_record_id),
+        channel_owner = ?,
+        goal_status = ?,
+        optimistic_lock_version = optimistic_lock_version + 1,
         last_activity_at = UTC_TIMESTAMP(),
         updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
+    WHERE id = ? AND optimistic_lock_version = ?
   `).run(
     nextScreenKey,
     JSON.stringify(navigationStack),
     JSON.stringify(stateData),
+    JSON.stringify(transcript),
     contactPhone || null,
     contactName || null,
     contactEmail || null,
     crmRecordId || null,
-    session.id
+    nextChannelOwner,
+    nextGoalStatus,
+    session.id,
+    currentLockVersion
   );
 
-  // If linked to a flow session and reaching terminal or checkout confirmation screen
-  const isCompletionScreen = nextScreenKey === "confirmation" || nextScreenKey === "thank_you" || action === "COMPLETE" || (formValues && formValues.checkout_complete);
+  if (!navUpdate || navUpdate.changes === 0) {
+    const err = new Error("Concurrent session update detected. Please retry.");
+    err.statusCode = 409;
+    err.code = "CONCURRENT_SESSION_UPDATE";
+    throw err;
+  }
+
+  // Evaluate & persist Business Goal Outcome + Email Notification idempotently on completion
+  let goalOutcome = null;
+  if (isCompletionScreen) {
+    try {
+      const businessGoalService = require("../studio/businessGoalService");
+      const rawExpRow = db.prepare("SELECT * FROM inapp_experiences WHERE id = ?").get(experience.id);
+      if (rawExpRow) {
+        goalOutcome = businessGoalService.recordGoalCompletion({
+          tenantId: rawExpRow.tenant_id || 1,
+          experience: rawExpRow,
+          session: { ...session, visitor_phone: contactPhone || session.visitor_phone, visitor_name: contactName || session.visitor_name, visitor_email: contactEmail || session.visitor_email },
+          stateData: { ...stateData, ...safeFormValues }
+        });
+        if (goalOutcome?.referenceCode && !stateData.referenceCode) {
+          stateData.referenceCode = goalOutcome.referenceCode;
+          db.prepare("UPDATE inapp_sessions SET state_data_json = ? WHERE id = ?")
+            .run(JSON.stringify(stateData), session.id);
+        }
+      }
+    } catch (goalErr) {
+      console.warn("[inappRuntimeService] Business goal trigger warning:", goalErr.message);
+    }
+  }
+
   if (isCompletionScreen && (session.flow_session_id || stateData.flow_session_id)) {
     try {
       syncInappCompletionToFlowSession(session.session_token, {
         ...stateData,
-        ...formValues,
+        ...safeFormValues,
+        referenceCode: goalOutcome?.referenceCode || stateData.referenceCode || null,
         targetScreenKey: nextScreenKey
       });
     } catch (syncErr) {
@@ -776,7 +984,12 @@ function navigateSession(slug, {
     success: true,
     currentScreenKey: nextScreenKey,
     navigationStack,
-    stateData
+    stateData,
+    transcript,
+    channelOwner: nextChannelOwner,
+    goalStatus: nextGoalStatus,
+    goalOutcome,
+    optimisticLockVersion: currentLockVersion + 1
   };
 }
 
@@ -854,21 +1067,24 @@ function createLinkedSession({
     }
   }
 
-  // 3. Generate secure session token
+  // 3. Generate session row + opaque short-lived continuation token
   const sessionToken = `isess_${crypto.randomBytes(16).toString("hex")}`;
   const targetEntryScreen = entryScreenKey || exp.entry_screen_key || "welcome";
   const navigationStack = [targetEntryScreen];
+  const initialTranscript = buildTranscriptFromScreen(exp.id, targetEntryScreen);
 
   const res = db.prepare(`
     INSERT INTO inapp_sessions (
       tenant_id, experience_id, flow_session_id, session_token,
       visitor_phone, visitor_name, visitor_email, current_screen_key,
-      navigation_stack_json, state_data_json, status,
+      navigation_stack_json, state_data_json, transcript_json,
+      channel_owner, optimistic_lock_version, status,
       last_activity_at, expires_at, created_at, updated_at
     ) VALUES (
       ?, ?, ?, ?,
       ?, ?, ?, ?,
-      ?, ?, 'ACTIVE',
+      ?, ?, ?,
+      'SURVYA', 1, 'ACTIVE',
       UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 24 HOUR),
       CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
     )
@@ -882,20 +1098,35 @@ function createLinkedSession({
     initialData.email || null,
     targetEntryScreen,
     JSON.stringify(navigationStack),
-    JSON.stringify(stateData)
+    JSON.stringify(stateData),
+    JSON.stringify(initialTranscript)
   );
 
+  const ctResult = continuationTokenService.issueContinuationToken({
+    tenantId: numericTenantId,
+    experienceId: exp.id,
+    flowSessionId: flowSessionId || null,
+    inappSessionId: res.lastInsertRowid,
+    contactPhone: customerPhone || null,
+    channelSource: "WHATSAPP",
+    ttlMinutes: 30,
+    isSingleUse: true
+  });
+
   const baseUrl = process.env.PUBLIC_APP_URL || "";
-  const inappUrl = `${baseUrl}/x/${exp.slug}?s=${sessionToken}`;
+  const inappUrl = `${baseUrl}/x/${exp.slug}?ct=${ctResult.continuationToken}`;
 
   return {
     success: true,
     sessionId: res.lastInsertRowid,
     sessionToken,
+    continuationToken: ctResult.continuationToken,
+    continuationTokenPrefix: ctResult.tokenPrefix,
     inappUrl,
     experience: exp,
     entryScreenKey: targetEntryScreen,
-    stateData
+    stateData,
+    transcript: initialTranscript
   };
 }
 
@@ -1007,6 +1238,82 @@ function syncInappCompletionToFlowSession(sessionToken, payload = {}) {
   };
 }
 
+function redeemContinuation(slug, continuationToken) {
+  return continuationTokenService.redeemContinuationToken(slug, continuationToken);
+}
+
+/**
+ * Coordinates channel handoff between SURVYA interactive chat, WHATSAPP, and HUMAN assistance.
+ */
+function switchChannelOwner(slug, { sessionToken, targetChannel = "WHATSAPP", note = "" } = {}) {
+  const { experience } = getPublicExperience(slug);
+  if (!sessionToken) {
+    const err = new Error("sessionToken is required");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const normalizedChannel = String(targetChannel || "WHATSAPP").toUpperCase();
+  if (!["WHATSAPP", "SURVYA", "HUMAN"].includes(normalizedChannel)) {
+    const err = new Error("Invalid targetChannel. Allowed: WHATSAPP, SURVYA, HUMAN");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const session = db.prepare(`
+    SELECT * FROM inapp_sessions
+    WHERE session_token = ? AND experience_id = ? AND delete_status = 0
+  `).get(sessionToken.trim(), experience.id);
+
+  if (!session) {
+    const err = new Error("Session expired or invalid");
+    err.statusCode = 401;
+    throw err;
+  }
+
+  const stateData = JSON.parse(session.state_data_json || "{}");
+  stateData.last_channel_switch = {
+    from: session.channel_owner || "SURVYA",
+    to: normalizedChannel,
+    note: sanitizeText(note),
+    at: new Date().toISOString()
+  };
+
+  db.prepare(`
+    UPDATE inapp_sessions
+    SET channel_owner = ?,
+        state_data_json = ?,
+        optimistic_lock_version = optimistic_lock_version + 1,
+        last_activity_at = UTC_TIMESTAMP(),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(normalizedChannel, JSON.stringify(stateData), session.id);
+
+  // Sync ownership back to WhatsApp flow session if linked
+  if (session.flow_session_id) {
+    try {
+      const flowSess = db.prepare("SELECT id, collected_data_json FROM conversation_flow_sessions WHERE id = ?").get(session.flow_session_id);
+      if (flowSess) {
+        const collected = JSON.parse(flowSess.collected_data_json || "{}");
+        collected.active_channel = normalizedChannel;
+        collected.waiting_for_inapp = normalizedChannel === "SURVYA";
+        db.prepare(`
+          UPDATE conversation_flow_sessions
+          SET collected_data_json = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(JSON.stringify(collected), flowSess.id);
+      }
+    } catch (_) {}
+  }
+
+  return {
+    success: true,
+    channelOwner: normalizedChannel,
+    optimisticLockVersion: Number(session.optimistic_lock_version || 1) + 1,
+    stateData
+  };
+}
+
 module.exports = {
   getPublicExperience,
   startOrResumeSession,
@@ -1014,6 +1321,8 @@ module.exports = {
   navigateSession,
   createLinkedSession,
   syncInappCompletionToFlowSession,
+  redeemContinuation,
+  switchChannelOwner,
   startVisitorSession: (slugOrOpts, opts = {}) => {
     if (typeof slugOrOpts === "object" && slugOrOpts !== null) {
       return startOrResumeSession(slugOrOpts.slug, slugOrOpts);

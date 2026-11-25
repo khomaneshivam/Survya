@@ -208,8 +208,29 @@ describe("Layer 8: Real Headless Browser E2E Verification", { concurrency: 1 }, 
       const ownerRow = db.prepare("SELECT id, tenant_id FROM users WHERE email = ?").get(ownerEmail);
       const tid = createdTenantId || ownerRow?.tenant_id;
       if (tid && Number(tid) > 1) {
-        try { db.prepare("DELETE FROM tenant_subscriptions WHERE tenant_id = ?").run(tid); } catch {}
-        try { db.prepare("DELETE FROM tenant_user_memberships WHERE tenant_id = ?").run(tid); } catch {}
+        for (const tbl of [
+          "inapp_sessions",
+          "inapp_form_fields",
+          "inapp_screens",
+          "inapp_experiences",
+          "conversation_flows",
+          "pricing_rules",
+          "catalog_addons",
+          "catalog_addon_groups",
+          "catalog_items",
+          "catalog_categories",
+          "business_entities",
+          "master_categories",
+          "master_locations",
+          "master_units",
+          "master_tax_slabs",
+          "master_payment_modes",
+          "crm_pipelines",
+          "tenant_subscriptions",
+          "tenant_user_memberships"
+        ]) {
+          try { db.prepare(`DELETE FROM ${tbl} WHERE tenant_id = ?`).run(tid); } catch {}
+        }
         try { db.prepare("DELETE FROM users WHERE tenant_id = ?").run(tid); } catch {}
         try { db.prepare("DELETE FROM tenants WHERE id = ?").run(tid); } catch {}
       }
@@ -236,20 +257,34 @@ describe("Layer 8: Real Headless Browser E2E Verification", { concurrency: 1 }, 
     await browser.clickButtonByText("Launch Workspace");
     await browser.waitForText("Create SARVYA Account");
 
+    await browser.evalJs(`
+      const sel = document.querySelector('#regDomain');
+      if (sel) {
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, 'CLINIC_HEALTH');
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    `);
     await browser.setInputValue("#regName", "Dr Kavita BrowserOwner");
+    await browser.setInputValue("#regBizName", "Kavita Health Clinic");
     await browser.setInputValue("#regEmail", ownerEmail);
     await browser.setInputValue("#regPhone", "+919822334455");
     await browser.setInputValue("#regPwd", ownerPass);
-    await browser.setInputValue("#regConfirm", ownerPass);
     await browser.clickButtonByText("Create Workspace Account");
 
     await browser.waitForText("Team & Settings");
 
-    // Verify backend MySQL persisted the new isolated tenant & OWNER membership
+    // Verify Trial Clinic workspace sees Clinic suite in sidebar & does not see locked Hospitality rate calendar
+    const ownerSidebarText = await browser.evalJs(`return document.querySelector('aside')?.innerText || document.body.innerText;`);
+    assert.equal(ownerSidebarText.includes("Clinic & Appointments"), true, "Clinic user must see Clinic & Appointments in sidebar");
+    assert.equal(ownerSidebarText.includes("Hospitality"), false, "TRIAL Clinic user must not see Hospitality module");
+
+    // Verify backend MySQL persisted the new isolated tenant, primary_domain & OWNER membership
     const dbOwner = db.prepare("SELECT id, role, tenant_id FROM users WHERE email = ?").get(ownerEmail);
     assert.ok(dbOwner && dbOwner.tenant_id > 1, "Browser registration must create isolated tenant > 1");
     createdTenantId = dbOwner.tenant_id;
     assert.equal(dbOwner.role, "USER");
+    const dbTenant = db.prepare("SELECT primary_domain FROM tenants WHERE id = ?").get(createdTenantId);
+    assert.equal(dbTenant?.primary_domain, "CLINIC_HEALTH");
     const dbMem = db.prepare("SELECT role FROM tenant_user_memberships WHERE tenant_id = ? AND user_id = ?").get(createdTenantId, dbOwner.id);
     assert.equal(dbMem?.role, "OWNER");
 
@@ -288,6 +323,19 @@ describe("Layer 8: Real Headless Browser E2E Verification", { concurrency: 1 }, 
     // 3. Open Flow Builder via live Sidebar click & confirm clean render (no TDZ/null errors)
     await browser.clickButtonByText("Flow Builder");
     await browser.waitForText("Flows Directory");
+
+    // 3b. Open Catalog & Menu + 4-Mode Availability & Slots -> verify pre-built clinic items & zero DataTable React crash
+    await browser.clickButtonByText("Catalog & Menu");
+    await browser.waitForText("4-Mode Availability & Slots");
+    const itemsTabText = await browser.evalJs(`return document.body.innerText || '';`);
+    assert.equal(itemsTabText.includes("Unable to display"), false, "Catalog items view must render without React ErrorBoundary crash");
+    await browser.clickButtonByText("4-Mode Availability & Slots");
+    await browser.waitForText("Live Stock & Inventory Capacity");
+    await browser.waitForText("AVAILABLE BALANCE");
+    const rowCount = await browser.evalJs(`return document.querySelectorAll('.sarvya-table tbody tr').length;`);
+    assert.ok(rowCount >= 1, "Expected seeded clinic rows rendered inside Availability DataTable");
+    const catBodyText = await browser.evalJs(`return document.body.innerText || '';`);
+    assert.equal(catBodyText.includes("Unable to display"), false, "Catalog Availability DataTable must render without React ErrorBoundary crash");
 
     // 4. Sign out and sign in as the Employee via live Login form -> confirm RBAC UI gating
     await browser.evalJs(`

@@ -357,9 +357,11 @@ app.get(["/api/health", "/health"], (req, res) => {
   }
 });
 
-// 4c. In-App Experience Studio API
+// 4c. In-App Experience & Survya Studio APIs
 const inappExperienceRoutes = require("./src/routes/inappExperienceRoutes");
 app.use("/api/v1/inapp", inappExperienceRoutes);
+const studioRoutes = require("./src/routes/studioRoutes");
+app.use("/api/v1/studio", studioRoutes);
 
 // 4d. Public Dynamic In-App Experience Runtime (/api/v1/public/x/:slug)
 const publicInappRoutes = require("./src/routes/publicInappRoutes");

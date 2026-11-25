@@ -4,6 +4,7 @@ const authController = require("../controllers/authController");
 const { authenticateToken } = require("../middleware/authMiddleware");
 const { authLimiter } = require("../middleware/rateLimiter");
 
+router.get("/domains", authController.listPublicDomains);
 router.post("/register", authLimiter, authController.register);
 router.post("/login", authLimiter, authController.login);
 router.post("/forgot-password", authLimiter, authController.forgotPassword);

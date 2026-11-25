@@ -136,7 +136,7 @@ test("Scenario 1: OPEN_INAPP_EXPERIENCE node creates linked session carrying pre
   assert.equal(result.action, "WAIT_FOR_INPUT", "Node should pause flow waiting for in-app completion");
   assert.ok(result.replyMessages?.length > 0, "Should generate WhatsApp reply message");
   const msg = result.replyMessages[0];
-  assert.ok(msg.includes("/x/villa-express-booking?s="), "Message should contain signed in-app link");
+  assert.ok(msg.includes("/x/villa-express-booking?ct="), "Message should contain opaque ?ct= continuation link");
   assert.ok(msg.includes("Open Interactive Experience"), "Message should include button label");
 
   // Verify inapp_sessions row in DB

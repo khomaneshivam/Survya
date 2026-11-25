@@ -1,4 +1,5 @@
 const catalogService = require("../services/catalogService");
+const domainProfileService = require("../services/domainProfileService");
 const { db } = require("../config/database");
 const { isPlatformAdmin, isWorkspaceAdmin } = require("../middleware/authMiddleware");
 
@@ -30,7 +31,19 @@ async function listEntities(req, res) {
     const { domain } = req.query;
     const userId = req.user?.id || null;
     const isAdmin = isWorkspaceAdmin(req.user);
-    const entities = catalogService.listEntities(tenantId, domain, userId, isAdmin);
+    let entities = catalogService.listEntities(tenantId, domain, userId, isAdmin);
+
+    if (!isPlatformAdmin(req.user)) {
+      const access = domainProfileService.getTenantDomainAccess(tenantId);
+      if (access.hasExplicitDomainConfig) {
+        const allowedSet = new Set(access.allowedDomains || []);
+        entities = entities.filter((e) => {
+          const norm = domainProfileService.normalizeDomainCode(e.domain, e.domain);
+          return allowedSet.has(norm) || allowedSet.has(String(e.domain || "").toUpperCase());
+        });
+      }
+    }
+
     res.json({ success: true, entities });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

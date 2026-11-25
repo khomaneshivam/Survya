@@ -25,6 +25,7 @@ router.use(apiLimiter);
 // =========================================================================
 // 1. AUTHENTICATION & PROFILE
 // =========================================================================
+router.get("/auth/domains", authController.listPublicDomains);
 router.post("/auth/register", authLimiter, authController.register);
 router.post("/auth/login", authLimiter, authController.login);
 router.post("/auth/forgot-password", authLimiter, authController.forgotPassword);

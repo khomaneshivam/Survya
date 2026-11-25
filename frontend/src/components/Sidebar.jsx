@@ -25,8 +25,26 @@ import {
   Plug,
   Database,
   Smartphone,
-  Receipt
+  Receipt,
+  Sparkles,
+  UtensilsCrossed,
+  ShoppingBag,
+  Stethoscope,
+  Building,
+  GraduationCap,
+  Boxes
 } from 'lucide-react';
+
+const DOMAIN_NAV_ICONS = {
+  HOSPITALITY: BedDouble,
+  RESTAURANT_FOOD: UtensilsCrossed,
+  RETAIL_ECOM: ShoppingBag,
+  CLINIC_HEALTH: Stethoscope,
+  SALON_WELLNESS: Sparkles,
+  REAL_ESTATE: Building,
+  EDUCATION_COACHING: GraduationCap,
+  B2B_WHOLESALE: Boxes
+};
 
 export default function Sidebar({
   activeTab,
@@ -36,7 +54,19 @@ export default function Sidebar({
   mobileOpen,
   setMobileOpen
 }) {
-  const { user, isPlatformAdmin, isWorkspaceAdmin, logout } = useAuth();
+  const {
+    user,
+    isPlatformAdmin,
+    isWorkspaceAdmin,
+    logout,
+    allowedDomains = ['HOSPITALITY'],
+    primaryDomain = 'HOSPITALITY',
+    activeDomainProfile
+  } = useAuth();
+
+  const ActiveDomainIcon = DOMAIN_NAV_ICONS[primaryDomain] || Sparkles;
+  const activeDomainLabel = activeDomainProfile?.sidebarLabel || activeDomainProfile?.shortLabel || 'My Domain';
+  const showHospitalityModule = Boolean(isPlatformAdmin || allowedDomains.includes('HOSPITALITY'));
 
   // Role-based segmented navigation (Platform Super-Admin vs Workspace Owner vs Employee)
   const sections = [
@@ -56,17 +86,18 @@ export default function Sidebar({
     {
       title: 'Industry Solutions',
       items: [
+        { id: 'domain_hub', label: activeDomainLabel, icon: ActiveDomainIcon, badge: 'Suite' },
         { id: 'masters', label: 'Masters Hub', icon: Database, badge: 'ERP' },
         { id: 'catalog', label: 'Catalog & Menu', icon: Layers },
         { id: 'transactions', label: 'Orders & Bookings', icon: Receipt, badge: 'Live' },
-        { id: 'inventory', label: 'Hospitality', icon: BedDouble }
+        ...(showHospitalityModule ? [{ id: 'inventory', label: 'Hospitality', icon: BedDouble }] : [])
       ]
     },
     ...(isWorkspaceAdmin ? [
       {
         title: 'Workspace Controls',
         items: [
-          { id: 'inapp_studio', label: 'In-App Studio', icon: Smartphone, badge: 'Dynamic' },
+          { id: 'inapp_studio', label: 'Survya Studio', icon: Smartphone, badge: 'Studio' },
           { id: 'connect', label: 'Connect', icon: Plug }
         ]
       }

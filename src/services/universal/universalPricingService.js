@@ -163,7 +163,7 @@ function calculateCartQuote(tenantId = 1, options = {}) {
     const lineFinalSubtotal = Math.max(0, lineRawSubtotal - itemDiscountAmount);
     const resolvedGstPercent = item.master_tax_rate !== null && item.master_tax_rate !== undefined
       ? Number(item.master_tax_rate)
-      : (Number(item.gst_percent) || 0);
+      : (Number(item.gst_percent || item.tax_rate) || 0);
 
     const lineGst = (lineFinalSubtotal * resolvedGstPercent) / 100;
 
