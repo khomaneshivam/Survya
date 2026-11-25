@@ -32,22 +32,65 @@ import {
 
 const DOMAIN_ICONS = {
   HOSPITALITY: BedDouble,
+  RESTAURANT_FOOD: Coffee,
   DINING: Coffee,
+  RETAIL_ECOM: ShoppingBag,
   RETAIL: ShoppingBag,
+  CLINIC_HEALTH: Stethoscope,
+  SALON_WELLNESS: Sparkles,
   SERVICES: Stethoscope,
-  REAL_ESTATE: Store
+  REAL_ESTATE: Store,
+  EDUCATION_COACHING: Layers,
+  B2B_WHOLESALE: Layers
 };
 
 const DOMAIN_LABELS = {
   HOSPITALITY: 'Stays & Hospitality',
+  RESTAURANT_FOOD: 'Restaurant & F&B',
   DINING: 'F&B & Dining',
+  RETAIL_ECOM: 'Retail & E-Commerce',
   RETAIL: 'Retail & D2C',
+  CLINIC_HEALTH: 'Clinic & Healthcare',
+  SALON_WELLNESS: 'Salon, Spa & Wellness',
   SERVICES: 'Clinic & Services',
-  REAL_ESTATE: 'Tours & Real Estate'
+  REAL_ESTATE: 'Tours & Real Estate',
+  EDUCATION_COACHING: 'Education & Coaching',
+  B2B_WHOLESALE: 'B2B & Wholesale'
 };
 
+const STARTER_PACK_OPTIONS = [
+  {
+    code: 'RESORT_LUXURY_V1',
+    domainCode: 'HOSPITALITY',
+    title: 'Resort & Villa Pack',
+    description: 'Ocean Villas, Plunge Pool Suites, Garden Cottages with 30-day inventory matrix.',
+    icon: BedDouble
+  },
+  {
+    code: 'CAFE_DINING_V1',
+    domainCode: 'RESTAURANT_FOOD',
+    title: 'Cafe & Seafood Pack',
+    description: 'Malvani Crab Masala, Wood-fired Pizzas, Solkadhi Coolers with Veg/Non-Veg flags.',
+    icon: Coffee
+  },
+  {
+    code: 'D2C_RETAIL_V1',
+    domainCode: 'RETAIL_ECOM',
+    title: 'Retail & Goods Pack',
+    description: 'Linen Resort Shirts, Coastal Spices with size variants & real-time stock counters.',
+    icon: ShoppingBag
+  },
+  {
+    code: 'SALON_CLINIC_V1',
+    domainCode: 'CLINIC_HEALTH',
+    title: 'Clinic & Spa Pack',
+    description: 'Ayurvedic full-body massage, Doctor consultations with durations & buffer times.',
+    icon: Stethoscope
+  }
+];
+
 export default function CatalogInventoryPage() {
-  const { token } = useAuth();
+  const { token, isPlatformAdmin, domainAccess, allowedDomains } = useAuth();
 
   const [entities, setEntities] = useState([]);
   const [selectedEntityId, setSelectedEntityId] = useState(null);
@@ -451,6 +494,13 @@ export default function CatalogInventoryPage() {
           )}
           {item.item_type === 'SERVICE' && (
             <span><Clock size={11} /> {item.duration_minutes} mins</span>
+          )}
+          {!['ROOM', 'FOOD', 'PRODUCT', 'SERVICE'].includes(item.item_type) && (
+            <span>
+              {item.item_type || 'STANDARD'}
+              {item.track_inventory ? ` · Stock: ${item.stock_qty ?? item.stock_quantity ?? 0}` : ''}
+              {item.duration_minutes ? ` · ${item.duration_minutes} mins` : ''}
+            </span>
           )}
         </div>
       )
@@ -1069,90 +1119,43 @@ export default function CatalogInventoryPage() {
             </div>
 
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '20px', lineHeight: 1.5 }}>
-              Choose a starter kit tailored to your business model. This immediately provisions realistic categories, sample dishes/rooms with tariffs, and dietary tags so you can start selling on WhatsApp in 180 seconds.
+              {isPlatformAdmin
+                ? 'Choose a starter kit tailored to your business model. This immediately provisions realistic categories, sample items with tariffs, and domain tags so you can start selling in 180 seconds.'
+                : `Showing starter kits enabled for your active plan (${domainAccess?.policyLabel || 'Plan-scoped'}). Upgrade your plan in Domain Workspace or Billing to unlock additional verticals.`}
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '20px' }}>
-              {/* Option 1: Hospitality */}
-              <div
-                onClick={() => handleSeedStarter('RESORT_LUXURY_V1')}
-                style={{
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '16px',
-                  cursor: 'pointer',
-                  background: 'var(--bg-app)',
-                  transition: 'border-color 0.15s ease'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  <BedDouble size={18} color="var(--sarvya-blue)" />
-                  <span style={{ fontWeight: 700, fontSize: '14px' }}>Resort & Villa Pack</span>
-                </div>
-                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
-                  Ocean Villas, Plunge Pool Suites, Garden Cottages with 30-day inventory matrix.
-                </p>
-              </div>
-
-              {/* Option 2: F&B Dining */}
-              <div
-                onClick={() => handleSeedStarter('CAFE_DINING_V1')}
-                style={{
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '16px',
-                  cursor: 'pointer',
-                  background: 'var(--bg-app)'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  <Coffee size={18} color="var(--sarvya-blue)" />
-                  <span style={{ fontWeight: 700, fontSize: '14px' }}>Cafe & Seafood Pack</span>
-                </div>
-                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
-                  Malvani Crab Masala, Wood-fired Pizzas, Solkadhi Coolers with Veg/Non-Veg flags.
-                </p>
-              </div>
-
-              {/* Option 3: Retail D2C */}
-              <div
-                onClick={() => handleSeedStarter('D2C_RETAIL_V1')}
-                style={{
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '16px',
-                  cursor: 'pointer',
-                  background: 'var(--bg-app)'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  <ShoppingBag size={18} color="var(--sarvya-blue)" />
-                  <span style={{ fontWeight: 700, fontSize: '14px' }}>Retail & Goods Pack</span>
-                </div>
-                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
-                  Linen Resort Shirts, Coastal Spices with size variants & real-time stock counters.
-                </p>
-              </div>
-
-              {/* Option 4: Clinic & Salon */}
-              <div
-                onClick={() => handleSeedStarter('SALON_CLINIC_V1')}
-                style={{
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '16px',
-                  cursor: 'pointer',
-                  background: 'var(--bg-app)'
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  <Stethoscope size={18} color="var(--sarvya-blue)" />
-                  <span style={{ fontWeight: 700, fontSize: '14px' }}>Clinic & Spa Pack</span>
-                </div>
-                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
-                  Ayurvedic full-body massage, Doctor consultations with durations & buffer times.
-                </p>
-              </div>
+              {STARTER_PACK_OPTIONS.filter((pack) => {
+                if (isPlatformAdmin || !Array.isArray(allowedDomains) || allowedDomains.length === 0) return true;
+                if (pack.code === 'SALON_CLINIC_V1') {
+                  return allowedDomains.includes('CLINIC_HEALTH') || allowedDomains.includes('SALON_WELLNESS');
+                }
+                return allowedDomains.includes(pack.domainCode);
+              }).map((pack) => {
+                const PackIcon = pack.icon;
+                return (
+                  <div
+                    key={pack.code}
+                    onClick={() => handleSeedStarter(pack.code)}
+                    style={{
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '16px',
+                      cursor: 'pointer',
+                      background: 'var(--bg-app)',
+                      transition: 'border-color 0.15s ease'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                      <PackIcon size={18} color="var(--sarvya-blue)" />
+                      <span style={{ fontWeight: 700, fontSize: '14px' }}>{pack.title}</span>
+                    </div>
+                    <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
+                      {pack.description}
+                    </p>
+                  </div>
+                );
+              })}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -1529,7 +1532,7 @@ export default function CatalogInventoryPage() {
                   Daily Availability & Seasonal Rates: {inventoryItem.title}
                 </h3>
                 <p style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  Base Rate: ₹{inventoryItem.base_price.toLocaleString('en-IN')} / night
+                  Base Rate: ₹{Number(inventoryItem.base_price || 0).toLocaleString('en-IN')} / night
                 </p>
               </div>
               <button

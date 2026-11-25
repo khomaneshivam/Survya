@@ -48,6 +48,7 @@ const ReportsPage = lazyWithRetry(() => import('../pages/ReportsPage'));
 const CatalogInventoryPage = lazyWithRetry(() => import('../pages/CatalogInventoryPage'));
 const BookingsOrdersPage = lazyWithRetry(() => import('../pages/BookingsOrdersPage'));
 const MastersHubPage = lazyWithRetry(() => import('../pages/MastersHubPage'));
+const DomainWorkspacePage = lazyWithRetry(() => import('../pages/DomainWorkspacePage'));
 const InventoryCalendarPage = lazyWithRetry(() => import('../pages/InventoryCalendarPage'));
 const SystemAdminPanel = lazyWithRetry(() => import('../pages/SystemAdminPanel'));
 const PayoutsPage = lazyWithRetry(() => import('../pages/PayoutsPage'));
@@ -266,6 +267,18 @@ export const PAGE_REGISTRY = {
     adminOnly: false,
     component: MastersHubPage
   },
+  domain_hub: {
+    id: 'domain_hub',
+    title: 'Pre-Built Domain Workspace',
+    module: 'Industry',
+    group: 'Industry Solutions',
+    badge: 'Suite',
+    badgeTone: 'green',
+    icon: Sparkles,
+    description: 'Pre-built business domain suite, seeded catalog items, conversational experiences, and plan-scoped domain entitlements.',
+    adminOnly: false,
+    component: DomainWorkspacePage
+  },
   inventory: {
     id: 'inventory',
     title: 'Hospitality Inventory & Rate Calendar',
@@ -276,6 +289,7 @@ export const PAGE_REGISTRY = {
     icon: BedDouble,
     description: 'Room categories, calendar view, seasonal tariff rules, occupancy limits, and real-time room availability.',
     adminOnly: false,
+    requiredDomains: ['HOSPITALITY'],
     component: InventoryCalendarPage
   },
   admin: {
@@ -440,22 +454,36 @@ class PageErrorBoundary extends Component {
  * Wraps every sidebar tab view with unified layout, breadcrumb bar, navigation injection, and deep-linking.
  */
 export default function PageSystem({ activeTab, setActiveTab }) {
-  const { user, isPlatformAdmin, isWorkspaceAdmin } = useAuth();
+  const { user, isPlatformAdmin, isWorkspaceAdmin, allowedDomains = ['HOSPITALITY'], activeDomainProfile } = useAuth();
 
-  // Resolve active page configuration from registry with 3-tier RBAC guard
+  const isPageAllowed = useCallback((page) => {
+    if (!page) return false;
+    if ((page.platformAdminOnly || page.adminOnly) && !isPlatformAdmin) return false;
+    if (page.workspaceAdminOnly && !isWorkspaceAdmin) return false;
+    if (Array.isArray(page.requiredDomains) && page.requiredDomains.length > 0 && !isPlatformAdmin) {
+      return page.requiredDomains.some((dom) => allowedDomains.includes(dom));
+    }
+    return true;
+  }, [isPlatformAdmin, isWorkspaceAdmin, allowedDomains]);
+
+  // Resolve active page configuration from registry with 3-tier RBAC + plan-domain guard
   const activePage = useMemo(() => {
     const page = PAGE_REGISTRY[activeTab];
-    if (page) {
-      if ((page.platformAdminOnly || page.adminOnly) && !isPlatformAdmin) {
-        return PAGE_REGISTRY.dashboard;
-      }
-      if (page.workspaceAdminOnly && !isWorkspaceAdmin) {
-        return PAGE_REGISTRY.dashboard;
+    if (page && isPageAllowed(page)) {
+      if (page.id === 'domain_hub' && activeDomainProfile?.name) {
+        return {
+          ...page,
+          title: `${activeDomainProfile.name} Workspace`,
+          badge: activeDomainProfile.shortLabel || page.badge
+        };
       }
       return page;
     }
+    if (page && Array.isArray(page.requiredDomains) && !isPlatformAdmin) {
+      return PAGE_REGISTRY.domain_hub;
+    }
     return PAGE_REGISTRY.dashboard;
-  }, [activeTab, isPlatformAdmin, isWorkspaceAdmin]);
+  }, [activeTab, isPageAllowed, activeDomainProfile, isPlatformAdmin]);
 
   // Update document metadata & noindex for authenticated app tabs
   usePageMeta({
@@ -469,11 +497,10 @@ export default function PageSystem({ activeTab, setActiveTab }) {
     if (!activePage) return [];
     return Object.values(PAGE_REGISTRY).filter(p => {
       if (p.id === activePage.id) return false;
-      if ((p.platformAdminOnly || p.adminOnly) && !isPlatformAdmin) return false;
-      if (p.workspaceAdminOnly && !isWorkspaceAdmin) return false;
+      if (!isPageAllowed(p)) return false;
       return p.group === activePage.group || p.module === activePage.module;
     });
-  }, [activePage, isPlatformAdmin, isWorkspaceAdmin]);
+  }, [activePage, isPageAllowed]);
 
   // Universal Navigation Dispatcher
   const handleNavigate = useCallback((targetTab) => {

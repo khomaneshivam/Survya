@@ -1,39 +1,39 @@
 const express = require("express");
 const router = express.Router();
 const inappController = require("../controllers/inappExperienceController");
-const { authenticateToken, requireAdmin } = require("../middleware/authMiddleware");
+const { authenticateToken, requireWorkspaceAdmin } = require("../middleware/authMiddleware");
 
 // All routes require authentication and tenant context
 router.use(authenticateToken);
 
-// Experiences CRUD & Lifecycle (Admin Only)
-router.get("/experiences", requireAdmin, inappController.listExperiences);
-router.post("/experiences", requireAdmin, inappController.createExperience);
-router.post("/experiences/from-starter", requireAdmin, inappController.createFromStarter);
+// Experiences CRUD & Lifecycle (Workspace Owner / Platform Admin)
+router.get("/experiences", requireWorkspaceAdmin, inappController.listExperiences);
+router.post("/experiences", requireWorkspaceAdmin, inappController.createExperience);
+router.post("/experiences/from-starter", requireWorkspaceAdmin, inappController.createFromStarter);
 
-router.get("/experiences/:id", requireAdmin, inappController.getExperience);
-router.put("/experiences/:id", requireAdmin, inappController.updateExperience);
-router.delete("/experiences/:id", requireAdmin, inappController.deleteExperience);
-router.patch("/experiences/:id/status", requireAdmin, inappController.updateStatus);
-router.get("/experiences/:id/qr", requireAdmin, inappController.getQrCode);
+router.get("/experiences/:id", requireWorkspaceAdmin, inappController.getExperience);
+router.put("/experiences/:id", requireWorkspaceAdmin, inappController.updateExperience);
+router.delete("/experiences/:id", requireWorkspaceAdmin, inappController.deleteExperience);
+router.patch("/experiences/:id/status", requireWorkspaceAdmin, inappController.updateStatus);
+router.get("/experiences/:id/qr", requireWorkspaceAdmin, inappController.getQrCode);
 
-// Screens Management (Admin Only)
-router.get("/experiences/:id/screens", requireAdmin, inappController.listScreens);
-router.post("/experiences/:id/screens", requireAdmin, inappController.createScreen);
-router.post("/experiences/:id/screens/reorder", requireAdmin, inappController.reorderScreens);
+// Screens Management (Workspace Owner / Platform Admin)
+router.get("/experiences/:id/screens", requireWorkspaceAdmin, inappController.listScreens);
+router.post("/experiences/:id/screens", requireWorkspaceAdmin, inappController.createScreen);
+router.post("/experiences/:id/screens/reorder", requireWorkspaceAdmin, inappController.reorderScreens);
 
-router.put("/screens/:screenId", requireAdmin, inappController.updateScreen);
-router.delete("/screens/:screenId", requireAdmin, inappController.deleteScreen);
+router.put("/screens/:screenId", requireWorkspaceAdmin, inappController.updateScreen);
+router.delete("/screens/:screenId", requireWorkspaceAdmin, inappController.deleteScreen);
 
-// Form Fields Management & Validation (Admin Only)
-router.get("/screens/:screenId/fields", requireAdmin, inappController.listFields);
-router.post("/screens/:screenId/fields", requireAdmin, inappController.createField);
-router.post("/screens/:screenId/fields/reorder", requireAdmin, inappController.reorderFields);
+// Form Fields Management & Validation (Workspace Owner / Platform Admin)
+router.get("/screens/:screenId/fields", requireWorkspaceAdmin, inappController.listFields);
+router.post("/screens/:screenId/fields", requireWorkspaceAdmin, inappController.createField);
+router.post("/screens/:screenId/fields/reorder", requireWorkspaceAdmin, inappController.reorderFields);
 
-router.put("/fields/:fieldId", requireAdmin, inappController.updateField);
-router.delete("/fields/:fieldId", requireAdmin, inappController.deleteField);
+router.put("/fields/:fieldId", requireWorkspaceAdmin, inappController.updateField);
+router.delete("/fields/:fieldId", requireWorkspaceAdmin, inappController.deleteField);
 
-router.post("/screens/:screenId/validate", requireAdmin, inappController.validateForm);
+router.post("/screens/:screenId/validate", requireWorkspaceAdmin, inappController.validateForm);
 
 // Agent Rate Negotiations Management
 const inappNegotiationService = require("../services/inapp/inappNegotiationService");

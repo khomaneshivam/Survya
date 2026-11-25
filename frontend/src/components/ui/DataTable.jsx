@@ -17,6 +17,7 @@ export default function DataTable({
   loading = false,
   emptyTitle = 'No matching records',
   emptyDescription = '',
+  emptyMessage = '',
   emptyAction,
   pageSize: initialPageSize = 10,
   pageSizeOptions = [10, 25, 50],
@@ -47,10 +48,12 @@ export default function DataTable({
     return (row, idx) => row.id ?? row.key ?? idx;
   }, [rowKey, keyField]);
 
+  const getColSortKey = (col) => col?.key || (typeof col?.accessor === 'string' ? col.accessor : (col?.header || col?.label));
+
   const sortedData = useMemo(() => {
     if (!sortKey) return resolvedData;
-    const col = columns.find((c) => c.key === sortKey);
-    const getValue = col?.sortValue || ((row) => row[sortKey]);
+    const col = columns.find((c) => (c.key || (typeof c.accessor === 'string' ? c.accessor : (c.header || c.label))) === sortKey || c.key === sortKey);
+    const getValue = col?.sortValue || (typeof col?.accessor === 'function' ? col.accessor : (row) => row?.[col?.accessor || sortKey]);
     const factor = sortDir === 'asc' ? 1 : -1;
 
     return [...resolvedData].sort((a, b) => {
@@ -75,14 +78,17 @@ export default function DataTable({
 
   function toggleSort(col) {
     if (!col.sortable) return;
-    if (sortKey === col.key) {
+    const key = getColSortKey(col);
+    if (sortKey === key) {
       setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
-      setSortKey(col.key);
+      setSortKey(key);
       setSortDir('asc');
     }
     setPage(1);
   }
+
+  const resolvedEmptyDesc = emptyDescription || emptyMessage;
 
   if (loading) {
     return (
@@ -103,9 +109,9 @@ export default function DataTable({
           <Inbox size={16} />
           <span>{emptyTitle}</span>
         </div>
-        {emptyDescription && (
+        {resolvedEmptyDesc && (
           <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
-            {emptyDescription}
+            {resolvedEmptyDesc}
           </div>
         )}
         {emptyAction && <div style={{ marginTop: '12px' }}>{emptyAction}</div>}
@@ -150,14 +156,15 @@ export default function DataTable({
           <thead style={stickyHeader ? { position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-surface)', backdropFilter: 'blur(8px)' } : undefined}>
             <tr>
               {columns.map((col, colIdx) => {
-                const isSorted = sortKey === col.key;
+                const colSortKey = getColSortKey(col);
+                const isSorted = sortKey === colSortKey;
                 const columnLabel = col.label || col.header || '';
                 const isNumeric = col.numeric || col.align === 'right' || col.align === 'end';
                 const textAlign = col.align || (isNumeric ? 'right' : 'start');
 
                 return (
                   <th
-                    key={col.key || col.accessor || col.header || col.label || `col_${colIdx}`}
+                    key={col.key || (typeof col.accessor === 'string' ? col.accessor : null) || col.header || col.label || `col_${colIdx}`}
                     scope="col"
                     aria-sort={col.sortable ? (isSorted ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined) : undefined}
                     style={{ textAlign, width: col.width }}
@@ -214,28 +221,43 @@ export default function DataTable({
                     const isNumeric = col.numeric || col.align === 'right' || col.align === 'end';
                     const textAlign = col.align || (isNumeric ? 'right' : 'start');
                     const fieldKey = col.accessor || col.key;
+                    const isFnAccessor = typeof fieldKey === 'function';
                     const hasField = Boolean(fieldKey && typeof fieldKey === 'string' && row && fieldKey in row);
-                    const cellValue = typeof fieldKey === 'function'
-                      ? fieldKey(row)
+                    const cellValue = isFnAccessor
+                      ? fieldKey(row, idx)
                       : (hasField ? row[fieldKey] : undefined);
+                    const hasResolvedValue = isFnAccessor || hasField;
 
                     let rendered;
-                    if (col.render) {
-                      // Pass (cellValue, row) when fieldKey is on row; if field is absent (e.g. Actions), pass (row, row).
-                      // If render function only takes 1 argument (render.length === 1) and firstArg is null/undefined or not an object,
-                      // fall back to row so single-argument (row) => ... callbacks never crash on null properties!
-                      const firstArg = hasField ? cellValue : row;
-                      const safeFirstArg = (col.render.length === 1 && (firstArg === null || firstArg === undefined) && row)
+                    if (typeof col.render === 'function') {
+                      // Pass computed value when accessor/key resolved from row; otherwise pass row itself.
+                      const firstArg = hasResolvedValue ? cellValue : row;
+                      const safeFirstArg = (col.render.length === 1 && !isFnAccessor && (firstArg === null || firstArg === undefined) && row)
                         ? row
                         : firstArg;
-                      rendered = col.render(safeFirstArg, row);
+                      rendered = col.render(safeFirstArg, row, idx);
+                    } else if (typeof col.cell === 'function') {
+                      // Standard `cell: (row) => ...` signature used across CatalogInventoryPage / tables.
+                      rendered = (col.cell.length >= 2 && hasResolvedValue)
+                        ? col.cell(cellValue, row, idx)
+                        : col.cell(row, idx);
                     } else {
                       rendered = cellValue !== undefined && cellValue !== null ? cellValue : '—';
                     }
 
+                    if (
+                      rendered !== null &&
+                      rendered !== undefined &&
+                      typeof rendered === 'object' &&
+                      !Array.isArray(rendered) &&
+                      !React.isValidElement(rendered)
+                    ) {
+                      rendered = rendered.title || rendered.name || rendered.label || JSON.stringify(rendered);
+                    }
+
                     return (
                       <td
-                        key={col.key || col.accessor || col.header || col.label || `cell_${colIdx}`}
+                        key={col.key || (typeof col.accessor === 'string' ? col.accessor : null) || col.header || col.label || `cell_${colIdx}`}
                         data-label={col.label || col.header || ''}
                         style={{ textAlign, width: col.width }}
                         className={`${isNumeric ? 'tabular-nums ' : ''}${col.className || ''}`.trim()}

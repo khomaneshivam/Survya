@@ -101,9 +101,10 @@ module.exports = {
         updatedData: {
           inapp_session_token: linkRes.sessionToken,
           inapp_url: linkRes.inappUrl,
+          continuation_token_prefix: linkRes.continuationTokenPrefix || null,
           waiting_for_inapp: true
         },
-        traceNote: `Generated linked In-App session ${linkRes.sessionToken}. Waiting for completion at ${linkRes.inappUrl}.`
+        traceNote: `Generated linked In-App session (token ${linkRes.continuationTokenPrefix || "ct_***"}). Waiting for completion.`
       };
     }
 
@@ -113,9 +114,10 @@ module.exports = {
       replyMessages: [fullMsg],
       updatedData: {
         inapp_session_token: linkRes.sessionToken,
-        inapp_url: linkRes.inappUrl
+        inapp_url: linkRes.inappUrl,
+        continuation_token_prefix: linkRes.continuationTokenPrefix || null
       },
-      traceNote: `Dispatched In-App link ${linkRes.inappUrl}. Continued without waiting.`
+      traceNote: `Dispatched In-App link (prefix ${linkRes.continuationTokenPrefix || "ct_***"}). Continued without waiting.`
     };
   }
 };

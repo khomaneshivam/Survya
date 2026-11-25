@@ -13,8 +13,10 @@ router.use(apiLimiter);
 // Experience Discovery & Meta
 router.get("/:slug", runtimeController.getExperience);
 
-// Session Lifecycle
+// Session Lifecycle & Opaque Continuation Token Exchange
 router.post("/:slug/session", runtimeController.handleSession);
+router.post("/:slug/continuation/redeem", runtimeController.redeemContinuation);
+router.post("/:slug/channel-switch", runtimeController.switchChannel);
 
 // Live Dynamic Catalog Query & Price Range Filter
 router.get("/:slug/catalog", runtimeController.getCatalog);

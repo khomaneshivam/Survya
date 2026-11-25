@@ -6,6 +6,7 @@ const { db } = require("../config/database");
 const timeUtil = require("../utils/timeUtil");
 
 const crmPipelineService = require("../services/crmPipelineService");
+const domainProfileService = require("../services/domainProfileService");
 
 /**
  * Build safe workspace-aware user payload shared across register & login
@@ -22,6 +23,25 @@ function buildSafeUser(user, defaultWorkspaceRole = null) {
 
   const isPlatformAdminFlag = user.role === "SUPER_ADMIN" || (user.role === "ADMIN" && resolvedTenantId === 1);
   const isWorkspaceAdminFlag = isPlatformAdminFlag || ["OWNER", "ADMIN", "AGENCY_ADMIN"].includes(workspaceRole);
+  let domainAccess = null;
+  let tenantSummary = null;
+  try {
+    const tRow = db.prepare(`
+      SELECT id, name, slug, status, plan_code, primary_domain, allowed_domains_json,
+             subscription_status, trial_ends_at, branding_json
+      FROM tenants WHERE id = ? AND COALESCE(delete_status, 0) = 0
+    `).get(resolvedTenantId);
+    if (tRow) {
+      domainAccess = domainProfileService.getTenantDomainAccess(tRow, { isPlatformAdmin: isPlatformAdminFlag });
+      tenantSummary = {
+        ...tRow,
+        branding_json: tRow.branding_json && typeof tRow.branding_json === "string" ? JSON.parse(tRow.branding_json) : tRow.branding_json,
+        primary_domain: domainAccess.primaryDomain,
+        allowed_domains: domainAccess.allowedDomains,
+        domain_access: domainAccess
+      };
+    }
+  } catch (_) {}
 
   return {
     id: user.id,
@@ -35,6 +55,10 @@ function buildSafeUser(user, defaultWorkspaceRole = null) {
     status: user.status,
     assigned_phone_id: user.assigned_phone_id,
     tenant_id: resolvedTenantId,
+    primary_domain: domainAccess?.primaryDomain || "HOSPITALITY",
+    allowed_domains: domainAccess?.allowedDomains || ["HOSPITALITY"],
+    domain_access: domainAccess,
+    tenant: tenantSummary,
     created_at: user.created_at,
     last_login_at: user.last_login_at || null
   };
@@ -61,7 +85,7 @@ function generateToken(user) {
  */
 async function register(req, res) {
   try {
-    const { name, email, phone, password } = req.body || {};
+    const { name, email, phone, password, domain, businessName } = req.body || {};
 
     if (!name || !String(name).trim()) {
       return res.status(400).json({ success: false, message: "Full Name is required." });
@@ -73,9 +97,15 @@ async function register(req, res) {
       return res.status(400).json({ success: false, message: "Password must be at least 8 characters long." });
     }
 
+    const selectedDomain = domain ? domainProfileService.normalizeDomainCode(domain, null) : "HOSPITALITY";
+    if (!selectedDomain) {
+      return res.status(400).json({ success: false, message: `Unsupported business domain '${domain}'.` });
+    }
+
     const cleanEmail = String(email).trim().toLowerCase();
     const cleanName = String(name).trim();
     const cleanPhone = phone ? String(phone).trim() : null;
+    const cleanBizName = businessName && String(businessName).trim() ? String(businessName).trim() : `${cleanName}'s Workspace`;
 
     // Hash password
     const passwordHash = await bcrypt.hash(password, 10);
@@ -109,8 +139,7 @@ async function register(req, res) {
         role = "ADMIN";
         tenantId = 1;
       } else {
-        // Self-serve SaaS: create a dedicated workspace with 7-day TRIAL.
-        // Assign platform user role 'USER' while recording workspace 'OWNER' in tenant_user_memberships.
+        // Self-serve SaaS: create a dedicated workspace with 7-day TRIAL pinned to chosen domain.
         role = "USER";
         let baseSlug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
         if (!baseSlug) baseSlug = "workspace";
@@ -123,10 +152,11 @@ async function register(req, res) {
 
         const insertTenant = db.prepare(`
           INSERT INTO tenants (
-            name, slug, status, plan_code, subscription_status, trial_ends_at,
+            name, slug, status, plan_code, primary_domain, allowed_domains_json,
+            subscription_status, trial_ends_at,
             quota_monthly_messages, quota_waba_lines, timezone, created_at, updated_at
-          ) VALUES (?, ?, 'ACTIVE', 'TRIAL', 'TRIALING', DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 DAY), 1000, 1, 'Asia/Kolkata', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        `).run(`${cleanName}'s Workspace`, uniqueSlug);
+          ) VALUES (?, ?, 'ACTIVE', 'TRIAL', ?, ?, 'TRIALING', DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 DAY), 1000, 1, 'Asia/Kolkata', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        `).run(cleanBizName, uniqueSlug, selectedDomain, JSON.stringify([selectedDomain]));
 
         tenantId = Number(insertTenant.lastInsertRowid);
       }
@@ -151,12 +181,22 @@ async function register(req, res) {
       throw txErr;
     }
 
-    // Seed default CRM pipelines for new workspace outside transaction
+    // Seed default CRM pipelines & complete pre-built industry profile outside transaction
     if (tenantId > 1) {
       try {
         crmPipelineService.ensureDefaultPipelines(tenantId);
       } catch (pipeErr) {
         console.warn("[Register] Notice seeding default CRM pipelines:", pipeErr.message);
+      }
+      try {
+        domainProfileService.provisionTenantDomainProfile(tenantId, {
+          domain: selectedDomain,
+          businessName: businessName && String(businessName).trim() ? String(businessName).trim() : null,
+          phone: cleanPhone,
+          userId
+        });
+      } catch (domErr) {
+        console.warn("[Register] Notice provisioning domain profile:", domErr.message);
       }
     }
 
@@ -275,9 +315,10 @@ async function getMe(req, res) {
       `).get();
     }
 
-    // Fetch tenant details
+    // Fetch tenant details with plan-gated domain access
     const tenant = db.prepare(`
-      SELECT id, name, slug, status, plan_code, subscription_status, trial_ends_at,
+      SELECT id, name, slug, status, plan_code, primary_domain, allowed_domains_json,
+             subscription_status, trial_ends_at,
              parent_agency_tenant_id, branding_json, gstin, billing_address,
              quota_monthly_messages, quota_waba_lines, timezone, created_at
       FROM tenants
@@ -290,12 +331,25 @@ async function getMe(req, res) {
       } catch (e) {}
     }
 
+    const domainAccess = tenant
+      ? domainProfileService.getTenantDomainAccess(tenant, { isPlatformAdmin: Boolean(user.is_platform_admin) })
+      : null;
+
+    if (tenant && domainAccess) {
+      tenant.primary_domain = domainAccess.primaryDomain;
+      tenant.allowed_domains = domainAccess.allowedDomains;
+      tenant.domain_access = domainAccess;
+    }
+
     return res.status(200).json({
       success: true,
       user: {
         ...user,
         assignedPhone,
         tenant: tenant || null,
+        primary_domain: domainAccess?.primaryDomain || user.primary_domain || "HOSPITALITY",
+        allowed_domains: domainAccess?.allowedDomains || user.allowed_domains || ["HOSPITALITY"],
+        domain_access: domainAccess || user.domain_access || null,
         workspace_role: user.workspace_role || (user.role === "ADMIN" ? "OWNER" : "USER"),
         is_switched_workspace: Boolean(user.is_switched_workspace),
         original_tenant_id: user.original_tenant_id || user.tenant_id
@@ -586,6 +640,21 @@ async function changePassword(req, res) {
   }
 }
 
+async function listPublicDomains(req, res) {
+  try {
+    const domains = domainProfileService.getPublicDomainCatalog();
+    const billingService = require("../services/billingService");
+    return res.status(200).json({
+      success: true,
+      domains,
+      plans: billingService.getPlans(),
+      planPolicy: domainProfileService.PLAN_DOMAIN_POLICY
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
 module.exports = {
   register,
   login,
@@ -594,5 +663,6 @@ module.exports = {
   forgotPassword,
   verifyResetToken,
   resetPassword,
-  changePassword
+  changePassword,
+  listPublicDomains
 };

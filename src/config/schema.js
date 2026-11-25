@@ -107,7 +107,13 @@ const TABLE_SCHEMAS = {
   "template_versions": "CREATE TABLE IF NOT EXISTS `template_versions` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `uuid` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `template_id` bigint NOT NULL,\n  `version_number` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '1.0.0',\n  `status` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PUBLISHED',\n  `graph_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `config_schema_json` longtext COLLATE utf8mb4_unicode_ci,\n  `required_bindings_json` longtext COLLATE utf8mb4_unicode_ci,\n  `checksum` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `changelog` text COLLATE utf8mb4_unicode_ci,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `active_status` tinyint NOT NULL DEFAULT '1',\n  `delete_status` tinyint NOT NULL DEFAULT '0',\n  `created_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `idx_tmpl_ver_uuid` (`uuid`),\n  UNIQUE KEY `idx_tmpl_ver_unique` (`template_id`, `version_number`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "template_installations": "CREATE TABLE IF NOT EXISTS `template_installations` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `uuid` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `tenant_id` bigint NOT NULL,\n  `template_id` bigint NOT NULL,\n  `installed_version_id` bigint NOT NULL,\n  `installed_version_number` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `flow_id` bigint NOT NULL,\n  `status` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'DRAFT',\n  `config_values_json` longtext COLLATE utf8mb4_unicode_ci,\n  `custom_flow_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `installation_notes` text COLLATE utf8mb4_unicode_ci,\n  `installed_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `activated_at` datetime DEFAULT NULL,\n  `active_status` tinyint NOT NULL DEFAULT '1',\n  `delete_status` tinyint NOT NULL DEFAULT '0',\n  `created_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `idx_tmpl_inst_uuid` (`uuid`),\n  KEY `idx_tmpl_inst_tenant_tmpl` (`tenant_id`, `template_id`),\n  KEY `idx_tmpl_inst_flow` (`flow_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "conversation_handoff_states": "CREATE TABLE IF NOT EXISTS `conversation_handoff_states` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `phone_number_id` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',\n  `clean_phone` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `is_paused` tinyint(1) NOT NULL DEFAULT '1',\n  `paused_until` datetime DEFAULT NULL,\n  `paused_by` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `reason` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uniq_handoff_tenant_line_phone` (`tenant_id`, `phone_number_id`, `clean_phone`),\n  KEY `idx_handoff_until` (`tenant_id`, `clean_phone`, `paused_until`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-  "template_bindings": "CREATE TABLE IF NOT EXISTS `template_bindings` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `installation_id` bigint NOT NULL,\n  `tenant_id` bigint NOT NULL,\n  `logical_key` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `resource_type` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `target_resource_id` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `target_resource_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `active_status` tinyint NOT NULL DEFAULT '1',\n  `delete_status` tinyint NOT NULL DEFAULT '0',\n  `created_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_tmpl_bind_inst` (`installation_id`, `delete_status`),\n  KEY `idx_tmpl_bind_tenant` (`tenant_id`, `resource_type`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+  "template_bindings": "CREATE TABLE IF NOT EXISTS `template_bindings` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `installation_id` bigint NOT NULL,\n  `tenant_id` bigint NOT NULL,\n  `logical_key` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `resource_type` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `target_resource_id` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `target_resource_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `active_status` tinyint NOT NULL DEFAULT '1',\n  `delete_status` tinyint NOT NULL DEFAULT '0',\n  `created_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_tmpl_bind_inst` (`installation_id`, `delete_status`),\n  KEY `idx_tmpl_bind_tenant` (`tenant_id`, `resource_type`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "experience_continuation_tokens": "CREATE TABLE IF NOT EXISTS `experience_continuation_tokens` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `experience_id` bigint NOT NULL,\n  `flow_session_id` bigint DEFAULT NULL,\n  `inapp_session_id` bigint DEFAULT NULL,\n  `token_hash` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `token_prefix` varchar(24) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `contact_phone` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `channel_source` varchar(24) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'WHATSAPP',\n  `scope` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'CUSTOMER_SESSION',\n  `is_single_use` tinyint(1) NOT NULL DEFAULT '1',\n  `redeemed_at` datetime DEFAULT NULL,\n  `revoked_at` datetime DEFAULT NULL,\n  `expires_at` datetime NOT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `idx_ect_token_hash` (`token_hash`),\n  KEY `idx_ect_exp_tenant` (`tenant_id`, `experience_id`, `expires_at`),\n  KEY `idx_ect_flow_session` (`flow_session_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "business_goal_outcomes": "CREATE TABLE IF NOT EXISTS `business_goal_outcomes` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `experience_id` bigint NOT NULL,\n  `session_id` bigint DEFAULT NULL,\n  `flow_session_id` bigint DEFAULT NULL,\n  `goal_type` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `event_name` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `idempotency_key` varchar(160) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `customer_phone` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `customer_name` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `customer_email` varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `summary_json` json DEFAULT NULL,\n  `reference_code` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `monetary_value` double NOT NULL DEFAULT '0',\n  `currency` varchar(8) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'INR',\n  `status` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'COMPLETED',\n  `achieved_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uniq_bgo_idempotency` (`idempotency_key`),\n  KEY `idx_bgo_tenant_exp` (`tenant_id`, `experience_id`, `achieved_at`),\n  KEY `idx_bgo_event` (`tenant_id`, `event_name`, `achieved_at`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "tenant_email_settings": "CREATE TABLE IF NOT EXISTS `tenant_email_settings` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL,\n  `enabled` tinyint(1) NOT NULL DEFAULT '1',\n  `recipients_json` json DEFAULT NULL,\n  `notify_events_json` json DEFAULT NULL,\n  `from_name` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `reply_to` varchar(160) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `template_overrides_json` json DEFAULT NULL,\n  `updated_by` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uniq_tes_tenant` (`tenant_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "email_notification_logs": "CREATE TABLE IF NOT EXISTS `email_notification_logs` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `experience_id` bigint DEFAULT NULL,\n  `goal_outcome_id` bigint DEFAULT NULL,\n  `event_name` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `idempotency_key` varchar(160) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `recipients_json` json NOT NULL,\n  `subject` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `payload_json` json DEFAULT NULL,\n  `status` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PENDING',\n  `attempts` int NOT NULL DEFAULT '0',\n  `max_attempts` int NOT NULL DEFAULT '5',\n  `last_error` text COLLATE utf8mb4_unicode_ci,\n  `provider_message_id` varchar(160) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `sent_at` datetime DEFAULT NULL,\n  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uniq_enl_idempotency` (`idempotency_key`),\n  KEY `idx_enl_tenant_status` (`tenant_id`, `status`, `created_at`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "experience_versions": "CREATE TABLE IF NOT EXISTS `experience_versions` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `experience_id` bigint NOT NULL,\n  `version_number` int NOT NULL,\n  `status` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PUBLISHED',\n  `snapshot_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `validation_report_json` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `changelog` text COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `approved_by` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `approved_at` datetime DEFAULT NULL,\n  `published_by` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `published_at` datetime DEFAULT NULL,\n  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uniq_exp_ver_num` (`experience_id`, `version_number`),\n  KEY `idx_exp_ver_tenant` (`tenant_id`, `experience_id`, `status`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "studio_audit_logs": "CREATE TABLE IF NOT EXISTS `studio_audit_logs` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `experience_id` bigint DEFAULT NULL,\n  `version_id` bigint DEFAULT NULL,\n  `actor_id` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `actor_email` varchar(160) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `action` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `details_json` json DEFAULT NULL,\n  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_sal_tenant_exp` (`tenant_id`, `experience_id`, `created_at`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
 };
 
 const INDEXES = [
@@ -623,11 +629,80 @@ function runColumnMigrations(db) {
     }
   } catch (e) {}
 
-  // Ensure inapp_sessions has flow_session_id
+  // Ensure inapp_sessions has flow_session_id and Layer 1 coordination columns
   try {
     const isCols = db.prepare("DESCRIBE inapp_sessions").all().map(c => c.Field);
     if (!isCols.includes("flow_session_id")) {
       db.exec("ALTER TABLE inapp_sessions ADD COLUMN flow_session_id BIGINT NULL AFTER experience_id");
+    }
+    if (!isCols.includes("channel_owner")) {
+      db.exec("ALTER TABLE inapp_sessions ADD COLUMN channel_owner VARCHAR(24) NOT NULL DEFAULT 'SURVYA' AFTER status");
+    }
+    if (!isCols.includes("optimistic_lock_version")) {
+      db.exec("ALTER TABLE inapp_sessions ADD COLUMN optimistic_lock_version INT NOT NULL DEFAULT 1 AFTER channel_owner");
+    }
+    if (!isCols.includes("demo_mode")) {
+      db.exec("ALTER TABLE inapp_sessions ADD COLUMN demo_mode TINYINT(1) NOT NULL DEFAULT 0 AFTER optimistic_lock_version");
+    }
+    if (!isCols.includes("goal_status")) {
+      db.exec("ALTER TABLE inapp_sessions ADD COLUMN goal_status VARCHAR(32) NOT NULL DEFAULT 'PENDING' AFTER demo_mode");
+    }
+    if (!isCols.includes("experience_version_id")) {
+      db.exec("ALTER TABLE inapp_sessions ADD COLUMN experience_version_id BIGINT NULL AFTER goal_status");
+    }
+    if (!isCols.includes("experience_version_number")) {
+      db.exec("ALTER TABLE inapp_sessions ADD COLUMN experience_version_number INT NULL AFTER experience_version_id");
+    }
+    if (!isCols.includes("transcript_json")) {
+      db.exec("ALTER TABLE inapp_sessions ADD COLUMN transcript_json LONGTEXT NULL AFTER state_data_json");
+    }
+  } catch (e) {}
+
+  // Ensure inapp_experiences has Layer 2+ Studio mode, goal & versioning metadata
+  try {
+    const ieCols = db.prepare("DESCRIBE inapp_experiences").all().map(c => c.Field);
+    if (!ieCols.includes("studio_mode")) {
+      db.exec("ALTER TABLE inapp_experiences ADD COLUMN studio_mode VARCHAR(24) NOT NULL DEFAULT 'GUIDED' AFTER domain_type");
+    }
+    if (!ieCols.includes("goal_type")) {
+      db.exec("ALTER TABLE inapp_experiences ADD COLUMN goal_type VARCHAR(64) NOT NULL DEFAULT 'LEAD_QUALIFICATION' AFTER studio_mode");
+    }
+    if (!ieCols.includes("goal_config_json")) {
+      db.exec("ALTER TABLE inapp_experiences ADD COLUMN goal_config_json LONGTEXT NULL AFTER goal_type");
+    }
+    if (!ieCols.includes("initial_reply_config_json")) {
+      db.exec("ALTER TABLE inapp_experiences ADD COLUMN initial_reply_config_json LONGTEXT NULL AFTER goal_config_json");
+    }
+    if (!ieCols.includes("published_version_id")) {
+      db.exec("ALTER TABLE inapp_experiences ADD COLUMN published_version_id BIGINT NULL AFTER status");
+    }
+    if (!ieCols.includes("published_version_number")) {
+      db.exec("ALTER TABLE inapp_experiences ADD COLUMN published_version_number INT NULL AFTER published_version_id");
+    }
+    if (!ieCols.includes("approval_required")) {
+      db.exec("ALTER TABLE inapp_experiences ADD COLUMN approval_required TINYINT(1) NOT NULL DEFAULT 0 AFTER published_version_number");
+    }
+    if (!ieCols.includes("approval_state")) {
+      db.exec("ALTER TABLE inapp_experiences ADD COLUMN approval_state VARCHAR(32) NOT NULL DEFAULT 'NOT_REQUIRED' AFTER approval_required");
+    }
+  } catch (e) {}
+
+  // Ensure chat_links can bind directly to a Studio experience
+  try {
+    const clCols = db.prepare("DESCRIBE chat_links").all().map(c => c.Field);
+    if (!clCols.includes("experience_id")) {
+      db.exec("ALTER TABLE chat_links ADD COLUMN experience_id BIGINT NULL AFTER flow_id");
+    }
+  } catch (e) {}
+
+  // Ensure tenants table tracks selected primary_domain and allowed_domains_json according to plan
+  try {
+    const tCols = db.prepare("DESCRIBE tenants").all().map(c => c.Field);
+    if (!tCols.includes("primary_domain")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN primary_domain VARCHAR(64) NOT NULL DEFAULT 'HOSPITALITY' AFTER plan_code");
+    }
+    if (!tCols.includes("allowed_domains_json")) {
+      db.exec("ALTER TABLE tenants ADD COLUMN allowed_domains_json JSON NULL AFTER primary_domain");
     }
   } catch (e) {}
 

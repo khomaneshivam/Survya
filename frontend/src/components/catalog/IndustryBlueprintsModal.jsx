@@ -16,8 +16,10 @@ import {
   RefreshCw,
   SlidersHorizontal,
   ExternalLink,
-  ChevronLeft
+  ChevronLeft,
+  Lock
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import { automationApi } from '../../features/automation/api/automationApi';
 
 const SECTOR_ICONS = {
@@ -39,6 +41,7 @@ export default function IndustryBlueprintsModal({
   onOpenProfile,
   token
 }) {
+  const { isPlatformAdmin, allowedDomains = [], domainAccess } = useAuth();
   const [blueprints, setBlueprints] = useState([]);
   const [loading, setLoading] = useState(false);
   const [seedingSector, setSeedingSector] = useState(null);
@@ -155,7 +158,9 @@ export default function IndustryBlueprintsModal({
               1-Click Industry Blueprint Launcher
             </h2>
             <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#6B7280' }}>
-              Scaffold ERP master data, catalog products, pricing rules, and a pre-wired WhatsApp flow for your account.
+              {isPlatformAdmin
+                ? 'Scaffold ERP master data, catalog products, pricing rules, and a pre-wired WhatsApp flow for any industry.'
+                : `Showing pre-built domain blueprints unlocked for your plan (${domainAccess?.policyLabel || 'Plan-scoped'}).`}
             </p>
           </div>
           <button
@@ -370,9 +375,13 @@ export default function IndustryBlueprintsModal({
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
-              {blueprints.map(bp => {
+              {(isPlatformAdmin || !Array.isArray(allowedDomains) || allowedDomains.length === 0
+                ? blueprints
+                : blueprints.filter((bp) => allowedDomains.includes(bp.code))
+              ).map(bp => {
                 const IconComponent = SECTOR_ICONS[bp.code] || Boxes;
                 const isSeeding = seedingSector === bp.code;
+                const isAllowed = Boolean(isPlatformAdmin || !allowedDomains.length || allowedDomains.includes(bp.code));
                 return (
                   <div
                     key={bp.code}
@@ -408,7 +417,7 @@ export default function IndustryBlueprintsModal({
                         <ul style={{ margin: 0, paddingLeft: '16px', lineHeight: '1.4' }}>
                           {bp.itemsPreview?.slice(0, 2).map((item, idx) => (
                             <li key={idx}>
-                              {item.title} (₹{item.base_price.toLocaleString('en-IN')})
+                              {item.title} (₹{Number(item.base_price || 0).toLocaleString('en-IN')})
                             </li>
                           ))}
                         </ul>
@@ -418,6 +427,7 @@ export default function IndustryBlueprintsModal({
                     <div style={{ display: 'flex', gap: '6px' }}>
                       <button
                         type="button"
+                        disabled={!isAllowed}
                         onClick={() => handleStartCustomizing(bp)}
                         title="Customize before deploying"
                         style={{
@@ -426,7 +436,7 @@ export default function IndustryBlueprintsModal({
                           border: '1px solid #D1D5DB',
                           background: '#FFFFFF',
                           color: '#374151',
-                          cursor: 'pointer',
+                          cursor: isAllowed ? 'pointer' : 'not-allowed',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center'
@@ -436,25 +446,30 @@ export default function IndustryBlueprintsModal({
                       </button>
                       <button
                         type="button"
-                        disabled={isSeeding}
+                        disabled={isSeeding || !isAllowed}
                         onClick={() => handleImportFullSuite(bp.code, { businessName: bp.entityName })}
                         style={{
                           flex: 1,
                           padding: '8px 12px',
                           borderRadius: '8px',
-                          background: '#16A34A',
+                          background: isAllowed ? '#16A34A' : '#94A3B8',
                           color: '#FFFFFF',
                           border: 'none',
                           fontSize: '0.82rem',
                           fontWeight: 600,
-                          cursor: isSeeding ? 'not-allowed' : 'pointer',
+                          cursor: isSeeding || !isAllowed ? 'not-allowed' : 'pointer',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           gap: '6px'
                         }}
                       >
-                        {isSeeding ? (
+                        {!isAllowed ? (
+                          <>
+                            <Lock size={14} />
+                            <span>Upgrade Plan</span>
+                          </>
+                        ) : isSeeding ? (
                           <>
                             <RefreshCw size={14} className="animate-spin" />
                             <span>Deploying...</span>

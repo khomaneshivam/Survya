@@ -158,7 +158,7 @@ function getInitialActiveTab() {
 }
 
 function AppContent() {
-  const { isAuthenticated, loading, isPlatformAdmin, isWorkspaceAdmin } = useAuth();
+  const { isAuthenticated, loading, isPlatformAdmin, isWorkspaceAdmin, allowedDomains = ['HOSPITALITY'] } = useAuth();
   const [activeTab, setActiveTabState] = useState(getInitialActiveTab);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -196,7 +196,7 @@ function AppContent() {
     };
   }, [activeTab]);
 
-  // Client-side RBAC Guard: enforce Platform Super-Admin & Workspace Admin view separation
+  // Client-side RBAC + Domain Guard: enforce Platform Super-Admin, Workspace Admin, and Plan-Scoped Domain views
   useEffect(() => {
     if (!isPlatformAdmin && (activeTab === 'admin' || activeTab === 'payouts')) {
       setActiveTab('dashboard');
@@ -204,8 +204,12 @@ function AppContent() {
     }
     if (!isWorkspaceAdmin && (activeTab === 'connect' || activeTab === 'inapp_studio' || activeTab === 'autoreply' || activeTab === 'flowStudio')) {
       setActiveTab('dashboard');
+      return;
     }
-  }, [isPlatformAdmin, isWorkspaceAdmin, activeTab, setActiveTab]);
+    if (!isPlatformAdmin && activeTab === 'inventory' && !allowedDomains.includes('HOSPITALITY')) {
+      setActiveTab('domain_hub');
+    }
+  }, [isPlatformAdmin, isWorkspaceAdmin, allowedDomains, activeTab, setActiveTab]);
 
   // Intercept public customer chat links (/c/:slug or /chat/:slug) without requiring login
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '';
