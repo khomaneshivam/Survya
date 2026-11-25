@@ -7,7 +7,7 @@ const templateController = require("./templateController");
 const messagingService = require("../services/whatsappMessagingService");
 const metaRateService = require("../services/billing/metaRateService");
 const billingService = require("../services/billingService");
-const { isWorkspaceAdmin } = require("../middleware/authMiddleware");
+const { isPlatformAdmin, isWorkspaceAdmin } = require("../middleware/authMiddleware");
 
 /**
  * Normalizes a SQLite template row for API responses
@@ -50,10 +50,15 @@ function serializeTemplate(row) {
  * Computes template breakdown summary across all statuses
  */
 function getTemplateStatusSummary(user = null) {
-  let query = "SELECT UPPER(COALESCE(status, 'DRAFT')) as status, COUNT(*) as count FROM templates";
+  let query = "SELECT UPPER(COALESCE(status, 'DRAFT')) as status, COUNT(*) as count FROM templates WHERE 1=1";
   const params = [];
-  if (user && user.role !== "ADMIN") {
-    query += " WHERE (status != 'DRAFT' OR user_id = ? OR user_id IS NULL)";
+  if (user && !isPlatformAdmin(user)) {
+    const tId = Number(user.tenant_id || 1);
+    query += " AND (COALESCE(tenant_id, 1) = ? OR (COALESCE(tenant_id, 1) = 1 AND status = 'APPROVED' AND user_id IS NULL))";
+    params.push(tId);
+  }
+  if (user && !isWorkspaceAdmin(user)) {
+    query += " AND (status != 'DRAFT' OR user_id = ? OR user_id IS NULL)";
     params.push(user.id);
   }
   query += " GROUP BY UPPER(COALESCE(status, 'DRAFT'))";
@@ -151,7 +156,9 @@ async function connectWhatsAppAccount(req, res) {
         return res.status(403).json({ success: false, message: "Only Workspace Administrators can update the Meta App Secret." });
       }
       if (tenantId === 1) {
-        setSetting("META_APP_SECRET", String(appSecret).trim());
+        const cleanSecret = String(appSecret).trim();
+        setSetting("META_APP_SECRET", cleanSecret);
+        config.META_APP_SECRET = cleanSecret;
       }
     }
 
@@ -249,33 +256,56 @@ async function connectWhatsAppAccount(req, res) {
  */
 async function listWhatsAppAccounts(req, res) {
   try {
-    const accounts = db.prepare(`
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const platformAdmin = isPlatformAdmin(req.user);
+    const workspaceAdmin = isWorkspaceAdmin(req.user);
+
+    const accountSql = `
       SELECT
         p.*,
-        (SELECT COUNT(*) FROM campaigns c WHERE c.phone_number_id = p.phone_number_id OR c.phone_number_id = p.id) as campaigns_count,
+        (SELECT COUNT(*) FROM campaigns c WHERE (c.phone_number_id = p.phone_number_id OR c.phone_number_id = p.id) AND COALESCE(c.delete_status, 0) = 0) as campaigns_count,
         (SELECT COUNT(*) FROM whatsapp_messages m WHERE m.phone_number_id = p.phone_number_id) as direct_messages_count
       FROM waba_phone_numbers p
+      WHERE COALESCE(p.delete_status, 0) = 0
+      ${platformAdmin ? "" : "AND p.tenant_id = ?"}
       ORDER BY p.is_default DESC, p.created_at DESC
-    `).all();
+    `;
+    const accounts = platformAdmin
+      ? db.prepare(accountSql).all()
+      : db.prepare(accountSql).all(tenantId);
 
     const activeAccount = accounts.find(a => a.is_default === 1) || accounts[0] || null;
     const templateSummary = getTemplateStatusSummary(req.user);
 
-    const isNonAdmin = req.user && req.user.role !== "ADMIN";
-    const campSent = isNonAdmin
-      ? (db.prepare("SELECT COALESCE(SUM(sent_count), 0) as total FROM campaigns WHERE user_id = ?").get(req.user.id)?.total || 0)
-      : (db.prepare("SELECT COALESCE(SUM(sent_count), 0) as total FROM campaigns").get()?.total || 0);
-    const directSent = isNonAdmin
-      ? (db.prepare("SELECT COUNT(*) as total FROM whatsapp_messages WHERE direction = 'OUTBOUND' AND user_id = ?").get(req.user.id)?.total || 0)
-      : (db.prepare("SELECT COUNT(*) as total FROM whatsapp_messages WHERE direction = 'OUTBOUND'").get()?.total || 0);
+    let campSql = "SELECT COALESCE(SUM(sent_count), 0) as total FROM campaigns WHERE COALESCE(delete_status, 0) = 0";
+    const campParams = [];
+    let msgSql = "SELECT COUNT(*) as total FROM whatsapp_messages WHERE direction = 'OUTBOUND'";
+    const msgParams = [];
+    if (!platformAdmin) {
+      campSql += " AND tenant_id = ?";
+      campParams.push(tenantId);
+      msgSql += " AND tenant_id = ?";
+      msgParams.push(tenantId);
+    }
+    if (!workspaceAdmin && req.user?.id) {
+      campSql += " AND user_id = ?";
+      campParams.push(req.user.id);
+      msgSql += " AND user_id = ?";
+      msgParams.push(req.user.id);
+    }
+    const campSent = db.prepare(campSql).get(...campParams)?.total || 0;
+    const directSent = db.prepare(msgSql).get(...msgParams)?.total || 0;
     const totalMessagesSent = Number(campSent) + Number(directSent);
 
-    const hasToken = Boolean(getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN);
-    const wabaId = metaWhatsAppService.resolveWabaId();
+    const allowGlobalFallback = platformAdmin || tenantId === 1;
+    const hasToken = activeAccount
+      ? Boolean(activeAccount.access_token || activeAccount.access_token_enc || (allowGlobalFallback && (getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN)))
+      : Boolean(allowGlobalFallback && (getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN));
+    const wabaId = activeAccount?.waba_id || (allowGlobalFallback ? metaWhatsAppService.resolveWabaId() : null);
 
     return res.status(200).json({
       success: true,
-      connected: Boolean(activeAccount || (hasToken && (getSetting("WHATSAPP_PHONE_NUMBER_ID") || config.WHATSAPP_PHONE_NUMBER_ID))),
+      connected: Boolean(activeAccount || (hasToken && allowGlobalFallback && (getSetting("WHATSAPP_PHONE_NUMBER_ID") || config.WHATSAPP_PHONE_NUMBER_ID))),
       hasToken,
       wabaId,
       activeAccount,
@@ -664,7 +694,12 @@ async function listCustomTemplates(req, res) {
     let sql = "SELECT * FROM templates WHERE 1=1";
     const params = [];
 
-    if (req.user?.role !== "ADMIN") {
+    if (req.user && !isPlatformAdmin(req.user)) {
+      const tId = Number(req.user.tenant_id || 1);
+      sql += " AND (COALESCE(tenant_id, 1) = ? OR (COALESCE(tenant_id, 1) = 1 AND status = 'APPROVED' AND user_id IS NULL))";
+      params.push(tId);
+    }
+    if (req.user && !isWorkspaceAdmin(req.user)) {
       sql += " AND (status != 'DRAFT' OR user_id = ? OR user_id IS NULL)";
       params.push(req.user.id);
     }
@@ -796,8 +831,11 @@ async function sendOneToOneMessage(req, res) {
 async function createCampaignV1(req, res) {
   const payload = { ...(req.body || {}) };
   if (!payload.contacts && Array.isArray(payload.contactIds) && payload.contactIds.length > 0) {
+    const tenantId = Number(req.user?.tenant_id || 1);
     const placeholders = payload.contactIds.map(() => "?").join(",");
-    const rows = db.prepare(`SELECT id, phone_e164 as phone, name FROM contacts WHERE id IN (${placeholders})`).all(...payload.contactIds);
+    const rows = isPlatformAdmin(req.user)
+      ? db.prepare(`SELECT id, phone_e164 as phone, name FROM contacts WHERE id IN (${placeholders})`).all(...payload.contactIds)
+      : db.prepare(`SELECT id, phone_e164 as phone, name FROM contacts WHERE id IN (${placeholders}) AND tenant_id = ?`).all(...payload.contactIds, tenantId);
     payload.contacts = rows.map(r => ({ phone: r.phone, name: r.name || "Customer" }));
   }
 
@@ -851,13 +889,25 @@ async function launchCampaignV1(req, res) {
 async function getMessageStatusById(req, res) {
   try {
     const { id } = req.params;
-    const waMsg = db.prepare(`
-      SELECT * FROM whatsapp_messages
-      WHERE id = ? OR meta_message_id = ?
-      LIMIT 1
-    `).get(id, id);
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const platformAdmin = isPlatformAdmin(req.user);
+
+    const waMsg = platformAdmin
+      ? db.prepare(`
+          SELECT * FROM whatsapp_messages
+          WHERE id = ? OR meta_message_id = ?
+          LIMIT 1
+        `).get(id, id)
+      : db.prepare(`
+          SELECT * FROM whatsapp_messages
+          WHERE (id = ? OR meta_message_id = ?) AND tenant_id = ?
+          LIMIT 1
+        `).get(id, id, tenantId);
 
     if (waMsg) {
+      if (!isWorkspaceAdmin(req.user) && waMsg.user_id && waMsg.user_id !== req.user?.id) {
+        return res.status(403).json({ success: false, message: "Access denied to this message." });
+      }
       return res.status(200).json({
         success: true,
         source: "direct",
@@ -866,15 +916,26 @@ async function getMessageStatusById(req, res) {
       });
     }
 
-    const campRecip = db.prepare(`
-      SELECT r.*, c.name as campaign_name, c.template_name, c.template_language
-      FROM campaign_recipients r
-      LEFT JOIN campaigns c ON c.id = r.campaign_id
-      WHERE CAST(r.id AS TEXT) = ? OR r.meta_message_id = ?
-      LIMIT 1
-    `).get(id, id);
+    const campRecip = platformAdmin
+      ? db.prepare(`
+          SELECT r.*, c.name as campaign_name, c.template_name, c.template_language, c.tenant_id, c.user_id
+          FROM campaign_recipients r
+          LEFT JOIN campaigns c ON c.id = r.campaign_id
+          WHERE CAST(r.id AS CHAR) = ? OR r.meta_message_id = ?
+          LIMIT 1
+        `).get(id, id)
+      : db.prepare(`
+          SELECT r.*, c.name as campaign_name, c.template_name, c.template_language, c.tenant_id, c.user_id
+          FROM campaign_recipients r
+          JOIN campaigns c ON c.id = r.campaign_id
+          WHERE (CAST(r.id AS CHAR) = ? OR r.meta_message_id = ?) AND c.tenant_id = ?
+          LIMIT 1
+        `).get(id, id, tenantId);
 
     if (campRecip) {
+      if (!isWorkspaceAdmin(req.user) && campRecip.user_id && campRecip.user_id !== req.user?.id) {
+        return res.status(403).json({ success: false, message: "Access denied to this message." });
+      }
       return res.status(200).json({
         success: true,
         source: "campaign",
@@ -898,9 +959,21 @@ async function getMessageStatusById(req, res) {
  */
 async function getUsageAndBilling(req, res) {
   try {
-    const isNonAdmin = req.user && req.user.role !== "ADMIN";
-    const userFilterClause = isNonAdmin ? " WHERE user_id = ?" : "";
-    const userParams = isNonAdmin ? [req.user.id] : [];
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const platformAdmin = isPlatformAdmin(req.user);
+    const workspaceAdmin = isWorkspaceAdmin(req.user);
+
+    const conditions = [];
+    const userParams = [];
+    if (!platformAdmin) {
+      conditions.push("tenant_id = ?");
+      userParams.push(tenantId);
+    }
+    if (!workspaceAdmin && req.user?.id) {
+      conditions.push("user_id = ?");
+      userParams.push(req.user.id);
+    }
+    const userFilterClause = conditions.length > 0 ? ` WHERE ${conditions.join(" AND ")}` : "";
 
     const byCategory = db.prepare(`
       SELECT

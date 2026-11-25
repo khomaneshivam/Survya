@@ -102,6 +102,130 @@ function generateSequentialInvoiceNumber() {
   return `INV-SARVYA-${yearMonth}-${nextSeq}`;
 }
 
+function isPlaceholderGatewaySecret(val) {
+  if (!val || typeof val !== "string") return true;
+  const trimmed = val.trim();
+  if (!trimmed) return true;
+  return /placeholder|your_|dummy|optional|mock/i.test(trimmed);
+}
+
+function isRazorpayGatewayConfigured() {
+  const keyId = process.env.RAZORPAY_KEY_ID || "";
+  const keySecret = process.env.RAZORPAY_KEY_SECRET || "";
+  return Boolean(keyId && !isPlaceholderGatewaySecret(keyId) && keySecret && !isPlaceholderGatewaySecret(keySecret));
+}
+
+function calculatePlanPricing(planCode, billingCycle = "MONTHLY", customerStateCode = "27") {
+  const plan = PLANS[String(planCode).toUpperCase()] || PLANS.STARTER;
+  const isYearly = String(billingCycle).toUpperCase() === "YEARLY";
+  const baseAmount = isYearly ? plan.priceYearly : plan.priceMonthly;
+  const isMaharashtra = String(customerStateCode).trim() === "27";
+  const cgst = isMaharashtra ? Math.round(baseAmount * 0.09 * 100) / 100 : 0;
+  const sgst = isMaharashtra ? Math.round(baseAmount * 0.09 * 100) / 100 : 0;
+  const igst = !isMaharashtra ? Math.round(baseAmount * 0.18 * 100) / 100 : 0;
+  const gstAmount = Math.round((cgst + sgst + igst) * 100) / 100;
+  const totalAmount = Math.round((baseAmount + gstAmount) * 100) / 100;
+  return {
+    plan,
+    billingCycle: isYearly ? "YEARLY" : "MONTHLY",
+    isYearly,
+    customerStateCode: String(customerStateCode).trim() || "27",
+    isMaharashtra,
+    baseAmount,
+    cgst,
+    sgst,
+    igst,
+    gstAmount,
+    totalAmount
+  };
+}
+
+function activateTenantSubscription({ tenantId, planCode, billingCycle, customerStateCode, gstin, billingAddress, paymentId }) {
+  const numericTenantId = Number(tenantId);
+  const pricing = calculatePlanPricing(planCode, billingCycle, customerStateCode);
+  const { plan, isYearly, baseAmount, gstAmount, totalAmount } = pricing;
+
+  if (paymentId) {
+    const existing = db.prepare(`
+      SELECT invoice_number, plan_code, total_inr, razorpay_payment_id
+      FROM tenant_subscriptions
+      WHERE tenant_id = ? AND razorpay_payment_id = ?
+      LIMIT 1
+    `).get(numericTenantId, paymentId);
+    if (existing) {
+      return {
+        success: true,
+        alreadyProcessed: true,
+        invoiceNumber: existing.invoice_number,
+        tenantId: numericTenantId,
+        planCode: existing.plan_code,
+        status: "PROCESSED",
+        amount: existing.total_inr,
+        paymentId: existing.razorpay_payment_id
+      };
+    }
+  }
+
+  if (gstin || billingAddress) {
+    try {
+      db.prepare(`
+        UPDATE tenants SET
+          gstin = COALESCE(?, gstin),
+          billing_address = COALESCE(?, billing_address),
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(gstin || null, billingAddress || null, numericTenantId);
+    } catch (e) {}
+  }
+
+  const invoiceNumber = generateSequentialInvoiceNumber();
+  const intervalClause = isYearly ? "INTERVAL 1 YEAR" : "INTERVAL 1 MONTH";
+  db.prepare(`
+    INSERT INTO tenant_subscriptions (
+      tenant_id, plan_code, billing_cycle, amount_inr, gst_inr, total_inr,
+      razorpay_payment_id, invoice_number, status, period_start, period_end, created_at, updated_at
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?,
+      ?, ?, 'ACTIVE', CURRENT_TIMESTAMP, DATE_ADD(CURRENT_TIMESTAMP, ${intervalClause}), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+    )
+  `).run(
+    numericTenantId,
+    plan.code,
+    pricing.billingCycle,
+    baseAmount,
+    gstAmount,
+    totalAmount,
+    paymentId,
+    invoiceNumber
+  );
+
+  db.prepare(`
+    UPDATE tenants SET
+      plan_code = ?,
+      subscription_status = 'ACTIVE',
+      quota_monthly_messages = ?,
+      quota_waba_lines = ?,
+      trial_ends_at = NULL,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(
+    plan.code,
+    plan.quotaMessages,
+    plan.quotaLines,
+    numericTenantId
+  );
+
+  return {
+    success: true,
+    invoiceNumber,
+    tenantId: numericTenantId,
+    planCode: plan.code,
+    status: "PROCESSED",
+    amount: totalAmount,
+    paymentId
+  };
+}
+
 /**
  * Create checkout payload with 18% GST (SAC 998314)
  */
@@ -114,33 +238,15 @@ function createCheckout({
   billingAddress = ""
 }) {
   const targetTenantId = Number(tenantId);
-  const plan = PLANS[String(planCode).toUpperCase()];
-  if (!plan) {
+  const upperPlan = String(planCode || "").toUpperCase();
+  if (!PLANS[upperPlan]) {
     throw new Error(`Invalid plan code '${planCode}'. Must be STARTER, GROWTH, or ENTERPRISE.`);
   }
 
-  const isYearly = String(billingCycle).toUpperCase() === "YEARLY";
-  const baseAmount = isYearly ? plan.priceYearly : plan.priceMonthly;
-
-  if (baseAmount <= 0) {
+  const pricing = calculatePlanPricing(upperPlan, billingCycle, customerStateCode);
+  if (pricing.baseAmount <= 0) {
     throw new Error("Free Trial does not require checkout. Activate directly.");
   }
-
-  // 18% GST calculation (SAC 998314 - Information Technology Software Services)
-  const isMaharashtra = String(customerStateCode).trim() === "27";
-  let cgst = 0;
-  let sgst = 0;
-  let igst = 0;
-
-  if (isMaharashtra) {
-    cgst = Math.round(baseAmount * 0.09 * 100) / 100;
-    sgst = Math.round(baseAmount * 0.09 * 100) / 100;
-  } else {
-    igst = Math.round(baseAmount * 0.18 * 100) / 100;
-  }
-
-  const gstAmount = Math.round((cgst + sgst + igst) * 100) / 100;
-  const totalAmount = Math.round((baseAmount + gstAmount) * 100) / 100;
 
   // Persist billing info on tenant if supplied
   if (gstin || billingAddress) {
@@ -155,35 +261,89 @@ function createCheckout({
     } catch (e) {}
   }
 
-  // Generate Razorpay test order ID
   const orderId = `order_${crypto.randomBytes(12).toString("hex")}`;
+  const gatewayConfigured = isRazorpayGatewayConfigured();
 
   return {
     success: true,
     orderId,
-    amount: Math.round(totalAmount * 100), // in paise
+    amount: Math.round(pricing.totalAmount * 100), // in paise
     currency: "INR",
-    key: process.env.RAZORPAY_KEY_ID || "rzp_test_sarvya_mock_key",
+    key: gatewayConfigured ? process.env.RAZORPAY_KEY_ID : null,
+    gatewayConfigured,
     plan: {
-      code: plan.code,
-      name: plan.name,
-      billingCycle: isYearly ? "YEARLY" : "MONTHLY",
-      quotaMessages: plan.quotaMessages,
-      quotaLines: plan.quotaLines
+      code: pricing.plan.code,
+      name: pricing.plan.name,
+      billingCycle: pricing.billingCycle,
+      quotaMessages: pricing.plan.quotaMessages,
+      quotaLines: pricing.plan.quotaLines
     },
     breakdown: {
       sacCode: "998314",
       sacDescription: "Information Technology Software Services",
-      baseAmount,
-      cgst,
-      sgst,
-      igst,
-      gstTotal: gstAmount,
-      totalAmount,
-      stateCode: customerStateCode,
-      isMaharashtra
+      baseAmount: pricing.baseAmount,
+      cgst: pricing.cgst,
+      sgst: pricing.sgst,
+      igst: pricing.igst,
+      gstTotal: pricing.gstAmount,
+      totalAmount: pricing.totalAmount,
+      stateCode: pricing.customerStateCode,
+      isMaharashtra: pricing.isMaharashtra
     }
   };
+}
+
+/**
+ * Verify Razorpay Checkout payment signature (HMAC-SHA256 of order_id|payment_id) & activate subscription
+ */
+async function verifyRazorpayCheckoutPayment({
+  tenantId,
+  planCode,
+  billingCycle = "MONTHLY",
+  customerStateCode = "27",
+  gstin = "",
+  billingAddress = "",
+  razorpayOrderId,
+  razorpayPaymentId,
+  razorpaySignature
+}) {
+  const keySecret = process.env.RAZORPAY_KEY_SECRET || "";
+  if (isPlaceholderGatewaySecret(keySecret)) {
+    const err = new Error("Razorpay checkout gateway is not configured on this server (RAZORPAY_KEY_SECRET missing).");
+    err.statusCode = 503;
+    err.code = "PAYMENT_GATEWAY_NOT_CONFIGURED";
+    throw err;
+  }
+
+  if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
+    const err = new Error("Missing razorpay_order_id, razorpay_payment_id, or razorpay_signature.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const expectedSignature = crypto
+    .createHmac("sha256", keySecret)
+    .update(`${String(razorpayOrderId).trim()}|${String(razorpayPaymentId).trim()}`)
+    .digest("hex");
+
+  const sigBuf = Buffer.from(String(razorpaySignature).trim(), "utf8");
+  const expBuf = Buffer.from(expectedSignature, "utf8");
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    const err = new Error("Invalid Razorpay payment signature.");
+    err.statusCode = 401;
+    err.code = "INVALID_PAYMENT_SIGNATURE";
+    throw err;
+  }
+
+  return activateTenantSubscription({
+    tenantId,
+    planCode,
+    billingCycle,
+    customerStateCode,
+    gstin,
+    billingAddress,
+    paymentId: String(razorpayPaymentId).trim()
+  });
 }
 
 /**
@@ -213,7 +373,6 @@ async function handleRazorpayWebhook(payload, signature, rawBody = null, options
     }
   }
 
-  const event = payload?.event || "payment.captured";
   const payment = payload?.payload?.payment?.entity || payload?.payment || {};
   const notes = payment.notes || payload?.notes || {};
 
@@ -223,66 +382,13 @@ async function handleRazorpayWebhook(payload, signature, rawBody = null, options
   const paymentId = payment.id || payload?.payment_id || `pay_${crypto.randomBytes(12).toString("hex")}`;
   const customerStateCode = String(notes.customer_state_code || payload?.customer_state_code || "27");
 
-  const plan = PLANS[planCode] || PLANS.STARTER;
-  const isYearly = billingCycle === "YEARLY";
-  const baseAmount = isYearly ? plan.priceYearly : plan.priceMonthly;
-
-  const isMaharashtra = customerStateCode === "27";
-  const cgst = isMaharashtra ? Math.round(baseAmount * 0.09 * 100) / 100 : 0;
-  const sgst = isMaharashtra ? Math.round(baseAmount * 0.09 * 100) / 100 : 0;
-  const igst = !isMaharashtra ? Math.round(baseAmount * 0.18 * 100) / 100 : 0;
-  const gstAmount = Math.round((cgst + sgst + igst) * 100) / 100;
-  const totalAmount = Math.round((baseAmount + gstAmount) * 100) / 100;
-
-  const invoiceNumber = generateSequentialInvoiceNumber();
-
-  // Insert subscription / invoice record
-  const intervalClause = isYearly ? "INTERVAL 1 YEAR" : "INTERVAL 1 MONTH";
-  db.prepare(`
-    INSERT INTO tenant_subscriptions (
-      tenant_id, plan_code, billing_cycle, amount_inr, gst_inr, total_inr,
-      razorpay_payment_id, invoice_number, status, period_start, period_end, created_at, updated_at
-    ) VALUES (
-      ?, ?, ?, ?, ?, ?,
-      ?, ?, 'ACTIVE', CURRENT_TIMESTAMP, DATE_ADD(CURRENT_TIMESTAMP, ${intervalClause}), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-    )
-  `).run(
+  return activateTenantSubscription({
     tenantId,
-    plan.code,
+    planCode,
     billingCycle,
-    baseAmount,
-    gstAmount,
-    totalAmount,
-    paymentId,
-    invoiceNumber
-  );
-
-  // Update tenant subscription status and quotas
-  db.prepare(`
-    UPDATE tenants SET
-      plan_code = ?,
-      subscription_status = 'ACTIVE',
-      quota_monthly_messages = ?,
-      quota_waba_lines = ?,
-      trial_ends_at = NULL,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(
-    plan.code,
-    plan.quotaMessages,
-    plan.quotaLines,
-    tenantId
-  );
-
-  return {
-    success: true,
-    invoiceNumber,
-    tenantId,
-    planCode: plan.code,
-    status: "PROCESSED",
-    amount: totalAmount,
+    customerStateCode,
     paymentId
-  };
+  });
 }
 
 /**
@@ -594,10 +700,12 @@ function assertCanConnectWabaLine(tenantId, phoneNumberId = null) {
 module.exports = {
   PLANS,
   getPlans,
+  isRazorpayGatewayConfigured,
   getTenantEntitlementSnapshot,
   assertCanSendMessages,
   assertCanConnectWabaLine,
   createCheckout,
+  verifyRazorpayCheckoutPayment,
   handleRazorpayWebhook,
   getInvoices,
   getInvoiceHtml

@@ -3,12 +3,33 @@ const webhookService = require("../services/webhookService");
 const { getSetting, db } = require("../config/database");
 const config = require("../config/env");
 
+function isWorkspaceAdmin(user) {
+  if (!user) return false;
+  if (user.role === "SUPER_ADMIN") return true;
+  const wsRole = String(user.workspace_role || "").toUpperCase();
+  if (["OWNER", "ADMIN", "AGENCY_ADMIN"].includes(wsRole)) return true;
+  if (user.role === "ADMIN") {
+    const homeTenant = Number(user.original_tenant_id || user.tenant_id || 1);
+    return homeTenant === 1 || Number(user.tenant_id || 1) === homeTenant;
+  }
+  return false;
+}
+
 // Legacy shared-bot settings and webhook secrets are not tenant-isolated.
 // Deny access to other workspaces until these settings have their own data model.
 function requireLegacyWorkspace(req, res) {
   if (Number(req.user?.tenant_id) === 1) return true;
   res.status(403).json({ success: false, message: "Legacy shared automation settings are unavailable for this workspace." });
   return false;
+}
+
+function normalizeSecretCandidate(val) {
+  if (!val || typeof val !== "string") return "";
+  const cleaned = val.trim().replace(/^["']|["']$/g, "");
+  if (!cleaned) return "";
+  if (cleaned.startsWith("enc:aes-256-gcm:")) return "";
+  if (/placeholder|your_meta_app_secret|your_app_secret|dummy|optional/i.test(cleaned)) return "";
+  return cleaned;
 }
 
 /**
@@ -22,34 +43,55 @@ function verifyMetaSignature(req) {
   }
 
   const signature = req.headers["x-hub-signature-256"];
-  let appSecret = config.META_APP_SECRET || getSetting("META_APP_SECRET") || process.env.META_APP_SECRET || "";
-  appSecret = String(appSecret).trim().replace(/^["']|["']$/g, "");
+  const rawDbSecret = typeof getSetting === "function" ? getSetting("META_APP_SECRET") : null;
+  if (typeof rawDbSecret === "string" && rawDbSecret.startsWith("enc:aes-256-gcm:")) {
+    console.error("[Webhook Security] DB META_APP_SECRET failed AES-GCM decryption (check APP_ENCRYPTION_KEY / JWT_SECRET) and was ignored. Re-save Meta App Secret in Admin Settings.");
+  }
+
+  const envConfigSecret = normalizeSecretCandidate(config.META_APP_SECRET);
+  const dbSecret = normalizeSecretCandidate(rawDbSecret);
+  const processEnvSecret = normalizeSecretCandidate(process.env.META_APP_SECRET);
+
+  let appSecret = "";
+  let secretSource = "none";
+  if (envConfigSecret) {
+    appSecret = envConfigSecret;
+    secretSource = "env_config";
+  } else if (dbSecret) {
+    appSecret = dbSecret;
+    secretSource = "db_settings";
+  } else if (processEnvSecret) {
+    appSecret = processEnvSecret;
+    secretSource = "process_env";
+  }
 
   // Fail closed for live traffic. Development fixtures may omit the secret.
-  if (!appSecret || /placeholder|your_meta_app_secret|your_app_secret|dummy|optional/i.test(appSecret)) {
+  if (!appSecret) {
     return process.env.NODE_ENV !== "production";
   }
 
   // If App Secret is configured, enforce strict HMAC-SHA256 signature verification
-  if (!signature || !signature.startsWith("sha256=")) {
+  if (!signature || !String(signature).startsWith("sha256=")) {
     console.warn("[Webhook Security] Missing or malformed X-Hub-Signature-256 header on signed webhook.");
     return false;
   }
 
-  const clientHash = signature.substring(7);
+  const clientHash = String(signature).substring(7).trim().toLowerCase();
   const rawBody = req.rawBody || Buffer.from(typeof req.body === "string" ? req.body : JSON.stringify(req.body || {}));
   const expectedHash = crypto.createHmac("sha256", appSecret).update(rawBody).digest("hex");
 
   try {
     const clientBuf = Buffer.from(clientHash, "hex");
     const expectedBuf = Buffer.from(expectedHash, "hex");
+    const dbDiffersFromEnv = Boolean(dbSecret && envConfigSecret && dbSecret !== envConfigSecret);
+    const diag = `source=${secretSource} secretLen=${appSecret.length} looksHex32=${/^[a-f0-9]{32}$/.test(appSecret)} hasRawBody=${Buffer.isBuffer(req.rawBody)} bodyBytes=${rawBody.length} dbDiffersFromEnv=${dbDiffersFromEnv}`;
     if (clientBuf.length !== expectedBuf.length) {
-      console.warn("[Webhook Security] Signature length mismatch. Verify META_APP_SECRET in .env matches your Meta App Secret.");
+      console.warn(`[Webhook Security] Signature length mismatch (${diag}). Verify META_APP_SECRET in .env / Admin Settings against App Secret in developers.facebook.com.`);
       return false;
     }
     const isMatch = crypto.timingSafeEqual(clientBuf, expectedBuf);
     if (!isMatch) {
-      console.warn("[Webhook Security] HMAC-SHA256 signature mismatch! Check META_APP_SECRET in .env against App Secret in developers.facebook.com.");
+      console.warn(`[Webhook Security] HMAC-SHA256 signature mismatch! (${diag}). Check META_APP_SECRET in .env or Admin Settings against App Secret in developers.facebook.com.`);
     }
     return isMatch;
   } catch (err) {
@@ -189,7 +231,7 @@ function getConfig(req, res) {
     const webhookUrl = publicUrl ? `${publicUrl}/webhook` : `${protocol}://${host}/webhook`;
     const altWebhookUrl = publicUrl ? `${publicUrl}/api/webhook` : `${protocol}://${host}/api/webhook`;
 
-    const scopedUserId = user && user.role !== "ADMIN" ? user.id : null;
+    const scopedUserId = !isWorkspaceAdmin(user) ? user?.id : null;
     const repliesStats = webhookService.getReplies({ limit: 1, userId: scopedUserId, tenantId: req.user?.tenant_id || 1 });
 
     return res.status(200).json({
@@ -342,7 +384,7 @@ function listReplies(req, res) {
   try {
     const { limit, offset, search, campaignId, unreadOnly, userId, repliesOnly } = req.query;
     let targetUserId = null;
-    if (req.user?.role !== "ADMIN") {
+    if (!isWorkspaceAdmin(req.user)) {
       targetUserId = req.user.id;
     } else if (userId && String(userId).trim() !== "ALL") {
       targetUserId = String(userId).trim();
@@ -535,9 +577,9 @@ async function sendManualReply(req, res) {
  * Gets Auto-Reply settings
  */
 function getAutoReplySettings(req, res) {
-  if (!requireLegacyWorkspace(req, res)) return;
   try {
-    const settings = webhookService.getAutoReplySettings();
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const settings = webhookService.getAutoReplySettings({ tenantId });
     return res.status(200).json({ success: true, data: settings });
   } catch (error) {
     console.error("[WebhookController] getAutoReplySettings error:", error);
@@ -546,12 +588,12 @@ function getAutoReplySettings(req, res) {
 }
 
 /**
- * Updates Auto-Reply settings
+ * Updates Auto-Reply settings (Tenant-Scoped)
  */
 function updateAutoReplySettings(req, res) {
-  if (!requireLegacyWorkspace(req, res)) return;
   try {
-    const updated = webhookService.saveAutoReplySettings(req.body || {});
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const updated = webhookService.saveAutoReplySettings(req.body || {}, { tenantId });
     return res.status(200).json({
       success: true,
       message: "Auto-reply settings updated successfully.",
@@ -569,7 +611,8 @@ function updateAutoReplySettings(req, res) {
 function getDynamicOptions(req, res) {
   if (!requireLegacyWorkspace(req, res)) return;
   try {
-    const settings = webhookService.getAutoReplySettings();
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const settings = webhookService.getAutoReplySettings({ tenantId });
     return res.status(200).json({ success: true, data: settings.dynamicOptions || [] });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -582,8 +625,9 @@ function getDynamicOptions(req, res) {
 function saveDynamicOptions(req, res) {
   if (!requireLegacyWorkspace(req, res)) return;
   try {
+    const tenantId = Number(req.user?.tenant_id || 1);
     const options = Array.isArray(req.body) ? req.body : (req.body?.dynamicOptions || []);
-    const updated = webhookService.saveAutoReplySettings({ dynamicOptions: options });
+    const updated = webhookService.saveAutoReplySettings({ dynamicOptions: options }, { tenantId });
     return res.status(200).json({
       success: true,
       message: "Dynamic bot options updated successfully.",

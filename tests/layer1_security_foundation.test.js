@@ -435,4 +435,113 @@ describe("Layer 1: Security Foundation, RBAC, Tenant Isolation & SSRF Defense", 
     const travRes = await fetch(`${baseUrl}/uploads/inbound/%2e%2e%2fpackage.json`);
     assert.equal(travRes.status, 403);
   });
+
+  test("7. Billing checkout fail-closed without gateway secret & verifies genuine HMAC-SHA256 payment signature", async () => {
+    const prevKeyId = process.env.RAZORPAY_KEY_ID;
+    const prevKeySecret = process.env.RAZORPAY_KEY_SECRET;
+    const tenantIdA = Number(tenantAOwner.user.tenant_id);
+    const createdPaymentId = `pay_l1_${Date.now()}`;
+
+    try {
+      delete process.env.RAZORPAY_KEY_ID;
+      delete process.env.RAZORPAY_KEY_SECRET;
+
+      const noKeyCheckout = await fetch(`${baseUrl}/api/v1/billing/checkout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tenantAOwner.token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ planCode: "GROWTH", billingCycle: "MONTHLY", customerStateCode: "27" })
+      });
+      assert.equal(noKeyCheckout.status, 200);
+      const noKeyData = await noKeyCheckout.json();
+      assert.equal(noKeyData.gatewayConfigured, false);
+      assert.equal(noKeyData.key, null);
+
+      const failClosedVerify = await fetch(`${baseUrl}/api/v1/billing/verify-payment`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tenantAOwner.token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          planCode: "GROWTH",
+          razorpay_order_id: noKeyData.orderId,
+          razorpay_payment_id: createdPaymentId,
+          razorpay_signature: "spoofed_sig"
+        })
+      });
+      assert.equal(failClosedVerify.status, 503);
+
+      // Now configure server gateway keys and validate strict HMAC verification
+      process.env.RAZORPAY_KEY_ID = "rzp_test_l1_key_id";
+      process.env.RAZORPAY_KEY_SECRET = "l1_gateway_secret_abcdef_987654";
+
+      const configuredCheckout = await fetch(`${baseUrl}/api/v1/billing/checkout`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tenantAOwner.token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ planCode: "GROWTH", billingCycle: "MONTHLY", customerStateCode: "27" })
+      });
+      assert.equal(configuredCheckout.status, 200);
+      const cfgData = await configuredCheckout.json();
+      assert.equal(cfgData.gatewayConfigured, true);
+      assert.equal(cfgData.key, "rzp_test_l1_key_id");
+
+      const forgedRes = await fetch(`${baseUrl}/api/v1/billing/verify-payment`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tenantAOwner.token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          planCode: "GROWTH",
+          billingCycle: "MONTHLY",
+          customerStateCode: "27",
+          razorpay_order_id: cfgData.orderId,
+          razorpay_payment_id: createdPaymentId,
+          razorpay_signature: "0000000000000000000000000000000000000000000000000000000000000000"
+        })
+      });
+      assert.equal(forgedRes.status, 401);
+
+      const validSig = crypto
+        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+        .update(`${cfgData.orderId}|${createdPaymentId}`)
+        .digest("hex");
+
+      const okRes = await fetch(`${baseUrl}/api/v1/billing/verify-payment`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tenantAOwner.token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          planCode: "GROWTH",
+          billingCycle: "MONTHLY",
+          customerStateCode: "27",
+          razorpay_order_id: cfgData.orderId,
+          razorpay_payment_id: createdPaymentId,
+          razorpay_signature: validSig
+        })
+      });
+      assert.equal(okRes.status, 200);
+      const okData = await okRes.json();
+      assert.equal(okData.success, true);
+      assert.equal(okData.planCode, "GROWTH");
+      assert.match(okData.invoiceNumber, /^INV-SARVYA-/);
+
+      // Idempotent replay with same payment ID does not issue duplicate invoice
+      const replayRes = await fetch(`${baseUrl}/api/v1/billing/verify-payment`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tenantAOwner.token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          planCode: "GROWTH",
+          billingCycle: "MONTHLY",
+          customerStateCode: "27",
+          razorpay_order_id: cfgData.orderId,
+          razorpay_payment_id: createdPaymentId,
+          razorpay_signature: validSig
+        })
+      });
+      assert.equal(replayRes.status, 200);
+      const replayData = await replayRes.json();
+      assert.equal(replayData.alreadyProcessed, true);
+      assert.equal(replayData.invoiceNumber, okData.invoiceNumber);
+    } finally {
+      if (prevKeyId === undefined) delete process.env.RAZORPAY_KEY_ID;
+      else process.env.RAZORPAY_KEY_ID = prevKeyId;
+      if (prevKeySecret === undefined) delete process.env.RAZORPAY_KEY_SECRET;
+      else process.env.RAZORPAY_KEY_SECRET = prevKeySecret;
+      try { db.prepare("DELETE FROM tenant_subscriptions WHERE tenant_id = ?").run(tenantIdA); } catch (_) {}
+    }
+  });
 });

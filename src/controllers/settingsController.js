@@ -8,6 +8,7 @@ const {
   getTemplateDetails
 } = require("../services/metaWhatsAppService");
 const billingService = require("../services/billingService");
+const { isPlatformAdmin } = require("../middleware/authMiddleware");
 
 /**
  * Masks sensitive secret strings for secure API presentation
@@ -100,7 +101,9 @@ async function updateSettings(req, res) {
       setSetting("WHATSAPP_API_TOKEN", WHATSAPP_API_TOKEN.trim());
     }
     if (META_APP_SECRET !== undefined && !META_APP_SECRET.includes("••••")) {
-      setSetting("META_APP_SECRET", META_APP_SECRET.trim());
+      const cleanAppSecret = META_APP_SECRET.trim();
+      setSetting("META_APP_SECRET", cleanAppSecret);
+      config.META_APP_SECRET = cleanAppSecret;
     }
     if (WHATSAPP_PHONE_NUMBER_ID !== undefined) {
       setSetting("WHATSAPP_PHONE_NUMBER_ID", WHATSAPP_PHONE_NUMBER_ID.trim());
@@ -448,9 +451,17 @@ async function deregisterMetaPhone(req, res) {
     }
 
     const cleanPhoneId = String(id).trim();
+    const existingPhone = db.prepare("SELECT id, tenant_id, access_token FROM waba_phone_numbers WHERE phone_number_id = ?").get(cleanPhoneId);
+    if (existingPhone && req.user && !isPlatformAdmin(req.user) && Number(existingPhone.tenant_id || 1) !== Number(req.user?.tenant_id || 1)) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: Phone line belongs to another workspace."
+      });
+    }
+
     const result = await deregisterPhoneNumberWithMeta({
       phoneNumberId: cleanPhoneId,
-      token: customToken
+      token: customToken || existingPhone?.access_token
     });
 
     try {

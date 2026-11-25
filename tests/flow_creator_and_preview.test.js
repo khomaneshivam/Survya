@@ -15,6 +15,12 @@ describe('Meta Flow Creator & Live Preview Intake Test Suite', () => {
 
   test('1. flowController.createFlow supports direct creation with PUBLISHED status & auto-generated meta_flow_id', async () => {
     const mockReq = {
+      user: {
+        id: 'preview_test_admin',
+        role: 'ADMIN',
+        tenant_id: 1,
+        workspace_role: 'OWNER'
+      },
       body: {
         name: `Test Preview Flow ${Date.now()}`,
         categories: ['LEAD_GENERATION'],

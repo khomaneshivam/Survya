@@ -309,13 +309,13 @@ class FlowService {
   /**
    * Reconciles and synchronizes Meta Flows with local SQLite database
    */
-  async syncFlowsWithMeta({ userId, wabaId = null, customCredentials = null } = {}) {
+  async syncFlowsWithMeta({ userId, tenantId = 1, wabaId = null, customCredentials = null } = {}) {
     const metaList = await this.listMetaFlows({ limit: 100, customCredentials, wabaId });
 
     let syncedCount = 0;
     let createdCount = 0;
 
-    const findExisting = db.prepare("SELECT * FROM whatsapp_flows WHERE meta_flow_id = ?");
+    const findExisting = db.prepare("SELECT * FROM whatsapp_flows WHERE meta_flow_id = ? AND COALESCE(tenant_id, 1) = ?");
     const updateFlow = db.prepare(`
       UPDATE whatsapp_flows 
       SET status = ?, 
@@ -332,14 +332,14 @@ class FlowService {
 
     const insertFlow = db.prepare(`
       INSERT INTO whatsapp_flows (
-        id, user_id, name, description, meta_flow_id, status, categories,
+        id, tenant_id, user_id, name, description, meta_flow_id, status, categories,
         flow_json, json_version, data_api_version, endpoint_uri, preview_url,
         validation_errors, sync_status, last_sync_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `);
 
     for (const item of metaList) {
-      const existing = findExisting.get(item.id);
+      const existing = findExisting.get(item.id, Number(tenantId || 1));
       const categoriesJson = JSON.stringify(item.categories || []);
       const validationErrorsJson = JSON.stringify(item.validation_errors || []);
       const previewUrl = item.preview?.preview_url || null;
@@ -380,6 +380,7 @@ class FlowService {
 
         insertFlow.run(
           newLocalId,
+          Number(tenantId || 1),
           userId || "system",
           item.name || `Flow ${item.id}`,
           "Synchronized from Meta WhatsApp Business Account",
@@ -407,7 +408,7 @@ class FlowService {
   /**
    * Creates a local flow draft in whatsapp_flows
    */
-  createLocalFlow({ id = null, name, category = "OTHER", categories = null, description = "", flowJson, userId = "system" }) {
+  createLocalFlow({ id = null, tenantId = 1, name, category = "OTHER", categories = null, description = "", flowJson, userId = "system" }) {
     if (!name || !flowJson) {
       throw new Error("name and flowJson are required to create a local flow.");
     }
@@ -423,11 +424,12 @@ class FlowService {
 
     db.prepare(`
       INSERT INTO whatsapp_flows (
-        id, user_id, name, description, status, categories,
+        id, tenant_id, user_id, name, description, status, categories,
         flow_json, json_version, data_api_version, sync_status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, 'LOCAL', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?, 'LOCAL', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `).run(
       flowId,
+      Number(tenantId || 1),
       userId,
       String(name).trim(),
       description || null,

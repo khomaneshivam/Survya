@@ -297,4 +297,280 @@ describe("Multi-Tenant Data Ownership & Account Isolation Test Suite", () => {
     const adminEnt = await adminEntRes.json();
     assert.ok(adminEnt.entities.length >= 2, "Admin sees all entities across workspace");
   });
+
+  test("10. Multi-Tenant Workspace Owner Authority vs Cross-Tenant Isolation across Resort, Catalog & Connect", async () => {
+    const tTs = Date.now();
+    const tAInfo = db.prepare(`INSERT INTO tenants (name, slug, status) VALUES (?, ?, 'ACTIVE')`).run(`Owner Tenant A ${tTs}`, `owner-a-${tTs}`);
+    const tBInfo = db.prepare(`INSERT INTO tenants (name, slug, status) VALUES (?, ?, 'ACTIVE')`).run(`Owner Tenant B ${tTs}`, `owner-b-${tTs}`);
+    const tidA = Number(tAInfo.lastInsertRowid);
+    const tidB = Number(tBInfo.lastInsertRowid);
+
+    const ownerAId = `own_a_${tTs}`;
+    const empAId = `emp_a_${tTs}`;
+    const ownerBId = `own_b_${tTs}`;
+    const wabaIdA = `waba_iso_a_${tTs}`;
+    const msgIdA = `msg_iso_a_${tTs}`;
+    let entIdA = null;
+    let itemIdA = null;
+
+    try {
+      db.prepare(`INSERT INTO users (id, tenant_id, name, email, phone, password_hash, role, status) VALUES (?, ?, 'Clinic Owner A', ?, '9191110001', 'h', 'USER', 'ACTIVE')`).run(ownerAId, tidA, `own_a_${tTs}@test.local`);
+      db.prepare(`INSERT INTO tenant_user_memberships (user_id, tenant_id, role) VALUES (?, ?, 'OWNER')`).run(ownerAId, tidA);
+      db.prepare(`INSERT INTO users (id, tenant_id, name, email, phone, password_hash, role, status) VALUES (?, ?, 'Clinic Emp A', ?, '9191110002', 'h', 'USER', 'ACTIVE')`).run(empAId, tidA, `emp_a_${tTs}@test.local`);
+      db.prepare(`INSERT INTO tenant_user_memberships (user_id, tenant_id, role) VALUES (?, ?, 'USER')`).run(empAId, tidA);
+      db.prepare(`INSERT INTO users (id, tenant_id, name, email, phone, password_hash, role, status) VALUES (?, ?, 'Retail Owner B', ?, '9191110003', 'h', 'USER', 'ACTIVE')`).run(ownerBId, tidB, `own_b_${tTs}@test.local`);
+      db.prepare(`INSERT INTO tenant_user_memberships (user_id, tenant_id, role) VALUES (?, ?, 'OWNER')`).run(ownerBId, tidB);
+
+      db.prepare(`
+        INSERT INTO waba_phone_numbers (id, tenant_id, display_name, phone_number, phone_number_id, waba_id, is_default, status)
+        VALUES (?, ?, 'Tenant A Desk Line', '9191110001', ?, ?, 1, 'CONNECTED')
+      `).run(wabaIdA, tidA, `pn_${tTs}`, `waba_${tTs}`);
+      db.prepare(`
+        INSERT INTO whatsapp_messages (id, tenant_id, user_id, phone_number_id, recipient_phone, direction, message_type, message_body, status)
+        VALUES (?, ?, ?, ?, '919900001122', 'OUTBOUND', 'TEXT', 'Confidential Patient Info', 'SENT')
+      `).run(msgIdA, tidA, empAId, `pn_${tTs}`);
+
+      const tokOwnerA = jwt.sign({ userId: ownerAId, role: "USER", tenantId: tidA }, config.JWT_SECRET, { expiresIn: "1h" });
+      const tokEmpA = jwt.sign({ userId: empAId, role: "USER", tenantId: tidA }, config.JWT_SECRET, { expiresIn: "1h" });
+      const tokOwnerB = jwt.sign({ userId: ownerBId, role: "USER", tenantId: tidB }, config.JWT_SECRET, { expiresIn: "1h" });
+
+      // Employee creates an enquiry & entity in Tenant A -> Workspace Owner A sees both despite role === 'USER'
+      const empEnqRes = await fetch(`${baseUrl}/api/v1/enquiries`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tokEmpA}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ guest_name: "Patient Via Emp", phone: "919988112200", check_in: "2026-12-10", check_out: "2026-12-11", adults: 1 })
+      });
+      assert.equal(empEnqRes.status, 201);
+      const empEnqId = (await empEnqRes.json()).data.id;
+
+      const ownerGetEnq = await fetch(`${baseUrl}/api/v1/enquiries/${empEnqId}`, { headers: { Authorization: `Bearer ${tokOwnerA}` } });
+      assert.equal(ownerGetEnq.status, 200, "Workspace Owner must read team enquiries inside own tenant");
+
+      const empEntRes = await fetch(`${baseUrl}/api/v1/entities`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tokEmpA}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Emp Created Branch", domain: "CLINIC", phone_e164: "+9191110002", city: "Mumbai" })
+      });
+      assert.equal(empEntRes.status, 201);
+      entIdA = (await empEntRes.json()).entity.id;
+
+      const empItemRes = await fetch(`${baseUrl}/api/v1/entities/${entIdA}/items`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tokEmpA}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Consultation", base_price: 500, item_type: "SERVICE" })
+      });
+      assert.equal(empItemRes.status, 201);
+      itemIdA = (await empItemRes.json()).item.id;
+
+      const ownerEntRes = await fetch(`${baseUrl}/api/v1/entities`, { headers: { Authorization: `Bearer ${tokOwnerA}` } });
+      assert.ok((await ownerEntRes.json()).entities.some(e => e.id === entIdA), "Workspace Owner sees employee-created workspace entities");
+
+      // Cross-tenant isolation on Catalog items/entities
+      const crossItems = await fetch(`${baseUrl}/api/v1/entities/${entIdA}/items`, { headers: { Authorization: `Bearer ${tokOwnerB}` } });
+      assert.equal(crossItems.status, 403, "Tenant B blocked from Tenant A entity items");
+      const crossSingleItem = await fetch(`${baseUrl}/api/v1/items/${itemIdA}`, { headers: { Authorization: `Bearer ${tokOwnerB}` } });
+      assert.equal(crossSingleItem.status, 403, "Tenant B blocked from Tenant A catalog item");
+
+      // Tenant-scoped WABA accounts & message status in sarvyaConnectController
+      const accARes = await (await fetch(`${baseUrl}/api/v1/channels/whatsapp/accounts`, { headers: { Authorization: `Bearer ${tokOwnerA}` } })).json();
+      assert.equal(accARes.accounts.length, 1);
+      assert.equal(accARes.summary.oneToOneSent, 1, "Workspace Owner A sees team direct message count");
+
+      const accBRes = await (await fetch(`${baseUrl}/api/v1/channels/whatsapp/accounts`, { headers: { Authorization: `Bearer ${tokOwnerB}` } })).json();
+      assert.equal(accBRes.accounts.length, 0, "Tenant B must never see Tenant A WABA accounts");
+      assert.equal(accBRes.connected, false, "Tenant B must never inherit Tenant 1 global token connected flag");
+      assert.equal(accBRes.summary.oneToOneSent, 0);
+
+      const crossMsg = await fetch(`${baseUrl}/api/v1/whatsapp/messages/${msgIdA}`, { headers: { Authorization: `Bearer ${tokOwnerB}` } });
+      assert.equal(crossMsg.status, 404, "Tenant B must never access Tenant A message status");
+
+      const usageARes = await (await fetch(`${baseUrl}/api/v1/whatsapp/usage`, { headers: { Authorization: `Bearer ${tokOwnerA}` } })).json();
+      assert.equal(usageARes.recentMessages.length, 1, "Workspace Owner A sees workspace recent messages");
+      const usageBRes = await (await fetch(`${baseUrl}/api/v1/whatsapp/usage`, { headers: { Authorization: `Bearer ${tokOwnerB}` } })).json();
+      assert.equal(usageBRes.recentMessages.length, 0, "Tenant B must see 0 messages from Tenant A");
+    } finally {
+      try { if (itemIdA) db.prepare("DELETE FROM catalog_items WHERE id = ?").run(itemIdA); } catch {}
+      try { if (entIdA) db.prepare("DELETE FROM business_entities WHERE id = ?").run(entIdA); } catch {}
+      for (const tid of [tidA, tidB]) {
+        try { db.prepare("DELETE FROM booking_enquiries WHERE tenant_id = ?").run(tid); } catch {}
+        try { db.prepare("DELETE FROM whatsapp_messages WHERE tenant_id = ?").run(tid); } catch {}
+        try { db.prepare("DELETE FROM waba_phone_numbers WHERE tenant_id = ?").run(tid); } catch {}
+        try { db.prepare("DELETE FROM tenant_user_memberships WHERE tenant_id = ?").run(tid); } catch {}
+        try { db.prepare("DELETE FROM users WHERE tenant_id = ?").run(tid); } catch {}
+        try { db.prepare("DELETE FROM tenants WHERE id = ?").run(tid); } catch {}
+      }
+    }
+  });
+
+  test("11. Workspace Owner Inbox, WABA Lines, Tenant Auto-Reply & WhatsApp Flows Isolation", async () => {
+    const { getSetting, setSetting } = require("../src/config/database");
+    const flowController = require("../src/controllers/flowController");
+
+    const tTs = Date.now() + 77;
+    const tAInfo = db.prepare(`INSERT INTO tenants (name, slug, status, quota_waba_lines) VALUES (?, ?, 'ACTIVE', 3)`).run(`Suite11 A ${tTs}`, `s11-a-${tTs}`);
+    const tBInfo = db.prepare(`INSERT INTO tenants (name, slug, status, quota_waba_lines) VALUES (?, ?, 'ACTIVE', 3)`).run(`Suite11 B ${tTs}`, `s11-b-${tTs}`);
+    const tidA = Number(tAInfo.lastInsertRowid);
+    const tidB = Number(tBInfo.lastInsertRowid);
+
+    const ownerAId = `s11_own_a_${tTs}`;
+    const empAId = `s11_emp_a_${tTs}`;
+    const ownerBId = `s11_own_b_${tTs}`;
+    const lineA1Id = `waba_s11_a1_${tTs}`;
+    const lineA1PhoneId = `pn_s11_a1_${tTs}`;
+    const lineA2PhoneId = `pn_s11_a2_${tTs}`;
+    let replyIdA = null;
+    const prevGlobalPhoneId = getSetting("WHATSAPP_PHONE_NUMBER_ID");
+    const prevGlobalAutoMsg = getSetting("AUTO_REPLY_MESSAGE");
+    const prevFlowsFlag = getSetting("WHATSAPP_FLOWS_ENABLED");
+    let createdFlowId = null;
+
+    try {
+      db.prepare(`INSERT INTO users (id, tenant_id, name, email, phone, password_hash, role, status) VALUES (?, ?, 'S11 Owner A', ?, '9192220001', 'h', 'USER', 'ACTIVE')`).run(ownerAId, tidA, `s11_own_a_${tTs}@test.local`);
+      db.prepare(`INSERT INTO tenant_user_memberships (user_id, tenant_id, role) VALUES (?, ?, 'OWNER')`).run(ownerAId, tidA);
+      db.prepare(`INSERT INTO users (id, tenant_id, name, email, phone, password_hash, role, status) VALUES (?, ?, 'S11 Emp A', ?, '9192220002', 'h', 'USER', 'ACTIVE')`).run(empAId, tidA, `s11_emp_a_${tTs}@test.local`);
+      db.prepare(`INSERT INTO tenant_user_memberships (user_id, tenant_id, role) VALUES (?, ?, 'USER')`).run(empAId, tidA);
+      db.prepare(`INSERT INTO users (id, tenant_id, name, email, phone, password_hash, role, status) VALUES (?, ?, 'S11 Owner B', ?, '9192220003', 'h', 'USER', 'ACTIVE')`).run(ownerBId, tidB, `s11_own_b_${tTs}@test.local`);
+      db.prepare(`INSERT INTO tenant_user_memberships (user_id, tenant_id, role) VALUES (?, ?, 'OWNER')`).run(ownerBId, tidB);
+
+      db.prepare(`
+        INSERT INTO waba_phone_numbers (id, tenant_id, display_name, phone_number, phone_number_id, waba_id, is_default, status)
+        VALUES (?, ?, 'Tenant A Primary Line', '+91 92220 00001', ?, ?, 1, 'CONNECTED')
+      `).run(lineA1Id, tidA, lineA1PhoneId, `waba_s11_${tTs}`);
+
+      const repRes = db.prepare(`
+        INSERT INTO customer_replies (tenant_id, user_id, wa_message_id, from_phone, customer_name, message_body, message_type, received_at, is_read)
+        VALUES (?, ?, ?, '+919900011223', 'Patient via EmpA', 'Need invoice copy', 'text', CURRENT_TIMESTAMP, 0)
+      `).run(tidA, empAId, `wamid_${tTs}`);
+      replyIdA = Number(repRes.lastInsertRowid);
+
+      const tokOwnerA = jwt.sign({ userId: ownerAId, role: "USER", tenantId: tidA }, config.JWT_SECRET, { expiresIn: "1h" });
+      const tokEmpA = jwt.sign({ userId: empAId, role: "USER", tenantId: tidA }, config.JWT_SECRET, { expiresIn: "1h" });
+      const tokOwnerB = jwt.sign({ userId: ownerBId, role: "USER", tenantId: tidB }, config.JWT_SECRET, { expiresIn: "1h" });
+
+      // 1. Inbox: Workspace Owner A sees Emp A's customer reply; Tenant B sees 0
+      const inboxA = await (await fetch(`${baseUrl}/api/inbox/replies`, { headers: { Authorization: `Bearer ${tokOwnerA}` } })).json();
+      assert.ok(inboxA.replies.some(r => String(r.id) === String(replyIdA)), "Workspace Owner A must see team customer replies");
+      const inboxB = await (await fetch(`${baseUrl}/api/inbox/replies`, { headers: { Authorization: `Bearer ${tokOwnerB}` } })).json();
+      assert.equal(inboxB.replies.some(r => String(r.id) === String(replyIdA)), false, "Tenant B must never see Tenant A replies");
+
+      // 2. WABA Lines: Tenant-scoped listing, spoof protection, Workspace Owner default toggle, Employee 403
+      const linesA = await (await fetch(`${baseUrl}/api/phone-numbers`, { headers: { Authorization: `Bearer ${tokOwnerA}` } })).json();
+      assert.equal(linesA.data.length, 1);
+      assert.equal(linesA.data[0].phone_number_id, lineA1PhoneId);
+
+      const empAddLine = await fetch(`${baseUrl}/api/phone-numbers`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tokEmpA}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName: "Emp Unauthorized Line", phoneNumberId: lineA2PhoneId })
+      });
+      assert.equal(empAddLine.status, 403);
+
+      const ownerAddLine = await fetch(`${baseUrl}/api/phone-numbers`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tokOwnerA}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenantId: 1, // attempted spoof must be ignored
+          displayName: "Tenant A Secondary Line",
+          phoneNumber: "+91 92220 00002",
+          phoneNumberId: lineA2PhoneId
+        })
+      });
+      assert.equal(ownerAddLine.status, 201);
+      const lineA2 = (await ownerAddLine.json()).data;
+      assert.equal(Number(lineA2.tenant_id), tidA, "Client tenantId spoof must never assign line to Tenant 1");
+
+      const setDefRes = await fetch(`${baseUrl}/api/phone-numbers/${lineA2.id}/default`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tokOwnerA}` }
+      });
+      assert.equal(setDefRes.status, 200);
+      assert.equal(getSetting("WHATSAPP_PHONE_NUMBER_ID"), prevGlobalPhoneId, "Tenant A default change must not alter Tenant 1 global sender");
+
+      const crossDef = await fetch(`${baseUrl}/api/phone-numbers/${lineA1Id}/default`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tokOwnerB}` }
+      });
+      assert.equal(crossDef.status, 403, "Tenant B blocked from toggling Tenant A default line");
+
+      const crossDel = await fetch(`${baseUrl}/api/phone-numbers/${lineA1Id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${tokOwnerB}` }
+      });
+      assert.equal(crossDel.status, 403, "Tenant B blocked from deleting Tenant A line");
+
+      // 3. Auto-Reply Settings: Tenant-scoped save & isolation
+      const empSaveAr = await fetch(`${baseUrl}/api/settings/auto-reply`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tokEmpA}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: true, mode: "ALWAYS", message: "Emp Override" })
+      });
+      assert.equal(empSaveAr.status, 403);
+
+      const ownerSaveAr = await fetch(`${baseUrl}/api/settings/auto-reply`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tokOwnerA}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: false, mode: "ALWAYS", message: "Tenant A Custom Auto-Reply" })
+      });
+      assert.equal(ownerSaveAr.status, 200);
+      const ownerGetAr = await (await fetch(`${baseUrl}/api/settings/auto-reply`, { headers: { Authorization: `Bearer ${tokOwnerA}` } })).json();
+      assert.equal(ownerGetAr.data.enabled, false);
+      assert.equal(ownerGetAr.data.mode, "ALWAYS");
+      assert.equal(ownerGetAr.data.autoReplyMessage, "Tenant A Custom Auto-Reply");
+      assert.equal(getSetting("AUTO_REPLY_MESSAGE"), prevGlobalAutoMsg, "Tenant A auto-reply must not overwrite Tenant 1 global setting");
+
+      const tenantBGetAr = await (await fetch(`${baseUrl}/api/settings/auto-reply`, { headers: { Authorization: `Bearer ${tokOwnerB}` } })).json();
+      assert.notEqual(tenantBGetAr.data.autoReplyMessage, "Tenant A Custom Auto-Reply");
+
+      // 4. WhatsApp Flows: No !req.user fail-open bypass & strict tenant isolation
+      let directStatus = 200;
+      const directRes = { status: (c) => { directStatus = c; return directRes; }, json: () => directRes };
+      await flowController.getFlow({ user: null, params: { flowId: "nonexistent" } }, directRes);
+      assert.equal(directStatus, 401, "flowController must fail closed (401) when req.user is missing");
+
+      setSetting("WHATSAPP_FLOWS_ENABLED", "true");
+      const validFlowJson = {
+        version: "3.1",
+        screens: [{ id: "WELCOME", title: "Intake", terminal: true, layout: { type: "SingleColumnLayout", children: [{ type: "TextHeading", text: "Hi" }] } }]
+      };
+      const empCreateFlow = await fetch(`${baseUrl}/api/flows`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tokEmpA}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: `Tenant A Flow ${tTs}`, flow_json: validFlowJson })
+      });
+      assert.equal(empCreateFlow.status, 201);
+      createdFlowId = (await empCreateFlow.json()).data.id;
+
+      const ownerFlows = await (await fetch(`${baseUrl}/api/flows`, { headers: { Authorization: `Bearer ${tokOwnerA}` } })).json();
+      assert.ok(ownerFlows.data.some(f => f.id === createdFlowId), "Workspace Owner A sees team-created flows");
+
+      const tenantBFlows = await (await fetch(`${baseUrl}/api/flows`, { headers: { Authorization: `Bearer ${tokOwnerB}` } })).json();
+      assert.equal(tenantBFlows.data.some(f => f.id === createdFlowId), false, "Tenant B never sees Tenant A flows");
+
+      const crossFlowGet = await fetch(`${baseUrl}/api/flows/${createdFlowId}`, { headers: { Authorization: `Bearer ${tokOwnerB}` } });
+      assert.equal(crossFlowGet.status, 403);
+      const crossFlowPub = await fetch(`${baseUrl}/api/flows/${createdFlowId}/publish`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tokOwnerB}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ forceLocal: true })
+      });
+      assert.equal(crossFlowPub.status, 403);
+      const crossFlowDel = await fetch(`${baseUrl}/api/flows/${createdFlowId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${tokOwnerB}` }
+      });
+      assert.equal(crossFlowDel.status, 403);
+    } finally {
+      if (prevFlowsFlag !== null && prevFlowsFlag !== undefined) setSetting("WHATSAPP_FLOWS_ENABLED", prevFlowsFlag);
+      try { if (createdFlowId) db.prepare("DELETE FROM whatsapp_flows WHERE id = ?").run(createdFlowId); } catch {}
+      try { db.prepare("DELETE FROM customer_replies WHERE id = ?").run(replyIdA); } catch {}
+      for (const tid of [tidA, tidB]) {
+        try { db.prepare("DELETE FROM tenant_settings WHERE tenant_id = ?").run(tid); } catch {}
+        try { db.prepare("DELETE FROM whatsapp_flows WHERE tenant_id = ?").run(tid); } catch {}
+        try { db.prepare("DELETE FROM waba_phone_numbers WHERE tenant_id = ?").run(tid); } catch {}
+        try { db.prepare("DELETE FROM tenant_user_memberships WHERE tenant_id = ?").run(tid); } catch {}
+        try { db.prepare("DELETE FROM users WHERE tenant_id = ?").run(tid); } catch {}
+        try { db.prepare("DELETE FROM tenants WHERE id = ?").run(tid); } catch {}
+      }
+    }
+  });
 });

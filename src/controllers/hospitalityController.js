@@ -2,6 +2,7 @@ const configService = require("../services/hospitalityConfigService");
 const availabilityService = require("../services/hospitalityAvailabilityService");
 const pricingService = require("../services/hospitalityPricingService");
 const chatService = require("../services/hospitalityChatService");
+const { isWorkspaceAdmin } = require("../middleware/authMiddleware");
 
 /**
  * -------------------------------------------------------------------------
@@ -12,7 +13,7 @@ async function listProperties(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || null;
-    const isAdmin = req.user?.role === "ADMIN" || req.user?.role === "SYSTEM_ADMIN";
+    const isAdmin = isWorkspaceAdmin(req.user);
     const properties = configService.listProperties(tenantId, userId, isAdmin);
     res.json({ success: true, properties });
   } catch (err) {
@@ -24,7 +25,7 @@ async function getProperty(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || null;
-    const isAdmin = req.user?.role === "ADMIN" || req.user?.role === "SYSTEM_ADMIN";
+    const isAdmin = isWorkspaceAdmin(req.user);
     const property = configService.getPropertyById(tenantId, req.params.id, userId, isAdmin);
     if (!property) return res.status(404).json({ success: false, message: "Property not found." });
     res.json({ success: true, property });
@@ -37,7 +38,7 @@ async function updateProperty(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || null;
-    const isAdmin = req.user?.role === "ADMIN" || req.user?.role === "SYSTEM_ADMIN";
+    const isAdmin = isWorkspaceAdmin(req.user);
     const property = configService.updateProperty(req.params.id, req.body, tenantId, userId, isAdmin);
     res.json({ success: true, property, message: "Property configuration updated." });
   } catch (err) {
@@ -49,7 +50,7 @@ async function publishProperty(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || null;
-    const isAdmin = req.user?.role === "ADMIN" || req.user?.role === "SYSTEM_ADMIN";
+    const isAdmin = isWorkspaceAdmin(req.user);
     const result = configService.publishProperty(req.params.id, tenantId, userId, isAdmin);
     res.json({ success: true, ...result });
   } catch (err) {
@@ -61,7 +62,7 @@ async function unpublishProperty(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || null;
-    const isAdmin = req.user?.role === "ADMIN" || req.user?.role === "SYSTEM_ADMIN";
+    const isAdmin = isWorkspaceAdmin(req.user);
     const result = configService.unpublishProperty(req.params.id, tenantId, userId, isAdmin);
     res.json({ success: true, ...result });
   } catch (err) {

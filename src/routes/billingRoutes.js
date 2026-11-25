@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const billingService = require("../services/billingService");
-const { authenticateToken, optionalAuth } = require("../middleware/authMiddleware");
+const { authenticateToken, requireWorkspaceAdmin, optionalAuth } = require("../middleware/authMiddleware");
 const { db } = require("../config/database");
 
 /**
@@ -99,6 +99,45 @@ router.post("/checkout", (req, res) => {
     return res.status(200).json(result);
   } catch (err) {
     return res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * POST /verify-payment
+ * Verifies Razorpay Checkout signature on the server (HMAC-SHA256) and activates subscription
+ */
+router.post("/verify-payment", requireWorkspaceAdmin, async (req, res) => {
+  try {
+    const {
+      planCode,
+      billingCycle,
+      customerStateCode,
+      gstin,
+      billingAddress,
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature
+    } = req.body || {};
+
+    const result = await billingService.verifyRazorpayCheckoutPayment({
+      tenantId: req.user.tenant_id,
+      planCode,
+      billingCycle,
+      customerStateCode,
+      gstin,
+      billingAddress,
+      razorpayOrderId: razorpay_order_id,
+      razorpayPaymentId: razorpay_payment_id,
+      razorpaySignature: razorpay_signature
+    });
+    return res.status(200).json(result);
+  } catch (err) {
+    const status = err.statusCode || (/signature/i.test(err.message) ? 401 : 400);
+    return res.status(status).json({
+      success: false,
+      code: err.code || undefined,
+      message: err.message
+    });
   }
 });
 

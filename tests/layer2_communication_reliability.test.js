@@ -231,4 +231,80 @@ describe("Layer 2: Communication Adapter, Channel Isolation, Durable Webhook & H
     const engine = new JobWorkerEngine({ workerId: "l2_test_worker" });
     assert.equal(typeof engine.handlers.get("OUTBOUND_MESSAGE_DISPATCH"), "function");
   });
+
+  test("5. Updating META_APP_SECRET via Admin Settings immediately updates live HMAC webhook verification & ignores corrupted ciphertext", async () => {
+    const jwt = require("jsonwebtoken");
+    const webhookController = require("../src/controllers/webhookController");
+    const adminRow = db.prepare("SELECT * FROM users WHERE role = 'ADMIN' AND tenant_id = 1 LIMIT 1").get();
+    assert.ok(adminRow);
+    const adminToken = jwt.sign({ userId: adminRow.id, role: "ADMIN", tenantId: 1 }, config.JWT_SECRET, { expiresIn: "1h" });
+
+    const rotatedSecret = "abcdef0123456789abcdef0123456789";
+    const savedConfigSecret = config.META_APP_SECRET;
+    const savedDbSecret = getSetting("META_APP_SECRET");
+    const prevNodeEnv = process.env.NODE_ENV;
+
+    try {
+      // Admin rotates META_APP_SECRET via API while stale value was previously in config.META_APP_SECRET
+      const updRes = await originalFetch(`${baseUrl}/api/settings`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ META_APP_SECRET: rotatedSecret })
+      });
+      assert.equal(updRes.status, 200);
+      assert.equal(config.META_APP_SECRET, rotatedSecret, "Runtime config.META_APP_SECRET must sync on Admin save");
+
+      const cfgRes = await (await originalFetch(`${baseUrl}/api/admin/webhooks/config`, {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      })).json();
+      assert.equal(cfgRes.data.metaAppSecretConfigured, true);
+      assert.equal(cfgRes.data.metaAppSecretLength, 32);
+
+      const whBody = JSON.stringify({
+        object: "whatsapp_business_account",
+        entry: [{ id: `waba_rot_${Date.now()}`, changes: [] }]
+      });
+      const validSig = "sha256=" + crypto.createHmac("sha256", rotatedSecret).update(whBody).digest("hex");
+      const staleSig = "sha256=" + crypto.createHmac("sha256", "stale_wrong_secret_12345").update(whBody).digest("hex");
+
+      const badRes = await originalFetch(`${baseUrl}/webhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-hub-signature-256": staleSig },
+        body: whBody
+      });
+      assert.equal(badRes.status, 403);
+
+      const okRes = await originalFetch(`${baseUrl}/webhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-hub-signature-256": validSig },
+        body: whBody
+      });
+      assert.equal(okRes.status, 200);
+
+      // Verify undecryptable DB ciphertext does NOT verify against raw "enc:aes-256-gcm:..." string
+      const corruptEnc = "enc:aes-256-gcm:00112233445566778899aabb:00112233445566778899aabbccddeeff:deadbeef";
+      db.prepare("INSERT OR REPLACE INTO settings (`key`, value, updated_at) VALUES ('META_APP_SECRET', ?, CURRENT_TIMESTAMP)").run(corruptEnc);
+      config.META_APP_SECRET = "";
+      process.env.NODE_ENV = "production";
+      const fakeReq = {
+        headers: {
+          "x-hub-signature-256": "sha256=" + crypto.createHmac("sha256", corruptEnc).update(Buffer.from("{}")).digest("hex")
+        },
+        rawBody: Buffer.from("{}"),
+        body: {}
+      };
+      assert.equal(webhookController.verifyMetaSignature(fakeReq), false, "Corrupted ciphertext must never be used as HMAC key");
+    } finally {
+      process.env.NODE_ENV = prevNodeEnv;
+      config.META_APP_SECRET = savedConfigSecret;
+      if (savedDbSecret !== null && savedDbSecret !== undefined) {
+        setSetting("META_APP_SECRET", savedDbSecret);
+      } else {
+        db.prepare("DELETE FROM settings WHERE `key` = 'META_APP_SECRET'").run();
+      }
+    }
+  });
 });

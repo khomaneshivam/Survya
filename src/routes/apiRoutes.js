@@ -71,16 +71,16 @@ router.post("/admin/phone-numbers/:id/default", authenticateToken, requireAdmin,
 router.post("/admin/phone-numbers/:id/token", authenticateToken, requireAdmin, adminController.updatePhoneNumberToken);
 router.post("/admin/phone-numbers/:id/test", authenticateToken, requireAdmin, adminController.testPhoneNumber);
 
-// Top-level aliases for phone numbers
+// Workspace-scoped aliases for phone numbers (Workspace Owner/Admin or Platform Admin)
 router.get("/phone-numbers", authenticateToken, adminController.listPhoneNumbers);
-router.post("/phone-numbers", authenticateToken, requireAdmin, adminController.registerPhoneNumber);
-router.post("/phone-numbers/register-meta", authenticateToken, requireAdmin, settingsController.registerMetaPhone);
-router.post("/phone-numbers/:id/register-meta", authenticateToken, requireAdmin, settingsController.registerMetaPhone);
-router.post("/phone-numbers/:id/deregister-meta", authenticateToken, requireAdmin, settingsController.deregisterMetaPhone);
-router.delete("/phone-numbers/:id", authenticateToken, requireAdmin, adminController.deletePhoneNumber);
-router.post("/phone-numbers/:id/default", authenticateToken, requireAdmin, adminController.setDefaultPhoneNumber);
-router.post("/phone-numbers/:id/token", authenticateToken, requireAdmin, adminController.updatePhoneNumberToken);
-router.post("/phone-numbers/:id/test", authenticateToken, requireAdmin, adminController.testPhoneNumber);
+router.post("/phone-numbers", authenticateToken, requireWorkspaceAdmin, adminController.registerPhoneNumber);
+router.post("/phone-numbers/register-meta", authenticateToken, requireWorkspaceAdmin, settingsController.registerMetaPhone);
+router.post("/phone-numbers/:id/register-meta", authenticateToken, requireWorkspaceAdmin, settingsController.registerMetaPhone);
+router.post("/phone-numbers/:id/deregister-meta", authenticateToken, requireWorkspaceAdmin, settingsController.deregisterMetaPhone);
+router.delete("/phone-numbers/:id", authenticateToken, requireWorkspaceAdmin, adminController.deletePhoneNumber);
+router.post("/phone-numbers/:id/default", authenticateToken, requireWorkspaceAdmin, adminController.setDefaultPhoneNumber);
+router.post("/phone-numbers/:id/token", authenticateToken, requireWorkspaceAdmin, adminController.updatePhoneNumberToken);
+router.post("/phone-numbers/:id/test", authenticateToken, requireWorkspaceAdmin, adminController.testPhoneNumber);
 
 // =========================================================================
 // 3. REPORTS & ANALYTICS (Protected & Scoped)
@@ -406,13 +406,13 @@ router.get("/flows/responses", authenticateToken, flowController.listResponses);
 router.get("/flows/crypto/config", authenticateToken, flowController.getCryptoConfig);
 router.post("/flows/crypto/generate-keypair", authenticateToken, requireAdmin, flowController.generateKeyPair);
 router.post("/flows/crypto/save-private-key", authenticateToken, requireAdmin, flowController.savePrivateKey);
-router.post("/flows/sync", authenticateToken, requireAdmin, flowController.syncMeta);
+router.post("/flows/sync", authenticateToken, requireWorkspaceAdmin, flowController.syncMeta);
 router.post("/flows", authenticateToken, flowController.createFlow);
 router.get("/flows/:flowId", authenticateToken, flowController.getFlow);
 router.put("/flows/:flowId", authenticateToken, flowController.updateFlow);
-router.post("/flows/:flowId/push", authenticateToken, requireAdmin, flowController.pushFlowToMeta);
-router.post("/flows/:flowId/publish", authenticateToken, requireAdmin, flowController.publishFlow);
-router.post("/flows/:flowId/deprecate", authenticateToken, requireAdmin, flowController.deprecateFlow);
+router.post("/flows/:flowId/push", authenticateToken, requireWorkspaceAdmin, flowController.pushFlowToMeta);
+router.post("/flows/:flowId/publish", authenticateToken, requireWorkspaceAdmin, flowController.publishFlow);
+router.post("/flows/:flowId/deprecate", authenticateToken, requireWorkspaceAdmin, flowController.deprecateFlow);
 router.delete("/flows/:flowId", authenticateToken, flowController.deleteFlow);
 router.post("/flows/:flowId/send-test", authenticateToken, flowController.sendTestFlow);
 
@@ -437,8 +437,8 @@ router.post("/webhook/tunnel/restart", authenticateToken, requireAdmin, webhookC
 // Customer Replies & Inbox (Protected & Scoped)
 router.get("/replies", authenticateToken, webhookController.listReplies);
 router.get("/inbox/replies", authenticateToken, webhookController.listReplies);
-router.get("/replies/auto-reply-settings", authenticateToken, requireAdmin, webhookController.getAutoReplySettings);
-router.post("/replies/auto-reply-settings", authenticateToken, requireAdmin, webhookController.updateAutoReplySettings);
+router.get(["/replies/auto-reply-settings", "/settings/auto-reply"], authenticateToken, requireWorkspaceAdmin, webhookController.getAutoReplySettings);
+router.post(["/replies/auto-reply-settings", "/settings/auto-reply"], authenticateToken, requireWorkspaceAdmin, webhookController.updateAutoReplySettings);
 router.get("/replies/dynamic-options", authenticateToken, requireAdmin, webhookController.getDynamicOptions);
 router.post("/replies/dynamic-options", authenticateToken, requireAdmin, webhookController.saveDynamicOptions);
 router.post("/replies/:id/reply", authenticateToken, webhookController.sendManualReply);

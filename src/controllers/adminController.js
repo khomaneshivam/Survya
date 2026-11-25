@@ -8,7 +8,7 @@ const metaWhatsAppService = require("../services/metaWhatsAppService");
 const recycleBinService = require("../services/recycleBinService");
 const complianceService = require("../services/complianceService");
 const billingService = require("../services/billingService");
-const { isPlatformAdmin } = require("../middleware/authMiddleware");
+const { isPlatformAdmin, isWorkspaceAdmin } = require("../middleware/authMiddleware");
 
 /**
  * List all registered users with summary statistics (Admin Only)
@@ -228,23 +228,35 @@ async function impersonateUser(req, res) {
  */
 async function listPhoneNumbers(req, res) {
   try {
-    // Ensure at least one default line exists if registered numbers exist
-    const defaultCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers WHERE is_default = 1").get()?.count || 0;
-    const totalCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers").get()?.count || 0;
-    if (totalCount > 0 && defaultCount === 0) {
-      const activeSettingId = getSetting("WHATSAPP_PHONE_NUMBER_ID") || config.WHATSAPP_PHONE_NUMBER_ID;
-      if (activeSettingId) {
-        db.prepare("UPDATE waba_phone_numbers SET is_default = 1 WHERE phone_number_id = ?").run(activeSettingId);
-      }
-      const recheck = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers WHERE is_default = 1").get()?.count || 0;
-      if (recheck === 0) {
-        const first = db.prepare("SELECT id FROM waba_phone_numbers ORDER BY created_at ASC LIMIT 1").get();
-        if (first?.id) {
-          db.prepare("UPDATE waba_phone_numbers SET is_default = 1 WHERE id = ?").run(first.id);
+    const callerTenantId = Number(req.user?.tenant_id || 1);
+    const hasWorkspaceOverride = Boolean(req.headers?.["x-workspace-id"] || req.headers?.["x-tenant-id"]);
+    const isAdminOverview = isPlatformAdmin(req.user) && (req.originalUrl || "").includes("/admin/") && !hasWorkspaceOverride;
+    const requestedTenantId = isAdminOverview && req.query?.tenantId ? Number(req.query.tenantId) : null;
+    const scopeTenantId = isAdminOverview ? requestedTenantId : callerTenantId;
+
+    // Ensure at least one default line exists within the scoped workspace
+    if (scopeTenantId) {
+      const defaultCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers WHERE is_default = 1 AND COALESCE(tenant_id, 1) = ?").get(scopeTenantId)?.count || 0;
+      const totalCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers WHERE COALESCE(tenant_id, 1) = ?").get(scopeTenantId)?.count || 0;
+      if (totalCount > 0 && defaultCount === 0) {
+        if (scopeTenantId === 1) {
+          const activeSettingId = getSetting("WHATSAPP_PHONE_NUMBER_ID") || config.WHATSAPP_PHONE_NUMBER_ID;
+          if (activeSettingId) {
+            db.prepare("UPDATE waba_phone_numbers SET is_default = 1 WHERE phone_number_id = ? AND COALESCE(tenant_id, 1) = 1").run(activeSettingId);
+          }
+        }
+        const recheck = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers WHERE is_default = 1 AND COALESCE(tenant_id, 1) = ?").get(scopeTenantId)?.count || 0;
+        if (recheck === 0) {
+          const first = db.prepare("SELECT id FROM waba_phone_numbers WHERE COALESCE(tenant_id, 1) = ? ORDER BY created_at ASC LIMIT 1").get(scopeTenantId);
+          if (first?.id) {
+            db.prepare("UPDATE waba_phone_numbers SET is_default = 1 WHERE id = ? AND COALESCE(tenant_id, 1) = ?").run(first.id, scopeTenantId);
+          }
         }
       }
     }
 
+    const whereClause = scopeTenantId ? "WHERE COALESCE(p.tenant_id, 1) = ?" : "";
+    const params = scopeTenantId ? [scopeTenantId] : [];
     const numbers = db.prepare(`
       SELECT 
         p.*,
@@ -253,8 +265,9 @@ async function listPhoneNumbers(req, res) {
         (SELECT COUNT(*) FROM campaigns c WHERE c.phone_number_id = p.id) as campaigns_count
       FROM waba_phone_numbers p
       LEFT JOIN users u ON p.registered_by = u.id
+      ${whereClause}
       ORDER BY p.is_default DESC, p.created_at DESC
-    `).all().map(n => {
+    `).all(...params).map(n => {
       const rawToken = n.access_token ? String(n.access_token).trim() : null;
       return {
         ...n,
@@ -299,8 +312,12 @@ async function registerPhoneNumber(req, res) {
     let cleanPhone = phoneNumber ? String(phoneNumber).trim() : "";
     const cleanWabaId = wabaId ? String(wabaId).trim() : null;
 
-    // If custom token is provided and non-dummy, save it to platform settings
-    if (customToken && String(customToken).trim() && !customToken.startsWith("EAAX_") && !customToken.includes("placeholder")) {
+    const targetTenantId = isPlatformAdmin(req.user)
+      ? Number(req.body?.tenantId || req.user?.tenant_id || 1)
+      : Number(req.user?.tenant_id || 1);
+
+    // If custom token is provided and non-dummy, save it to Tenant 1 platform settings only
+    if (targetTenantId === 1 && customToken && String(customToken).trim() && !customToken.startsWith("EAAX_") && !customToken.includes("placeholder")) {
       try {
         setSetting("WHATSAPP_API_TOKEN", String(customToken).trim());
       } catch (e) {
@@ -308,8 +325,8 @@ async function registerPhoneNumber(req, res) {
       }
     }
 
-    // Determine active token to query Meta
-    const activeToken = (customToken && String(customToken).trim()) || getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN;
+    // Determine active token to query Meta (never inherit Tenant 1 global token into Tenant 2+)
+    const activeToken = (customToken && String(customToken).trim()) || (targetTenantId === 1 ? (getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN) : null);
 
     // Verify against Meta Graph API or auto-detect missing details
     let qualityRating = "GREEN";
@@ -345,7 +362,6 @@ async function registerPhoneNumber(req, res) {
       cleanPhone = cleanPhoneId;
     }
 
-    const targetTenantId = Number(req.body?.tenantId || req.user?.tenant_id || 1);
     try {
       billingService.assertCanConnectWabaLine(targetTenantId, cleanPhoneId);
     } catch (quotaErr) {
@@ -353,6 +369,15 @@ async function registerPhoneNumber(req, res) {
         success: false,
         code: quotaErr.code || "WABA_LINE_QUOTA_EXCEEDED",
         message: quotaErr.message
+      });
+    }
+
+    // Check if Phone Number ID belongs to another tenant before overwriting/PIN-registering
+    const existingPreCheck = db.prepare("SELECT * FROM waba_phone_numbers WHERE phone_number_id = ?").get(cleanPhoneId);
+    if (existingPreCheck && !isPlatformAdmin(req.user) && Number(existingPreCheck.tenant_id || 1) !== targetTenantId) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: This WhatsApp Phone Number ID is registered to another workspace."
       });
     }
 
@@ -384,7 +409,7 @@ async function registerPhoneNumber(req, res) {
     }
 
     // Check if Phone Number ID already exists (UPSERT instead of 409)
-    const existing = db.prepare("SELECT * FROM waba_phone_numbers WHERE phone_number_id = ?").get(cleanPhoneId);
+    const existing = existingPreCheck;
     const phoneCount = db.prepare("SELECT COUNT(*) as count FROM waba_phone_numbers WHERE COALESCE(tenant_id, 1) = ? AND COALESCE(delete_status, 0) = 0").get(targetTenantId).count;
     const shouldBeDefault = isDefault !== undefined ? Boolean(isDefault) : (existing ? existing.is_default === 1 : phoneCount === 0);
 
@@ -480,6 +505,9 @@ async function deletePhoneNumber(req, res) {
     if (!phone) {
       return res.status(404).json({ success: false, message: "Phone number not found." });
     }
+    if (!isPlatformAdmin(req.user) && Number(phone.tenant_id || 1) !== Number(req.user?.tenant_id || 1)) {
+      return res.status(403).json({ success: false, message: "Forbidden: Phone line belongs to another workspace." });
+    }
 
     if (phone.is_default) {
       return res.status(400).json({
@@ -488,11 +516,11 @@ async function deletePhoneNumber(req, res) {
       });
     }
 
-    db.prepare("DELETE FROM waba_phone_numbers WHERE id = ?").run(id);
+    db.prepare("DELETE FROM waba_phone_numbers WHERE id = ? AND COALESCE(tenant_id, 1) = ?").run(id, Number(phone.tenant_id || 1));
 
     return res.status(200).json({
       success: true,
-      message: `Phone number '${phone.display_name}' removed from platform.`
+      message: `Phone number '${phone.display_name}' removed from workspace.`
     });
   } catch (error) {
     console.error("Admin deletePhoneNumber error:", error);
@@ -501,7 +529,7 @@ async function deletePhoneNumber(req, res) {
 }
 
 /**
- * Set a phone number as default active (Admin Only)
+ * Set a phone number as default active within its workspace
  */
 async function setDefaultPhoneNumber(req, res) {
   try {
@@ -510,11 +538,17 @@ async function setDefaultPhoneNumber(req, res) {
     if (!phone) {
       return res.status(404).json({ success: false, message: "Phone number not found." });
     }
+    const targetTenantId = Number(phone.tenant_id || 1);
+    if (!isPlatformAdmin(req.user) && targetTenantId !== Number(req.user?.tenant_id || 1)) {
+      return res.status(403).json({ success: false, message: "Forbidden: Phone line belongs to another workspace." });
+    }
 
-    db.prepare("UPDATE waba_phone_numbers SET is_default = 0").run();
-    db.prepare("UPDATE waba_phone_numbers SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
+    db.prepare("UPDATE waba_phone_numbers SET is_default = 0 WHERE COALESCE(tenant_id, 1) = ?").run(targetTenantId);
+    db.prepare("UPDATE waba_phone_numbers SET is_default = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND COALESCE(tenant_id, 1) = ?").run(id, targetTenantId);
 
-    setSetting("WHATSAPP_PHONE_NUMBER_ID", phone.phone_number_id);
+    if (targetTenantId === 1) {
+      setSetting("WHATSAPP_PHONE_NUMBER_ID", phone.phone_number_id);
+    }
 
     return res.status(200).json({
       success: true,
@@ -527,7 +561,7 @@ async function setDefaultPhoneNumber(req, res) {
 }
 
 /**
- * Test / Verify a specific phone line against Meta Cloud API (Admin Only)
+ * Test / Verify a specific phone line against Meta Cloud API
  */
 async function testPhoneNumber(req, res) {
   try {
@@ -538,8 +572,12 @@ async function testPhoneNumber(req, res) {
     if (!phone) {
       return res.status(404).json({ success: false, message: "Phone number not found in registry." });
     }
+    const targetTenantId = Number(phone.tenant_id || 1);
+    if (!isPlatformAdmin(req.user) && targetTenantId !== Number(req.user?.tenant_id || 1)) {
+      return res.status(403).json({ success: false, message: "Forbidden: Phone line belongs to another workspace." });
+    }
 
-    const activeToken = (customToken && String(customToken).trim()) || phone.access_token || getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN;
+    const activeToken = (customToken && String(customToken).trim()) || phone.access_token || (targetTenantId === 1 ? (getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN) : null);
     if (!activeToken) {
       return res.status(400).json({ success: false, message: "No WhatsApp Cloud API token configured or provided." });
     }
@@ -594,7 +632,7 @@ async function testPhoneNumber(req, res) {
 }
 
 /**
- * Update and verify permanent access token dedicated to a specific phone line (Admin Only)
+ * Update and verify permanent access token dedicated to a specific phone line
  */
 async function updatePhoneNumberToken(req, res) {
   try {
@@ -607,6 +645,10 @@ async function updatePhoneNumberToken(req, res) {
     const phone = db.prepare("SELECT * FROM waba_phone_numbers WHERE id = ? OR phone_number_id = ?").get(id, id);
     if (!phone) {
       return res.status(404).json({ success: false, message: "Phone number not found in registry." });
+    }
+    const targetTenantId = Number(phone.tenant_id || 1);
+    if (!isPlatformAdmin(req.user) && targetTenantId !== Number(req.user?.tenant_id || 1)) {
+      return res.status(403).json({ success: false, message: "Forbidden: Phone line belongs to another workspace." });
     }
 
     // Live verification with Meta Graph API
@@ -641,8 +683,8 @@ async function updatePhoneNumberToken(req, res) {
       WHERE id = ?
     `).run(cleanToken, tokenType, qualityRating, status, verifiedName, displayPhone, phone.id);
 
-    // If this line is designated default, update settings WHATSAPP_API_TOKEN as well
-    if (phone.is_default === 1) {
+    // If this Tenant 1 line is designated default, update global WHATSAPP_API_TOKEN as well
+    if (phone.is_default === 1 && targetTenantId === 1) {
       try {
         setSetting("WHATSAPP_API_TOKEN", cleanToken);
       } catch (e) {}
@@ -922,7 +964,13 @@ async function getWebhookConfig(req, res) {
   try {
     const urls = webhookService.resolveWebhookUrls(req);
     const verifyToken = webhookService.getVerifyToken();
-    const appSecret = config.META_APP_SECRET || getSetting("META_APP_SECRET") || process.env.META_APP_SECRET;
+    const envSecretRaw = config.META_APP_SECRET || process.env.META_APP_SECRET || "";
+    const dbSecretRaw = getSetting("META_APP_SECRET") || "";
+    const envSecret = envSecretRaw && !envSecretRaw.startsWith("enc:aes-256-gcm:") ? envSecretRaw.trim() : "";
+    const dbSecret = dbSecretRaw && !dbSecretRaw.startsWith("enc:aes-256-gcm:") ? dbSecretRaw.trim() : "";
+    const appSecret = envSecret || dbSecret;
+    const appSecretSource = envSecret ? "env" : (dbSecret ? "db" : "none");
+    const appSecretConflict = Boolean(envSecret && dbSecret && envSecret !== dbSecret);
 
     // Get telemetry stats
     let totalReplies = 0;
@@ -945,6 +993,9 @@ async function getWebhookConfig(req, res) {
         isCustomOverride: urls.isCustomOverride,
         isHttps: urls.isHttps,
         metaAppSecretConfigured: Boolean(appSecret),
+        metaAppSecretSource: appSecretSource,
+        metaAppSecretLength: appSecret ? appSecret.length : 0,
+        metaAppSecretConflict: appSecretConflict,
         subscriptionFields: [
           "messages",
           "message_deliveries",
