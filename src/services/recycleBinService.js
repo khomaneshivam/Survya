@@ -83,6 +83,13 @@ const ENTITY_CONFIGS = {
     secondaryColumn: "slug",
     displayName: "Business Entity"
   },
+  properties: {
+    table: "properties",
+    primaryKey: "id",
+    labelColumn: "name",
+    secondaryColumn: "city",
+    displayName: "Property"
+  },
   catalog_items: {
     table: "catalog_items",
     primaryKey: "id",
@@ -217,6 +224,7 @@ const ALIAS_MAP = {
   lead: "crm_records",
   business_entity: "business_entities",
   entity: "business_entities",
+  property: "properties",
   catalog_item: "catalog_items",
   item: "catalog_items",
   catalog_addon_group: "catalog_addon_groups",
@@ -358,12 +366,22 @@ async function restoreItem({ entityType, id, restoredBy = null, tenantId = 1 } =
   if (!existing) {
     throw new Error(`Record not found in ${cfg.displayName} (#${id}).`);
   }
+  if (cfg.table !== "tenants" && "tenant_id" in existing && Number(tenantId) > 0 && Number(existing.tenant_id) !== Number(tenantId)) {
+    throw new Error(`Forbidden: ${cfg.displayName} #${id} does not belong to your workspace.`);
+  }
 
   if (Number(existing.delete_status) === 0) {
     return { success: true, message: `${cfg.displayName} #${id} is already active (not in Recycle Bin).`, item: existing };
   }
 
   // Restore record
+  const restoreWhere = (cfg.table !== "tenants" && "tenant_id" in existing && Number(tenantId) > 0)
+    ? `WHERE ${cfg.primaryKey} = ? AND tenant_id = ?`
+    : `WHERE ${cfg.primaryKey} = ?`;
+  const restoreParams = (cfg.table !== "tenants" && "tenant_id" in existing && Number(tenantId) > 0)
+    ? [id, tenantId]
+    : [id];
+
   db.prepare(`
     UPDATE ${cfg.table}
     SET delete_status = 0,
@@ -371,8 +389,8 @@ async function restoreItem({ entityType, id, restoredBy = null, tenantId = 1 } =
         deleted_at = NULL,
         deleted_by = NULL,
         updated_at = CURRENT_TIMESTAMP
-    WHERE ${cfg.primaryKey} = ?
-  `).run(id);
+    ${restoreWhere}
+  `).run(...restoreParams);
 
   // If conversation_flow: reactivate triggers
   if (key === "conversation_flows") {
@@ -428,6 +446,9 @@ async function hardDeleteItem({ entityType, id, confirmHardDelete = false, delet
   if (!existing) {
     throw new Error(`Record not found in ${cfg.displayName} (#${id}).`);
   }
+  if (cfg.table !== "tenants" && "tenant_id" in existing && Number(tenantId) > 0 && Number(existing.tenant_id) !== Number(tenantId)) {
+    throw new Error(`Forbidden: ${cfg.displayName} #${id} does not belong to your workspace.`);
+  }
 
   // REFERENTIAL SAFETY CHECKS
   if (key === "users") {
@@ -453,7 +474,11 @@ async function hardDeleteItem({ entityType, id, confirmHardDelete = false, delet
   }
 
   // Perform permanent hard delete
-  db.prepare(`DELETE FROM ${cfg.table} WHERE ${cfg.primaryKey} = ?`).run(id);
+  if (cfg.table !== "tenants" && "tenant_id" in existing && Number(tenantId) > 0) {
+    db.prepare(`DELETE FROM ${cfg.table} WHERE ${cfg.primaryKey} = ? AND tenant_id = ?`).run(id, tenantId);
+  } else {
+    db.prepare(`DELETE FROM ${cfg.table} WHERE ${cfg.primaryKey} = ?`).run(id);
+  }
 
   // Clean up dependent triggers if deleting conversation_flows
   if (key === "conversation_flows") {

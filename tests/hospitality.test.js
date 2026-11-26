@@ -532,18 +532,18 @@ describe("SARVYA Hospitality Inventory, Room & Rate Configuration Module Test Su
     const privatePropId = propRes.lastInsertRowid;
 
     // Staff A can access their private property
-    const propA = configService.getPropertyById(1, privatePropId, staffUserA.id, false);
+    const propA = configService.getPropertyById(privatePropId, 1, staffUserA.id, false);
     assert.ok(propA);
     assert.equal(propA.name, "Staff A Private Villa");
 
     // Staff B attempting to access Staff A's private property gets 403 Forbidden
     assert.throws(() => {
-      configService.getPropertyById(1, privatePropId, staffUserB.id, false);
+      configService.getPropertyById(privatePropId, 1, staffUserB.id, false);
     }, (err) => err.statusCode === 403);
 
     // Public visitor attempting to view draft property gets 404 Not Found
     assert.throws(() => {
-      configService.getPublishedProperty(1, privatePropId);
+      configService.getPublishedProperty(privatePropId, 1);
     }, (err) => err.statusCode === 404);
 
     // Clean up private property

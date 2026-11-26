@@ -246,7 +246,7 @@ async function login(req, res) {
       SELECT * FROM users WHERE email = ? COLLATE NOCASE
     `).get(cleanEmail);
 
-    if (!user) {
+    if (!user || Number(user.delete_status || 0) === 1 || Number(user.active_status ?? 1) === 0) {
       return res.status(401).json({ success: false, message: "Invalid email or password." });
     }
 

@@ -53,7 +53,7 @@ const config = {
   // an unreachable local address instead of Meta's live Graph API.
   META_API_URL: process.env.META_API_URL || "",
   WHATSAPP_TEMPLATE_ID: process.env.WHATSAPP_TEMPLATE_ID || "",
-  DEFAULT_TEMPLATE_NAME: process.env.DEFAULT_TEMPLATE_NAME || "kt_restaurant_invitation",
+  DEFAULT_TEMPLATE_NAME: process.env.DEFAULT_TEMPLATE_NAME ,
   DEFAULT_TEMPLATE_LANG: process.env.DEFAULT_TEMPLATE_LANG || "en",
   DEFAULT_COUNTRY_CODE: process.env.DEFAULT_COUNTRY_CODE || "91",
   BROADCAST_DELAY_MS: parseInt(process.env.BROADCAST_DELAY_MS || "250", 10),

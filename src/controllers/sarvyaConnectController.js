@@ -432,7 +432,11 @@ async function createCustomTemplate(req, res) {
 async function updateCustomTemplate(req, res) {
   try {
     const { id } = req.params;
-    const row = db.prepare("SELECT * FROM templates WHERE id = ? OR meta_id = ? LIMIT 1").get(id, id);
+    const tenantId = Number(req.user?.tenant_id);
+    if (!Number.isInteger(tenantId) || tenantId <= 0) {
+      return res.status(403).json({ success: false, message: "Workspace tenant context required." });
+    }
+    const row = db.prepare("SELECT * FROM templates WHERE (id = ? OR meta_id = ?) AND tenant_id = ? LIMIT 1").get(id, id, tenantId);
     if (!row) {
       return res.status(404).json({ success: false, message: "Template not found." });
     }
@@ -543,7 +547,11 @@ async function updateCustomTemplate(req, res) {
 async function cloneCustomTemplate(req, res) {
   try {
     const { id } = req.params;
-    const row = db.prepare("SELECT * FROM templates WHERE id = ? OR meta_id = ? LIMIT 1").get(id, id);
+    const tenantId = Number(req.user?.tenant_id);
+    if (!Number.isInteger(tenantId) || tenantId <= 0) {
+      return res.status(403).json({ success: false, message: "Workspace tenant context required." });
+    }
+    const row = db.prepare("SELECT * FROM templates WHERE (id = ? OR meta_id = ?) AND tenant_id = ? LIMIT 1").get(id, id, tenantId);
     if (!row) {
       return res.status(404).json({ success: false, message: "Template not found." });
     }
@@ -551,7 +559,7 @@ async function cloneCustomTemplate(req, res) {
     const baseName = row.name.replace(/_v\d+$/, "");
     const nextVersion = Number(row.version || 1) + 1;
     let candidateName = `${baseName}_v${nextVersion}`;
-    while (db.prepare("SELECT id FROM templates WHERE name = ? AND language = ?").get(candidateName, row.language)) {
+    while (db.prepare("SELECT id FROM templates WHERE name = ? AND language = ? AND tenant_id = ?").get(candidateName, row.language, tenantId)) {
       candidateName = `${baseName}_v${Math.floor(100 + Math.random() * 899)}`;
     }
 
@@ -562,7 +570,7 @@ async function cloneCustomTemplate(req, res) {
         body_text, variables, components, buttons,
         header_type, header_text, header_media_url, footer_text,
         version, user_id, tenant_id, created_at, updated_at
-      ) VALUES (?, ?, NULL, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, NULL, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `).run(
       newId,
       candidateName,
@@ -578,7 +586,8 @@ async function cloneCustomTemplate(req, res) {
       row.header_media_url,
       row.footer_text,
       nextVersion,
-      req.user?.id || row.user_id || null
+      req.user?.id || row.user_id || null,
+      tenantId
     );
 
     const cloned = serializeTemplate(db.prepare("SELECT * FROM templates WHERE id = ?").get(newId));
@@ -601,7 +610,11 @@ async function cloneCustomTemplate(req, res) {
 async function submitTemplateToMeta(req, res) {
   try {
     const { id } = req.params;
-    const row = db.prepare("SELECT * FROM templates WHERE id = ? OR meta_id = ? LIMIT 1").get(id, id);
+    const tenantId = Number(req.user?.tenant_id);
+    if (!Number.isInteger(tenantId) || tenantId <= 0) {
+      return res.status(403).json({ success: false, message: "Workspace tenant context required." });
+    }
+    const row = db.prepare("SELECT * FROM templates WHERE (id = ? OR meta_id = ?) AND tenant_id = ? LIMIT 1").get(id, id, tenantId);
     if (!row) {
       return res.status(404).json({ success: false, message: "Template not found." });
     }
@@ -629,14 +642,16 @@ async function submitTemplateToMeta(req, res) {
       });
     }
 
-    const wabaId = req.body?.wabaId || metaWhatsAppService.resolveWabaId();
+    const wabaId = req.body?.wabaId || metaWhatsAppService.resolveWabaId(null, tenantId);
+    const creds = metaWhatsAppService.resolveCredentials({ tenantId, phoneNumberId: req.body?.phoneNumberId || null });
     const metaResult = await metaWhatsAppService.createWabaTemplate({
       name: row.name,
       category: row.category,
       language: row.language || "en_US",
       components,
       parameterFormat: row.parameter_format || "POSITIONAL",
-      wabaId
+      wabaId,
+      customCredentials: creds
     });
 
     const newStatus = String(metaResult.status || "PENDING").toUpperCase();

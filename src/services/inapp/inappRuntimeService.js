@@ -223,24 +223,32 @@ function getExperienceCatalogMeta(exp) {
 
   try {
     if (exp.domain_type === "HOSPITALITY") {
-      let propId = exp.business_entity_id;
-      if (!propId) {
-        const defaultProp = db.prepare("SELECT id FROM properties WHERE tenant_id = ? ORDER BY id ASC LIMIT 1").get(exp.tenant_id);
-        propId = defaultProp?.id || 1;
+      // Match property strictly inside exp.tenant_id (preferring matching entity name or active primary property)
+      let prop = null;
+      if (exp.business_entity_id) {
+        const ent = db.prepare("SELECT id, name FROM business_entities WHERE id = ? AND tenant_id = ? LIMIT 1").get(exp.business_entity_id, exp.tenant_id);
+        if (ent?.name) {
+          prop = db.prepare("SELECT id FROM properties WHERE tenant_id = ? AND name = ? AND COALESCE(delete_status, 0) = 0 LIMIT 1").get(exp.tenant_id, ent.name);
+        }
+      }
+      if (!prop) {
+        prop = db.prepare("SELECT id FROM properties WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0 ORDER BY id ASC LIMIT 1").get(exp.tenant_id);
       }
 
-      const roomTypes = db.prepare(`
-        SELECT id, name, base_rate FROM room_types
-        WHERE tenant_id = ? AND property_id = ? AND active = 1
-      `).all(exp.tenant_id, propId);
+      if (prop?.id) {
+        const roomTypes = db.prepare(`
+          SELECT id, name, base_rate FROM room_types
+          WHERE tenant_id = ? AND property_id = ? AND active = 1
+        `).all(exp.tenant_id, prop.id);
 
-      if (roomTypes.length > 0) {
-        totalItems = roomTypes.length;
-        const rates = roomTypes.map(r => Number(r.base_rate) || 0);
-        minPrice = Math.min(...rates);
-        maxPrice = Math.max(...rates);
-        categories = [{ id: "rooms", name: "Rooms & Villas", slug: "rooms" }];
-        return { minPrice, maxPrice, totalItems, categories };
+        if (roomTypes.length > 0) {
+          totalItems = roomTypes.length;
+          const rates = roomTypes.map(r => Number(r.base_rate) || 0);
+          minPrice = Math.min(...rates);
+          maxPrice = Math.max(...rates);
+          categories = [{ id: "rooms", name: "Rooms & Villas", slug: "rooms" }];
+          return { minPrice, maxPrice, totalItems, categories };
+        }
       }
     }
 
@@ -391,21 +399,27 @@ function getCatalogItems(slug, query = {}) {
 
   let items = [];
 
-  const expTenantId = experience.tenantId || experience.tenant_id || 1;
-  if (experience.domainType === "HOSPITALITY") {
-    let propId = experience.businessEntityId;
-    if (!propId) {
-      const defaultProp = db.prepare("SELECT id FROM properties WHERE tenant_id = ? ORDER BY id ASC LIMIT 1").get(expTenantId);
-      propId = defaultProp?.id || 1;
+  const expTenantId = experience.tenantId || experience.tenant_id;
+  if (experience.domainType === "HOSPITALITY" && expTenantId) {
+    let prop = null;
+    if (experience.businessEntityId) {
+      const ent = db.prepare("SELECT id, name FROM business_entities WHERE id = ? AND tenant_id = ? LIMIT 1").get(experience.businessEntityId, expTenantId);
+      if (ent?.name) {
+        prop = db.prepare("SELECT id FROM properties WHERE tenant_id = ? AND name = ? AND COALESCE(delete_status, 0) = 0 LIMIT 1").get(expTenantId, ent.name);
+      }
     }
+    if (!prop) {
+      prop = db.prepare("SELECT id FROM properties WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0 ORDER BY id ASC LIMIT 1").get(expTenantId);
+    }
+    const propId = prop?.id || null;
 
     let sql = `
       SELECT r.*, p.name as property_name, p.currency
       FROM room_types r
       LEFT JOIN properties p ON p.id = r.property_id
-      WHERE r.tenant_id = ? AND r.property_id = ? AND r.active = 1
+      WHERE r.tenant_id = ? ${propId ? "AND r.property_id = ?" : "AND 1=0"} AND r.active = 1
     `;
-    const params = [expTenantId, propId];
+    const params = propId ? [expTenantId, propId] : [expTenantId];
 
     if (minPrice !== null && !isNaN(minPrice)) {
       sql += " AND r.base_rate >= ?";
