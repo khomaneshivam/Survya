@@ -157,23 +157,17 @@ function handleIncomingEvent(req, res) {
 
     const canUseDbDedup = db && typeof db.prepare === "function";
     const digestKey = `digest_${digest}`;
+
+    // ── BUG-P3-01 FIX: Atomic dedup-insert + enqueue ──────────────────────────
+    // The original code wrote dedup records BEFORE enqueueJob. If enqueueJob
+    // failed, the dedup was committed, so Meta's retry also got dropped — silent
+    // message loss. Now we detect duplicates first (read-only), then enqueue, and
+    // only write dedup records after enqueue succeeds. If enqueue fails we throw
+    // 503 so Meta retries the payload.
     if (canUseDbDedup) {
       const existingDigest = db.prepare("SELECT id FROM incoming_webhook_events WHERE event_id = ? LIMIT 1").get(digestKey);
       if (existingDigest) {
         return res.status(200).send("EVENT_RECEIVED");
-      }
-
-      const insertEventStmt = db.prepare(`
-        INSERT INTO incoming_webhook_events (event_id, event_type, status)
-        VALUES (?, ?, 'RECEIVED')
-      `);
-      insertEventStmt.run(digestKey, payload.object || "whatsapp_business_account");
-
-      for (const eId of entryIds) {
-        const hasEntry = db.prepare("SELECT id FROM incoming_webhook_events WHERE event_id = ? LIMIT 1").get(eId);
-        if (!hasEntry) {
-          insertEventStmt.run(eId, payload.object || "whatsapp_business_account");
-        }
       }
 
       let allMessagesDuplicate = messageIds.length > 0;
@@ -182,17 +176,19 @@ function handleIncomingEvent(req, res) {
         const seenMsg = db.prepare("SELECT id FROM incoming_webhook_events WHERE event_id = ? LIMIT 1").get(mKey);
         if (!seenMsg) {
           allMessagesDuplicate = false;
-          insertEventStmt.run(mKey, "whatsapp_message");
+          break; // at least one new message ID
         }
       }
-      if (allMessagesDuplicate) {
+      if (allMessagesDuplicate && messageIds.length > 0) {
         return res.status(200).send("EVENT_RECEIVED");
       }
     }
 
+    // Enqueue first. If this succeeds, we commit dedup records.
+    // If it fails, we throw 503 so Meta retries.
     const { enqueueJob } = require("../services/queue/jobQueueService");
     const queued = enqueueJob({
-      tenantId: 0, // System-scoped ingress; individual messages resolve their tenant on processing.
+      tenantId: 0,
       queueName: "webhook",
       jobType: "META_WEBHOOK_INGEST",
       idempotencyKey: `meta_ingest_${digest}`,
@@ -200,8 +196,29 @@ function handleIncomingEvent(req, res) {
       priority: 10,
       maxAttempts: 7
     });
-
     if (!queued?.success) throw new Error("Webhook event could not be durably queued");
+
+    // Only write dedup records AFTER successful enqueue (atomic write-after-commit)
+    if (canUseDbDedup) {
+      try {
+        const insertEventStmt = db.prepare(`
+          INSERT OR IGNORE INTO incoming_webhook_events (event_id, event_type, status)
+          VALUES (?, ?, 'RECEIVED')
+        `);
+        insertEventStmt.run(digestKey, payload.object || "whatsapp_business_account");
+        for (const eId of entryIds) {
+          insertEventStmt.run(eId, payload.object || "whatsapp_business_account");
+        }
+        for (const mId of messageIds) {
+          insertEventStmt.run(`wamid_${mId}`, "whatsapp_message");
+        }
+      } catch (dedupErr) {
+        // Non-fatal: dedup record write failure does not prevent delivery.
+        // The job is already enqueued. Log and continue.
+        console.warn("[Webhook] Dedup record write failed (non-fatal):", dedupErr.message);
+      }
+    }
+
     return res.status(200).send("EVENT_RECEIVED");
   } catch (error) {
     console.error("[Webhook] Durable enqueue failed:", error.message);

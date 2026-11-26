@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const controller = require("../controllers/hospitalityController");
-const { authenticateToken } = require("../middleware/authMiddleware");
+const { authenticateToken, requireWorkspaceAdmin } = require("../middleware/authMiddleware");
 const { mediaUpload } = require("../middleware/uploadMiddleware");
 
 /**
@@ -43,14 +43,20 @@ router.post("/hospitality/public/chat-action", controller.publicChatAction);
 // Property Setup & Publishing Lifecycle
 router.get("/v1/hospitality/properties", authenticateToken, controller.listProperties);
 router.get("/hospitality/properties", authenticateToken, controller.listProperties);
+router.post("/v1/hospitality/properties", authenticateToken, requireWorkspaceAdmin, controller.createProperty);
+router.post("/hospitality/properties", authenticateToken, requireWorkspaceAdmin, controller.createProperty);
 router.get("/v1/hospitality/properties/:id", authenticateToken, controller.getProperty);
 router.get("/hospitality/properties/:id", authenticateToken, controller.getProperty);
-router.put("/v1/hospitality/properties/:id", authenticateToken, controller.updateProperty);
-router.put("/hospitality/properties/:id", authenticateToken, controller.updateProperty);
-router.post("/v1/hospitality/properties/:id/publish", authenticateToken, controller.publishProperty);
-router.post("/hospitality/properties/:id/publish", authenticateToken, controller.publishProperty);
-router.post("/v1/hospitality/properties/:id/unpublish", authenticateToken, controller.unpublishProperty);
-router.post("/hospitality/properties/:id/unpublish", authenticateToken, controller.unpublishProperty);
+router.put("/v1/hospitality/properties/:id", authenticateToken, requireWorkspaceAdmin, controller.updateProperty);
+router.put("/hospitality/properties/:id", authenticateToken, requireWorkspaceAdmin, controller.updateProperty);
+router.post("/v1/hospitality/properties/:id/archive", authenticateToken, requireWorkspaceAdmin, controller.archiveProperty);
+router.post("/hospitality/properties/:id/archive", authenticateToken, requireWorkspaceAdmin, controller.archiveProperty);
+router.post("/v1/hospitality/properties/:id/duplicate", authenticateToken, requireWorkspaceAdmin, controller.duplicateProperty);
+router.post("/hospitality/properties/:id/duplicate", authenticateToken, requireWorkspaceAdmin, controller.duplicateProperty);
+router.post("/v1/hospitality/properties/:id/publish", authenticateToken, requireWorkspaceAdmin, controller.publishProperty);
+router.post("/hospitality/properties/:id/publish", authenticateToken, requireWorkspaceAdmin, controller.publishProperty);
+router.post("/v1/hospitality/properties/:id/unpublish", authenticateToken, requireWorkspaceAdmin, controller.unpublishProperty);
+router.post("/hospitality/properties/:id/unpublish", authenticateToken, requireWorkspaceAdmin, controller.unpublishProperty);
 router.get("/v1/hospitality/properties/:id/overview", authenticateToken, controller.getSetupOverview);
 router.get("/hospitality/properties/:id/overview", authenticateToken, controller.getSetupOverview);
 

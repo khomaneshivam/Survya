@@ -115,10 +115,11 @@ async function createCategory(req, res) {
 
 async function updateCategory(req, res) {
   try {
-    const cat = db.prepare("SELECT id, entity_id, tenant_id FROM catalog_categories WHERE id = ?").get(req.params.id);
+    const categoryId = req.params.catId || req.params.id;
+    const cat = db.prepare("SELECT id, entity_id, tenant_id FROM catalog_categories WHERE id = ?").get(categoryId);
     if (!cat) return res.status(404).json({ success: false, message: "Category not found" });
     if (!authorizeEntityAccess(req, res, cat.entity_id, cat.tenant_id)) return;
-    const category = catalogService.updateCategory(req.params.id, req.body);
+    const category = catalogService.updateCategory(categoryId, req.body);
     res.json({ success: true, category });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -127,10 +128,11 @@ async function updateCategory(req, res) {
 
 async function deleteCategory(req, res) {
   try {
-    const cat = db.prepare("SELECT id, entity_id, tenant_id FROM catalog_categories WHERE id = ?").get(req.params.id);
+    const categoryId = req.params.catId || req.params.id;
+    const cat = db.prepare("SELECT id, entity_id, tenant_id FROM catalog_categories WHERE id = ?").get(categoryId);
     if (!cat) return res.status(404).json({ success: false, message: "Category not found" });
     if (!authorizeEntityAccess(req, res, cat.entity_id, cat.tenant_id)) return;
-    const result = catalogService.deleteCategory(req.params.id);
+    const result = catalogService.deleteCategory(categoryId);
     res.json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });

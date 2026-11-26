@@ -21,26 +21,15 @@ function logAudit(tenantId, userId, action, targetId, details) {
 /**
  * Retrieve property configuration by ID
  */
-function getPropertyById(propertyId = 1, tenantId = 1, userId = null, isAdmin = false) {
-  // Support both (propertyId, tenantId, ...) and (tenantId, propertyId, ...)
-  let prop = db.prepare(`
+function getPropertyById(propertyId, tenantId, userId = null, isAdmin = false) {
+  if (!propertyId || !tenantId) return null;
+  const prop = db.prepare(`
     SELECT p.*, t.name as tenant_name, t.slug as tenant_slug
     FROM properties p
     JOIN tenants t ON p.tenant_id = t.id
-    WHERE p.id = ? AND p.tenant_id = ?
+    WHERE p.id = ? AND p.tenant_id = ? AND COALESCE(p.delete_status, 0) = 0
     LIMIT 1
-  `).get(propertyId, tenantId);
-
-  if (!prop) {
-    // Check swapped parameters
-    prop = db.prepare(`
-      SELECT p.*, t.name as tenant_name, t.slug as tenant_slug
-      FROM properties p
-      JOIN tenants t ON p.tenant_id = t.id
-      WHERE p.id = ? AND p.tenant_id = ?
-      LIMIT 1
-    `).get(tenantId, propertyId);
-  }
+  `).get(Number(propertyId), Number(tenantId));
 
   if (!prop) return null;
 
@@ -87,15 +76,18 @@ function getPublishedProperty(propertyId = 1, tenantId = 1) {
 /**
  * List all properties for a tenant
  */
-function listProperties(tenantId = 1, userId = null, isAdmin = false) {
+function listProperties(tenantId, userId = null, isAdmin = false, options = {}) {
+  if (!tenantId) return [];
+  const includeArchived = Boolean(options?.includeArchived);
   let sql = `
     SELECT p.*, 
       (SELECT COUNT(*) FROM room_types WHERE property_id = p.id AND active = 1) as room_types_count,
       (SELECT COUNT(*) FROM hospitality_facilities WHERE property_id = p.id AND is_active = 1) as facilities_count
     FROM properties p
     WHERE p.tenant_id = ?
+      ${includeArchived ? "" : "AND COALESCE(p.delete_status, 0) = 0"}
   `;
-  const params = [tenantId];
+  const params = [Number(tenantId)];
   if (!isAdmin && userId) {
     sql += ` AND (p.user_id = ? OR p.user_id IS NULL)`;
     params.push(userId);
@@ -113,13 +105,91 @@ function listProperties(tenantId = 1, userId = null, isAdmin = false) {
 }
 
 /**
- * Update property configuration
+ * Create a brand-new independent property within a tenant workspace (defaults to DRAFT).
  */
-function updateProperty(propertyId, data = {}, tenantId = 1, userId = null, isAdmin = false) {
+function createProperty(data = {}, tenantId, userId = null) {
+  if (!tenantId) {
+    const err = new Error("Tenant context required to create property.");
+    err.statusCode = 403;
+    throw err;
+  }
+  const cleanName = String(data.name || "").trim();
+  if (!cleanName) {
+    const err = new Error("Property name is required.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const pubStatus = String(data.publication_status || "DRAFT").toUpperCase() === "PUBLISHED" ? "PUBLISHED" : "DRAFT";
+  const socialJson = data.social_links ? JSON.stringify(data.social_links) : "{}";
+  const langJson = data.languages ? JSON.stringify(data.languages) : '["en", "hi", "mr"]';
+  const galleryJson = data.gallery ? JSON.stringify(data.gallery) : "[]";
+
+  const res = db.prepare(`
+    INSERT INTO properties (
+      tenant_id, name, description, property_type, user_id, email, phone, website,
+      social_links_json, address, district, city, state, country, postal_code,
+      latitude, longitude, check_in_time, check_out_time, timezone, languages_json,
+      currency, logo_url, cover_image_url, primary_image_url, gallery_json,
+      publication_status, status, version, active_status, delete_status, created_at, updated_at
+    ) VALUES (
+      ?, ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
+      ?, 'ACTIVE', 1, 1, 0, UTC_TIMESTAMP(), UTC_TIMESTAMP()
+    )
+  `).run(
+    Number(tenantId),
+    cleanName,
+    data.description || null,
+    data.property_type || "RESORT",
+    userId ? String(userId) : null,
+    data.email || null,
+    data.phone || null,
+    data.website || null,
+    socialJson,
+    data.address || null,
+    data.district || null,
+    data.city || null,
+    data.state || null,
+    data.country || "India",
+    data.postal_code || null,
+    data.latitude !== undefined ? data.latitude : null,
+    data.longitude !== undefined ? data.longitude : null,
+    data.check_in_time || "14:00",
+    data.check_out_time || "11:00",
+    data.timezone || "Asia/Kolkata",
+    langJson,
+    data.currency || "INR",
+    data.logo_url || null,
+    data.cover_image_url || null,
+    data.primary_image_url || null,
+    galleryJson,
+    pubStatus
+  );
+
+  const createdId = Number(res.lastInsertRowid);
+  logAudit(tenantId, userId, "PROPERTY_CREATED", createdId, { name: cleanName, property_type: data.property_type || "RESORT", publication_status: pubStatus });
+  return getPropertyById(createdId, tenantId, userId, true);
+}
+
+/**
+ * Update property configuration (with optional optimistic lock & before/after audit diff)
+ */
+function updateProperty(propertyId, data = {}, tenantId, userId = null, isAdmin = false) {
   const existing = getPropertyById(propertyId, tenantId, userId, isAdmin);
   if (!existing) {
     const err = new Error("Property not found or access denied.");
     err.statusCode = 404;
+    throw err;
+  }
+
+  const expectedVer = data.expected_version !== undefined ? data.expected_version : data.expectedVersion;
+  if (expectedVer !== undefined && expectedVer !== null && Number(expectedVer) !== Number(existing.version || 1)) {
+    const err = new Error("Conflict: Property was modified by another user. Refresh before saving.");
+    err.statusCode = 409;
+    err.code = "OPTIMISTIC_LOCK_CONFLICT";
     throw err;
   }
 
@@ -133,6 +203,7 @@ function updateProperty(propertyId, data = {}, tenantId = 1, userId = null, isAd
     social_links,
     address,
     district,
+    city,
     state,
     country,
     postal_code,
@@ -160,8 +231,8 @@ function updateProperty(propertyId, data = {}, tenantId = 1, userId = null, isAd
         country = ?, postal_code = ?, latitude = ?, longitude = ?,
         check_in_time = ?, check_out_time = ?, timezone = ?, languages_json = ?,
         currency = ?, logo_url = ?, cover_image_url = ?, primary_image_url = ?,
-        gallery_json = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND tenant_id = ?
+        gallery_json = ?, version = COALESCE(version, 1) + 1, updated_at = UTC_TIMESTAMP()
+    WHERE id = ? AND tenant_id = ? AND COALESCE(delete_status, 0) = 0
   `).run(
     name !== undefined ? name : existing.name,
     description !== undefined ? description : existing.description,
@@ -190,8 +261,125 @@ function updateProperty(propertyId, data = {}, tenantId = 1, userId = null, isAd
     tenantId
   );
 
-  logAudit(tenantId, userId, "PROPERTY_CONFIG_UPDATED", propertyId, { fields: Object.keys(data) });
+  logAudit(tenantId, userId, "PROPERTY_CONFIG_UPDATED", propertyId, {
+    fields: Object.keys(data),
+    before: { name: existing.name, city: existing.city, state: existing.state, publication_status: existing.publication_status },
+    after: { name: name !== undefined ? name : existing.name, city: city !== undefined ? city : existing.city, state: state !== undefined ? state : existing.state }
+  });
   return getPropertyById(propertyId, tenantId, userId, isAdmin);
+}
+
+/**
+ * Archive (soft-delete) a property cleanly
+ */
+function archiveProperty(propertyId, tenantId, userId = null, isAdmin = false, options = {}) {
+  const existing = getPropertyById(propertyId, tenantId, userId, isAdmin);
+  if (!existing) {
+    const err = new Error("Property not found or access denied.");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  if (!options.force) {
+    const activeConfirmed = db.prepare(`
+      SELECT COUNT(*) as cnt FROM booking_enquiries
+      WHERE tenant_id = ? AND property_id = ? AND status IN ('CONFIRMED', 'WON')
+        AND COALESCE(delete_status, 0) = 0
+    `).get(tenantId, propertyId)?.cnt || 0;
+    if (activeConfirmed > 0) {
+      const err = new Error(`Cannot archive property with ${activeConfirmed} active confirmed/won bookings.`);
+      err.statusCode = 409;
+      throw err;
+    }
+  }
+
+  db.prepare(`
+    UPDATE properties
+    SET active_status = 0, delete_status = 1, deleted_at = UTC_TIMESTAMP(),
+        deleted_by = ?, publication_status = 'ARCHIVED', status = 'ARCHIVED', updated_at = UTC_TIMESTAMP()
+    WHERE id = ? AND tenant_id = ?
+  `).run(userId ? String(userId) : "staff", propertyId, tenantId);
+
+  logAudit(tenantId, userId, "PROPERTY_ARCHIVED", propertyId, { name: existing.name });
+  return { success: true, message: `Property '${existing.name}' archived cleanly.` };
+}
+
+/**
+ * Duplicate a property and its configuration as an independent DRAFT property
+ */
+function duplicateProperty(propertyId, data = {}, tenantId, userId = null, isAdmin = false) {
+  const source = getPropertyById(propertyId, tenantId, userId, isAdmin);
+  if (!source) {
+    const err = new Error("Source property not found or access denied.");
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const newName = String(data.name || `${source.name} (Draft Copy)`).trim();
+  const created = createProperty({
+    ...source,
+    social_links: source.social_links,
+    languages: source.languages,
+    gallery: source.gallery,
+    name: newName,
+    publication_status: "DRAFT"
+  }, tenantId, userId);
+
+  const targetPropId = created.id;
+
+  // Duplicate active room categories, rate plans, facilities, policies, and FAQs
+  const roomMap = new Map();
+  const srcRooms = db.prepare("SELECT * FROM room_types WHERE property_id = ? AND tenant_id = ? AND active = 1").all(propertyId, tenantId);
+  for (const rt of srcRooms) {
+    const rRes = db.prepare(`
+      INSERT INTO room_types (
+        tenant_id, property_id, name, max_adults, max_children, base_rate, description,
+        active, room_code, room_size, size_unit, bed_type, bed_count, max_occupancy,
+        standard_occupancy, extra_adult_capacity, extra_child_capacity, extra_adult_price,
+        extra_child_price, bathroom_count, view_type, smoking_policy, accessibility_info,
+        amenities_json, primary_image_url, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    `).run(
+      tenantId, targetPropId, rt.name, rt.max_adults, rt.max_children, rt.base_rate, rt.description,
+      rt.room_code, rt.room_size, rt.size_unit, rt.bed_type, rt.bed_count, rt.max_occupancy,
+      rt.standard_occupancy, rt.extra_adult_capacity, rt.extra_child_capacity, rt.extra_adult_price,
+      rt.extra_child_price, rt.bathroom_count, rt.view_type, rt.smoking_policy, rt.accessibility_info,
+      rt.amenities_json, rt.primary_image_url
+    );
+    roomMap.set(rt.id, rRes.lastInsertRowid);
+  }
+
+  const srcPlans = db.prepare("SELECT * FROM hospitality_rate_plans WHERE property_id = ? AND tenant_id = ? AND is_active = 1").all(propertyId, tenantId);
+  for (const pl of srcPlans) {
+    db.prepare(`
+      INSERT INTO hospitality_rate_plans (
+        tenant_id, property_id, name, code, meal_plan, is_refundable, free_cancellation_hours,
+        price_multiplier, flat_addon_per_night, extra_guest_multiplier, description, is_active, is_default, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+    `).run(
+      tenantId, targetPropId, pl.name, pl.code, pl.meal_plan, pl.is_refundable, pl.free_cancellation_hours,
+      pl.price_multiplier, pl.flat_addon_per_night, pl.extra_guest_multiplier, pl.description, pl.is_default
+    );
+  }
+
+  const srcFacilities = db.prepare("SELECT * FROM hospitality_facilities WHERE property_id = ? AND tenant_id = ? AND is_active = 1").all(propertyId, tenantId);
+  for (const fac of srcFacilities) {
+    db.prepare(`
+      INSERT INTO hospitality_facilities (tenant_id, property_id, name, category, description, operational_hours, is_chargeable, price_info, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+    `).run(tenantId, targetPropId, fac.name, fac.category, fac.description, fac.operational_hours, fac.is_chargeable, fac.price_info);
+  }
+
+  const srcPolicies = db.prepare("SELECT * FROM hospitality_policies WHERE property_id = ? AND tenant_id = ?").all(propertyId, tenantId);
+  for (const pol of srcPolicies) {
+    db.prepare(`
+      INSERT INTO hospitality_policies (tenant_id, property_id, policy_type, title, summary_text, full_text, display_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(tenantId, targetPropId, pol.policy_type, pol.title, pol.summary_text, pol.full_text, pol.display_order || 0);
+  }
+
+  logAudit(tenantId, userId, "PROPERTY_DUPLICATED", targetPropId, { sourcePropertyId: propertyId, copiedRooms: roomMap.size });
+  return created;
 }
 
 /**
@@ -964,11 +1152,8 @@ function deleteFaq(faqId, propertyId = 1, tenantId = 1) {
  * OVERVIEW & COMPLETENESS DASHBOARD
  * -------------------------------------------------------------------------
  */
-function getSetupOverview(propertyId = 1, tenantId = 1) {
-  let prop = getPropertyById(propertyId, tenantId, null, true);
-  if (!prop) {
-    prop = getPropertyById(tenantId, propertyId, null, true);
-  }
+function getSetupOverview(propertyId, tenantId) {
+  const prop = getPropertyById(propertyId, tenantId, null, true);
   if (!prop) return null;
 
   const resolvedPropId = prop.id;
@@ -1035,7 +1220,10 @@ module.exports = {
   getPropertyById,
   getPublishedProperty,
   listProperties,
+  createProperty,
   updateProperty,
+  archiveProperty,
+  duplicateProperty,
   publishProperty,
   unpublishProperty,
   listRoomCategories,

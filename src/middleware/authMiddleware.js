@@ -37,11 +37,6 @@ function extractRequestToken(req) {
     }
   }
 
-  // 4. Query param fallback (token or access_token)
-  if (req.query && (req.query.token || req.query.access_token)) {
-    return String(req.query.token || req.query.access_token).trim();
-  }
-
   return null;
 }
 
@@ -163,17 +158,17 @@ function authenticateToken(req, res, next) {
       });
     }
 
-    // Always verify current user status and role against active database record
+    // Always verify current user status and soft-delete flags against active database record
     const user = db.prepare(`
-      SELECT id, name, email, phone, role, status, assigned_phone_id, tenant_id, created_at
+      SELECT id, name, email, phone, role, status, active_status, delete_status, assigned_phone_id, tenant_id, created_at
       FROM users
       WHERE id = ?
     `).get(uId);
 
-    if (!user) {
+    if (!user || Number(user.delete_status || 0) === 1 || Number(user.active_status ?? 1) === 0) {
       return res.status(401).json({
         success: false,
-        message: "User account not found."
+        message: "User account not found or deactivated."
       });
     }
 
@@ -222,8 +217,8 @@ function authenticateStreamToken(req, res, next) {
       return res.status(401).json({ success: false, message: "Invalid stream token." });
     }
 
-    const user = db.prepare("SELECT id, name, email, phone, role, status, tenant_id FROM users WHERE id = ?").get(uId);
-    if (!user || user.status !== "ACTIVE") {
+    const user = db.prepare("SELECT id, name, email, phone, role, status, active_status, delete_status, tenant_id FROM users WHERE id = ?").get(uId);
+    if (!user || user.status !== "ACTIVE" || Number(user.delete_status || 0) === 1 || Number(user.active_status ?? 1) === 0) {
       return res.status(403).json({ success: false, message: "Unauthorized or suspended account." });
     }
 
@@ -300,11 +295,11 @@ function optionalAuth(req, res, next) {
     const uId = decoded?.userId || decoded?.id;
     if (uId) {
       const user = db.prepare(`
-        SELECT id, name, email, phone, role, status, assigned_phone_id, tenant_id
+        SELECT id, name, email, phone, role, status, active_status, delete_status, assigned_phone_id, tenant_id
         FROM users
         WHERE id = ?
       `).get(uId);
-      if (user && user.status === "ACTIVE") {
+      if (user && user.status === "ACTIVE" && Number(user.delete_status || 0) === 0 && Number(user.active_status ?? 1) === 1) {
         req.user = resolveWorkspaceAccess(user, req);
       }
     }

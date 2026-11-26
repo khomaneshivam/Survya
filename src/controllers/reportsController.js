@@ -449,12 +449,15 @@ async function getOverviewAnalytics(req, res) {
     let quoteStats = { won_count: 0, revenue_inr: 0 };
     try {
       const qTenantFilter = effectiveFinTenantId !== null ? "COALESCE(q.tenant_id, 1) = ?" : "1=1";
+      // BUG-P4-02 FIX: quotes.status is 'DRAFT'/'SENT', not 'WON'.
+      // The enquiry WON status lives on booking_enquiries. Join through enquiry_id.
       quoteStats = db.prepare(`
         SELECT
           COUNT(*) as won_count,
           COALESCE(SUM(COALESCE(q.total, 0)), 0) as revenue_inr
         FROM quotes q
-        WHERE UPPER(q.status) = 'WON'
+        INNER JOIN booking_enquiries be ON be.id = q.enquiry_id
+        WHERE UPPER(be.status) = 'WON'
           AND NOT EXISTS (
             SELECT 1 FROM universal_transactions ut
             WHERE ut.crm_record_id = q.enquiry_id

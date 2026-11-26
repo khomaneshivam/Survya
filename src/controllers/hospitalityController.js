@@ -14,10 +14,21 @@ async function listProperties(req, res) {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || null;
     const isAdmin = isWorkspaceAdmin(req.user);
-    const properties = configService.listProperties(tenantId, userId, isAdmin);
+    const properties = await configService.listProperties(tenantId, userId, isAdmin);
     res.json({ success: true, properties });
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, message: err.message });
+  }
+}
+
+async function createProperty(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const userId = req.user?.id || null;
+    const property = await configService.createProperty(req.body, tenantId, userId);
+    res.status(201).json({ success: true, property, message: "Property created successfully." });
+  } catch (err) {
+    res.status(err.statusCode || 400).json({ success: false, message: err.message });
   }
 }
 
@@ -26,7 +37,8 @@ async function getProperty(req, res) {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || null;
     const isAdmin = isWorkspaceAdmin(req.user);
-    const property = configService.getPropertyById(tenantId, req.params.id, userId, isAdmin);
+    // FIX: arg order is (propertyId, tenantId) — not swapped
+    const property = await configService.getPropertyById(Number(req.params.id), tenantId, userId, isAdmin);
     if (!property) return res.status(404).json({ success: false, message: "Property not found." });
     res.json({ success: true, property });
   } catch (err) {
@@ -39,8 +51,32 @@ async function updateProperty(req, res) {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || null;
     const isAdmin = isWorkspaceAdmin(req.user);
-    const property = configService.updateProperty(req.params.id, req.body, tenantId, userId, isAdmin);
+    const property = await configService.updateProperty(req.params.id, req.body, tenantId, userId, isAdmin);
     res.json({ success: true, property, message: "Property configuration updated." });
+  } catch (err) {
+    res.status(err.statusCode || 400).json({ success: false, message: err.message });
+  }
+}
+
+async function archiveProperty(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const userId = req.user?.id || null;
+    const isAdmin = isWorkspaceAdmin(req.user);
+    const result = await configService.archiveProperty(Number(req.params.id), tenantId, userId, isAdmin, req.body || {});
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(err.statusCode || 400).json({ success: false, message: err.message });
+  }
+}
+
+async function duplicateProperty(req, res) {
+  try {
+    const tenantId = req.user?.tenant_id || 1;
+    const userId = req.user?.id || null;
+    const isAdmin = isWorkspaceAdmin(req.user);
+    const result = await configService.duplicateProperty(Number(req.params.id), req.body || {}, tenantId, userId, isAdmin);
+    res.status(201).json({ success: true, ...result });
   } catch (err) {
     res.status(err.statusCode || 400).json({ success: false, message: err.message });
   }
@@ -51,7 +87,7 @@ async function publishProperty(req, res) {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || null;
     const isAdmin = isWorkspaceAdmin(req.user);
-    const result = configService.publishProperty(req.params.id, tenantId, userId, isAdmin);
+    const result = await configService.publishProperty(req.params.id, tenantId, userId, isAdmin);
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(err.statusCode || 400).json({ success: false, message: err.message });
@@ -63,7 +99,7 @@ async function unpublishProperty(req, res) {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || null;
     const isAdmin = isWorkspaceAdmin(req.user);
-    const result = configService.unpublishProperty(req.params.id, tenantId, userId, isAdmin);
+    const result = await configService.unpublishProperty(req.params.id, tenantId, userId, isAdmin);
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(err.statusCode || 400).json({ success: false, message: err.message });
@@ -73,7 +109,7 @@ async function unpublishProperty(req, res) {
 async function getSetupOverview(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
-    const overview = configService.getSetupOverview(tenantId, req.params.id);
+    const overview = await configService.getSetupOverview(tenantId, req.params.id);
     res.json({ success: true, overview });
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, message: err.message });
@@ -928,6 +964,11 @@ module.exports = {
   upsertTaxRule,
   deleteTaxRule,
   calculateQuote,
+
+  // Property lifecycle
+  createProperty,
+  archiveProperty,
+  duplicateProperty,
 
   // Public Conversational API
   publicSearchProperties,

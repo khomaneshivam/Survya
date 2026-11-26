@@ -31,12 +31,9 @@ class TemplateBindingService {
       resources.properties = db.prepare(`
         SELECT id, name, city, timezone, status
         FROM properties
-        WHERE tenant_id = ? AND delete_status = 0
+        WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0
+        ORDER BY id ASC
       `).all(tenantId);
-      if (resources.properties.length === 0 && Number(tenantId) === 1) {
-        const prop1 = db.prepare("SELECT id, name, city, timezone, status FROM properties WHERE id = 1 AND tenant_id = 1").get();
-        if (prop1) resources.properties.push(prop1);
-      }
     } catch (_) {}
 
     try {

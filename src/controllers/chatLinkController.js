@@ -383,7 +383,20 @@ async function getPublicLinkBySlug(req, res) {
 
     let galleryData = null;
     try {
-      galleryData = hospitalityConfigService.getPropertyGallery(1, 1);
+      const linkTenantId = Number(link.tenant_id || 0);
+      const linkPropertyId = Number(link.property_id || 0);
+      if (linkTenantId > 0 && linkPropertyId > 0) {
+        galleryData = hospitalityConfigService.getPropertyGallery(linkPropertyId, linkTenantId);
+      } else if (linkTenantId > 0 && String(link.category || "").toUpperCase() === "HOSPITALITY") {
+        const defaultProp = db.prepare(`
+          SELECT id FROM properties
+          WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0
+          ORDER BY id ASC LIMIT 1
+        `).get(linkTenantId);
+        if (defaultProp?.id) {
+          galleryData = hospitalityConfigService.getPropertyGallery(defaultProp.id, linkTenantId);
+        }
+      }
     } catch (e) {}
 
     const publicLink = {
@@ -433,7 +446,17 @@ async function getPublicChatLinkGallery(req, res) {
     if (!link) {
       return res.status(404).json({ success: false, message: "Conversation link not found." });
     }
-    const galleryData = hospitalityConfigService.getPropertyGallery(1, 1);
+    const linkTenantId = Number(link.tenant_id || 0);
+    const linkPropertyId = Number(link.property_id || 0);
+    let galleryData = { all_photos: [] };
+    if (linkTenantId > 0) {
+      const targetPropId = linkPropertyId > 0
+        ? linkPropertyId
+        : (db.prepare("SELECT id FROM properties WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0 ORDER BY id ASC LIMIT 1").get(linkTenantId)?.id || null);
+      if (targetPropId) {
+        galleryData = hospitalityConfigService.getPropertyGallery(targetPropId, linkTenantId);
+      }
+    }
     return res.status(200).json({
       success: true,
       photos: galleryData.all_photos || [],

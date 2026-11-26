@@ -339,7 +339,10 @@ router.post("/settings/register-phone", authenticateToken, requireAdmin, setting
 router.post("/settings/register-meta-phone", authenticateToken, requireAdmin, settingsController.registerMetaPhone);
 router.post("/settings/deregister-phone", authenticateToken, requireAdmin, settingsController.deregisterMetaPhone);
 
-// Direct Meta Graph Phone Registration endpoints (accepts { id, pin, token })
+// Direct Meta Graph Phone Registration/Deregistration endpoints (accepts { id, pin, token })
+// These support the Meta Embedded-Signup OAuth callback flow where the token is passed in the request body.
+// The dedicated /settings/deregister-phone and /phone-numbers/:id/deregister-meta routes require auth.
+// This legacy endpoint keeps optionalAuth; the controller validates the body token before calling Meta.
 router.post("/meta/register-phone", optionalAuth, settingsController.registerMetaPhone);
 router.post("/meta/phone-registration", optionalAuth, settingsController.registerMetaPhone);
 router.post("/meta/deregister-phone", optionalAuth, settingsController.deregisterMetaPhone);

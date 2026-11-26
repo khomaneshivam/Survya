@@ -42,7 +42,7 @@ const TABLE_SCHEMAS = {
   "merchant_payout_beneficiaries": "CREATE TABLE IF NOT EXISTS `merchant_payout_beneficiaries` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `entity_id` bigint NOT NULL,\n  `account_holder_name` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `bank_name` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `account_number` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `ifsc_code` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `account_type` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'CURRENT',\n  `upi_vpa` longtext COLLATE utf8mb4_unicode_ci,\n  `verification_status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'PENDING',\n  `penny_drop_reference` longtext COLLATE utf8mb4_unicode_ci,\n  `registered_legal_name` longtext COLLATE utf8mb4_unicode_ci,\n  `is_primary` bigint DEFAULT '1',\n  `payout_schedule` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'DAILY',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "merchant_payout_ledger": "CREATE TABLE IF NOT EXISTS `merchant_payout_ledger` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `entity_id` bigint NOT NULL,\n  `beneficiary_id` bigint NOT NULL,\n  `payout_batch_id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `gross_amount` double NOT NULL,\n  `platform_fee` double DEFAULT '0',\n  `tax_on_fee` double DEFAULT '0',\n  `net_payout_amount` double NOT NULL,\n  `currency` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'INR',\n  `status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'PENDING',\n  `bank_utr` longtext COLLATE utf8mb4_unicode_ci,\n  `failure_reason` longtext COLLATE utf8mb4_unicode_ci,\n  `dispatched_at` datetime DEFAULT NULL,\n  `settled_at` datetime DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "password_resets": "CREATE TABLE IF NOT EXISTS `password_resets` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `user_id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `token_hash` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `expires_at` datetime NOT NULL,\n  `used` bigint DEFAULT '0',\n  `ip_address` longtext COLLATE utf8mb4_unicode_ci,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-  "properties": "CREATE TABLE IF NOT EXISTS `properties` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `name` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `city` longtext COLLATE utf8mb4_unicode_ci,\n  `timezone` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'Asia/Kolkata',\n  `inventory_mode` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'MANUAL',\n  `status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'ACTIVE',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `description` text COLLATE utf8mb4_unicode_ci,\n  `property_type` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT 'RESORT',\n  `user_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `email` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `phone` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `website` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `social_links_json` text COLLATE utf8mb4_unicode_ci,\n  `address` text COLLATE utf8mb4_unicode_ci,\n  `district` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `state` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `country` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT 'India',\n  `postal_code` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `latitude` double DEFAULT NULL,\n  `longitude` double DEFAULT NULL,\n  `check_in_time` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT '14:00',\n  `check_out_time` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT '11:00',\n  `languages_json` text COLLATE utf8mb4_unicode_ci,\n  `currency` varchar(16) COLLATE utf8mb4_unicode_ci DEFAULT 'INR',\n  `logo_url` text COLLATE utf8mb4_unicode_ci,\n  `cover_image_url` text COLLATE utf8mb4_unicode_ci,\n  `primary_image_url` text COLLATE utf8mb4_unicode_ci,\n  `gallery_json` text COLLATE utf8mb4_unicode_ci,\n  `publication_status` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT 'PUBLISHED',\n  `published_at` datetime DEFAULT NULL,\n  `published_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `version` int DEFAULT '1',\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "properties": "CREATE TABLE IF NOT EXISTS `properties` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `name` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `city` longtext COLLATE utf8mb4_unicode_ci,\n  `timezone` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'Asia/Kolkata',\n  `inventory_mode` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'MANUAL',\n  `status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'ACTIVE',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `description` text COLLATE utf8mb4_unicode_ci,\n  `property_type` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT 'RESORT',\n  `user_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `email` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `phone` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `website` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `social_links_json` text COLLATE utf8mb4_unicode_ci,\n  `address` text COLLATE utf8mb4_unicode_ci,\n  `district` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `state` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `country` varchar(128) COLLATE utf8mb4_unicode_ci DEFAULT 'India',\n  `postal_code` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `latitude` double DEFAULT NULL,\n  `longitude` double DEFAULT NULL,\n  `check_in_time` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT '14:00',\n  `check_out_time` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT '11:00',\n  `languages_json` text COLLATE utf8mb4_unicode_ci,\n  `currency` varchar(16) COLLATE utf8mb4_unicode_ci DEFAULT 'INR',\n  `logo_url` text COLLATE utf8mb4_unicode_ci,\n  `cover_image_url` text COLLATE utf8mb4_unicode_ci,\n  `primary_image_url` text COLLATE utf8mb4_unicode_ci,\n  `gallery_json` text COLLATE utf8mb4_unicode_ci,\n  `publication_status` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT 'PUBLISHED',\n  `published_at` datetime DEFAULT NULL,\n  `published_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `version` int DEFAULT '1',\n  `active_status` tinyint(1) NOT NULL DEFAULT '1',\n  `delete_status` tinyint(1) NOT NULL DEFAULT '0',\n  `deleted_at` datetime DEFAULT NULL,\n  `deleted_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "quote_items": "CREATE TABLE IF NOT EXISTS `quote_items` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `quote_id` bigint NOT NULL,\n  `room_type_id` bigint DEFAULT NULL,\n  `description` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `quantity` bigint NOT NULL DEFAULT '1',\n  `nights` bigint NOT NULL DEFAULT '1',\n  `unit_rate` double NOT NULL DEFAULT '0',\n  `amount` double NOT NULL DEFAULT '0',\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "quotes": "CREATE TABLE IF NOT EXISTS `quotes` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `enquiry_id` bigint NOT NULL,\n  `quote_number` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `currency` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'INR',\n  `subtotal` double NOT NULL DEFAULT '0',\n  `tax_total` double NOT NULL DEFAULT '0',\n  `total` double NOT NULL DEFAULT '0',\n  `valid_until` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `status` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT 'DRAFT',\n  `created_by` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `notes` longtext COLLATE utf8mb4_unicode_ci,\n  `sent_at` datetime DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "room_inventory_daily": "CREATE TABLE IF NOT EXISTS `room_inventory_daily` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `room_type_id` bigint NOT NULL,\n  `inventory_date` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `available_qty` bigint DEFAULT '5',\n  `base_rate` double DEFAULT '3500',\n  `is_closed` bigint DEFAULT '0',\n  `updated_by` longtext COLLATE utf8mb4_unicode_ci,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `total_rooms` int DEFAULT '5',\n  `blocked_qty` int DEFAULT '0',\n  `out_of_service_qty` int DEFAULT '0',\n  `allocated_qty` int DEFAULT '0',\n  `notes` text COLLATE utf8mb4_unicode_ci,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
@@ -242,7 +242,9 @@ const INDEXES = [
   "CREATE INDEX idx_wa_usage_tenant_created ON whatsapp_usage_ledger (tenant_id, billing_status, created_at)",
   "CREATE INDEX idx_conv_flow_sessions_tenant_status ON conversation_flow_sessions (tenant_id, session_status, updated_at)",
   "CREATE INDEX idx_contact_consents_tenant_contact ON contact_consents (tenant_id, contact_id, status)",
-  "CREATE INDEX idx_workflow_jobs_due ON workflow_scheduled_jobs (status, run_at)"
+  "CREATE INDEX idx_workflow_jobs_due ON workflow_scheduled_jobs (status, run_at)",
+  "CREATE INDEX idx_properties_tenant ON properties (tenant_id, delete_status)",
+  "CREATE INDEX idx_room_inv_tenant_prop_date ON room_inventory_daily (tenant_id, property_id, inventory_date)"
 ];
 
 function runColumnMigrations(db) {
@@ -470,7 +472,7 @@ function runColumnMigrations(db) {
 
   // Universal Soft Delete Columns Migration across operational tables
   const softDeleteTables = [
-    'tenants', 'users', 'waba_phone_numbers', 'conversation_flows', 'campaigns',
+    'tenants', 'users', 'properties', 'waba_phone_numbers', 'conversation_flows', 'campaigns',
     'templates', 'contacts', 'enquiries', 'booking_enquiries', 'crm_pipelines',
     'crm_records', 'business_entities', 'catalog_items', 'room_types',
     'catalog_addon_groups', 'catalog_addons', 'catalog_pricing_rules',
@@ -480,6 +482,20 @@ function runColumnMigrations(db) {
     'master_resources', 'master_payment_modes', 'master_status_tags',
     'template_catalog', 'template_versions', 'template_installations', 'template_bindings'
   ];
+
+  // Ensure room_inventory_daily carries property_id and backfills from room_types
+  try {
+    const ridCols = db.prepare("DESCRIBE room_inventory_daily").all().map(c => c.Field);
+    if (!ridCols.includes("property_id")) {
+      db.exec("ALTER TABLE room_inventory_daily ADD COLUMN property_id BIGINT NOT NULL DEFAULT 1 AFTER tenant_id");
+      db.exec(`
+        UPDATE room_inventory_daily rid
+        JOIN room_types rt ON rid.room_type_id = rt.id
+        SET rid.property_id = COALESCE(rt.property_id, 1)
+        WHERE rid.property_id = 1 AND rt.property_id IS NOT NULL
+      `);
+    }
+  } catch (e) {}
 
   for (const tbl of softDeleteTables) {
     try {
@@ -1383,7 +1399,12 @@ function initSchema(db, config) {
 
     try { db.exec("SET FOREIGN_KEY_CHECKS = 1;"); } catch (e) {}
 
-    // 3. Create performance and unique indexes
+    // 3. Run incremental column migrations FIRST so new columns exist before indexes reference them
+    // FIX BUG-P9-02: Swapped order — INDEXES previously ran before runColumnMigrations,
+    // causing index creation to fail on fresh installs when columns from migrations didn't exist yet.
+    runColumnMigrations(db);
+
+    // 4. Create performance and unique indexes (after all columns exist)
     for (const idxSql of INDEXES) {
       try {
         db.exec(idxSql);
@@ -1391,9 +1412,6 @@ function initSchema(db, config) {
         // Ignored if duplicate index or already exists
       }
     }
-
-    // 4. Run incremental column migrations
-    runColumnMigrations(db);
 
     // 5. Seed initial defaults & metadata
     seedDefaults(db, config);

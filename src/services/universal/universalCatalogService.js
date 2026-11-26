@@ -1683,16 +1683,26 @@ function seedIndustryBlueprint(tenantId = 1, sectorCode = "HOSPITALITY", userId 
   const displayBusinessName = String(flowOptions.businessName || blueprint.entity.name || blueprint.sectorName).trim();
   const targetExperienceSlug = String(flowOptions.experienceSlug || "").trim();
 
-  // 1. Create or ensure Business Entity
-  const existingEntity = db.prepare(`
-    SELECT * FROM business_entities
-    WHERE tenant_id = ? AND domain = ? AND delete_status = 0
-    ORDER BY id ASC LIMIT 1
-  `).get(numericTenantId, blueprint.domain);
+  // 1. Create or reuse matching Business Entity (never silently overwrite a differently-named entity)
+  const targetEntityId = flowOptions.targetEntityId ? Number(flowOptions.targetEntityId) : null;
+  let existingEntity = null;
+  if (targetEntityId) {
+    existingEntity = db.prepare(`
+      SELECT * FROM business_entities
+      WHERE id = ? AND tenant_id = ? AND delete_status = 0
+      LIMIT 1
+    `).get(targetEntityId, numericTenantId);
+  } else if (!flowOptions.createNewEntity) {
+    existingEntity = db.prepare(`
+      SELECT * FROM business_entities
+      WHERE tenant_id = ? AND domain = ? AND LOWER(name) = LOWER(?) AND delete_status = 0
+      ORDER BY id ASC LIMIT 1
+    `).get(numericTenantId, blueprint.domain, displayBusinessName);
+  }
 
   let entityId = existingEntity?.id;
   if (!entityId) {
-    const baseSlug = slugify(blueprint.entity.name);
+    const baseSlug = slugify(displayBusinessName || blueprint.entity.name);
     let finalSlug = baseSlug;
     let cnt = 1;
     while (db.prepare("SELECT id FROM business_entities WHERE slug = ?").get(finalSlug)) {
@@ -1714,7 +1724,7 @@ function seedIndustryBlueprint(tenantId = 1, sectorCode = "HOSPITALITY", userId 
     const entRes = entStmt.run(
       numericTenantId,
       blueprint.domain,
-      blueprint.entity.name,
+      displayBusinessName || blueprint.entity.name,
       finalSlug,
       blueprint.entity.tagline,
       blueprint.entity.description,
@@ -1966,19 +1976,46 @@ function importFullIndustrySuite(tenantId = 1, options = {}, userId = "system") 
     `).run(...updateParams);
   }
 
-  // 4. Update or ensure default property in `properties` table
-  const existingProp = db.prepare("SELECT id FROM properties WHERE tenant_id = ? ORDER BY id ASC LIMIT 1").get(numericTenantId);
-  if (existingProp) {
-    db.prepare(`
-      UPDATE properties 
-      SET name = ?, phone = COALESCE(?, phone), city = COALESCE(?, city), state = COALESCE(?, state), updated_at = UTC_TIMESTAMP()
-      WHERE id = ? AND tenant_id = ?
-    `).run(finalBizName, finalPhone, city, state, existingProp.id, numericTenantId);
-  } else {
-    db.prepare(`
-      INSERT INTO properties (tenant_id, name, phone, city, state, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
-    `).run(numericTenantId, finalBizName, finalPhone, city || "Mumbai", state || "Maharashtra");
+  // 4. Create or explicitly update target property (NEVER silently overwrite an existing named property like KonkanTrip)
+  const targetPropId = options.targetPropertyId ? Number(options.targetPropertyId) : null;
+  let propId = null;
+
+  if (targetPropId) {
+    const targetProp = db.prepare("SELECT id FROM properties WHERE id = ? AND tenant_id = ? AND COALESCE(delete_status, 0) = 0").get(targetPropId, numericTenantId);
+    if (targetProp) {
+      db.prepare(`
+        UPDATE properties
+        SET name = ?, phone = COALESCE(?, phone), city = COALESCE(?, city), state = COALESCE(?, state), updated_at = UTC_TIMESTAMP()
+        WHERE id = ? AND tenant_id = ?
+      `).run(finalBizName, finalPhone, city, state, targetProp.id, numericTenantId);
+      propId = targetProp.id;
+    }
+  }
+
+  if (!propId) {
+    const sameNameProp = db.prepare(`
+      SELECT id FROM properties
+      WHERE tenant_id = ? AND LOWER(name) = LOWER(?) AND COALESCE(delete_status, 0) = 0
+      ORDER BY id ASC LIMIT 1
+    `).get(numericTenantId, finalBizName);
+
+    if (sameNameProp) {
+      db.prepare(`
+        UPDATE properties
+        SET phone = COALESCE(?, phone), city = COALESCE(?, city), state = COALESCE(?, state), updated_at = UTC_TIMESTAMP()
+        WHERE id = ? AND tenant_id = ?
+      `).run(finalPhone, city, state, sameNameProp.id, numericTenantId);
+      propId = sameNameProp.id;
+    } else {
+      const existingPropCount = Number(db.prepare("SELECT COUNT(*) as cnt FROM properties WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0").get(numericTenantId)?.cnt || 0);
+      const initialPubStatus = (existingPropCount === 0 && (sectorCode === "HOSPITALITY" || options.publishProperty)) ? "PUBLISHED" : "DRAFT";
+      const insProp = db.prepare(`
+        INSERT INTO properties (
+          tenant_id, name, phone, city, state, publication_status, status, active_status, delete_status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', 1, 0, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+      `).run(numericTenantId, finalBizName, finalPhone, city || "Mumbai", state || "Maharashtra", initialPubStatus);
+      propId = Number(insProp.lastInsertRowid);
+    }
   }
 
   // 5. Update the newly created flow with the custom business name & bound line
@@ -2012,7 +2049,8 @@ function importFullIndustrySuite(tenantId = 1, options = {}, userId = "system") 
     } catch (_) {}
   }
 
-  const propId = db.prepare("SELECT id FROM properties WHERE tenant_id = ? ORDER BY id ASC LIMIT 1").get(numericTenantId)?.id || null;
+  // propId was resolved earlier in this function (let propId = null; ... set during property create/update)
+  // No second resolution needed — just use the already-set propId.
 
   return {
     success: true,
@@ -2129,11 +2167,21 @@ function updateBusinessProfile(tenantId = 1, payload = {}, userId = "system") {
   const finalMenuKeywords = menuKeywords || menu_keywords;
   const finalLine = phone_number_id || phoneNumberId || null;
 
-  let existing = db.prepare(`
-    SELECT * FROM business_entities
-    WHERE tenant_id = ? AND delete_status = 0
-    ORDER BY id ASC LIMIT 1
-  `).get(numericTenantId);
+  const targetEntityId = payload.entityId || payload.entity_id || null;
+  let existing = null;
+  if (targetEntityId) {
+    existing = db.prepare(`
+      SELECT * FROM business_entities
+      WHERE id = ? AND tenant_id = ? AND delete_status = 0
+      LIMIT 1
+    `).get(Number(targetEntityId), numericTenantId);
+  } else {
+    existing = db.prepare(`
+      SELECT * FROM business_entities
+      WHERE tenant_id = ? AND delete_status = 0
+      ORDER BY id ASC LIMIT 1
+    `).get(numericTenantId);
+  }
 
   if (existing) {
     db.prepare(`
@@ -2182,10 +2230,22 @@ function updateBusinessProfile(tenantId = 1, payload = {}, userId = "system") {
     );
   }
 
-  // Update properties table
-  const existingProp = db.prepare("SELECT id FROM properties WHERE tenant_id = ? ORDER BY id ASC LIMIT 1").get(numericTenantId);
-  if (existingProp && finalName) {
-    db.prepare("UPDATE properties SET name = ?, phone = COALESCE(?, phone), city = COALESCE(?, city), state = COALESCE(?, state), updated_at = UTC_TIMESTAMP() WHERE id = ?").run(finalName, finalPhone, city, state, existingProp.id);
+  // Update explicit target property (or a single matching property only if tenant has <= 1 property matching old entity name)
+  const explicitPropId = payload.propertyId || payload.property_id || null;
+  if (explicitPropId && finalName) {
+    db.prepare(`
+      UPDATE properties SET name = ?, phone = COALESCE(?, phone), city = COALESCE(?, city), state = COALESCE(?, state), updated_at = UTC_TIMESTAMP()
+      WHERE id = ? AND tenant_id = ? AND COALESCE(delete_status, 0) = 0
+    `).run(finalName, finalPhone, city, state, Number(explicitPropId), numericTenantId);
+  } else if (finalName && existing) {
+    const propCount = Number(db.prepare("SELECT COUNT(*) as cnt FROM properties WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0").get(numericTenantId)?.cnt || 0);
+    if (propCount === 1) {
+      const onlyProp = db.prepare("SELECT id, name FROM properties WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0 LIMIT 1").get(numericTenantId);
+      if (onlyProp && (onlyProp.name === existing.name || payload.syncLinkedProperty)) {
+        db.prepare("UPDATE properties SET name = ?, phone = COALESCE(?, phone), city = COALESCE(?, city), state = COALESCE(?, state), updated_at = UTC_TIMESTAMP() WHERE id = ? AND tenant_id = ?")
+          .run(finalName, finalPhone, city, state, onlyProp.id, numericTenantId);
+      }
+    }
   }
 
   // Update flow_global_settings if fallback_message, root_flow_id, or menu_keywords provided

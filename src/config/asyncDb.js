@@ -14,7 +14,7 @@ function getAsyncPool() {
       port: config.DB_PORT || 3306,
       user: config.DB_USER || "root",
       password: config.DB_PASSWORD || "",
-      database: config.DB_NAME || "whatsapp_bulk_db",
+      database: config.DB_NAME ,
       waitForConnections: true,
       connectionLimit: 12,
       queueLimit: 0,

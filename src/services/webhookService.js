@@ -3919,11 +3919,6 @@ class WebhookService {
     if (bName !== undefined && String(bName).trim()) {
       const cleanBName = String(bName).trim().substring(0, 100);
       writeScoped("BOT_BUSINESS_NAME", cleanBName);
-      if (isPrimaryWorkspace) {
-        try {
-          db.prepare("UPDATE properties SET name = ? WHERE id = 1").run(cleanBName);
-        } catch (e) {}
-      }
     }
     const welcome = payload.welcomeMessage || payload.welcome_message;
     if (welcome !== undefined && String(welcome).trim()) {

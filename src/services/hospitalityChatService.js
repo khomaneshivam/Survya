@@ -19,13 +19,17 @@ const pricingService = require("./hospitalityPricingService");
 /**
  * 1. search_properties
  */
-function searchProperties({ query = "", destination = "", type = "", tenantId = 1 }) {
+function searchProperties({ query = "", destination = "", type = "", tenantId = null }) {
   let sql = `
-    SELECT id, name, property_type, district, state, address, primary_image_url, cover_image_url, currency
+    SELECT id, tenant_id, name, property_type, district, state, address, primary_image_url, cover_image_url, currency
     FROM properties
-    WHERE tenant_id = ? AND publication_status = 'PUBLISHED'
+    WHERE publication_status = 'PUBLISHED' AND COALESCE(delete_status, 0) = 0
   `;
-  const params = [tenantId];
+  const params = [];
+  if (tenantId) {
+    sql += ` AND tenant_id = ?`;
+    params.push(Number(tenantId));
+  }
 
   if (query) {
     sql += ` AND (name LIKE ? OR description LIKE ? OR address LIKE ? OR district LIKE ?)`;
@@ -73,7 +77,7 @@ function searchProperties({ query = "", destination = "", type = "", tenantId = 
  * 2. get_property_details
  */
 function getPropertyDetails({ propertyId = 1, tenantId = 1 }) {
-  const prop = configService.getPublishedProperty(tenantId, propertyId);
+  const prop = configService.getPublishedProperty(propertyId, tenantId);
   if (!prop) {
     return {
       action: "get_property_details",
@@ -119,7 +123,7 @@ function getPropertyDetails({ propertyId = 1, tenantId = 1 }) {
  */
 function getRoomCategories({ propertyId = 1, tenantId = 1 }) {
   const categories = configService.listRoomCategories(propertyId, tenantId).filter(c => c.active && c.status === "ACTIVE");
-  const prop = configService.getPublishedProperty(tenantId, propertyId);
+  const prop = configService.getPublishedProperty(propertyId, tenantId);
 
   let waText = `🛏️ *Available Room Categories at ${prop ? prop.name : "Our Property"}*\n\n`;
 
@@ -419,7 +423,7 @@ function getRatePlanDetailsAction({ propertyId = 1, tenantId = 1 }) {
  */
 function getPropertyFacilitiesAction({ propertyId = 1, category = null, tenantId = 1 }) {
   const facilities = configService.listFacilities(propertyId, tenantId, category).filter(f => f.is_active);
-  const prop = configService.getPublishedProperty(tenantId, propertyId);
+  const prop = configService.getPublishedProperty(propertyId, tenantId);
 
   let waText = `✨ *Resort Facilities & Amenities at ${prop ? prop.name : "Property"}*\n\n`;
   facilities.forEach(f => {
@@ -499,7 +503,7 @@ function getPropertyFaqAction({ propertyId = 1, question = "", tenantId = 1 }) {
  * Strictly routes the customer to human staff without confirming bookings or holding inventory
  */
 function requestHumanHandoff({ propertyId = 1, customerName = "", customerPhone = "", inquiryDetails = "", tenantId = 1 }) {
-  const prop = configService.getPublishedProperty(tenantId, propertyId);
+  const prop = configService.getPublishedProperty(propertyId, tenantId);
 
   // Record an enquiry in the CRM system
   let enquiryId = null;
