@@ -5,7 +5,8 @@ const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 
 const config = require("../src/config/env");
-const { db, setSetting, initializeDatabase } = require("../src/config/database");
+const { db, getSetting, setSetting, initializeDatabase } = require("../src/config/database");
+const { closeAsyncPool } = require("../src/config/asyncDb");
 const { app } = require("../server");
 const { JobWorkerEngine } = require("../src/services/queue/jobWorkerEngine");
 const whatsappMessagingService = require("../src/services/whatsappMessagingService");
@@ -22,6 +23,8 @@ describe("Phase 7 Regression: Workspace Sandbox Mode & Greenvally E2E Booking Li
   let propId;
   let wabaPhoneId;
   let originalFetch;
+  let origVerifyToken;
+  let origAppSecret;
   const externalFetchCalls = [];
   const webhookVerifyToken = "wb_live_greenvally_sandbox_verify_123";
   const metaSecret = "1234567890abcdef1234567890abcdef";
@@ -29,6 +32,8 @@ describe("Phase 7 Regression: Workspace Sandbox Mode & Greenvally E2E Booking Li
 
   before(async () => {
     initializeDatabase();
+    origVerifyToken = getSetting("WEBHOOK_VERIFY_TOKEN");
+    origAppSecret = getSetting("META_APP_SECRET");
 
     // Intercept global.fetch to guarantee ZERO outbound Meta/Razorpay network calls during Sandbox E2E
     originalFetch = global.fetch;
@@ -74,6 +79,8 @@ describe("Phase 7 Regression: Workspace Sandbox Mode & Greenvally E2E Booking Li
   });
 
   after(async () => {
+    if (origVerifyToken !== undefined && origVerifyToken !== null) setSetting("WEBHOOK_VERIFY_TOKEN", origVerifyToken);
+    if (origAppSecret !== undefined && origAppSecret !== null) setSetting("META_APP_SECRET", origAppSecret);
     if (originalFetch) {
       global.fetch = originalFetch;
     }
@@ -81,6 +88,7 @@ describe("Phase 7 Regression: Workspace Sandbox Mode & Greenvally E2E Booking Li
       if (typeof server.closeAllConnections === "function") server.closeAllConnections();
       await new Promise((resolve) => server.close(resolve));
     }
+    await closeAsyncPool();
   });
 
   test("1. Workspace toggles SANDBOX mode on via API & blocks live Meta calls while waiving sandbox ledger cost", async () => {

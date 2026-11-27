@@ -231,11 +231,7 @@ export default function DataTable({
                     let rendered;
                     if (typeof col.render === 'function') {
                       // Pass computed value when accessor/key resolved from row; otherwise pass row itself.
-                      const firstArg = hasResolvedValue ? cellValue : row;
-                      const safeFirstArg = (col.render.length === 1 && !isFnAccessor && (firstArg === null || firstArg === undefined) && row)
-                        ? row
-                        : firstArg;
-                      rendered = col.render(safeFirstArg, row, idx);
+                      rendered = col.render(hasResolvedValue ? cellValue : row, row, idx);
                     } else if (typeof col.cell === 'function') {
                       // Standard `cell: (row) => ...` signature used across CatalogInventoryPage / tables.
                       rendered = (col.cell.length >= 2 && hasResolvedValue)
