@@ -355,8 +355,24 @@ async function seedBlueprint(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || "admin";
-    const { sectorCode } = req.body;
-    const result = universalCatalogService.seedIndustryBlueprint(tenantId, sectorCode, userId);
+    const { sectorCode, allowCrossDomain, autoPublish, phoneLineId } = req.body || {};
+    const { isPlatformAdmin } = require("../middleware/authMiddleware");
+    const domainProfileService = require("../services/domainProfileService");
+    const upperSector = String(sectorCode || "").trim().toUpperCase();
+    const isPlatAdmin = isPlatformAdmin(req.user);
+    const access = domainProfileService.getTenantDomainAccess(tenantId, { isPlatformAdmin: isPlatAdmin });
+    if (upperSector && !access.allowedDomains.includes(upperSector) && !(isPlatAdmin && allowCrossDomain)) {
+      return res.status(403).json({
+        success: false,
+        code: "DOMAIN_NOT_ALLOWED",
+        message: `Domain '${upperSector}' is not active in your workspace plan (${access.policyLabel}).`
+      });
+    }
+    const result = universalCatalogService.seedIndustryBlueprint(tenantId, sectorCode, userId, {
+      ...(req.body || {}),
+      autoPublish,
+      phoneLineId: phoneLineId || null
+    });
     return res.status(201).json(result);
   } catch (err) {
     return res.status(400).json({ success: false, error: err.message });
@@ -367,7 +383,20 @@ async function importFullSuite(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || "admin";
-    const result = universalCatalogService.importFullIndustrySuite(tenantId, req.body || {}, userId);
+    const { isPlatformAdmin } = require("../middleware/authMiddleware");
+    const domainProfileService = require("../services/domainProfileService");
+    const body = req.body || {};
+    const upperSector = String(body.sectorCode || body.sector || "HOSPITALITY").trim().toUpperCase();
+    const isPlatAdmin = isPlatformAdmin(req.user);
+    const access = domainProfileService.getTenantDomainAccess(tenantId, { isPlatformAdmin: isPlatAdmin });
+    if (!access.allowedDomains.includes(upperSector) && !(isPlatAdmin && body.allowCrossDomain)) {
+      return res.status(403).json({
+        success: false,
+        code: "DOMAIN_NOT_ALLOWED",
+        message: `Domain '${upperSector}' is not active in your workspace plan (${access.policyLabel}).`
+      });
+    }
+    const result = universalCatalogService.importFullIndustrySuite(tenantId, body, userId);
     return res.status(201).json(result);
   } catch (err) {
     return res.status(400).json({ success: false, error: err.message });

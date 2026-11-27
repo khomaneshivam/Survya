@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { authenticateToken, requireAdmin } = require("../middleware/authMiddleware");
+const { authenticateToken, requireAdmin, isPlatformAdmin } = require("../middleware/authMiddleware");
 const jobQueueService = require("../services/queue/jobQueueService");
 
 // All admin queue routes require authenticated token and admin privileges
@@ -11,7 +11,9 @@ router.use(requireAdmin);
 router.get("/stats", (req, res) => {
   try {
     const tenantId = req.tenantId || req.user?.tenant_id || 1;
-    const stats = jobQueueService.getQueueStats(tenantId);
+    const stats = jobQueueService.getQueueStats(tenantId, {
+      includeSystemQueue: isPlatformAdmin(req.user)
+    });
     return res.status(200).json({ success: true, data: stats });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -25,6 +27,7 @@ router.get("/jobs", (req, res) => {
     const { queueName, jobType, status, page, limit } = req.query;
     const result = jobQueueService.listJobs({
       tenantId,
+      includeSystemQueue: isPlatformAdmin(req.user),
       queueName,
       jobType,
       status,
@@ -41,7 +44,9 @@ router.get("/jobs", (req, res) => {
 router.get("/jobs/:id", (req, res) => {
   try {
     const tenantId = req.tenantId || req.user?.tenant_id || 1;
-    const job = jobQueueService.getJobById(req.params.id, tenantId);
+    const job = jobQueueService.getJobById(req.params.id, tenantId, {
+      includeSystemQueue: isPlatformAdmin(req.user)
+    });
     if (!job) {
       return res.status(404).json({ success: false, message: "Job not found" });
     }

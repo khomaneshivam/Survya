@@ -56,7 +56,9 @@ const DEFAULT_INTAKE_FIELDS = [
 ];
 
 export default function ChatLinksPage({ onNavigate }) {
-  const { token, user, isWorkspaceAdmin } = useAuth();
+  const { token, user, isWorkspaceAdmin, primaryDomain } = useAuth();
+  const isHospitality = !primaryDomain || primaryDomain === 'HOSPITALITY';
+  const tenantDisplayName = user?.tenant?.name || 'our team';
   const [loading, setLoading] = useState(true);
   const [links, setLinks] = useState([]);
   const [summary, setSummary] = useState({
@@ -89,17 +91,19 @@ export default function ChatLinksPage({ onNavigate }) {
     welcomeDescription: '',
     autoReplyEnabled: true,
     autoReplyMessage: '',
-    category: 'HOSPITALITY',
-    customFields: DEFAULT_INTAKE_FIELDS
+    category: isHospitality ? 'HOSPITALITY' : 'GENERAL',
+    customFields: isHospitality ? DEFAULT_INTAKE_FIELDS : DEFAULT_INTAKE_FIELDS.filter(f => f.id === 'special_requests').map(f => ({ ...f, label: 'Requirements / Details', placeholder: 'Share your inquiry details', enabled: true }))
   });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
   // Bulk Generator Drawer
   const [bulkDrawerOpen, setBulkDrawerOpen] = useState(false);
-  const [bulkPrefix, setBulkPrefix] = useState('resort');
+  const [bulkPrefix, setBulkPrefix] = useState(isHospitality ? 'resort' : 'offer');
   const [bulkItemsText, setBulkItemsText] = useState(
-    'Deluxe Sea View Villa\nLuxury Coconut Cottage\nFamily Ocean Suite\nBeachside Candlelight Dinner\nWater Sports Package'
+    isHospitality
+      ? 'Deluxe Sea View Villa\nLuxury Coconut Cottage\nFamily Ocean Suite\nBeachside Candlelight Dinner\nWater Sports Package'
+      : 'Consultation & Demo\nProduct Catalogue Inquiry\nOrder Support Desk'
   );
   const [bulkGenerating, setBulkGenerating] = useState(false);
 
@@ -164,13 +168,17 @@ export default function ChatLinksPage({ onNavigate }) {
       slug: '',
       phoneNumber: defaultPhone?.phone_number || '',
       phoneNumberId: defaultPhone?.phone_number_id || '',
-      defaultMessage: 'Hi KonkanTrip Beach Resort, I want to book a villa.',
-      welcomeTitle: 'KonkanTrip Beach Resort & Spa',
-      welcomeDescription: 'Direct WhatsApp Concierge & Reservations Desk',
+      defaultMessage: isHospitality
+        ? `Hi ${tenantDisplayName}, I would like to inquire about availability.`
+        : `Hi ${tenantDisplayName}, I would like more information.`,
+      welcomeTitle: tenantDisplayName,
+      welcomeDescription: isHospitality ? 'Direct WhatsApp Concierge & Reservations Desk' : 'Direct WhatsApp Business Concierge',
       autoReplyEnabled: true,
-      autoReplyMessage: 'Hello! Thank you for connecting with us. We have received your inquiry. A concierge is reviewing our room availability now.',
-      category: 'HOSPITALITY',
-      customFields: DEFAULT_INTAKE_FIELDS
+      autoReplyMessage: isHospitality
+        ? 'Hello! Thank you for connecting with us. We have received your inquiry and a concierge is reviewing availability now.'
+        : 'Hello! Thank you for connecting with us. We have received your inquiry and our team will respond shortly.',
+      category: isHospitality ? 'HOSPITALITY' : 'GENERAL',
+      customFields: isHospitality ? DEFAULT_INTAKE_FIELDS : [{ id: 'special_requests', label: 'Inquiry Details', type: 'text', required: false, enabled: true, placeholder: 'How can we help?' }]
     });
     setModalOpen(true);
   };
@@ -460,7 +468,7 @@ export default function ChatLinksPage({ onNavigate }) {
       key: 'title',
       label: 'Title & Short Link',
       header: 'Title & Short Link',
-      render: (r) => (
+      render: (_, r) => (
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>{r.title}</span>
@@ -518,7 +526,7 @@ export default function ChatLinksPage({ onNavigate }) {
       key: 'phone_number',
       label: 'Target Phone',
       header: 'Target Phone',
-      render: (r) => (
+      render: (_, r) => (
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
           +{r.phone_number}
         </span>
@@ -528,13 +536,13 @@ export default function ChatLinksPage({ onNavigate }) {
       key: 'category',
       label: 'Category',
       header: 'Category',
-      render: (r) => <Badge tone="neutral">{r.category || 'GENERAL'}</Badge>
+      render: (_, r) => <Badge tone="neutral">{r.category || 'GENERAL'}</Badge>
     },
     ...(isWorkspaceAdmin ? [{
       key: 'creator',
       label: 'Created By',
       header: 'Created By',
-      render: (r) => (
+      render: (_, r) => (
         <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>
           {r.creator_name || (r.user_id === 'system' ? 'System Default' : 'Staff Account')}
         </span>
@@ -544,7 +552,7 @@ export default function ChatLinksPage({ onNavigate }) {
       key: 'auto_reply',
       label: 'Interactive Bot',
       header: 'Interactive Bot',
-      render: (r) => (
+      render: (_, r) => (
         <Badge tone={r.auto_reply_enabled ? 'blue' : 'neutral'}>
           {r.auto_reply_enabled ? 'Enabled' : 'Off'}
         </Badge>
@@ -554,7 +562,7 @@ export default function ChatLinksPage({ onNavigate }) {
       key: 'performance',
       label: 'Performance',
       header: 'Performance',
-      render: (r) => (
+      render: (_, r) => (
         <div style={{ fontSize: '12px' }}>
           <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.clicks_count || 0}</span>
           <span style={{ color: 'var(--text-muted)' }}> clicks · </span>
@@ -568,7 +576,7 @@ export default function ChatLinksPage({ onNavigate }) {
       label: 'Actions',
       header: 'Actions',
       align: 'right',
-      render: (r) => (
+      render: (_, r) => (
         <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
           <Button
             type="button"

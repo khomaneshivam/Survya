@@ -334,7 +334,11 @@ export default function CatalogInventoryPage() {
         },
         body: JSON.stringify({
           ...itemForm,
-          item_type: currentEntity?.domain === 'HOSPITALITY' ? 'ROOM' : (currentEntity?.domain === 'DINING' ? 'FOOD' : (currentEntity?.domain === 'RETAIL' ? 'PRODUCT' : 'SERVICE'))
+          item_type: currentEntity?.domain === 'HOSPITALITY'
+            ? 'ROOM'
+            : (['DINING', 'RESTAURANT_FOOD'].includes(currentEntity?.domain)
+              ? 'FOOD'
+              : (['RETAIL', 'RETAIL_ECOM'].includes(currentEntity?.domain) ? 'PRODUCT' : 'SERVICE'))
         })
       });
 
@@ -749,7 +753,11 @@ export default function CatalogInventoryPage() {
               setItemForm({
                 title: '',
                 category_id: categories[0]?.id || '',
-                item_type: currentEntity?.domain === 'HOSPITALITY' ? 'ROOM' : (currentEntity?.domain === 'DINING' ? 'FOOD' : 'PRODUCT'),
+                item_type: currentEntity?.domain === 'HOSPITALITY'
+                  ? 'ROOM'
+                  : (['DINING', 'RESTAURANT_FOOD'].includes(currentEntity?.domain)
+                    ? 'FOOD'
+                    : (['RETAIL', 'RETAIL_ECOM'].includes(currentEntity?.domain) ? 'PRODUCT' : 'SERVICE')),
                 base_price: '',
                 tax_rate: currentEntity?.domain === 'HOSPITALITY' ? 12 : 5,
                 short_description: '',
@@ -1333,7 +1341,7 @@ export default function CatalogInventoryPage() {
                 </div>
               )}
 
-              {currentEntity?.domain === 'DINING' && (
+              {['DINING', 'RESTAURANT_FOOD'].includes(currentEntity?.domain) && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                   <div>
                     <label className="sarvya-field-label">Dietary Flag</label>
@@ -1372,7 +1380,7 @@ export default function CatalogInventoryPage() {
                 </div>
               )}
 
-              {currentEntity?.domain === 'RETAIL' && (
+              {['RETAIL', 'RETAIL_ECOM'].includes(currentEntity?.domain) && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
                   <div>
                     <label className="sarvya-field-label">Stock Quantity</label>

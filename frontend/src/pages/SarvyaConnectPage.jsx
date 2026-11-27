@@ -334,7 +334,7 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
     {
       key: 'name',
       header: 'Template Name',
-      render: (row) => (
+      render: (_, row) => (
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-mono text-xs font-semibold text-[var(--text-primary)]">{row.name}</span>
@@ -352,7 +352,7 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
     {
       key: 'category',
       header: 'Category',
-      render: (row) => (
+      render: (_, row) => (
         <Badge tone={row.category === 'UTILITY' ? 'green' : row.category === 'AUTHENTICATION' ? 'blue' : 'purple'}>
           {row.category}
         </Badge>
@@ -361,12 +361,12 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
     {
       key: 'language',
       header: 'Language',
-      render: (row) => <span className="text-xs text-[var(--text-secondary)]">{row.language || 'en'}</span>
+      render: (_, row) => <span className="text-xs text-[var(--text-secondary)]">{row.language || 'en'}</span>
     },
     {
       key: 'status',
       header: 'Status',
-      render: (row) => (
+      render: (_, row) => (
         <Badge tone={STATUS_TONE[row.status] || 'neutral'}>{row.status}</Badge>
       )
     },
@@ -374,7 +374,7 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
       key: 'actions',
       header: 'Actions',
       align: 'right',
-      render: (row) => (
+      render: (_, row) => (
         <div className="inline-flex items-center justify-end gap-1.5">
           <Button
             type="button"
@@ -416,22 +416,22 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
     {
       key: 'created_at',
       header: 'Timestamp',
-      render: (row) => <span className="text-xs text-[var(--text-muted)]">{row.created_at}</span>
+      render: (_, row) => <span className="text-xs text-[var(--text-muted)]">{row.created_at}</span>
     },
     {
       key: 'recipient_phone',
       header: 'Recipient / Scope',
-      render: (row) => <span className="font-mono text-xs text-[var(--text-primary)]">{row.recipient_phone}</span>
+      render: (_, row) => <span className="font-mono text-xs text-[var(--text-primary)]">{row.recipient_phone}</span>
     },
     {
       key: 'category',
       header: 'Category',
-      render: (row) => <Badge tone={row.category === 'UTILITY' ? 'green' : row.category === 'SERVICE' ? 'neutral' : 'purple'}>{row.category}</Badge>
+      render: (_, row) => <Badge tone={row.category === 'UTILITY' ? 'green' : row.category === 'SERVICE' ? 'neutral' : 'purple'}>{row.category}</Badge>
     },
     {
       key: 'billing_status',
       header: 'State',
-      render: (row) => (
+      render: (_, row) => (
         <Badge tone={row.billing_status === 'RECORDED' ? 'green' : row.billing_status === 'WAIVED' ? 'amber' : 'blue'}>
           {row.billing_status === 'WAIVED' ? 'WAIVED (₹0)' : row.billing_status}
         </Badge>
@@ -441,7 +441,7 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
       key: 'unit_cost',
       header: 'Amount',
       align: 'right',
-      render: (row) => <span className="font-semibold text-xs text-[var(--text-primary)]">₹{Number(row.unit_cost || 0).toFixed(2)}</span>
+      render: (_, row) => <span className="font-semibold text-xs text-[var(--text-primary)]">₹{Number(row.unit_cost || 0).toFixed(2)}</span>
     }
   ];
 
@@ -451,7 +451,7 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
         title="SARVYA Connect — WhatsApp Messaging"
         actions={
           <>
-            <MetaEmbeddedSignupButton onSuccess={() => { fetchAccounts(); fetchTemplates(); }} />
+            <MetaEmbeddedSignupButton onSuccess={() => loadAll()} />
             <Button
               type="button"
               variant="secondary"
@@ -564,17 +564,17 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
                     {
                       key: 'display_name',
                       header: 'Business Label',
-                      render: (r) => (
+                      render: (_, r) => (
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-[var(--text-primary)]">{r.display_name}</span>
                           {r.is_default === 1 && <Badge tone="blue">Default</Badge>}
                         </div>
                       )
                     },
-                    { key: 'phone_number', header: 'Phone Number', render: (r) => <span className="font-mono text-xs">{r.phone_number}</span> },
-                    { key: 'phone_number_id', header: 'Phone Number ID', render: (r) => <span className="font-mono text-xs text-[var(--text-muted)]">{r.phone_number_id}</span> },
-                    { key: 'quality_rating', header: 'Quality', render: (r) => <Badge tone={r.quality_rating === 'GREEN' ? 'green' : 'coral'}>{r.quality_rating || 'GREEN'}</Badge> },
-                    { key: 'status', header: 'Status', render: (r) => <Badge tone="green">{r.status || 'ACTIVE'}</Badge> }
+                    { key: 'phone_number', header: 'Phone Number', render: (_, r) => <span className="font-mono text-xs">{r.phone_number}</span> },
+                    { key: 'phone_number_id', header: 'Phone Number ID', render: (_, r) => <span className="font-mono text-xs text-[var(--text-muted)]">{r.phone_number_id}</span> },
+                    { key: 'quality_rating', header: 'Quality', render: (_, r) => <Badge tone={r.quality_rating === 'GREEN' ? 'green' : 'coral'}>{r.quality_rating || 'GREEN'}</Badge> },
+                    { key: 'status', header: 'Status', render: (_, r) => <Badge tone="green">{r.status || 'ACTIVE'}</Badge> }
                   ]}
                   rows={accountsData.accounts}
                   keyField="id"
@@ -586,7 +586,7 @@ export default function SarvyaConnectPage({ onNavigate, currentUser }) {
                   description="Connect your Meta Phone Number ID and WABA ID to start messaging."
                   action={
                     <div className="flex gap-2 items-center flex-wrap justify-center">
-                      <MetaEmbeddedSignupButton onSuccess={() => { fetchAccounts(); fetchTemplates(); }} />
+                      <MetaEmbeddedSignupButton onSuccess={() => loadAll()} />
                       <Button type="button" variant="secondary" icon={Plus} onClick={() => setConnectOpen(true)}>
                         Manual Credentials
                       </Button>

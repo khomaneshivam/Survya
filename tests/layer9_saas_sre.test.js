@@ -225,6 +225,21 @@ describe("Layer 9: SaaS Plan Quotas, Composite Indexes, Correlation Logging & DB
     const entry = logEvent("info", "l9_health_probe", { traceId });
     assert.equal(entry.event, "l9_health_probe");
     assert.equal(entry.traceId, traceId);
+
+    // Phase 9 SRE probes (/livez, /readyz, /metrics)
+    const liveRes = await fetch(`${baseUrl}/livez`);
+    assert.equal(liveRes.status, 200);
+    assert.equal((await liveRes.json()).status, "alive");
+
+    const readyRes = await fetch(`${baseUrl}/readyz`);
+    assert.equal(readyRes.status, 200);
+    assert.equal((await readyRes.json()).database, "connected");
+
+    const metricsRes = await fetch(`${baseUrl}/metrics`);
+    assert.equal(metricsRes.status, 200);
+    const metricsBody = await metricsRes.text();
+    assert.match(metricsBody, /process_uptime_seconds/);
+    assert.match(metricsBody, /survya_job_queue_pending/);
   });
 
   test("4. Hot composite tenant indexes exist across campaigns, messages, ledger, sessions, consents & jobs", () => {
@@ -240,5 +255,51 @@ describe("Layer 9: SaaS Plan Quotas, Composite Indexes, Correlation Logging & DB
       const idx = db.prepare(`SHOW INDEX FROM ${table} WHERE Key_name = ?`).all(idxName);
       assert.ok(idx.length >= 1, `Missing composite index ${idxName} on ${table}`);
     }
+  });
+
+  test("5. Security hardening: unauthenticated /v1/orders/:id blocked, custom template delete scoped, and admin routes guarded", async () => {
+    // Unauthenticated /v1/orders/:id rejected with 401
+    const unauthOrd = await fetch(`${baseUrl}/api/v1/orders/99999`);
+    assert.equal(unauthOrd.status, 401);
+
+    // Employee token in Tenant Y blocked from master mutations and flow approvals decision
+    const empUserId = `usr_l9_emp_${Date.now()}`;
+    db.prepare(`
+      INSERT INTO users (id, tenant_id, name, email, password_hash, role, status, active_status, delete_status)
+      VALUES (?, ?, 'Emp L9', ?, 'hash', 'USER', 'ACTIVE', 1, 0)
+    `).run(empUserId, tenantYId, `emp_l9_${Date.now()}@test.local`);
+    db.prepare("INSERT INTO tenant_user_memberships (tenant_id, user_id, role) VALUES (?, ?, 'USER')").run(tenantYId, empUserId);
+    const empTokenY = jwt.sign(
+      { id: empUserId, userId: empUserId, tenant_id: tenantYId, role: "USER", workspace_role: "USER" },
+      config.JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    const masterWriteRes = await fetch(`${baseUrl}/api/v1/masters/seed-sector`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${empTokenY}` },
+      body: JSON.stringify({ sector: "HOSPITALITY" })
+    });
+    assert.equal(masterWriteRes.status, 403);
+
+    const approvalRes = await fetch(`${baseUrl}/api/v1/flows/conversation-flows/1/approvals/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${empTokenY}` },
+      body: JSON.stringify({ decision: "APPROVE" })
+    });
+    assert.equal(approvalRes.status, 403);
+
+    // Cross-tenant custom template deletion isolated (Tenant Y cannot delete Tenant X template)
+    const tplXId = `tpl_l9_x_${Date.now()}`;
+    db.prepare(`
+      INSERT INTO templates (id, tenant_id, name, language, category, status, body_text)
+      VALUES (?, ?, ?, 'en', 'MARKETING', 'DRAFT', 'Hi')
+    `).run(tplXId, tenantXId, `tpl_x_${Date.now()}`);
+    const delCross = await fetch(`${baseUrl}/api/templates/custom/${tplXId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${tokenY}` }
+    });
+    assert.equal(delCross.status, 404);
+    assert.ok(db.prepare("SELECT id FROM templates WHERE id = ?").get(tplXId));
   });
 });

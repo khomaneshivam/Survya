@@ -36,22 +36,31 @@ export function useFlowEditor(flowId) {
         const loadedFlow = res.flow;
         setFlow(loadedFlow);
 
-        // Normalize graph structure
+        // Normalize graph structure across canonical draftVersion/publishedVersion & legacy graph_json
         let graphNodes = [];
         let graphEdges = [];
 
-        if (loadedFlow.draft_graph_json) {
+        const ver = (loadedFlow.draftVersion?.nodes || loadedFlow.draftVersion?.nodes_json)
+          ? loadedFlow.draftVersion
+          : (loadedFlow.publishedVersion?.nodes || loadedFlow.publishedVersion?.nodes_json)
+            ? loadedFlow.publishedVersion
+            : null;
+
+        if (ver) {
+          graphNodes = Array.isArray(ver.nodes) ? ver.nodes : (ver.nodes_json ? JSON.parse(ver.nodes_json) : []);
+          graphEdges = Array.isArray(ver.transitions) ? ver.transitions : (ver.transitions_json ? JSON.parse(ver.transitions_json) : (ver.edges || []));
+        } else if (loadedFlow.draft_graph_json) {
           const draft = typeof loadedFlow.draft_graph_json === 'string'
             ? JSON.parse(loadedFlow.draft_graph_json)
             : loadedFlow.draft_graph_json;
           graphNodes = draft.nodes || [];
-          graphEdges = draft.edges || [];
+          graphEdges = draft.transitions || draft.edges || [];
         } else if (loadedFlow.graph_json) {
           const published = typeof loadedFlow.graph_json === 'string'
             ? JSON.parse(loadedFlow.graph_json)
             : loadedFlow.graph_json;
           graphNodes = published.nodes || [];
-          graphEdges = published.edges || [];
+          graphEdges = published.transitions || published.edges || [];
         }
 
         setNodes(graphNodes);
@@ -133,6 +142,7 @@ export function useFlowEditor(flowId) {
         trigger_keyword: flow?.trigger_keyword,
         trigger_type: flow?.trigger_type,
         nodes,
+        transitions: edges,
         edges
       };
       const res = await automationApi.saveFlowDraft(flowId, payload);

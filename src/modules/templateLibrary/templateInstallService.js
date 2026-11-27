@@ -20,6 +20,8 @@ class TemplateInstallService {
       tenantId,
       userId = 'system',
       customFlowName = null,
+      triggerKeyword = null,
+      triggerKeywords = null,
       configValues = {},
       bindings = [],
       activateImmediately = false
@@ -79,15 +81,34 @@ class TemplateInstallService {
     const phoneBinding = bindingValidation.resolvedBindings.find(b => b.resource_type === 'WHATSAPP_LINE' || b.logical_key === 'sender_line');
     const propertyBinding = bindingValidation.resolvedBindings.find(b => b.resource_type === 'PROPERTY' || b.logical_key === 'property_id');
     const crmBinding = bindingValidation.resolvedBindings.find(b => b.resource_type === 'CRM_PIPELINE' || b.logical_key === 'crm_pipeline');
+    const categoryBinding = bindingValidation.resolvedBindings.find(b => b.resource_type === 'CATALOG_CATEGORY' || b.logical_key === 'catalog_category' || b.logical_key === 'category_id');
+
+    // Resolve custom trigger keywords if supplied
+    let customKwList = [];
+    if (Array.isArray(triggerKeywords) && triggerKeywords.length > 0) {
+      customKwList = triggerKeywords.map(k => String(k).trim()).filter(Boolean);
+    } else if (triggerKeyword && String(triggerKeyword).trim()) {
+      customKwList = String(triggerKeyword).split(',').map(k => k.trim()).filter(Boolean);
+    } else if (configValues?.triggerKeyword && String(configValues.triggerKeyword).trim()) {
+      customKwList = String(configValues.triggerKeyword).split(',').map(k => k.trim()).filter(Boolean);
+    } else if (Array.isArray(configValues?.triggerKeywords) && configValues.triggerKeywords.length > 0) {
+      customKwList = configValues.triggerKeywords.map(k => String(k).trim()).filter(Boolean);
+    }
 
     // 5. Clone and adapt graph with tenant-specific bindings
     const rawNodes = Array.isArray(graphData.nodes) ? graphData.nodes : [];
     const rawTransitions = Array.isArray(graphData.transitions) ? graphData.transitions : [];
     const rawVariables = graphData.variables || {};
 
+    let templateStartKeywords = [];
     const clonedNodes = rawNodes.map(n => {
       const nodeCopy = JSON.parse(JSON.stringify(n));
       nodeCopy.config = nodeCopy.config || {};
+
+      // Inject bound WHATSAPP_LINE
+      if (phoneBinding && (!nodeCopy.config.phone_number_id || nodeCopy.config.phone_number_id === 'ALL')) {
+        nodeCopy.config.phone_number_id = String(phoneBinding.target_resource_id);
+      }
 
       // Inject bound property
       if (propertyBinding && (!nodeCopy.config.property_id || nodeCopy.config.property_id === 1)) {
@@ -99,14 +120,33 @@ class TemplateInstallService {
         nodeCopy.config.pipeline_id = crmBinding.target_resource_id;
       }
 
+      // Inject bound CATALOG_CATEGORY
+      if (categoryBinding) {
+        nodeCopy.config.category_id = categoryBinding.target_resource_id;
+        nodeCopy.config.master_category_id = Number(categoryBinding.target_resource_id) || categoryBinding.target_resource_id;
+      }
+
+      if (nodeCopy.type === 'START' || nodeCopy.type === 'TRIGGER_WHATSAPP' || nodeCopy.type === 'TRIGGER') {
+        if (customKwList.length > 0) {
+          nodeCopy.config.keywords = customKwList;
+          nodeCopy.config.triggerKeywords = customKwList;
+        } else if (Array.isArray(nodeCopy.config.keywords) && nodeCopy.config.keywords.length > 0) {
+          templateStartKeywords = nodeCopy.config.keywords;
+        }
+      }
+
       return nodeCopy;
     });
+
+    const finalTriggerKeywords = customKwList.length > 0
+      ? customKwList
+      : (templateStartKeywords.length > 0 ? templateStartKeywords : ["hi", "hello", "hey", "enquiry", "book", "rates", "pricing"]);
 
     const flowUuid = crypto.randomUUID();
     const finalFlowName = customFlowName || `${template.title} (${configValidation.cleanConfig['business.name'] || 'Custom'})`;
 
     // 6. Transactional Database Writes
-    // Create flow record
+    // Create flow record (never hardcode fallback property_id = 1)
     const insertFlowResult = db.prepare(`
       INSERT INTO conversation_flows (
         uuid, tenant_id, property_id, phone_number_id, name, description,
@@ -117,12 +157,12 @@ class TemplateInstallService {
     `).run(
       flowUuid,
       tenantId,
-      propertyBinding ? Number(propertyBinding.target_resource_id) : 1,
+      propertyBinding ? Number(propertyBinding.target_resource_id) : null,
       phoneBinding ? phoneBinding.target_resource_id : null,
       finalFlowName,
       template.description || '',
       template.category || 'HOSPITALITY_ENQUIRY',
-      JSON.stringify(["hi", "hello", "hey", "enquiry", "book", "rates", "pricing"]),
+      JSON.stringify(finalTriggerKeywords),
       template.id,
       version.id,
       userId,
@@ -240,33 +280,55 @@ class TemplateInstallService {
       WHERE id = ?
     `).run(version.id, userId, flow.id);
 
-    // 5. Register active workflow trigger for incoming messages
+    // 5. Register active workflow trigger for incoming messages using flow's configured keywords
     const phoneBinding = currentBindings.find(b => b.resource_type === 'WHATSAPP_LINE' || b.logical_key === 'sender_line');
     const phoneId = phoneBinding?.target_resource_id || flow.phone_number_id || null;
 
+    let activeKeywords = ["hi", "hello", "hey", "start", "enquiry", "book", "help"];
     try {
+      const parsedKw = typeof flow.trigger_keywords_json === 'string'
+        ? JSON.parse(flow.trigger_keywords_json || "[]")
+        : flow.trigger_keywords_json;
+      if (Array.isArray(parsedKw) && parsedKw.length > 0) {
+        activeKeywords = parsedKw;
+      }
+    } catch (_) {}
+
+    try {
+      const workflowTriggerService = require("../../services/workflow/workflowTriggerService");
+      const versionNodes = JSON.parse(version.nodes_json || "[]");
+      workflowTriggerService.syncFlowTriggers(tenantId, flow.id, versionNodes, phoneId);
+
       const triggerKey = `trg_${tenantId}_flow_${flow.id}_default`;
       const matchConfigJson = JSON.stringify({
         nodeId: "node_start",
         nodeType: "START",
-        keywords: ["hi", "hello", "hey", "start", "enquiry", "book", "help"],
+        keywords: activeKeywords,
         matchType: "CONTAINS",
         ignoreCase: true,
         priority: 50
       });
 
-      db.prepare(`
-        INSERT INTO workflow_triggers (
-          tenant_id, phone_number_id, flow_id, trigger_key, trigger_type,
-          match_config_json, priority, active_status, delete_status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'KEYWORD', ?, 50, 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        ON DUPLICATE KEY UPDATE
-          phone_number_id = VALUES(phone_number_id),
-          match_config_json = VALUES(match_config_json),
-          active_status = 1,
-          delete_status = 0,
-          updated_at = CURRENT_TIMESTAMP
-      `).run(tenantId, phoneId, String(flow.id), triggerKey, matchConfigJson);
+      const existingTrigger = db.prepare(`
+        SELECT id FROM workflow_triggers WHERE tenant_id = ? AND flow_id = ? AND delete_status = 0 LIMIT 1
+      `).get(tenantId, String(flow.id));
+      if (!existingTrigger) {
+        db.prepare(`
+          INSERT INTO workflow_triggers (
+            tenant_id, phone_number_id, flow_id, trigger_key, trigger_type,
+            match_config_json, priority, active_status, delete_status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, 'KEYWORD', ?, 50, 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          ON DUPLICATE KEY UPDATE
+            phone_number_id = VALUES(phone_number_id),
+            match_config_json = VALUES(match_config_json),
+            active_status = 1,
+            delete_status = 0,
+            updated_at = CURRENT_TIMESTAMP
+        `).run(tenantId, phoneId, String(flow.id), triggerKey, matchConfigJson);
+      }
+      const runtimeCache = require("../../services/workflow/runtimeCache");
+      runtimeCache.invalidateFlow(flow.id);
+      runtimeCache.invalidateTriggers(tenantId);
     } catch (_) {}
 
     // 6. Update installation status to ACTIVE

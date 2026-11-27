@@ -76,33 +76,64 @@ async function capturePayment(req, res) {
 async function handleRazorpayWebhook(req, res) {
   try {
     const signature = req.headers["x-razorpay-signature"];
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    if (!webhookSecret || !signature) {
+    const event = String(req.body?.event || "").trim().toLowerCase();
+    const paymentEntity = req.body?.payload?.payment?.entity;
+    const orderRef = paymentEntity?.notes?.order_number || paymentEntity?.description || req.body?.order_number || null;
+
+    let order = null;
+    if (orderRef) {
+      order = db.prepare("SELECT id, tenant_id, entity_id, grand_total, currency FROM unified_orders WHERE order_number = ?").get(orderRef);
+    }
+
+    const candidateSecrets = [];
+    if (order) {
+      try {
+        const cfgs = db.prepare(`
+          SELECT webhook_secret FROM merchant_payment_configs
+          WHERE tenant_id = ? AND entity_id = ? AND webhook_secret IS NOT NULL AND webhook_secret != ''
+        `).all(order.tenant_id, order.entity_id);
+        for (const row of cfgs) {
+          if (row?.webhook_secret) candidateSecrets.push(String(row.webhook_secret).trim());
+        }
+      } catch (_) {}
+    }
+    if (process.env.RAZORPAY_WEBHOOK_SECRET) {
+      candidateSecrets.push(String(process.env.RAZORPAY_WEBHOOK_SECRET).trim());
+    }
+
+    if (!signature || candidateSecrets.length === 0) {
       return res.status(401).json({ success: false, message: "Missing webhook signature or verification secret." });
     }
-    const rawPayload = req.rawBody ? Buffer.from(req.rawBody) : JSON.stringify(req.body);
+    const rawPayload = req.rawBody ? Buffer.from(req.rawBody) : Buffer.from(JSON.stringify(req.body));
 
-    const isValid = paymentPayoutService.verifyPaymentWebhook(rawPayload, signature, webhookSecret);
+    const isValid = candidateSecrets.some(secret => paymentPayoutService.verifyPaymentWebhook(rawPayload, signature, secret));
     if (!isValid) {
       console.warn("[Payment Webhook] Invalid signature rejected");
       return res.status(401).json({ success: false, message: "Invalid webhook signature." });
     }
 
-    const event = req.body.event;
     if (event === "payment.captured" || event === "order.paid") {
-      const paymentEntity = req.body.payload?.payment?.entity;
-      const orderRef = paymentEntity?.notes?.order_number || paymentEntity?.description;
-      if (orderRef) {
+      if (orderRef && order) {
+        const receivedCurrency = String(paymentEntity?.currency || order.currency || "INR").toUpperCase();
+        const expectedCurrency = String(order.currency || "INR").toUpperCase();
+        if (receivedCurrency !== expectedCurrency) {
+          return res.status(400).json({ success: false, message: `Currency mismatch: expected ${expectedCurrency}, got ${receivedCurrency}` });
+        }
+        const paidAmount = paymentEntity?.amount != null ? Number(paymentEntity.amount) / 100 : null;
+        if (paidAmount !== null && (!Number.isFinite(paidAmount) || paidAmount <= 0 || paidAmount + 0.01 < Number(order.grand_total || 0))) {
+          return res.status(400).json({ success: false, message: "Underpayment or invalid amount rejected." });
+        }
+
         paymentPayoutService.captureOrderPayment({
           orderNumber: orderRef,
           paymentMethod: "RAZORPAY",
-          paymentReference: paymentEntity.id,
-          amountPaid: (paymentEntity.amount || 0) / 100
+          paymentReference: paymentEntity?.id,
+          amountPaid: paidAmount
         });
       }
     }
 
-    res.json({ status: "ok" });
+    res.json({ status: "ok", event });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

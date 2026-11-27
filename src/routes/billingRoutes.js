@@ -71,6 +71,8 @@ router.get("/subscription", (req, res) => {
           wabaLinesUsed: snap.wabaLinesUsed,
           wabaLinesLimit: snap.quotaWabaLines,
           messagesUsed: snap.messagesUsed,
+          directMessagesUsed: snap.directMessagesUsed,
+          campaignMessagesUsed: snap.campaignMessagesUsed,
           messagesLimit: snap.quotaMonthlyMessages
         },
         latestSubscription: latestSub || null

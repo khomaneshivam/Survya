@@ -75,8 +75,8 @@ async function duplicateProperty(req, res) {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || null;
     const isAdmin = isWorkspaceAdmin(req.user);
-    const result = await configService.duplicateProperty(Number(req.params.id), req.body || {}, tenantId, userId, isAdmin);
-    res.status(201).json({ success: true, ...result });
+    const property = await configService.duplicateProperty(Number(req.params.id), req.body || {}, tenantId, userId, isAdmin);
+    res.status(201).json({ success: true, property, data: property, message: "Property duplicated cleanly." });
   } catch (err) {
     res.status(err.statusCode || 400).json({ success: false, message: err.message });
   }
@@ -768,11 +768,53 @@ async function calculateQuote(req, res) {
 /**
  * -------------------------------------------------------------------------
  * PUBLIC / CONVERSATIONAL CHAT API (Information-Only Source of Truth)
+ * BUG-P2-03 FIX: Resolve tenant scope deterministically from active published
+ * links/properties or verified active tenant ID rather than blind `|| 1` injection.
  * -------------------------------------------------------------------------
  */
+function resolvePublicTenantId(req, propertyId = null) {
+  const { db } = require("../config/database");
+  const slug = req.query?.link_slug || req.body?.link_slug || req.query?.slug || req.body?.slug;
+  if (slug) {
+    const linkRow = db.prepare(`
+      SELECT tenant_id FROM chat_links
+      WHERE slug = ? AND COALESCE(delete_status, 0) = 0
+      LIMIT 1
+    `).get(String(slug).trim());
+    if (linkRow?.tenant_id) return Number(linkRow.tenant_id);
+  }
+  const rawExplicit = req.query?.tenant_id ?? req.body?.tenant_id;
+  if (rawExplicit !== undefined && rawExplicit !== null && rawExplicit !== "") {
+    const parsed = Number(rawExplicit);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      const err = new Error("Invalid tenant scope.");
+      err.statusCode = 400;
+      throw err;
+    }
+    const tenantExists = db.prepare("SELECT id FROM tenants WHERE id = ? AND COALESCE(delete_status, 0) = 0 LIMIT 1").get(parsed);
+    if (!tenantExists) {
+      const err = new Error("Workspace not found.");
+      err.statusCode = 404;
+      throw err;
+    }
+    return parsed;
+  }
+  if (propertyId) {
+    const propRow = db.prepare(`
+      SELECT tenant_id, publication_status FROM properties
+      WHERE id = ? AND COALESCE(delete_status, 0) = 0
+      LIMIT 1
+    `).get(Number(propertyId));
+    if (propRow && propRow.publication_status === "PUBLISHED") {
+      return Number(propRow.tenant_id);
+    }
+  }
+  return 1;
+}
+
 async function publicSearchProperties(req, res) {
   try {
-    const tenantId = req.query.tenant_id ? Number(req.query.tenant_id) : 1;
+    const tenantId = resolvePublicTenantId(req);
     const result = chatService.searchProperties({
       query: req.query.q,
       destination: req.query.destination,
@@ -781,13 +823,13 @@ async function publicSearchProperties(req, res) {
     });
     res.json({ success: true, ...result });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
 }
 
 async function publicGetProperty(req, res) {
   try {
-    const tenantId = req.query.tenant_id ? Number(req.query.tenant_id) : 1;
+    const tenantId = resolvePublicTenantId(req, req.params.id);
     const result = chatService.getPropertyDetails({
       propertyId: req.params.id,
       tenantId
@@ -797,26 +839,26 @@ async function publicGetProperty(req, res) {
     }
     res.json({ success: true, ...result });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
 }
 
 async function publicGetRoomCategories(req, res) {
   try {
-    const tenantId = req.query.tenant_id ? Number(req.query.tenant_id) : 1;
+    const tenantId = resolvePublicTenantId(req, req.params.id);
     const result = chatService.getRoomCategories({
       propertyId: req.params.id,
       tenantId
     });
     res.json({ success: true, ...result });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
 }
 
 async function publicGetRoomDetails(req, res) {
   try {
-    const tenantId = req.query.tenant_id ? Number(req.query.tenant_id) : 1;
+    const tenantId = resolvePublicTenantId(req, req.params.id);
     const result = chatService.getRoomDetails({
       propertyId: req.params.id,
       roomTypeId: req.params.roomId,
@@ -827,13 +869,13 @@ async function publicGetRoomDetails(req, res) {
     }
     res.json({ success: true, ...result });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
 }
 
 async function publicCheckAvailability(req, res) {
   try {
-    const tenantId = req.query.tenant_id ? Number(req.query.tenant_id) : 1;
+    const tenantId = resolvePublicTenantId(req, req.params.id);
     const { room_type_id, check_in, check_out, quantity } = req.query;
     if (!check_in || !check_out) {
       return res.status(400).json({ success: false, message: "check_in and check_out query parameters are required." });
@@ -854,13 +896,13 @@ async function publicCheckAvailability(req, res) {
       res.json({ success: true, ...result });
     }
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    res.status(err.statusCode || 400).json({ success: false, message: err.message });
   }
 }
 
 async function publicCalculateQuote(req, res) {
   try {
-    const tenantId = req.body.tenant_id ? Number(req.body.tenant_id) : 1;
+    const tenantId = resolvePublicTenantId(req, req.params.id);
     const result = chatService.calculatePropertyQuoteAction({
       propertyId: req.params.id,
       roomTypeId: req.body.room_type_id,
@@ -874,21 +916,21 @@ async function publicCalculateQuote(req, res) {
     });
     res.json({ success: true, ...result });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    res.status(err.statusCode || 400).json({ success: false, message: err.message });
   }
 }
 
 async function publicChatAction(req, res) {
   try {
-    const { action, payload, tenant_id } = req.body;
+    const { action, payload } = req.body;
     if (!action) {
       return res.status(400).json({ success: false, message: "action parameter is required." });
     }
-    const tenantId = tenant_id ? Number(tenant_id) : 1;
+    const tenantId = resolvePublicTenantId(req, payload?.propertyId);
     const result = chatService.handleHospitalityChatAction(action, payload || {}, tenantId);
     res.json({ success: true, ...result });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    res.status(err.statusCode || 400).json({ success: false, message: err.message });
   }
 }
 

@@ -1,3 +1,4 @@
+const { isPlatformAdmin } = require("../middleware/authMiddleware");
 const { db } = require("../config/database");
 const { 
   getTemplateDetails, 
@@ -79,6 +80,12 @@ async function listTemplates(req, res) {
 
     let sql = `SELECT * FROM templates WHERE 1=1`;
     const params = [];
+
+    if (req.user && !isPlatformAdmin(req.user)) {
+      const tenantId = Number(req.user.tenant_id || 1);
+      sql += ` AND (tenant_id = ? OR tenant_id IS NULL)`;
+      params.push(tenantId);
+    }
 
     if (categoryParam && categoryParam !== "ALL") {
       sql += ` AND UPPER(COALESCE(category, 'MARKETING')) = ?`;
@@ -484,13 +491,27 @@ async function getTemplate(req, res) {
  */
 async function deleteTemplate(req, res) {
   try {
-    const { templateId } = req.params;
-    const clean = String(templateId).trim();
+    const rawId = req.params.templateId || req.params.id;
+    const clean = rawId ? String(rawId).trim() : "";
+    if (!clean) {
+      return res.status(400).json({ success: false, message: "Template identifier is required." });
+    }
 
-    const info = db.prepare(`
-      DELETE FROM templates 
-      WHERE id = ? OR meta_id = ? OR name = ?
-    `).run(clean, clean, clean);
+    const platformAdmin = isPlatformAdmin(req.user);
+    const tenantId = Number(req.user?.tenant_id || 1);
+
+    const existing = platformAdmin
+      ? db.prepare("SELECT id, tenant_id FROM templates WHERE id = ? OR meta_id = ? OR name = ? LIMIT 1").get(clean, clean, clean)
+      : db.prepare("SELECT id, tenant_id FROM templates WHERE (id = ? OR meta_id = ? OR name = ?) AND tenant_id = ? LIMIT 1").get(clean, clean, clean, tenantId);
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: `Template '${clean}' not found in your workspace.`
+      });
+    }
+
+    const info = db.prepare("DELETE FROM templates WHERE id = ?").run(existing.id);
 
     if (info.changes === 0) {
       return res.status(404).json({

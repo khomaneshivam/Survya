@@ -64,7 +64,7 @@ const TABLE_SCHEMAS = {
   "conversation_flow_versions": "CREATE TABLE IF NOT EXISTS `conversation_flow_versions` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `flow_id` bigint NOT NULL,\n  `version_number` int NOT NULL,\n  `status` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'DRAFT',\n  `nodes_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `transitions_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `variables_json` longtext COLLATE utf8mb4_unicode_ci,\n  `validation_report_json` longtext COLLATE utf8mb4_unicode_ci,\n  `changelog` text COLLATE utf8mb4_unicode_ci,\n  `published_at` datetime DEFAULT NULL,\n  `published_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_flow_version` (`flow_id`, `version_number`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "flow_approval_requests": "CREATE TABLE IF NOT EXISTS `flow_approval_requests` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `flow_id` bigint NOT NULL,\n  `stage` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `status` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PENDING',\n  `summary` text COLLATE utf8mb4_unicode_ci,\n  `checklist_json` longtext COLLATE utf8mb4_unicode_ci,\n  `requested_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `reviewed_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `decision_note` text COLLATE utf8mb4_unicode_ci,\n  `requested_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `decided_at` datetime DEFAULT NULL,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_flow_approval_lookup` (`tenant_id`, `flow_id`, `stage`, `status`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "flow_preview_links": "CREATE TABLE IF NOT EXISTS `flow_preview_links` (\n  `id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `flow_id` bigint NOT NULL,\n  `flow_version_id` bigint NOT NULL,\n  `token_hash` char(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `token_prefix` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `title` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `graph_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `status` varchar(24) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'ACTIVE',\n  `expires_at` datetime NOT NULL,\n  `created_by` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `last_accessed_at` datetime DEFAULT NULL,\n  `revoked_at` datetime DEFAULT NULL,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `idx_flow_preview_token_hash` (`token_hash`),\n  KEY `idx_flow_preview_lookup` (`tenant_id`, `flow_id`, `status`),\n  KEY `idx_flow_preview_expiry` (`status`, `expires_at`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
-  "conversation_flow_templates": "CREATE TABLE IF NOT EXISTS `conversation_flow_templates` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `slug` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `description` text COLLATE utf8mb4_unicode_ci,\n  `industry` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'HOSPITALITY',\n  `category` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'BOOKING',\n  `nodes_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `transitions_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `variables_json` longtext COLLATE utf8mb4_unicode_ci,\n  `is_system` tinyint NOT NULL DEFAULT '1',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `idx_flow_template_slug` (`slug`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "conversation_flow_templates": "CREATE TABLE IF NOT EXISTS `conversation_flow_templates` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint DEFAULT NULL,\n  `slug` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `title` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `description` text COLLATE utf8mb4_unicode_ci,\n  `industry` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'HOSPITALITY',\n  `category` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'BOOKING',\n  `nodes_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `transitions_json` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `variables_json` longtext COLLATE utf8mb4_unicode_ci,\n  `is_system` tinyint NOT NULL DEFAULT '1',\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `idx_flow_template_slug` (`slug`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "conversation_flow_sessions": "CREATE TABLE IF NOT EXISTS `conversation_flow_sessions` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `session_key` varchar(128) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `property_id` bigint DEFAULT '1',\n  `channel` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'WHATSAPP',\n  `sender_phone` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `flow_id` bigint NOT NULL,\n  `flow_version_id` bigint NOT NULL,\n  `current_node_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `session_status` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'ACTIVE',\n  `collected_data_json` longtext COLLATE utf8mb4_unicode_ci,\n  `navigation_stack_json` json DEFAULT NULL,\n  `call_stack_json` json DEFAULT NULL,\n  `last_interaction_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `expires_at` datetime DEFAULT NULL,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `idx_flow_session_key` (`session_key`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "flow_global_settings": "CREATE TABLE IF NOT EXISTS `flow_global_settings` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `tenant_id` bigint NOT NULL DEFAULT '1',\n  `phone_number_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `root_flow_id` bigint DEFAULT NULL,\n  `menu_keywords_json` json DEFAULT NULL,\n  `back_keywords_json` json DEFAULT NULL,\n  `handoff_keywords_json` json DEFAULT NULL,\n  `session_ttl_minutes` int NOT NULL DEFAULT '1440',\n  `fallback_message` text COLLATE utf8mb4_unicode_ci,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `uq_fgs` (`tenant_id`, `phone_number_id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
   "conversation_flow_events": "CREATE TABLE IF NOT EXISTS `conversation_flow_events` (\n  `id` bigint NOT NULL AUTO_INCREMENT,\n  `session_id` bigint NOT NULL,\n  `flow_id` bigint NOT NULL,\n  `flow_version_id` bigint NOT NULL,\n  `node_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `node_type` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `event_type` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `payload_json` longtext COLLATE utf8mb4_unicode_ci,\n  `created_at` datetime DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  KEY `idx_flow_events_session` (`session_id`),\n  KEY `idx_flow_events_flow` (`flow_id`, `created_at`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
@@ -765,6 +765,42 @@ function runColumnMigrations(db) {
       db.exec("ALTER TABLE ai_interaction_logs ADD COLUMN blocked_reason VARCHAR(64) NULL AFTER estimated_cost_inr");
     }
   } catch (e) {}
+
+  // BUG-P3-02 FIX: Clean up redundant active WABA duplicate rows belonging to the same tenant
+  // and enforce a UNIQUE index on waba_phone_numbers(phone_number_id) when safe.
+  try {
+    const dupPhones = db.prepare(`
+      SELECT phone_number_id, COUNT(*) as cnt, COUNT(DISTINCT tenant_id) as tenant_cnt, MIN(id) as keep_id
+      FROM waba_phone_numbers
+      WHERE phone_number_id IS NOT NULL AND phone_number_id != '' AND COALESCE(delete_status, 0) = 0
+      GROUP BY phone_number_id
+      HAVING cnt > 1
+    `).all();
+    for (const dp of dupPhones) {
+      if (Number(dp.tenant_cnt) === 1) {
+        db.prepare(`
+          UPDATE waba_phone_numbers
+          SET delete_status = 1, active_status = 0, status = 'INACTIVE', updated_at = UTC_TIMESTAMP()
+          WHERE phone_number_id = ? AND tenant_id = (
+            SELECT t_id FROM (SELECT tenant_id as t_id FROM waba_phone_numbers WHERE id = ?) as tmp
+          ) AND id != ?
+        `).run(dp.phone_number_id, dp.keep_id, dp.keep_id);
+      }
+    }
+    const allDupCount = Number(db.prepare(`
+      SELECT COUNT(*) as c FROM (
+        SELECT phone_number_id FROM waba_phone_numbers
+        WHERE phone_number_id IS NOT NULL AND phone_number_id != ''
+        GROUP BY phone_number_id HAVING COUNT(*) > 1
+      ) as dups
+    `).get()?.c || 0);
+    if (allDupCount === 0) {
+      const uniqWaba = db.prepare("SHOW INDEX FROM waba_phone_numbers WHERE Key_name = 'uniq_waba_phone_number_id'").all();
+      if (uniqWaba.length === 0) {
+        db.exec("CREATE UNIQUE INDEX uniq_waba_phone_number_id ON waba_phone_numbers (phone_number_id)");
+      }
+    }
+  } catch (e) {}
 }
 
 function seedDefaults(db, config) {
@@ -1377,6 +1413,20 @@ function seedDefaults(db, config) {
         `).run(u.id, tId, memRole);
       }
     }
+
+    // Tenant isolation on custom flow templates + workspace SANDBOX mode column
+    try {
+      const cftCols = db.prepare("DESCRIBE conversation_flow_templates").all().map(c => c.Field);
+      if (!cftCols.includes("tenant_id")) {
+        db.exec("ALTER TABLE conversation_flow_templates ADD COLUMN tenant_id BIGINT NULL");
+      }
+    } catch (_) {}
+    try {
+      const tCols = db.prepare("DESCRIBE tenants").all().map(c => c.Field);
+      if (!tCols.includes("is_sandbox")) {
+        db.exec("ALTER TABLE tenants ADD COLUMN is_sandbox TINYINT(1) NOT NULL DEFAULT 0");
+      }
+    } catch (_) {}
   } catch (tenantMemErr) {
     console.warn("[Database] Notice on seeding tenant memberships:", tenantMemErr.message);
   }

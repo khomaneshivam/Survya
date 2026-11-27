@@ -24,12 +24,10 @@ class MemoryRateLimiter {
   }
 
   static getClientIp(req) {
-    const xForwardedFor = req.headers["x-forwarded-for"];
-    if (xForwardedFor && typeof xForwardedFor === "string") {
-      const firstIp = xForwardedFor.split(",")[0].trim();
-      if (firstIp) return firstIp;
+    if (req.app && req.app.get("trust proxy")) {
+      return req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || "client_unknown";
     }
-    return req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || "client_unknown";
+    return req.socket?.remoteAddress || req.connection?.remoteAddress || req.ip || "client_unknown";
   }
 
   middleware() {

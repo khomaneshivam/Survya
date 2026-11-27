@@ -302,9 +302,57 @@ async function deleteWorkspaceUser(req, res) {
   }
 }
 
+async function getWorkspaceSandboxMode(req, res) {
+  try {
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const row = db.prepare("SELECT id, name, slug, is_sandbox FROM tenants WHERE id = ? LIMIT 1").get(tenantId);
+    if (!row) {
+      return res.status(404).json({ success: false, message: "Workspace tenant not found." });
+    }
+    return res.json({
+      success: true,
+      tenantId: Number(row.id),
+      isSandbox: Boolean(Number(row.is_sandbox) === 1),
+      mode: Number(row.is_sandbox) === 1 ? "SANDBOX" : "LIVE"
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+async function updateWorkspaceSandboxMode(req, res) {
+  try {
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const desiredSandbox = Boolean(req.body?.isSandbox ?? req.body?.is_sandbox ?? (String(req.body?.mode || "").toUpperCase() === "SANDBOX"));
+    db.prepare("UPDATE tenants SET is_sandbox = ? WHERE id = ?").run(desiredSandbox ? 1 : 0, tenantId);
+    try {
+      db.prepare(`
+        INSERT INTO audit_logs (tenant_id, user_id, action, target_id, details, ip_address, created_at)
+        VALUES (?, ?, 'WORKSPACE_SANDBOX_MODE', ?, ?, ?, UTC_TIMESTAMP())
+      `).run(
+        tenantId,
+        req.user?.id || "system",
+        tenantId,
+        JSON.stringify({ isSandbox: desiredSandbox, mode: desiredSandbox ? "SANDBOX" : "LIVE" }),
+        req.ip || "127.0.0.1"
+      );
+    } catch (_) {}
+    return res.json({
+      success: true,
+      tenantId,
+      isSandbox: desiredSandbox,
+      mode: desiredSandbox ? "SANDBOX" : "LIVE"
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+
 module.exports = {
   listWorkspaceUsers,
   createWorkspaceUser,
   updateWorkspaceUser,
-  deleteWorkspaceUser
+  deleteWorkspaceUser,
+  getWorkspaceSandboxMode,
+  updateWorkspaceSandboxMode
 };

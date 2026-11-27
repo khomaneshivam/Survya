@@ -47,7 +47,9 @@ const config = {
   DB_NAME: process.env.DB_NAME || "whatsapp_bulk_db",
   WHATSAPP_API_TOKEN: process.env.WHATSAPP_API_TOKEN || "",
   WHATSAPP_PHONE_NUMBER_ID: process.env.WHATSAPP_PHONE_NUMBER_ID || "",
-  META_APP_SECRET: metaAppSecret,
+  META_APP_ID: process.env.META_APP_ID || "",
+  META_APP_SECRET: process.env.META_APP_SECRET || "",
+  META_WABA_ID: process.env.META_WABA_ID || process.env.WHATSAPP_WABA_ID || process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || "",
   META_GRAPH_VERSION: process.env.META_GRAPH_VERSION || "v21.0",
   // An explicit endpoint override allows CI to route any accidental API call to
   // an unreachable local address instead of Meta's live Graph API.

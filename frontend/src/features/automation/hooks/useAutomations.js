@@ -37,8 +37,9 @@ export function useAutomations() {
   const automations = useMemo(() => {
     const instMap = new Map();
     installations.forEach(inst => {
-      if (inst.installed_flow_id) {
-        instMap.set(inst.installed_flow_id, inst);
+      const flowKey = inst.flow_id || inst.installed_flow_id;
+      if (flowKey) {
+        instMap.set(flowKey, inst);
       }
     });
 
@@ -50,7 +51,7 @@ export function useAutomations() {
         isTemplateBased: Boolean(flow.installed_from_template_id || inst),
         templateKey: inst?.template_key || null,
         installedVersion: inst?.installed_version_number || null,
-        hasUpgrade: Boolean(inst?.upgrade_available)
+        hasUpgrade: Boolean(inst?.upgrade_available || (inst?.latest_version && inst?.installed_version_number && inst.latest_version !== inst.installed_version_number))
       };
     });
   }, [flows, installations]);

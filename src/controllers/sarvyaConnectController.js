@@ -436,7 +436,10 @@ async function updateCustomTemplate(req, res) {
     if (!Number.isInteger(tenantId) || tenantId <= 0) {
       return res.status(403).json({ success: false, message: "Workspace tenant context required." });
     }
-    const row = db.prepare("SELECT * FROM templates WHERE (id = ? OR meta_id = ?) AND tenant_id = ? LIMIT 1").get(id, id, tenantId);
+    const platformAdmin = isPlatformAdmin(req.user);
+    const row = platformAdmin
+      ? db.prepare("SELECT * FROM templates WHERE (id = ? OR meta_id = ?) LIMIT 1").get(id, id)
+      : db.prepare("SELECT * FROM templates WHERE (id = ? OR meta_id = ?) AND tenant_id = ? LIMIT 1").get(id, id, tenantId);
     if (!row) {
       return res.status(404).json({ success: false, message: "Template not found." });
     }
@@ -551,15 +554,19 @@ async function cloneCustomTemplate(req, res) {
     if (!Number.isInteger(tenantId) || tenantId <= 0) {
       return res.status(403).json({ success: false, message: "Workspace tenant context required." });
     }
-    const row = db.prepare("SELECT * FROM templates WHERE (id = ? OR meta_id = ?) AND tenant_id = ? LIMIT 1").get(id, id, tenantId);
+    const platformAdmin = isPlatformAdmin(req.user);
+    const row = platformAdmin
+      ? db.prepare("SELECT * FROM templates WHERE (id = ? OR meta_id = ?) LIMIT 1").get(id, id)
+      : db.prepare("SELECT * FROM templates WHERE (id = ? OR meta_id = ?) AND tenant_id = ? LIMIT 1").get(id, id, tenantId);
     if (!row) {
       return res.status(404).json({ success: false, message: "Template not found." });
     }
+    const targetTenantId = Number(row.tenant_id || tenantId);
 
     const baseName = row.name.replace(/_v\d+$/, "");
     const nextVersion = Number(row.version || 1) + 1;
     let candidateName = `${baseName}_v${nextVersion}`;
-    while (db.prepare("SELECT id FROM templates WHERE name = ? AND language = ? AND tenant_id = ?").get(candidateName, row.language, tenantId)) {
+    while (db.prepare("SELECT id FROM templates WHERE name = ? AND language = ? AND tenant_id = ?").get(candidateName, row.language, targetTenantId)) {
       candidateName = `${baseName}_v${Math.floor(100 + Math.random() * 899)}`;
     }
 
@@ -587,7 +594,7 @@ async function cloneCustomTemplate(req, res) {
       row.footer_text,
       nextVersion,
       req.user?.id || row.user_id || null,
-      tenantId
+      targetTenantId
     );
 
     const cloned = serializeTemplate(db.prepare("SELECT * FROM templates WHERE id = ?").get(newId));
@@ -614,7 +621,10 @@ async function submitTemplateToMeta(req, res) {
     if (!Number.isInteger(tenantId) || tenantId <= 0) {
       return res.status(403).json({ success: false, message: "Workspace tenant context required." });
     }
-    const row = db.prepare("SELECT * FROM templates WHERE (id = ? OR meta_id = ?) AND tenant_id = ? LIMIT 1").get(id, id, tenantId);
+    const platformAdmin = isPlatformAdmin(req.user);
+    const row = platformAdmin
+      ? db.prepare("SELECT * FROM templates WHERE (id = ? OR meta_id = ?) LIMIT 1").get(id, id)
+      : db.prepare("SELECT * FROM templates WHERE (id = ? OR meta_id = ?) AND tenant_id = ? LIMIT 1").get(id, id, tenantId);
     if (!row) {
       return res.status(404).json({ success: false, message: "Template not found." });
     }

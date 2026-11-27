@@ -82,11 +82,21 @@ function checkAvailability(tenantId = 1, options = {}) {
       return { available: true, mode: "DATE_RANGE", nights: rows.length };
     }
 
-    // Default item check
-    const availableQty = (item.stock_qty || 0) - (item.reserved_qty || 0);
+    // Default item check with overlapping date-range holds
+    const overlapping = db.prepare(`
+      SELECT COALESCE(SUM(quantity), 0) as qty
+      FROM catalog_inventory_holds
+      WHERE tenant_id = ? AND catalog_item_id = ? AND hold_type = 'DATE_RANGE'
+        AND (status = 'CONFIRMED' OR (status = 'HELD' AND expires_at > UTC_TIMESTAMP()))
+        AND check_in IS NOT NULL AND check_out IS NOT NULL
+        AND check_in < ? AND check_out > ?
+    `).get(numericTenantId, item.id, checkOut, checkIn);
+    const totalStock = Number(item.stock_qty ?? item.stock_quantity ?? 0);
+    const occupiedQty = Number(overlapping?.qty || 0);
+    const availableQty = item.track_inventory ? Math.max(0, totalStock - occupiedQty) : 9999;
     return {
       available: availableQty >= quantity,
-      availableQty: Math.max(0, availableQty),
+      availableQty,
       mode: "DATE_RANGE"
     };
   }
@@ -173,7 +183,7 @@ function checkAvailability(tenantId = 1, options = {}) {
  */
 function createInventoryHold(tenantId = 1, options = {}) {
   const numericTenantId = Number(tenantId) || 1;
-  const { itemId, slotId, quantity = 1, holdMinutes = 15, customerPhone, customerName } = options;
+  const { itemId, slotId, quantity = 1, holdMinutes = 15, customerPhone, customerName, checkIn, checkOut } = options;
   const masterResourceId = options.masterResourceId || options.master_resource_id || options.resourceId || null;
 
   if (!itemId && !slotId) {
@@ -198,7 +208,9 @@ function createInventoryHold(tenantId = 1, options = {}) {
       `).run(qty, numericTenantId, slotId, qty);
 
       if (updateRes.changes === 0) {
-        throw new Error("Requested time slot no longer has sufficient capacity.");
+        const err = new Error("Requested time slot no longer has sufficient capacity.");
+        err.statusCode = 409;
+        throw err;
       }
 
       const resolvedResId = masterResourceId || slot?.master_resource_id || null;
@@ -213,7 +225,7 @@ function createInventoryHold(tenantId = 1, options = {}) {
           ?, 'HELD', DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE), ?, ?,
           UTC_TIMESTAMP(), UTC_TIMESTAMP()
         )
-      `).run(numericTenantId, itemId || null, slotId, resolvedResId, holdToken, holdToken, qty, holdMinutes, cleanPhone, cleanName);
+      `).run(numericTenantId, itemId || 0, slotId, resolvedResId, holdToken, holdToken, qty, holdMinutes, cleanPhone, cleanName);
 
       db.prepare("COMMIT").run();
       return {
@@ -227,10 +239,102 @@ function createInventoryHold(tenantId = 1, options = {}) {
       };
     }
 
-    // 2. Unit Stock Hold
+    // 2. Date-Range or Unit Stock Hold
     if (itemId) {
       const item = db.prepare("SELECT * FROM catalog_items WHERE tenant_id = ? AND id = ? FOR UPDATE").get(numericTenantId, itemId);
-      if (!item) throw new Error("Catalog item not found.");
+      if (!item) {
+        const err = new Error("Catalog item not found.");
+        err.statusCode = 404;
+        throw err;
+      }
+
+      const cleanCheckIn = checkIn ? String(checkIn).slice(0, 10) : null;
+      const cleanCheckOut = checkOut ? String(checkOut).slice(0, 10) : null;
+      const isDateRange = (item.inventory_mode === "DATE_RANGE" && cleanCheckIn && cleanCheckOut) || (cleanCheckIn && cleanCheckOut && options.holdType === "DATE_RANGE");
+
+      if (isDateRange) {
+        if (cleanCheckOut <= cleanCheckIn) {
+          const err = new Error("Check-out date must be after check-in date.");
+          err.statusCode = 400;
+          throw err;
+        }
+
+        const roomType = db.prepare(`
+          SELECT * FROM room_types WHERE tenant_id = ? AND name = ? AND active = 1 LIMIT 1
+        `).get(numericTenantId, item.title);
+
+        if (roomType) {
+          const dailyRows = db.prepare(`
+            SELECT id, inventory_date, available_qty, is_closed
+            FROM room_inventory_daily
+            WHERE tenant_id = ? AND room_type_id = ? AND inventory_date >= ? AND inventory_date < ?
+            FOR UPDATE
+          `).all(numericTenantId, roomType.id, cleanCheckIn, cleanCheckOut);
+
+          for (const r of dailyRows) {
+            if (r.is_closed || Number(r.available_qty || 0) < qty) {
+              const err = new Error(`Sold out on ${r.inventory_date}`);
+              err.statusCode = 409;
+              throw err;
+            }
+          }
+
+          if (dailyRows.length > 0) {
+            db.prepare(`
+              UPDATE room_inventory_daily
+              SET available_qty = GREATEST(0, available_qty - ?),
+                  allocated_qty = COALESCE(allocated_qty, 0) + ?,
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE tenant_id = ? AND room_type_id = ? AND inventory_date >= ? AND inventory_date < ?
+            `).run(qty, qty, numericTenantId, roomType.id, cleanCheckIn, cleanCheckOut);
+          }
+        }
+
+        if (item.track_inventory) {
+          const overlapRows = db.prepare(`
+            SELECT quantity
+            FROM catalog_inventory_holds
+            WHERE tenant_id = ? AND catalog_item_id = ? AND hold_type = 'DATE_RANGE'
+              AND (status = 'CONFIRMED' OR (status = 'HELD' AND expires_at > UTC_TIMESTAMP()))
+              AND check_in IS NOT NULL AND check_out IS NOT NULL
+              AND check_in < ? AND check_out > ?
+            FOR UPDATE
+          `).all(numericTenantId, itemId, cleanCheckOut, cleanCheckIn);
+
+          const occupied = overlapRows.reduce((sum, r) => sum + Number(r.quantity || 0), 0);
+          const totalStock = Number(item.stock_qty ?? item.stock_quantity ?? 0);
+          if (!roomType && (totalStock - occupied) < qty) {
+            const err = new Error("Date range has insufficient availability to hold.");
+            err.statusCode = 409;
+            throw err;
+          }
+        }
+
+        db.prepare(`
+          INSERT INTO catalog_inventory_holds (
+            tenant_id, catalog_item_id, slot_id, master_resource_id, hold_token, session_ref, hold_type,
+            quantity, check_in, check_out, status, expires_at, customer_phone, customer_name,
+            created_at, updated_at
+          ) VALUES (
+            ?, ?, NULL, ?, ?, ?, 'DATE_RANGE',
+            ?, ?, ?, 'HELD', DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE), ?, ?,
+            UTC_TIMESTAMP(), UTC_TIMESTAMP()
+          )
+        `).run(numericTenantId, itemId, masterResourceId, holdToken, holdToken, qty, cleanCheckIn, cleanCheckOut, holdMinutes, cleanPhone, cleanName);
+
+        db.prepare("COMMIT").run();
+        return {
+          success: true,
+          holdToken,
+          holdType: "DATE_RANGE",
+          itemId,
+          checkIn: cleanCheckIn,
+          checkOut: cleanCheckOut,
+          masterResourceId,
+          quantity: qty,
+          expiresInMinutes: holdMinutes
+        };
+      }
 
       if (item.track_inventory) {
         const updateRes = db.prepare(`
@@ -241,7 +345,9 @@ function createInventoryHold(tenantId = 1, options = {}) {
         `).run(qty, numericTenantId, itemId, qty);
 
         if (updateRes.changes === 0) {
-          throw new Error("Item has insufficient stock to hold.");
+          const err = new Error("Item has insufficient stock to hold.");
+          err.statusCode = 409;
+          throw err;
         }
       }
 
@@ -286,14 +392,30 @@ function confirmHold(tenantId = 1, holdIdentifier) {
   db.prepare("START TRANSACTION").run();
   try {
     const hold = db.prepare(`
-      SELECT * FROM catalog_inventory_holds
-      WHERE tenant_id = ? AND (hold_token = ? OR id = ?) AND status = 'HELD'
+      SELECT *,
+             CASE WHEN expires_at IS NOT NULL AND expires_at <= UTC_TIMESTAMP() THEN 1 ELSE 0 END AS is_expired
+      FROM catalog_inventory_holds
+      WHERE tenant_id = ? AND (hold_token = ? OR id = ?)
       FOR UPDATE
     `).get(numericTenantId, String(holdIdentifier), isNumeric ? Number(holdIdentifier) : 0);
 
     if (!hold) {
       db.prepare("ROLLBACK").run();
-      return { success: false, reason: "Hold not found or already processed" };
+      return { success: false, reason: "Hold not found" };
+    }
+
+    if (hold.status !== "HELD") {
+      db.prepare("ROLLBACK").run();
+      return {
+        success: false,
+        expired: hold.status === "EXPIRED",
+        reason: hold.status === "EXPIRED" ? "Inventory hold has expired" : `Hold already processed (${hold.status})`
+      };
+    }
+
+    if (Number(hold.is_expired) === 1) {
+      db.prepare("ROLLBACK").run();
+      return { success: false, expired: true, reason: "Inventory hold has expired" };
     }
 
     const upd = db.prepare(`
@@ -310,12 +432,13 @@ function confirmHold(tenantId = 1, holdIdentifier) {
     if (hold.hold_type === "ITEM_STOCK" && hold.catalog_item_id) {
       db.prepare(`
         UPDATE catalog_items
-        SET reserved_qty = GREATEST(0, reserved_qty - ?),
-            stock_qty = GREATEST(0, stock_qty - ?),
-            is_sold_out = CASE WHEN stock_qty - ? <= 0 THEN 1 ELSE is_sold_out END,
+        SET reserved_qty = GREATEST(0, COALESCE(reserved_qty, 0) - ?),
+            stock_qty = GREATEST(0, COALESCE(stock_qty, stock_quantity, 0) - ?),
+            stock_quantity = GREATEST(0, COALESCE(stock_quantity, stock_qty, 0) - ?),
+            is_sold_out = CASE WHEN GREATEST(0, COALESCE(stock_qty, 0) - ?) <= 0 THEN 1 ELSE is_sold_out END,
             updated_at = UTC_TIMESTAMP()
         WHERE tenant_id = ? AND id = ?
-      `).run(hold.quantity, hold.quantity, hold.quantity, numericTenantId, hold.catalog_item_id);
+      `).run(hold.quantity, hold.quantity, hold.quantity, hold.quantity, numericTenantId, hold.catalog_item_id);
     } else if (hold.hold_type === "SLOT" && hold.slot_id) {
       db.prepare(`
         UPDATE catalog_availability_slots
@@ -335,7 +458,7 @@ function confirmHold(tenantId = 1, holdIdentifier) {
 }
 
 /**
- * Explicitly releases a hold before expiry atomically
+ * Explicitly releases a held or confirmed hold atomically (e.g. cart release or booking cancellation)
  */
 function releaseHold(tenantId = 1, holdIdentifier) {
   const numericTenantId = Number(tenantId) || 1;
@@ -345,7 +468,7 @@ function releaseHold(tenantId = 1, holdIdentifier) {
   try {
     const hold = db.prepare(`
       SELECT * FROM catalog_inventory_holds
-      WHERE tenant_id = ? AND (hold_token = ? OR id = ?) AND status = 'HELD'
+      WHERE tenant_id = ? AND (hold_token = ? OR id = ?) AND status IN ('HELD', 'CONFIRMED')
       FOR UPDATE
     `).get(numericTenantId, String(holdIdentifier), isNumeric ? Number(holdIdentifier) : 0);
 
@@ -354,10 +477,11 @@ function releaseHold(tenantId = 1, holdIdentifier) {
       return { success: false, reason: "Hold not active" };
     }
 
+    const previousStatus = hold.status;
     const upd = db.prepare(`
       UPDATE catalog_inventory_holds
       SET status = 'RELEASED', updated_at = UTC_TIMESTAMP()
-      WHERE id = ? AND tenant_id = ? AND status = 'HELD'
+      WHERE id = ? AND tenant_id = ? AND status IN ('HELD', 'CONFIRMED')
     `).run(hold.id, numericTenantId);
 
     if (upd.changes !== 1) {
@@ -366,23 +490,57 @@ function releaseHold(tenantId = 1, holdIdentifier) {
     }
 
     if (hold.hold_type === "ITEM_STOCK" && hold.catalog_item_id) {
-      db.prepare(`
-        UPDATE catalog_items
-        SET reserved_qty = GREATEST(0, reserved_qty - ?),
-            updated_at = UTC_TIMESTAMP()
-        WHERE tenant_id = ? AND id = ?
-      `).run(hold.quantity, numericTenantId, hold.catalog_item_id);
+      if (previousStatus === "CONFIRMED") {
+        db.prepare(`
+          UPDATE catalog_items
+          SET stock_qty = COALESCE(stock_qty, 0) + ?,
+              stock_quantity = COALESCE(stock_quantity, stock_qty, 0) + ?,
+              is_sold_out = 0,
+              updated_at = UTC_TIMESTAMP()
+          WHERE tenant_id = ? AND id = ?
+        `).run(hold.quantity, hold.quantity, numericTenantId, hold.catalog_item_id);
+      } else {
+        db.prepare(`
+          UPDATE catalog_items
+          SET reserved_qty = GREATEST(0, COALESCE(reserved_qty, 0) - ?),
+              updated_at = UTC_TIMESTAMP()
+          WHERE tenant_id = ? AND id = ?
+        `).run(hold.quantity, numericTenantId, hold.catalog_item_id);
+      }
     } else if (hold.hold_type === "SLOT" && hold.slot_id) {
-      db.prepare(`
-        UPDATE catalog_availability_slots
-        SET held_capacity = GREATEST(0, held_capacity - ?),
-            updated_at = UTC_TIMESTAMP()
-        WHERE tenant_id = ? AND id = ?
-      `).run(hold.quantity, numericTenantId, hold.slot_id);
+      if (previousStatus === "CONFIRMED") {
+        db.prepare(`
+          UPDATE catalog_availability_slots
+          SET booked_capacity = GREATEST(0, booked_capacity - ?),
+              updated_at = UTC_TIMESTAMP()
+          WHERE tenant_id = ? AND id = ?
+        `).run(hold.quantity, numericTenantId, hold.slot_id);
+      } else {
+        db.prepare(`
+          UPDATE catalog_availability_slots
+          SET held_capacity = GREATEST(0, held_capacity - ?),
+              updated_at = UTC_TIMESTAMP()
+          WHERE tenant_id = ? AND id = ?
+        `).run(hold.quantity, numericTenantId, hold.slot_id);
+      }
+    } else if (hold.hold_type === "DATE_RANGE" && hold.catalog_item_id && hold.check_in && hold.check_out) {
+      const item = db.prepare("SELECT title FROM catalog_items WHERE tenant_id = ? AND id = ?").get(numericTenantId, hold.catalog_item_id);
+      if (item) {
+        const roomType = db.prepare("SELECT id FROM room_types WHERE tenant_id = ? AND name = ? AND active = 1 LIMIT 1").get(numericTenantId, item.title);
+        if (roomType) {
+          db.prepare(`
+            UPDATE room_inventory_daily
+            SET available_qty = available_qty + ?,
+                allocated_qty = GREATEST(0, COALESCE(allocated_qty, 0) - ?),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE tenant_id = ? AND room_type_id = ? AND inventory_date >= ? AND inventory_date < ?
+          `).run(hold.quantity, hold.quantity, numericTenantId, roomType.id, hold.check_in, hold.check_out);
+        }
+      }
     }
 
     db.prepare("COMMIT").run();
-    return { success: true, holdToken: hold.hold_token, status: "RELEASED" };
+    return { success: true, holdToken: hold.hold_token, previousStatus, status: "RELEASED" };
   } catch (err) {
     try { db.prepare("ROLLBACK").run(); } catch (_) {}
     throw err;
@@ -440,6 +598,20 @@ function releaseExpiredHolds(tenantId = null) {
               updated_at = UTC_TIMESTAMP()
           WHERE id = ?
         `).run(hold.quantity, hold.slot_id);
+      } else if (hold.hold_type === "DATE_RANGE" && hold.catalog_item_id && hold.check_in && hold.check_out) {
+        const item = db.prepare("SELECT title FROM catalog_items WHERE tenant_id = ? AND id = ?").get(hold.tenant_id, hold.catalog_item_id);
+        if (item) {
+          const roomType = db.prepare("SELECT id FROM room_types WHERE tenant_id = ? AND name = ? AND active = 1 LIMIT 1").get(hold.tenant_id, item.title);
+          if (roomType) {
+            db.prepare(`
+              UPDATE room_inventory_daily
+              SET available_qty = available_qty + ?,
+                  allocated_qty = GREATEST(0, COALESCE(allocated_qty, 0) - ?),
+                  updated_at = CURRENT_TIMESTAMP
+              WHERE tenant_id = ? AND room_type_id = ? AND inventory_date >= ? AND inventory_date < ?
+            `).run(hold.quantity, hold.quantity, hold.tenant_id, roomType.id, hold.check_in, hold.check_out);
+          }
+        }
       }
       db.prepare("COMMIT").run();
       count++;

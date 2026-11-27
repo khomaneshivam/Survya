@@ -169,8 +169,11 @@ function calculateCartQuote(tenantId = 1, options = {}) {
 
     itemsSubtotal += lineFinalSubtotal;
     itemsGstTotal += lineGst;
+    const roundedLineGst = Math.round(lineGst * 100) / 100;
+    const lineTotal = Math.round((lineFinalSubtotal + lineGst) * 100) / 100;
 
     processedItems.push({
+      id: item.id,
       itemId: item.id,
       title: item.title,
       variantSku: raw.variantSku || null,
@@ -179,11 +182,14 @@ function calculateCartQuote(tenantId = 1, options = {}) {
       unitSymbol: item.master_unit_symbol || null,
       quantity: qty,
       nights: lineNights,
+      taxRate: resolvedGstPercent,
       gstPercent: resolvedGstPercent,
-      gstAmount: lineGst,
+      taxAmount: roundedLineGst,
+      gstAmount: roundedLineGst,
       ruleApplied: ruleAppliedTitle,
       ruleDiscountAmount: itemDiscountAmount,
-      lineSubtotal: lineFinalSubtotal
+      lineSubtotal: Math.round(lineFinalSubtotal * 100) / 100,
+      lineTotal
     });
   }
 
@@ -227,17 +233,24 @@ function calculateCartQuote(tenantId = 1, options = {}) {
 
     addonsSubtotal += lineCost;
     addonsGstTotal += lineGst;
+    const roundedAddonGst = Math.round(lineGst * 100) / 100;
+    const addonLineTotal = Math.round((lineCost + lineGst) * 100) / 100;
 
     processedAddons.push({
+      id: addon.id,
       addonId: addon.id,
       name: addon.name,
       groupTitle: addon.group_title,
       priceMode: addon.price_mode,
       price: addonPrice,
+      unitPrice: addonPrice,
       quantity: qty,
+      taxRate: resolvedGstPercent,
       gstPercent: resolvedGstPercent,
-      gstAmount: lineGst,
-      lineSubtotal: lineCost
+      taxAmount: roundedAddonGst,
+      gstAmount: roundedAddonGst,
+      lineSubtotal: Math.round(lineCost * 100) / 100,
+      lineTotal: addonLineTotal
     });
   }
 
@@ -268,9 +281,9 @@ function calculateCartQuote(tenantId = 1, options = {}) {
   }
 
   // 4. Totals
-  const netSubtotal = Math.max(0, itemsSubtotal + addonsSubtotal - promoDiscount);
-  const totalGst = itemsGstTotal + addonsGstTotal;
-  const grandTotal = Math.round(netSubtotal + totalGst);
+  const netSubtotal = Math.max(0, Math.round((itemsSubtotal + addonsSubtotal - promoDiscount) * 100) / 100);
+  const totalGst = Math.round((itemsGstTotal + addonsGstTotal) * 100) / 100;
+  const grandTotal = Math.round((netSubtotal + totalGst) * 100) / 100;
 
   // 5. Deposit calculation (if requested or configured)
   let depositDueNow = null;

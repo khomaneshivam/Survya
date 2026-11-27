@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { authenticateToken } = require("../middleware/authMiddleware");
+const { authenticateToken, requireWorkspaceAdmin } = require("../middleware/authMiddleware");
 const masterDataService = require("../services/masters/masterDataService");
 
 router.use(authenticateToken);
@@ -17,7 +17,7 @@ router.get("/bundle", (req, res) => {
 });
 
 // 2. 1-Click Sector Setup Seeder
-router.post("/seed-sector", (req, res) => {
+router.post("/seed-sector", requireWorkspaceAdmin, (req, res) => {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || req.user?.email || "admin";
@@ -76,7 +76,7 @@ router.get("/:masterType/:id", (req, res) => {
 });
 
 // 6. Create new master item
-router.post("/:masterType", (req, res) => {
+router.post("/:masterType", requireWorkspaceAdmin, (req, res) => {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || req.user?.email || "admin";
@@ -89,7 +89,7 @@ router.post("/:masterType", (req, res) => {
 });
 
 // 7. Update master item
-router.put("/:masterType/:id", (req, res) => {
+router.put("/:masterType/:id", requireWorkspaceAdmin, (req, res) => {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || req.user?.email || "admin";
@@ -102,7 +102,7 @@ router.put("/:masterType/:id", (req, res) => {
 });
 
 // 8. Soft-delete master item
-router.delete("/:masterType/:id", (req, res) => {
+router.delete("/:masterType/:id", requireWorkspaceAdmin, (req, res) => {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || req.user?.email || "admin";
@@ -115,7 +115,7 @@ router.delete("/:masterType/:id", (req, res) => {
 });
 
 // 9. Toggle active status
-router.patch("/:masterType/:id/toggle-active", (req, res) => {
+router.patch("/:masterType/:id/toggle-active", requireWorkspaceAdmin, (req, res) => {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || req.user?.email || "admin";
@@ -128,7 +128,7 @@ router.patch("/:masterType/:id/toggle-active", (req, res) => {
 });
 
 // 10. Reorder master items
-router.post("/:masterType/reorder", (req, res) => {
+router.post("/:masterType/reorder", requireWorkspaceAdmin, (req, res) => {
   try {
     const tenantId = req.user?.tenant_id || 1;
     const userId = req.user?.id || req.user?.email || "admin";

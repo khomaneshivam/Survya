@@ -96,17 +96,51 @@ function parsePipeline(p) {
   };
 }
 
-function parseRecord(r) {
+function normalizeStageKeyForPipeline(rawStageKey, stages = []) {
+  const key = String(rawStageKey || '').trim().toUpperCase();
+  if (!Array.isArray(stages) || stages.length === 0) return key || 'NEW';
+  const exact = stages.find(s => String(s.key || s.id || '').toUpperCase() === key);
+  if (exact) return String(exact.key || exact.id);
+  const byLabel = stages.find(s => String(s.label || s.name || '').toUpperCase() === key);
+  if (byLabel) return String(byLabel.key || byLabel.id);
+  // Canonical alias fallback for automated writers (NEW / NEW_LEAD / PROSPECT / INQUIRY -> first stage)
+  const aliasGroups = [
+    ['NEW', 'NEW_LEAD', 'PROSPECT', 'INQUIRY', 'LEAD'],
+    ['QUALIFIED', 'MQL', 'SQL', 'AVAILABILITY_CHECKED'],
+    ['QUOTED', 'PROPOSAL_SENT', 'PAYMENT_PENDING'],
+    ['WON', 'CLOSED_WON', 'CONFIRMED', 'CONVERTED'],
+    ['LOST', 'CLOSED_LOST', 'CANCELLED', 'UNQUALIFIED']
+  ];
+  for (const grp of aliasGroups) {
+    if (grp.includes(key)) {
+      const match = stages.find(s => grp.includes(String(s.key || s.id || '').toUpperCase()));
+      if (match) return String(match.key || match.id);
+    }
+  }
+  return rawStageKey || String(stages[0]?.key || stages[0]?.id || 'NEW');
+}
+
+function parseRecord(r, stages = null) {
   if (!r) return null;
   const tags = JSON.parse(r.tags_json || '[]');
   const customAttrs = JSON.parse(r.custom_attributes || '{}');
+  let parsedStages = Array.isArray(stages) ? stages : [];
+  if (!parsedStages.length && r.pipeline_stages_json) {
+    try { parsedStages = JSON.parse(r.pipeline_stages_json || '[]'); } catch (_) {}
+  }
+  const matchedStage = parsedStages.find(
+    s => String(s.key || s.id || '').toUpperCase() === String(r.stage_key || '').toUpperCase()
+  );
+  const stageLabel = matchedStage ? (matchedStage.label || matchedStage.name || r.stage_key) : r.stage_key;
   const upperStage = String(r.stage_key || '').toUpperCase();
   return {
     ...r,
     title: r.contact_name || `Deal #${r.id}`,
     stage_id: r.stage_key,
-    stage_name: r.stage_key,
-    status: (upperStage === 'WON' || upperStage === 'CLOSED_WON' || upperStage === 'CONFIRMED' || upperStage === 'CONVERTED')
+    stage_key: r.stage_key,
+    stage_name: stageLabel,
+    stage_label: stageLabel,
+    status: (upperStage === 'WON' || upperStage === 'CLOSED_WON' || upperStage === 'CONFIRMED' || upperStage === 'CONVERTED' || upperStage === 'COMPLETED')
       ? 'WON'
       : (upperStage === 'LOST' || upperStage === 'CLOSED_LOST' || upperStage === 'CANCELLED' || upperStage === 'UNQUALIFIED')
         ? 'LOST'
@@ -209,7 +243,7 @@ function listRecords({
   offset = 0
 }) {
   let query = `
-    SELECT r.*, p.name as pipeline_name
+    SELECT r.*, p.name as pipeline_name, p.stages_json as pipeline_stages_json
     FROM crm_records r
     JOIN crm_pipelines p ON p.id = r.pipeline_id
     WHERE r.tenant_id = ? AND r.delete_status = 0
@@ -259,7 +293,7 @@ function listRecords({
  */
 function getRecordById(recordId, tenantId = 1) {
   const row = db.prepare(`
-    SELECT r.*, p.name as pipeline_name
+    SELECT r.*, p.name as pipeline_name, p.stages_json as pipeline_stages_json
     FROM crm_records r
     JOIN crm_pipelines p ON p.id = r.pipeline_id
     WHERE r.id = ? AND r.tenant_id = ? AND r.delete_status = 0
@@ -277,7 +311,9 @@ function createRecord(payload = {}) {
   const contactPhone = payload.contactPhone || payload.contact_phone || payload.phone;
   const contactName = payload.contactName || payload.contact_name || payload.title || payload.name || '';
   const contactEmail = payload.contactEmail || payload.contact_email || payload.email || null;
-  const stageKey = payload.stageKey || payload.stage_key || payload.stage_id || payload.stageId || payload.stage || 'NEW_LEAD';
+  const pipeline = pipelineId ? getPipelineById(pipelineId, tenantId) : null;
+  const rawStageKey = payload.stageKey || payload.stage_key || payload.stage_id || payload.stageId || payload.stage || 'NEW_LEAD';
+  const stageKey = normalizeStageKeyForPipeline(rawStageKey, pipeline?.stages || []);
   const leadScore = payload.leadScore !== undefined ? payload.leadScore : (payload.lead_score !== undefined ? payload.lead_score : 0);
   const dealValue = payload.dealValue !== undefined ? payload.dealValue : (payload.deal_value !== undefined ? payload.deal_value : 0);
   const tags = payload.tags || payload.tags_json || [];
@@ -325,7 +361,9 @@ function updateRecord(recordId, fields = {}, tenantId = 1) {
   const current = getRecordById(recordId, tenantId);
   if (!current) throw new Error('Record not found.');
 
-  const stageKey = fields.stageKey || fields.stage_key || fields.stage_id || fields.stageId || fields.stage || current.stage_key;
+  const pipeline = current.pipeline_id ? getPipelineById(current.pipeline_id, tenantId) : null;
+  const rawStage = fields.stageKey || fields.stage_key || fields.stage_id || fields.stageId || fields.stage || current.stage_key;
+  const stageKey = normalizeStageKeyForPipeline(rawStage, pipeline?.stages || []);
   const leadScore = (fields.leadScore !== undefined ? fields.leadScore : fields.lead_score) !== undefined ? Number(fields.leadScore !== undefined ? fields.leadScore : fields.lead_score) : current.lead_score;
   const dealValue = (fields.dealValue !== undefined ? fields.dealValue : fields.deal_value) !== undefined ? Number(fields.dealValue !== undefined ? fields.dealValue : fields.deal_value) : current.deal_value;
   const contactName = fields.contactName || fields.contact_name || fields.title || current.contact_name;

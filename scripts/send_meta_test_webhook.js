@@ -9,7 +9,10 @@ async function main() {
   console.log("🚀 Meta Webhook Inbound Message Receiving & Processing Live Verification");
   console.log("========================================================================");
 
-  let appSecret = (config.META_APP_SECRET || process.env.META_APP_SECRET || getSetting("META_APP_SECRET") || "").trim().replace(/^["']|["']$/g, "");
+  // Align secret resolution with webhookController (env config -> DB plaintext -> process.env)
+  const rawDbSecret = typeof getSetting === "function" ? String(getSetting("META_APP_SECRET") || "").trim() : "";
+  const safeDbSecret = rawDbSecret.startsWith("enc:aes-256-gcm:") ? "" : rawDbSecret;
+  let appSecret = (config.META_APP_SECRET || safeDbSecret || process.env.META_APP_SECRET || "").trim().replace(/^["']|["']$/g, "");
   if (appSecret && !/placeholder|dummy/i.test(appSecret)) {
     console.log(`🔐 Meta App Secret detected: [Configured - Length: ${appSecret.length} chars]`);
     console.log("   (Test requests will include X-Hub-Signature-256 HMAC signature)");
@@ -304,8 +307,13 @@ async function main() {
     console.log(`  - Flow Message Body: "${flowRecord.message_body}"`);
   }
 
-  // Check flow_responses table to verify parsed intake data
-  const flowResponse = db.prepare("SELECT * FROM flow_responses WHERE sender_phone LIKE ? ORDER BY id DESC LIMIT 1").get(`%${testPhone.slice(-10)}%`);
+  // Check flow_responses table via contacts join (flow_responses stores contact_id, not sender_phone)
+  const flowResponse = db.prepare(`
+    SELECT fr.* FROM flow_responses fr
+    LEFT JOIN contacts c ON c.id = fr.contact_id
+    WHERE c.phone_e164 LIKE ?
+    ORDER BY fr.id DESC LIMIT 1
+  `).get(`%${testPhone.slice(-10)}%`);
   if (flowResponse) {
     console.log("✓ Structured Flow Response recorded in flow_responses table:");
     console.log(`  - Flow Response ID: #${flowResponse.id}`);

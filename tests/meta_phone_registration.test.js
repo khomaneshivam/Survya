@@ -81,10 +81,26 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
   // 1. INPUT VALIDATION TESTS
   // =========================================================================
   describe("1. Validation & Input Sanitization", () => {
+    test("Rejects unauthenticated /api/meta/register-phone and /api/meta/deregister-phone with 401", async () => {
+      const regRes = await originalFetch(`${baseUrl}/api/meta/register-phone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: testPhoneId, pin: testPin, token: testToken })
+      });
+      assert.strictEqual(regRes.status, 401);
+
+      const deregRes = await originalFetch(`${baseUrl}/api/meta/deregister-phone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: testPhoneId, token: testToken })
+      });
+      assert.strictEqual(deregRes.status, 401);
+    });
+
     test("Rejects request missing phone number ID with 400", async () => {
       const res = await originalFetch(`${baseUrl}/api/meta/register-phone`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
         body: JSON.stringify({
           pin: "123456",
           token: testToken
@@ -99,7 +115,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
     test("Rejects request missing 2-step verification PIN with 400", async () => {
       const res = await originalFetch(`${baseUrl}/api/meta/register-phone`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
         body: JSON.stringify({
           id: testPhoneId,
           token: testToken
@@ -115,7 +131,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
       // 4 digits
       let res = await originalFetch(`${baseUrl}/api/meta/register-phone`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
         body: JSON.stringify({
           id: testPhoneId,
           pin: "1234",
@@ -130,7 +146,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
       // letters
       res = await originalFetch(`${baseUrl}/api/meta/register-phone`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
         body: JSON.stringify({
           id: testPhoneId,
           pin: "abcdef",
@@ -145,7 +161,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
       // 7 digits
       res = await originalFetch(`${baseUrl}/api/meta/register-phone`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
         body: JSON.stringify({
           id: testPhoneId,
           pin: "1234567",
@@ -165,7 +181,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
       try {
         const res = await originalFetch(`${baseUrl}/api/meta/register-phone`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
           body: JSON.stringify({
             id: testPhoneId,
             pin: "123456"
@@ -201,7 +217,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
 
       const res = await originalFetch(`${baseUrl}/api/meta/register-phone`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
         body: JSON.stringify({
           id: testPhoneId,
           pin: testPin,
@@ -324,7 +340,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
 
       const res = await originalFetch(`${baseUrl}/api/meta/register-phone`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
         body: JSON.stringify({
           id: testPhoneId,
           pin: "000000",
@@ -359,7 +375,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
 
       const res = await originalFetch(`${baseUrl}/api/meta/register-phone`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
         body: JSON.stringify({
           id: testPhoneId,
           pin: "123456",
@@ -398,7 +414,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
 
       const res = await originalFetch(`${baseUrl}/api/meta/deregister-phone`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
         body: JSON.stringify({
           id: testPhoneId,
           token: testToken

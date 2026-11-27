@@ -47,7 +47,8 @@ const STATUS_BADGE = {
 };
 
 export default function EnquiriesPage() {
-  const { token } = useAuth();
+  const { token, primaryDomain } = useAuth();
+  const isHospitality = !primaryDomain || primaryDomain === 'HOSPITALITY';
   const [crmTab, setCrmTab] = useState('pipeline'); // 'pipeline' | 'contacts'
 
   // Leads / Enquiries state
@@ -212,18 +213,23 @@ export default function EnquiriesPage() {
     }
   }, [crmTab, activePipelineId, loadCrmRecords]);
 
-  const handleUpdateRecordStage = async (recordId, newStageId) => {
+  const handleUpdateRecordStage = async (recordId, newStageKey) => {
     try {
       const res = await fetch(`/api/v1/crm/records/${recordId}/stage`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ stage_id: newStageId })
+        body: JSON.stringify({ stage_key: newStageKey, stage_id: newStageKey })
       });
       const data = await res.json();
       if (data.success) {
         loadCrmRecords(activePipelineId);
         if (selectedRecord && selectedRecord.id === recordId) {
-          setSelectedRecord(prev => ({ ...prev, stage_id: newStageId }));
+          setSelectedRecord(prev => ({
+            ...prev,
+            stage_id: data.record?.stage_id || newStageKey,
+            stage_key: data.record?.stage_key || newStageKey,
+            stage_name: data.record?.stage_name || newStageKey
+          }));
         }
       }
     } catch (err) {
@@ -543,7 +549,7 @@ export default function EnquiriesPage() {
                 key: 'guest_name',
                 label: 'Guest',
                 sortable: true,
-                render: (row) => (
+                render: (_, row) => (
                   <div>
                     <div style={{ fontWeight: 600 }}>{row.guest_name}</div>
                     <div className="font-mono" style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
@@ -556,7 +562,7 @@ export default function EnquiriesPage() {
                 key: 'check_in',
                 label: 'Stay Window',
                 sortable: true,
-                render: (row) => (
+                render: (_, row) => (
                   <span style={{ fontSize: '12.5px' }}>
                     {row.check_in} → {row.check_out}
                   </span>
@@ -565,7 +571,7 @@ export default function EnquiriesPage() {
               {
                 key: 'room_type_name',
                 label: 'Room & Guests',
-                render: (row) => (
+                render: (_, row) => (
                   <div>
                     <div style={{ fontWeight: 500 }}>{row.room_type_name || row.room_preference || 'Standard'}</div>
                     <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
@@ -578,7 +584,7 @@ export default function EnquiriesPage() {
                 key: 'status',
                 label: 'Stage',
                 sortable: true,
-                render: (row) => {
+                render: (_, row) => {
                   const meta = STATUS_BADGE[row.status] || { label: row.status, tone: 'neutral' };
                   return <Badge tone={meta.tone} dot>{meta.label}</Badge>;
                 }
@@ -588,7 +594,7 @@ export default function EnquiriesPage() {
                 label: 'Quote Value',
                 sortable: true,
                 align: 'end',
-                render: (row) =>
+                render: (_, row) =>
                   row.latest_quote_total ? (
                     <span className="tabular-nums" style={{ fontWeight: 600 }}>
                       ₹{Number(row.latest_quote_total).toLocaleString('en-IN')}
@@ -766,19 +772,25 @@ export default function EnquiriesPage() {
               {(() => {
                 const currentPipeline = pipelines.find(p => p.id === activePipelineId);
                 const stages = currentPipeline?.stages || [
-                  { id: 'lead', name: 'Lead Inflow', color: '#3B82F6' },
-                  { id: 'qualified', name: 'Qualified', color: '#2F5219' },
-                  { id: 'proposal', name: 'Proposal Sent', color: '#8B5CF6' },
-                  { id: 'won', name: 'Closed Won', color: '#16A34A' }
+                  { key: 'NEW_LEAD', label: 'Lead Inflow', color: '#3B82F6' },
+                  { key: 'QUALIFIED', label: 'Qualified', color: '#2F5219' },
+                  { key: 'PROPOSAL_SENT', label: 'Proposal Sent', color: '#8B5CF6' },
+                  { key: 'WON', label: 'Closed Won', color: '#16A34A' }
                 ];
 
                 return stages.map((stg) => {
-                  const stageRecords = crmRecords.filter(r => r.stage_id === stg.id || r.stage_name === stg.name);
+                  const stgKey = stg.key || stg.id;
+                  const stgLabel = stg.label || stg.name || stgKey;
+                  const stageRecords = crmRecords.filter(r =>
+                    r.stage_key === stgKey ||
+                    r.stage_id === stgKey ||
+                    (stgLabel && r.stage_name === stgLabel)
+                  );
                   const stageTotalVal = stageRecords.reduce((sum, r) => sum + Number(r.deal_value || 0), 0);
 
                   return (
                     <div
-                      key={stg.id}
+                      key={stgKey}
                       style={{
                         width: '280px',
                         minWidth: '280px',
@@ -808,7 +820,7 @@ export default function EnquiriesPage() {
                             background: stg.color || '#2F5219'
                           }} />
                           <span style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                            {stg.name}
+                            {stgLabel}
                           </span>
                         </div>
                         <Badge tone="neutral">{stageRecords.length}</Badge>
@@ -948,9 +960,9 @@ export default function EnquiriesPage() {
                   key: 'title',
                   label: 'Deal / Record',
                   sortable: true,
-                  render: (row) => (
+                  render: (_, row) => (
                     <div>
-                      <div style={{ fontWeight: 600 }}>{row.title || 'Untitled Record'}</div>
+                      <div style={{ fontWeight: 600 }}>{row.title || row.contact_name || 'Untitled Record'}</div>
                       <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{row.contact_name || ''}</div>
                     </div>
                   )
@@ -958,19 +970,19 @@ export default function EnquiriesPage() {
                 {
                   key: 'contact_phone',
                   label: 'WhatsApp Phone',
-                  render: (row) => <span className="font-mono">{row.contact_phone || '—'}</span>
+                  render: (_, row) => <span className="font-mono">{row.contact_phone || '—'}</span>
                 },
                 {
                   key: 'stage_name',
                   label: 'Stage',
                   sortable: true,
-                  render: (row) => <Badge tone="blue">{row.stage_name || row.stage_id}</Badge>
+                  render: (_, row) => <Badge tone="blue">{row.stage_label || row.stage_name || row.stage_key || row.stage_id || 'NEW'}</Badge>
                 },
                 {
                   key: 'lead_score',
                   label: 'Lead Score',
                   sortable: true,
-                  render: (row) => (
+                  render: (_, row) => (
                     <span style={{
                       fontWeight: 700,
                       color: (row.lead_score || 0) >= 70 ? '#16A34A' : (row.lead_score || 0) >= 40 ? '#D97706' : 'var(--text-secondary)'
@@ -984,7 +996,7 @@ export default function EnquiriesPage() {
                   label: 'Deal Value',
                   sortable: true,
                   align: 'end',
-                  render: (row) => (
+                  render: (_, row) => (
                     <span className="tabular-nums" style={{ fontWeight: 700, color: 'var(--brand-primary, #2F5219)' }}>
                       ₹{Number(row.deal_value || 0).toLocaleString('en-IN')}
                     </span>
@@ -994,7 +1006,7 @@ export default function EnquiriesPage() {
                   key: 'updated_at',
                   label: 'Last Updated',
                   sortable: true,
-                  render: (row) => (
+                  render: (_, row) => (
                     <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                       {row.updated_at ? formatIndianDateTime(row.updated_at) : '—'}
                     </span>
@@ -1277,12 +1289,14 @@ export default function EnquiriesPage() {
               onChange={(e) => setNewForm({ ...newForm, email: e.target.value })}
             />
           </div>
+          {isHospitality && (
+          <>
           <div>
             <label className="sarvya-field-label" htmlFor="enqCheckIn">Check-in *</label>
             <input
               id="enqCheckIn"
               type="date"
-              required
+              required={isHospitality}
               className="sarvya-input"
               value={newForm.check_in}
               onChange={(e) => setNewForm({ ...newForm, check_in: e.target.value })}
@@ -1293,7 +1307,7 @@ export default function EnquiriesPage() {
             <input
               id="enqCheckOut"
               type="date"
-              required
+              required={isHospitality}
               className="sarvya-input"
               value={newForm.check_out}
               onChange={(e) => setNewForm({ ...newForm, check_out: e.target.value })}
@@ -1346,6 +1360,8 @@ export default function EnquiriesPage() {
               onChange={(e) => setNewForm({ ...newForm, children: Number(e.target.value) })}
             />
           </div>
+          </>
+          )}
           <div style={{ gridColumn: '1 / -1' }}>
             <label className="sarvya-field-label" htmlFor="enqNotes">Notes</label>
             <textarea
@@ -1589,12 +1605,14 @@ export default function EnquiriesPage() {
                   <label className="form-label" style={{ fontSize: '0.78rem', fontWeight: 600 }}>Change Stage</label>
                   <select
                     className="form-input"
-                    value={selectedRecord.stage_id}
+                    value={selectedRecord.stage_key || selectedRecord.stage_id || ''}
                     onChange={(e) => handleUpdateRecordStage(selectedRecord.id, e.target.value)}
                   >
-                    {(pipelines.find(p => p.id === selectedRecord.pipeline_id)?.stages || []).map(stg => (
-                      <option key={stg.id} value={stg.id}>{stg.name}</option>
-                    ))}
+                    {(pipelines.find(p => p.id === selectedRecord.pipeline_id)?.stages || []).map(stg => {
+                      const sKey = stg.key || stg.id;
+                      const sLabel = stg.label || stg.name || sKey;
+                      return <option key={sKey} value={sKey}>{sLabel}</option>;
+                    })}
                   </select>
                 </div>
 

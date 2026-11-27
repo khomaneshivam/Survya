@@ -227,7 +227,7 @@ function updateProperty(propertyId, data = {}, tenantId, userId = null, isAdmin 
   db.prepare(`
     UPDATE properties
     SET name = ?, description = ?, property_type = ?, email = ?, phone = ?,
-        website = ?, social_links_json = ?, address = ?, district = ?, state = ?,
+        website = ?, social_links_json = ?, address = ?, city = ?, district = ?, state = ?,
         country = ?, postal_code = ?, latitude = ?, longitude = ?,
         check_in_time = ?, check_out_time = ?, timezone = ?, languages_json = ?,
         currency = ?, logo_url = ?, cover_image_url = ?, primary_image_url = ?,
@@ -242,6 +242,7 @@ function updateProperty(propertyId, data = {}, tenantId, userId = null, isAdmin 
     website !== undefined ? website : existing.website,
     social_links_json,
     address !== undefined ? address : existing.address,
+    city !== undefined ? city : existing.city,
     district !== undefined ? district : existing.district,
     state !== undefined ? state : existing.state,
     country !== undefined ? country : existing.country,

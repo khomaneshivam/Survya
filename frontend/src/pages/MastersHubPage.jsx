@@ -183,7 +183,7 @@ export default function MastersHubPage() {
       {seedResult && (
         <div style={{ padding: '12px 16px', borderRadius: '8px', background: '#ECFDF5', border: '1px solid #6EE7B7', color: '#065F46', fontSize: '0.84rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <CheckCircle2 size={16} />
-          Successfully initialized {seedResult.sector} sector masters! {JSON.stringify(seedResult.seeded)}
+          <span>{seedResult.message || `Successfully initialized ${seedResult.sector || 'workspace'} sector masters! ${JSON.stringify(seedResult.seeded || {})}`}</span>
         </div>
       )}
 

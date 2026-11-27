@@ -57,7 +57,8 @@ router.get("/", authenticateToken, async (req, res) => {
       ...result
     });
   } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
+    const code = Number(err.statusCode) || (/insufficient|sold out|expired|not found|unavailable|conflict/i.test(err.message) ? 409 : 500);
+    return res.status(code).json({ success: false, message: err.message });
   }
 });
 
@@ -71,7 +72,8 @@ router.get("/drawer-context/:phone", authenticateToken, async (req, res) => {
     const context = universalFulfillmentService.getCommerceDrawerContext(tenantId, phone);
     return res.json(context);
   } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
+    const code = Number(err.statusCode) || (/insufficient|sold out|expired|not found|unavailable|conflict/i.test(err.message) ? 409 : 500);
+    return res.status(code).json({ success: false, message: err.message });
   }
 });
 
@@ -97,7 +99,8 @@ router.get("/:id", authenticateToken, async (req, res) => {
       data: txn
     });
   } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
+    const code = Number(err.statusCode) || (/insufficient|sold out|expired|not found|unavailable|conflict/i.test(err.message) ? 409 : 500);
+    return res.status(code).json({ success: false, message: err.message });
   }
 });
 
@@ -124,7 +127,8 @@ router.patch("/:id/status", authenticateToken, async (req, res) => {
 
     return res.json(result);
   } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
+    const code = Number(err.statusCode) || (/insufficient|sold out|expired|not found|unavailable|conflict/i.test(err.message) ? 409 : 500);
+    return res.status(code).json({ success: false, message: err.message });
   }
 });
 
@@ -151,7 +155,8 @@ router.post("/:id/record-offline-payment", authenticateToken, async (req, res) =
 
     return res.json(result);
   } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
+    const code = Number(err.statusCode) || (/insufficient|sold out|expired|not found|unavailable|conflict/i.test(err.message) ? 409 : 500);
+    return res.status(code).json({ success: false, message: err.message });
   }
 });
 
@@ -179,7 +184,8 @@ router.post("/:id/send-payment-link", authenticateToken, async (req, res) => {
       paymentLinkUrl
     });
   } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
+    const code = Number(err.statusCode) || (/insufficient|sold out|expired|not found|unavailable|conflict/i.test(err.message) ? 409 : 500);
+    return res.status(code).json({ success: false, message: err.message });
   }
 });
 
@@ -223,7 +229,8 @@ router.post("/quick-link", authenticateToken, async (req, res) => {
 
     return res.status(201).json(txnRes);
   } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
+    const code = Number(err.statusCode) || (/insufficient|sold out|expired|not found|unavailable|conflict/i.test(err.message) ? 409 : 500);
+    return res.status(code).json({ success: false, message: err.message });
   }
 });
 

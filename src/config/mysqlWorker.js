@@ -7,6 +7,16 @@ const dataView = new Uint8Array(sab, 8);
 const encoder = new TextEncoder();
 
 let pool;
+let activeTxConn = null;
+let txDepth = 0;
+
+async function releaseTxConnIfNeeded() {
+  if (activeTxConn) {
+    try { activeTxConn.release(); } catch (_) {}
+  }
+  activeTxConn = null;
+  txDepth = 0;
+}
 
 async function init() {
   const host = dbConfig.host || 'localhost';
@@ -144,9 +154,62 @@ parentPort.on('message', async (task) => {
       return p === undefined ? null : p;
     });
 
-    if (task.type === 'exec') {
+    const trimmedUpper = sql.trim().replace(/;+$/, "").toUpperCase();
+    const isStartTx = /^START\s+TRANSACTION$/i.test(trimmedUpper) || /^BEGIN(\s+WORK)?$/i.test(trimmedUpper);
+    const isCommitTx = /^COMMIT(\s+WORK)?$/i.test(trimmedUpper);
+    const isRollbackTx = /^ROLLBACK(\s+WORK)?$/i.test(trimmedUpper);
+
+    if (isStartTx || isCommitTx || isRollbackTx) {
+      let txResult = { changes: 0, lastInsertRowid: 0 };
+      if (isStartTx) {
+        if (!activeTxConn) {
+          activeTxConn = await pool.getConnection();
+          txDepth = 1;
+          await activeTxConn.query('START TRANSACTION');
+        } else {
+          // BUG-P5-02 FIX: Nested START TRANSACTION inside an active tx would implicitly COMMIT in MySQL!
+          // Use SAVEPOINT instead so inner failures/rollbacks don't commit the outer transaction prematurely.
+          txDepth += 1;
+          await activeTxConn.query(`SAVEPOINT sp_${txDepth}`);
+        }
+      } else if (isCommitTx) {
+        if (activeTxConn) {
+          if (txDepth > 1) {
+            await activeTxConn.query(`RELEASE SAVEPOINT sp_${txDepth}`);
+            txDepth -= 1;
+          } else {
+            try {
+              await activeTxConn.query('COMMIT');
+            } finally {
+              await releaseTxConnIfNeeded();
+            }
+          }
+        }
+      } else if (isRollbackTx) {
+        if (activeTxConn) {
+          if (txDepth > 1) {
+            await activeTxConn.query(`ROLLBACK TO SAVEPOINT sp_${txDepth}`);
+            txDepth -= 1;
+          } else {
+            try {
+              await activeTxConn.query('ROLLBACK');
+            } finally {
+              await releaseTxConnIfNeeded();
+            }
+          }
+        }
+      }
+
+      const payload = task.type === 'exec' ? { ok: true } : (task.mode === 'run' ? txResult : []);
+      const json = JSON.stringify(payload);
+      const encoded = encoder.encode(json);
+      dataView.set(encoded);
+      status[1] = encoded.length;
+      status[0] = 1;
+    } else if (task.type === 'exec') {
+      const executor = activeTxConn || pool;
       try {
-        await pool.query(sql);
+        await executor.query(sql);
       } catch (execErr) {
         if (execErr.code === 'ER_DUP_KEYNAME' || execErr.errno === 1061) {
           // Index already exists in MySQL
@@ -160,7 +223,8 @@ parentPort.on('message', async (task) => {
       status[1] = encoded.length;
       status[0] = 1; // success
     } else {
-      const [rows] = await pool.query(sql, sanitizedParams);
+      const executor = activeTxConn || pool;
+      const [rows] = await executor.query(sql, sanitizedParams);
 
       let payload;
       if (task.mode === 'run') {

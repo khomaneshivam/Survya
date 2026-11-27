@@ -145,7 +145,7 @@ export default function AutomationStudio({ defaultView = 'my-automations', initi
           />
         )}
 
-        {activeView === 'admin' && isAdmin && (
+        {activeView === 'admin' && isPlatformAdmin && (
           <TemplateAdminPage />
         )}
       </div>

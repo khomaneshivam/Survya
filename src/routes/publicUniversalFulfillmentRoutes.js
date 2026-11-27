@@ -139,12 +139,94 @@ router.get(["/pay/:referenceCode", "/public/pay/:referenceCode"], async (req, re
 /**
  * POST /pay/webhook/razorpay - Razorpay Webhook Auto-Reconciler (Fail-Closed HMAC-SHA256 verified)
  */
+const ALLOWED_RAZORPAY_CAPTURE_EVENTS = new Set(["payment.captured", "payment_link.paid", "order.paid"]);
+
+function resolveRazorpayWebhookSecrets(txnRow = null) {
+  const secrets = [];
+  if (txnRow?.tenant_id) {
+    try {
+      let rows = [];
+      if (txnRow.master_location_id) {
+        rows = db.prepare(`
+          SELECT webhook_secret FROM merchant_payment_configs
+          WHERE tenant_id = ? AND entity_id = ? AND webhook_secret IS NOT NULL AND webhook_secret != ''
+        `).all(txnRow.tenant_id, txnRow.master_location_id);
+      }
+      if (rows.length === 0) {
+        rows = db.prepare(`
+          SELECT webhook_secret FROM merchant_payment_configs
+          WHERE tenant_id = ? AND webhook_secret IS NOT NULL AND webhook_secret != ''
+        `).all(txnRow.tenant_id);
+      }
+      for (const r of rows) {
+        if (r?.webhook_secret) secrets.push(String(r.webhook_secret).trim());
+      }
+    } catch (_) {}
+  }
+  if (process.env.RAZORPAY_WEBHOOK_SECRET) {
+    secrets.push(String(process.env.RAZORPAY_WEBHOOK_SECRET).trim());
+  }
+  return [...new Set(secrets.filter(Boolean))];
+}
+
+function verifySignatureAgainstAnySecret(rawBody, signature, secrets) {
+  if (!signature || !Array.isArray(secrets) || secrets.length === 0) return false;
+  const sigBuf = Buffer.from(String(signature), "utf8");
+  for (const secret of secrets) {
+    const expectedSignature = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+    const expBuf = Buffer.from(expectedSignature, "utf8");
+    if (sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 router.post(["/pay/webhook/razorpay", "/public/pay/webhook/razorpay"], async (req, res) => {
   try {
     const signature = req.headers["x-razorpay-signature"];
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    const event = String(req.body?.event || req.body?.type || "payment_link.paid").trim().toLowerCase();
+    const payload = req.body?.payload || {};
 
-    if (!webhookSecret || !signature) {
+    let referenceCode = null;
+    let paymentId = null;
+    let amountInPaise = null;
+    let webhookCurrency = null;
+
+    if (payload.payment_link?.entity) {
+      const linkEntity = payload.payment_link.entity;
+      referenceCode = linkEntity.reference_id || linkEntity.notes?.reference_code;
+      amountInPaise = linkEntity.amount_paid || linkEntity.amount;
+      webhookCurrency = linkEntity.currency || webhookCurrency;
+    }
+
+    if (payload.payment?.entity) {
+      const payEntity = payload.payment.entity;
+      if (!referenceCode) {
+        referenceCode = payEntity.notes?.reference_code || payEntity.description;
+      }
+      if (amountInPaise == null) {
+        amountInPaise = payEntity.amount;
+      }
+      webhookCurrency = payEntity.currency || webhookCurrency;
+    }
+
+    if (!referenceCode && req.body?.reference_code) {
+      referenceCode = req.body.reference_code;
+      amountInPaise = req.body.amount != null ? Number(req.body.amount) * 100 : null;
+      webhookCurrency = req.body.currency || webhookCurrency;
+    }
+
+    const txnRow = referenceCode
+      ? db.prepare(`
+          SELECT id, tenant_id, master_location_id, deposit_due, grand_total, currency
+          FROM universal_transactions
+          WHERE reference_code = ? AND delete_status = 0
+        `).get(referenceCode)
+      : null;
+
+    const candidateSecrets = resolveRazorpayWebhookSecrets(txnRow);
+    if (!signature || candidateSecrets.length === 0) {
       return res.status(401).json({
         success: false,
         message: "Webhook signature verification required"
@@ -152,41 +234,17 @@ router.post(["/pay/webhook/razorpay", "/public/pay/webhook/razorpay"], async (re
     }
 
     const rawBody = req.rawBody ? Buffer.from(req.rawBody) : Buffer.from(JSON.stringify(req.body));
-    const expectedSignature = crypto
-      .createHmac("sha256", webhookSecret)
-      .update(rawBody)
-      .digest("hex");
-
-    const sigBuf = Buffer.from(String(signature), "utf8");
-    const expBuf = Buffer.from(expectedSignature, "utf8");
-    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    if (!verifySignatureAgainstAnySecret(rawBody, signature, candidateSecrets)) {
       return res.status(401).json({ success: false, message: "Invalid Razorpay webhook signature" });
     }
 
-    const event = req.body.event || req.body.type || "payment_link.paid";
-    const payload = req.body.payload || {};
-
-    // Extract reference code and payment ID from Razorpay payload format
-    let referenceCode = null;
-    let paymentId = null;
-    let amountInPaise = null;
-
-    if (payload.payment_link?.entity) {
-      const linkEntity = payload.payment_link.entity;
-      referenceCode = linkEntity.reference_id || linkEntity.notes?.reference_code;
-      amountInPaise = linkEntity.amount_paid || linkEntity.amount;
-    }
-
-    if (!referenceCode && payload.payment?.entity) {
-      const payEntity = payload.payment.entity;
-      referenceCode = payEntity.notes?.reference_code || payEntity.description;
-      amountInPaise = payEntity.amount;
-    }
-
-    // Direct fallback if testing with top-level fields
-    if (!referenceCode && req.body.reference_code) {
-      referenceCode = req.body.reference_code;
-      amountInPaise = req.body.amount ? Number(req.body.amount) * 100 : null;
+    if (!ALLOWED_RAZORPAY_CAPTURE_EVENTS.has(event)) {
+      return res.json({
+        success: true,
+        ignored: true,
+        event,
+        message: `Webhook event '${event}' does not represent a captured payment`
+      });
     }
 
     if (payload.payment?.entity?.id) {
@@ -202,12 +260,6 @@ router.post(["/pay/webhook/razorpay", "/public/pay/webhook/razorpay"], async (re
       });
     }
 
-    // Find transaction to get tenantId
-    const txnRow = db.prepare(`
-      SELECT tenant_id FROM universal_transactions
-      WHERE reference_code = ? AND delete_status = 0
-    `).get(referenceCode);
-
     if (!txnRow) {
       return res.status(404).json({
         success: false,
@@ -215,7 +267,28 @@ router.post(["/pay/webhook/razorpay", "/public/pay/webhook/razorpay"], async (re
       });
     }
 
-    const paidAmount = amountInPaise ? Number(amountInPaise) / 100 : null;
+    const expectedCurrency = String(txnRow.currency || "INR").toUpperCase();
+    const receivedCurrency = String(webhookCurrency || expectedCurrency).toUpperCase();
+    if (receivedCurrency !== expectedCurrency) {
+      return res.status(400).json({
+        success: false,
+        message: `Currency mismatch: expected ${expectedCurrency}, got ${receivedCurrency}`
+      });
+    }
+
+    const paidAmount = amountInPaise != null ? Number(amountInPaise) / 100 : null;
+    const expectedMinAmount = Number(txnRow.deposit_due) > 0 ? Number(txnRow.deposit_due) : Number(txnRow.grand_total);
+    if (paidAmount !== null) {
+      if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+        return res.status(400).json({ success: false, message: "Invalid payment amount in webhook payload" });
+      }
+      if (paidAmount + 0.01 < expectedMinAmount) {
+        return res.status(400).json({
+          success: false,
+          message: `Underpayment rejected: paid ${paidAmount} is less than required ${expectedMinAmount}`
+        });
+      }
+    }
 
     // Reconcile idempotently
     const reconcileResult = await universalFulfillmentService.reconcilePaymentSuccess({
@@ -232,7 +305,7 @@ router.post(["/pay/webhook/razorpay", "/public/pay/webhook/razorpay"], async (re
       ...reconcileResult
     });
   } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
+    return res.status(Number(err.statusCode) || 500).json({ success: false, message: err.message });
   }
 });
 

@@ -14,16 +14,16 @@ describe('WhatsApp Broadcast Studio End-to-End Alignment Test Suite', () => {
   const testCampaignIds = [];
 
   before(async () => {
-    let admin = db.prepare("SELECT * FROM users WHERE role = 'ADMIN' LIMIT 1").get();
+    let admin = db.prepare("SELECT * FROM users WHERE role = 'ADMIN' AND COALESCE(tenant_id, 1) = 1 AND COALESCE(delete_status, 0) = 0 LIMIT 1").get();
     if (!admin) {
       const adminId = 'admin_studio_' + Date.now();
       db.prepare(`
-        INSERT INTO users (id, name, email, phone, password_hash, role, status)
-        VALUES (?, 'Studio Admin', 'studio_admin@test.internal', '919999999993', 'hash', 'ADMIN', 'ACTIVE')
+        INSERT INTO users (id, tenant_id, name, email, phone, password_hash, role, status)
+        VALUES (?, 1, 'Studio Admin', 'studio_admin@test.internal', '919999999993', 'hash', 'ADMIN', 'ACTIVE')
       `).run(adminId);
       admin = db.prepare("SELECT * FROM users WHERE id = ?").get(adminId);
     }
-    adminToken = jwt.sign({ userId: admin.id, email: admin.email, role: 'ADMIN' }, config.JWT_SECRET, { expiresIn: '1h' });
+    adminToken = jwt.sign({ userId: admin.id, tenant_id: admin.tenant_id || 1, email: admin.email, role: 'ADMIN' }, config.JWT_SECRET, { expiresIn: '1h' });
 
     const app = express();
     app.use(express.json());

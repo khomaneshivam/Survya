@@ -972,14 +972,14 @@ async function getWebhookConfig(req, res) {
     const appSecretSource = envSecret ? "env" : (dbSecret ? "db" : "none");
     const appSecretConflict = Boolean(envSecret && dbSecret && envSecret !== dbSecret);
 
-    // Get telemetry stats
+    // Get telemetry stats (customer_replies is the live canonical table)
     let totalReplies = 0;
     let lastEventAt = null;
     try {
-      totalReplies = db.prepare("SELECT COUNT(*) as count FROM replies").get()?.count || 0;
-      const lastReply = db.prepare("SELECT created_at FROM replies ORDER BY created_at DESC LIMIT 1").get();
-      if (lastReply?.created_at) {
-        lastEventAt = lastReply.created_at;
+      totalReplies = db.prepare("SELECT COUNT(*) as count FROM customer_replies").get()?.count || 0;
+      const lastReply = db.prepare("SELECT received_at FROM customer_replies ORDER BY id DESC LIMIT 1").get();
+      if (lastReply?.received_at) {
+        lastEventAt = lastReply.received_at;
       }
     } catch (e) {}
 
@@ -1317,10 +1317,12 @@ async function listRecycleBin(req, res) {
 async function restoreRecycleBinItem(req, res) {
   try {
     const { entityType, id } = req.params;
+    const isPlatform = isPlatformAdmin(req.user);
+    const reqTenantId = req.query.tenantId ? Number(req.query.tenantId) : null;
     const result = await recycleBinService.restoreItem({
       entityType,
       id,
-      tenantId: req.user?.tenant_id || 1,
+      tenantId: isPlatform ? reqTenantId : (req.user?.tenant_id || 1),
       restoredBy: req.user?.id || "admin"
     });
     return res.status(200).json({ success: true, message: result.message, data: result });
@@ -1334,10 +1336,12 @@ async function hardDeleteRecycleBinItem(req, res) {
   try {
     const { entityType, id } = req.params;
     const { confirmHardDelete } = req.body || {};
+    const isPlatform = isPlatformAdmin(req.user);
+    const reqTenantId = req.query.tenantId ? Number(req.query.tenantId) : null;
     const result = await recycleBinService.hardDeleteItem({
       entityType,
       id,
-      tenantId: req.user?.tenant_id || 1,
+      tenantId: isPlatform ? reqTenantId : (req.user?.tenant_id || 1),
       hardDeletedBy: req.user?.id || "admin",
       confirmHardDelete: Boolean(confirmHardDelete)
     });

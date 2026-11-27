@@ -8,7 +8,12 @@
 const knowledgeRetrievalService = require('./knowledgeRetrievalService');
 const voiceTranscriptionService = require('./voiceTranscriptionService');
 const taskScopedAiAgentService = require('./taskScopedAiAgentService');
+const { getSetting } = require('../../config/database');
 const config = require('../../config/env');
+
+function resolveGeminiKey() {
+  return String(getSetting('GEMINI_API_KEY') || process.env.GEMINI_API_KEY || config.GEMINI_API_KEY || '').trim();
+}
 
 class InboxCopilotService {
   /**
@@ -33,7 +38,7 @@ class InboxCopilotService {
     const topKnowledge = searchRes.matches[0];
     const topDetail = topKnowledge ? `${topKnowledge.title}: ${topKnowledge.content}` : '';
 
-    const geminiKey = process.env.GEMINI_API_KEY || config.GEMINI_API_KEY;
+    const geminiKey = resolveGeminiKey();
 
     if (geminiKey && userQuery) {
       try {
@@ -126,7 +131,7 @@ Format strictly as JSON with keys:
       return { success: true, translatedText: text, sourceLanguage: currentLang, targetLanguage };
     }
 
-    const geminiKey = process.env.GEMINI_API_KEY || config.GEMINI_API_KEY;
+    const geminiKey = resolveGeminiKey();
     if (geminiKey) {
       try {
         const langNames = { en: 'English', hi: 'Hindi (हिन्दी)', mr: 'Marathi (मराठी)', hinglish: 'Hinglish (Hindi in Latin script)' };
@@ -221,7 +226,7 @@ Return ONLY the direct translated text.`;
       return `${sender}: ${text}`;
     }).join('\n');
 
-    const geminiKey = process.env.GEMINI_API_KEY || config.GEMINI_API_KEY;
+    const geminiKey = resolveGeminiKey();
 
     if (geminiKey) {
       try {

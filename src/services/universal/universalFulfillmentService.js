@@ -113,26 +113,25 @@ async function createTransactionFromQuote({
 
   const referenceCode = generateReferenceCode(numericTenantId);
 
-  // 4. Calculate Deposit & Balance
+  const effectiveHoldTokens = [];
+  if (holdId) effectiveHoldTokens.push(String(holdId));
+  let txnMetadata = { ...(metadata || {}) };
+
+  // 4. Calculate Deposit & Balance (and reserve/confirm atomic inventory inside transaction)
   let depositDue = 0;
   let balanceDue = quote.grandTotal;
   let paymentStatus = "UNPAID";
   let fulfillmentStatus = "PENDING";
   let paymentLinkUrl = null;
   let paymentExpiresAt = null;
+  let primaryHoldId = holdId ? String(holdId) : null;
 
   if (isPayLater) {
     paymentStatus = paymentMode?.mode_code === "CASH_ON_DELIVERY" ? "COD_PENDING" : "PAY_AT_DESK";
     fulfillmentStatus = "CONFIRMED";
     depositDue = 0;
     balanceDue = quote.grandTotal;
-
-    // Immediately confirm hold if provided
-    if (holdId) {
-      universalAvailabilityService.confirmHold(numericTenantId, holdId);
-    }
   } else {
-    // Deposit calculation
     const depType = paymentMode?.deposit_type || "FULL";
     const depVal = Number(paymentMode?.deposit_value) || 100;
     if (depType === "PERCENTAGE") {
@@ -142,57 +141,89 @@ async function createTransactionFromQuote({
     } else {
       depositDue = quote.grandTotal;
     }
-    balanceDue = Math.max(0, quote.grandTotal - depositDue);
+    balanceDue = Math.max(0, Math.round((quote.grandTotal - depositDue) * 100) / 100);
     paymentStatus = "LINK_SENT";
     fulfillmentStatus = "PENDING";
 
-    // 30-minute expiry
     const expiresDate = new Date(Date.now() + 30 * 60 * 1000);
     paymentExpiresAt = toMysqlUtc(expiresDate);
-
-    // Generate payment link (internal checkout / sandbox)
     paymentLinkUrl = `/api/v1/public/pay/${referenceCode}`;
-
-    // Enqueue lifecycle jobs in system_job_queue
-    try {
-      const nudgeRunAt = new Date(Date.now() + 15 * 60 * 1000);
-      jobQueueService.enqueueJob({
-        tenantId: numericTenantId,
-        jobType: "PAYMENT_LINK_NUDGE",
-        idempotencyKey: `pln-${referenceCode}`,
-        runAt: nudgeRunAt,
-        payload: {
-          tenantId: numericTenantId,
-          referenceCode,
-          customerPhone,
-          customerName,
-          amount: depositDue,
-          paymentLinkUrl
-        }
-      });
-
-      const expireRunAt = new Date(Date.now() + 30 * 60 * 1000);
-      jobQueueService.enqueueJob({
-        tenantId: numericTenantId,
-        jobType: "PAYMENT_HOLD_EXPIRE",
-        idempotencyKey: `phe-${referenceCode}`,
-        runAt: expireRunAt,
-        payload: {
-          tenantId: numericTenantId,
-          referenceCode,
-          holdId
-        }
-      });
-    } catch (jobErr) {
-      console.warn(`[UniversalFulfillment] Could not enqueue payment reminder jobs: ${jobErr.message}`);
-    }
   }
 
-  // 5. Atomic Insert inside Transaction
+  // 5. Atomic Inventory Check/Hold + Insert inside Transaction
   db.prepare("START TRANSACTION").run();
   let txnId = null;
 
   try {
+    if (holdId) {
+      if (isPayLater) {
+        const confRes = universalAvailabilityService.confirmHold(numericTenantId, holdId);
+        if (!confRes || !confRes.success) {
+          const err = new Error(confRes?.reason || "Inventory hold expired or unavailable");
+          err.statusCode = 409;
+          throw err;
+        }
+      } else {
+        const heldRow = db.prepare(`
+          SELECT id, status,
+                 CASE WHEN expires_at IS NOT NULL AND expires_at <= UTC_TIMESTAMP() THEN 1 ELSE 0 END AS is_expired
+          FROM catalog_inventory_holds
+          WHERE tenant_id = ? AND (hold_token = ? OR id = ?)
+          FOR UPDATE
+        `).get(numericTenantId, String(holdId), /^\d+$/.test(String(holdId)) ? Number(holdId) : 0);
+        if (!heldRow || heldRow.status !== "HELD" || Number(heldRow.is_expired) === 1) {
+          const err = new Error(heldRow?.is_expired ? "Inventory hold has expired" : "Inventory hold is not active");
+          err.statusCode = 409;
+          throw err;
+        }
+      }
+    } else {
+      // Auto-acquire atomic holds for every tracked catalog item / slot / date range so stock cannot oversell
+      for (let idx = 0; idx < quote.items.length; idx++) {
+        const qItem = quote.items[idx];
+        const rawItem = cartItems[idx] || {};
+        const itemIdVal = qItem.id ?? qItem.itemId ?? rawItem.itemId ?? null;
+        const slotIdVal = rawItem.slotId || rawItem.slot_id || null;
+        if (!itemIdVal && !slotIdVal) continue;
+
+        const dbItem = itemIdVal
+          ? db.prepare("SELECT id, inventory_mode, track_inventory FROM catalog_items WHERE tenant_id = ? AND id = ? AND delete_status = 0").get(numericTenantId, itemIdVal)
+          : null;
+
+        const needsHold = Boolean(slotIdVal) || Boolean(dbItem && (Number(dbItem.track_inventory) === 1 || dbItem.inventory_mode === "DATE_RANGE"));
+        if (!needsHold) continue;
+
+        const autoHold = universalAvailabilityService.createInventoryHold(numericTenantId, {
+          itemId: itemIdVal,
+          slotId: slotIdVal,
+          quantity: qItem.quantity || 1,
+          holdMinutes: 30,
+          customerPhone,
+          customerName,
+          checkIn: serviceDate,
+          checkOut: serviceEndDate,
+          holdType: dbItem?.inventory_mode === "DATE_RANGE" ? "DATE_RANGE" : undefined
+        });
+
+        if (autoHold?.holdToken) {
+          effectiveHoldTokens.push(autoHold.holdToken);
+          if (!primaryHoldId) primaryHoldId = autoHold.holdToken;
+          if (isPayLater) {
+            const confRes = universalAvailabilityService.confirmHold(numericTenantId, autoHold.holdToken);
+            if (!confRes || !confRes.success) {
+              const err = new Error(confRes?.reason || "Could not confirm inventory hold");
+              err.statusCode = 409;
+              throw err;
+            }
+          }
+        }
+      }
+    }
+
+    if (effectiveHoldTokens.length > 0) {
+      txnMetadata = { ...txnMetadata, holdTokens: [...new Set(effectiveHoldTokens)] };
+    }
+
     const txnRes = db.prepare(`
       INSERT INTO universal_transactions (
         tenant_id, reference_code, transaction_type, source_channel,
@@ -233,7 +264,7 @@ async function createTransactionFromQuote({
       crmRecordId || null,
       flowSessionId || null,
       inappSessionId || null,
-      holdId || null,
+      primaryHoldId || null,
       serviceDate || null,
       serviceEndDate || null,
       serviceSlotTime || null,
@@ -250,7 +281,7 @@ async function createTransactionFromQuote({
       paymentExpiresAt,
       fulfillmentStatus,
       notes || null,
-      JSON.stringify(metadata || {}),
+      JSON.stringify(txnMetadata),
       userId,
       userId
     );
@@ -273,28 +304,35 @@ async function createTransactionFromQuote({
     `);
 
     for (const item of quote.items) {
+      const resolvedItemId = item.id ?? item.itemId ?? item.catalog_item_id ?? null;
+      const resolvedTaxPct = Number(item.gstPercent ?? item.taxRate ?? item.master_tax_rate ?? 0);
+      const resolvedTaxAmt = Number((item.gstAmount ?? item.taxAmount ?? 0).toFixed(2));
+      const resolvedLineTotal = Number((item.lineTotal ?? ((item.lineSubtotal || 0) + resolvedTaxAmt)).toFixed(2));
       insertItemStmt.run(
         numericTenantId,
         txnId,
-        item.id || item.catalog_item_id || null,
+        resolvedItemId,
         item.master_resource_id || null,
         item.title || "Item",
-        item.variant_label || null,
+        item.variantName || item.variant_label || null,
         item.inventory_mode || "UNIT_STOCK",
         item.quantity || 1,
-        quote.nights || 1,
-        item.master_unit_symbol || item.master_unit_name || "unit",
+        item.nights || quote.nights || 1,
+        item.unitSymbol || item.master_unit_symbol || item.master_unit_name || "unit",
         item.unitPrice || item.base_price || 0,
         item.addons ? JSON.stringify(item.addons) : null,
-        item.taxRate || item.master_tax_rate || 0,
-        item.taxAmount || 0,
-        item.lineTotal || 0
+        resolvedTaxPct,
+        resolvedTaxAmt,
+        resolvedLineTotal
       );
     }
 
     // Insert any global add-ons as transaction items
     if (Array.isArray(quote.addOns) && quote.addOns.length > 0) {
       for (const addon of quote.addOns) {
+        const addonTaxPct = Number(addon.gstPercent ?? addon.taxRate ?? 0);
+        const addonTaxAmt = Number((addon.gstAmount ?? addon.taxAmount ?? 0).toFixed(2));
+        const addonLineTotal = Number((addon.lineTotal ?? ((addon.lineSubtotal || 0) + addonTaxAmt)).toFixed(2));
         insertItemStmt.run(
           numericTenantId,
           txnId,
@@ -306,19 +344,55 @@ async function createTransactionFromQuote({
           addon.quantity || 1,
           1,
           "addon",
-          addon.unitPrice || 0,
+          addon.price ?? addon.unitPrice ?? 0,
           null,
-          addon.taxRate || 0,
-          addon.taxAmount || 0,
-          addon.lineTotal || 0
+          addonTaxPct,
+          addonTaxAmt,
+          addonLineTotal
         );
       }
     }
 
     db.prepare("COMMIT").run();
   } catch (err) {
-    db.prepare("ROLLBACK").run();
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
     throw err;
+  }
+
+  // Enqueue lifecycle jobs ONLY after atomic transaction succeeds
+  if (!isPayLater) {
+    try {
+      const nudgeRunAt = new Date(Date.now() + 15 * 60 * 1000);
+      jobQueueService.enqueueJob({
+        tenantId: numericTenantId,
+        jobType: "PAYMENT_LINK_NUDGE",
+        idempotencyKey: `pln-${referenceCode}`,
+        runAt: nudgeRunAt,
+        payload: {
+          tenantId: numericTenantId,
+          referenceCode,
+          customerPhone,
+          customerName,
+          amount: depositDue,
+          paymentLinkUrl
+        }
+      });
+
+      const expireRunAt = new Date(Date.now() + 30 * 60 * 1000);
+      jobQueueService.enqueueJob({
+        tenantId: numericTenantId,
+        jobType: "PAYMENT_HOLD_EXPIRE",
+        idempotencyKey: `phe-${referenceCode}`,
+        runAt: expireRunAt,
+        payload: {
+          tenantId: numericTenantId,
+          referenceCode,
+          holdId: primaryHoldId
+        }
+      });
+    } catch (jobErr) {
+      console.warn(`[UniversalFulfillment] Could not enqueue payment reminder jobs: ${jobErr.message}`);
+    }
   }
 
   // 6. Sync CRM Record
@@ -401,6 +475,13 @@ async function reconcilePaymentSuccess({
       throw new Error(`Transaction ${cleanRef} not found`);
     }
 
+    if (txn.fulfillment_status === "CANCELLED") {
+      db.prepare("ROLLBACK").run();
+      const err = new Error("Cannot reconcile payment for a cancelled transaction");
+      err.statusCode = 409;
+      throw err;
+    }
+
     // Idempotency inside exclusive row lock: prevent concurrent webhook double-crediting
     if (
       txn.payment_status === "PAID" ||
@@ -413,6 +494,22 @@ async function reconcilePaymentSuccess({
         message: "Transaction is already paid and reconciled",
         transaction: getTransactionById(numericTenantId, txn.id)
       };
+    }
+
+    // Confirm all bound inventory holds BEFORE committing payment — fail closed if expired/unavailable
+    let metaHoldTokens = [];
+    try {
+      const parsedMeta = typeof txn.metadata_json === "string" ? JSON.parse(txn.metadata_json || "{}") : (txn.metadata_json || {});
+      if (Array.isArray(parsedMeta.holdTokens)) metaHoldTokens = parsedMeta.holdTokens;
+    } catch (_) {}
+    const holdTokensToConfirm = [...new Set([txn.hold_id, ...metaHoldTokens].filter(Boolean).map(String))];
+    for (const hTok of holdTokensToConfirm) {
+      const holdConf = universalAvailabilityService.confirmHold(numericTenantId, hTok);
+      if (!holdConf || !holdConf.success) {
+        const err = new Error(holdConf?.reason || `Inventory hold ${hTok} expired or unavailable`);
+        err.statusCode = 409;
+        throw err;
+      }
     }
 
     const paymentToCredit = paidAmount != null
@@ -442,12 +539,7 @@ async function reconcilePaymentSuccess({
       txn.id
     );
 
-    // 2. Permanently commit stock/slot hold atomically
-    if (txn.hold_id) {
-      universalAvailabilityService.confirmHold(numericTenantId, txn.hold_id);
-    }
-
-    // 3. Cancel pending payment reminder and hold-expiry jobs
+    // 2. Cancel pending payment reminder and hold-expiry jobs
     db.prepare(`
       UPDATE system_job_queue
       SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP
@@ -513,22 +605,56 @@ async function reconcilePaymentSuccess({
  */
 async function updateFulfillmentStatus(tenantId = 1, txnId, newStatus, userId = "system") {
   const numericTenantId = Number(tenantId) || 1;
-  const txn = db.prepare(`
-    SELECT * FROM universal_transactions
-    WHERE tenant_id = ? AND id = ? AND delete_status = 0
-  `).get(numericTenantId, txnId);
+  let txn = null;
 
-  if (!txn) {
-    throw new Error(`Transaction #${txnId} not found`);
+  db.prepare("START TRANSACTION").run();
+  try {
+    txn = db.prepare(`
+      SELECT * FROM universal_transactions
+      WHERE tenant_id = ? AND id = ? AND delete_status = 0
+      FOR UPDATE
+    `).get(numericTenantId, txnId);
+
+    if (!txn) {
+      db.prepare("ROLLBACK").run();
+      throw new Error(`Transaction #${txnId} not found`);
+    }
+
+    if (newStatus === "CANCELLED" && txn.fulfillment_status === "CANCELLED") {
+      db.prepare("COMMIT").run();
+      return {
+        success: true,
+        alreadyCancelled: true,
+        transaction: getTransactionById(numericTenantId, txn.id)
+      };
+    }
+
+    db.prepare(`
+      UPDATE universal_transactions
+      SET fulfillment_status = ?,
+          updated_by = ?,
+          updated_at = UTC_TIMESTAMP()
+      WHERE id = ?
+    `).run(newStatus, userId, txn.id);
+
+    // If CANCELLED, release held OR confirmed inventory holds atomically
+    if (newStatus === "CANCELLED") {
+      let metaHoldTokens = [];
+      try {
+        const parsedMeta = typeof txn.metadata_json === "string" ? JSON.parse(txn.metadata_json || "{}") : (txn.metadata_json || {});
+        if (Array.isArray(parsedMeta.holdTokens)) metaHoldTokens = parsedMeta.holdTokens;
+      } catch (_) {}
+      const holdTokensToRelease = [...new Set([txn.hold_id, ...metaHoldTokens].filter(Boolean).map(String))];
+      for (const hTok of holdTokensToRelease) {
+        universalAvailabilityService.releaseHold(numericTenantId, hTok);
+      }
+    }
+
+    db.prepare("COMMIT").run();
+  } catch (err) {
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
+    throw err;
   }
-
-  db.prepare(`
-    UPDATE universal_transactions
-    SET fulfillment_status = ?,
-        updated_by = ?,
-        updated_at = UTC_TIMESTAMP()
-    WHERE id = ?
-  `).run(newStatus, userId, txn.id);
 
   // If COMPLETED, enqueue CSAT / Google review feedback job (+2 hours)
   if (newStatus === "COMPLETED") {
@@ -552,12 +678,8 @@ async function updateFulfillmentStatus(tenantId = 1, txnId, newStatus, userId = 
     }
   }
 
-  // If CANCELLED, release held stock or slot capacity and write audit log
+  // Audit cancellation
   if (newStatus === "CANCELLED") {
-    if (txn.hold_id) {
-      universalAvailabilityService.releaseHold(numericTenantId, txn.hold_id);
-    }
-
     try {
       db.prepare(`
         INSERT INTO audit_logs (
