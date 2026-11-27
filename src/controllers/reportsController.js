@@ -404,15 +404,16 @@ async function getOverviewAnalytics(req, res) {
       ${replyClause}
     `).get(...replyParams);
 
-    const totalSent = (campStats.total_sent || 0) + (autoStats.sent_success || 0);
-    const totalFailed = (campStats.total_failed || 0) + (autoStats.sent_failed || 0);
+    const totalSent = Number(campStats.total_sent || 0) + Number(autoStats.sent_success || 0);
+    const totalFailed = Number(campStats.total_failed || 0) + Number(autoStats.sent_failed || 0);
     const totalAttempted = totalSent + totalFailed;
 
-    const totalDelivered = (recipientStats.count_delivered > 0) ? recipientStats.count_delivered : totalSent;
-    const totalRead = recipientStats.count_read || 0;
-    const totalReplies = replyStats.total_replies || 0;
+    const trackedRecipientsTotal = Number(recipientStats.count_delivered || 0) + Number(recipientStats.count_sent || 0) + Number(recipientStats.count_failed || 0) + Number(recipientStats.count_pending || 0);
+    const totalDelivered = trackedRecipientsTotal > 0 ? Number(recipientStats.count_delivered || 0) : totalSent;
+    const totalRead = Number(recipientStats.count_read || 0);
+    const totalReplies = Number(replyStats.total_replies || 0);
 
-    const deliveryRate = totalSent > 0 ? ((totalDelivered / totalSent) * 100).toFixed(1) : (totalSent > 0 ? "100.0" : "0.0");
+    const deliveryRate = totalSent > 0 ? ((totalDelivered / totalSent) * 100).toFixed(1) : "0.0";
     const readRate = totalDelivered > 0 ? ((totalRead / totalDelivered) * 100).toFixed(1) : "0.0";
     const failureRate = totalAttempted > 0 ? ((totalFailed / totalAttempted) * 100).toFixed(1) : "0.0";
     const replyRate = totalDelivered > 0 ? (((replyStats.unique_repliers || 0) / totalDelivered) * 100).toFixed(1) : "0.0";
@@ -449,20 +450,26 @@ async function getOverviewAnalytics(req, res) {
     let quoteStats = { won_count: 0, revenue_inr: 0 };
     try {
       const qTenantFilter = effectiveFinTenantId !== null ? "COALESCE(q.tenant_id, 1) = ?" : "1=1";
-      // BUG-P4-02 FIX: quotes.status is 'DRAFT'/'SENT', not 'WON'.
-      // The enquiry WON status lives on booking_enquiries. Join through enquiry_id.
+      // Reconcile latest quote per WON/CONFIRMED enquiry without multi-quote inflation
       quoteStats = db.prepare(`
         SELECT
-          COUNT(*) as won_count,
+          COUNT(DISTINCT COALESCE(q.enquiry_id, q.id)) as won_count,
           COALESCE(SUM(COALESCE(q.total, 0)), 0) as revenue_inr
         FROM quotes q
-        INNER JOIN booking_enquiries be ON be.id = q.enquiry_id
-        WHERE UPPER(be.status) = 'WON'
-          AND NOT EXISTS (
-            SELECT 1 FROM universal_transactions ut
-            WHERE ut.crm_record_id = q.enquiry_id
-              AND ut.payment_status IN ('PAID', 'PARTIALLY_PAID', 'SETTLED')
-              AND COALESCE(ut.delete_status, 0) = 0
+        LEFT JOIN booking_enquiries be ON be.id = q.enquiry_id
+        WHERE (
+            (be.id IS NOT NULL AND COALESCE(be.delete_status, 0) = 0 AND (
+              UPPER(COALESCE(be.status, '')) IN ('WON', 'CONFIRMED')
+              OR (
+                UPPER(COALESCE(be.status, '')) NOT IN ('CANCELLED', 'LOST', 'ARCHIVED', 'REJECTED')
+                AND UPPER(COALESCE(q.status, '')) IN ('WON', 'ACCEPTED', 'PAID')
+              )
+            ))
+            OR (be.id IS NULL AND UPPER(COALESCE(q.status, '')) IN ('WON', 'ACCEPTED', 'PAID'))
+          )
+          AND (
+            q.enquiry_id IS NULL
+            OR q.id = (SELECT q2.id FROM quotes q2 WHERE q2.enquiry_id = q.enquiry_id ORDER BY q2.id DESC LIMIT 1)
           )
           AND ${qTenantFilter}
       `).get(...finTenantParams) || quoteStats;
@@ -503,6 +510,12 @@ async function getOverviewAnalytics(req, res) {
     const netContributionInr = Number((totalRevenueInr - totalCostInr).toFixed(2));
     const paidConversions = Number(txStats.paid_count || 0) + Number(orderStats.paid_count || 0) + Number(quoteStats.won_count || 0);
 
+    let subscriptionUsage = null;
+    try {
+      const billingService = require("../services/billingService");
+      subscriptionUsage = billingService.getTenantEntitlementSnapshot(effectiveFinTenantId || activeTenantId);
+    } catch (_) {}
+
     return res.status(200).json({
       success: true,
       data: {
@@ -521,6 +534,7 @@ async function getOverviewAnalytics(req, res) {
         failureRate: `${failureRate}%`,
         activeScheduled: scheduledStats.count || 0,
         totalDispatches: autoStats.total_dispatches || 0,
+        subscriptionUsage,
 
         // Real DB-derived Revenue, Costs & Funnel
         revenue: {

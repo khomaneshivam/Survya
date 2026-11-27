@@ -40,12 +40,30 @@ class JobWorkerEngine extends EventEmitter {
    */
   _registerBuiltInHandlers() {
     // Persisted Meta webhook ingestion. Tenant resolution occurs for each inbound message.
-    this.registerHandler("META_WEBHOOK_INGEST", async payload => {
+    this.registerHandler("META_WEBHOOK_INGEST", async (payload, job) => {
       const webhookService = require("../webhookService");
       if (!payload || typeof payload !== 'object') {
         throw new Error("Malformed persisted Meta webhook event");
       }
-      return webhookService.processIncomingPayload(payload);
+      const res = await webhookService.processIncomingPayload(payload);
+      try {
+        const digestKey = job?.idempotency_key && String(job.idempotency_key).startsWith("meta_ingest_")
+          ? `digest_${String(job.idempotency_key).slice("meta_ingest_".length)}`
+          : null;
+        if (digestKey) {
+          db.prepare("UPDATE incoming_webhook_events SET status = 'PROCESSED' WHERE event_id = ?").run(digestKey);
+        }
+        if (Array.isArray(payload.entry)) {
+          for (const entry of payload.entry) {
+            for (const ch of (Array.isArray(entry?.changes) ? entry.changes : [])) {
+              for (const m of (Array.isArray(ch?.value?.messages) ? ch.value.messages : [])) {
+                if (m?.id) db.prepare("UPDATE incoming_webhook_events SET status = 'PROCESSED' WHERE event_id = ?").run(`wamid_${m.id}`);
+              }
+            }
+          }
+        }
+      } catch (_) {}
+      return res;
     });
 
     // Durable outbound message dispatch outbox (with automatic retries via JobWorkerEngine)
@@ -538,13 +556,15 @@ class JobWorkerEngine extends EventEmitter {
     const conn = await pool.getConnection();
 
     try {
-      // 1. Check and enqueue recurring schedules
-      await this._syncRecurringSchedules(conn);
+      // 1. Check and enqueue recurring schedules (skip on dedicated webhook worker to prevent 1s lock churn)
+      if (this.queueName !== "webhook") {
+        await this._syncRecurringSchedules(conn);
+      }
 
-      // 2. Recover stale locks (worker died or timed out > 5 mins)
+      // 2. Recover stale locks while respecting max_attempts so exhausted jobs move to DEAD_LETTER
       await conn.query(`
         UPDATE system_job_queue
-        SET status = 'PENDING',
+        SET status = CASE WHEN attempts >= max_attempts THEN 'DEAD_LETTER' ELSE 'PENDING' END,
             locked_by = NULL,
             locked_at = NULL,
             last_error = CONCAT(COALESCE(last_error, ''), ' [STALE_LOCK_RESET: Worker timed out]')

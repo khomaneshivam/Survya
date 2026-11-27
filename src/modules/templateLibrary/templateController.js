@@ -141,13 +141,15 @@ class TemplateController {
     try {
       const tenantId = resolveTenantId(req);
       const userId = req.user?.id || 'system';
-      const { customFlowName, configValues, bindings, activateImmediately } = req.body;
+      const { customFlowName, triggerKeyword, triggerKeywords, configValues, bindings, activateImmediately } = req.body;
 
       const result = templateInstallService.installTemplate({
         templateIdOrKey: req.params.id,
         tenantId,
         userId,
         customFlowName,
+        triggerKeyword,
+        triggerKeywords,
         configValues,
         bindings,
         activateImmediately: Boolean(activateImmediately)
@@ -316,12 +318,12 @@ class TemplateController {
     try {
       const tenantId = resolveTenantId(req);
       const userId = req.user?.id || 'system';
-      const { targetVersionNumber, preserveCustomizations = true } = req.body || {};
+      const { targetVersionNumber, targetVersion, preserveCustomizations = true } = req.body || {};
       const result = templateUpgradeService.upgradeInstallation(
         req.params.id,
         tenantId,
         userId,
-        targetVersionNumber,
+        targetVersionNumber || targetVersion || null,
         { preserveCustomizations: preserveCustomizations !== false }
       );
       res.json(result);

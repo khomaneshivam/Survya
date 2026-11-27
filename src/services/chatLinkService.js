@@ -612,9 +612,9 @@ function startConversationFromLink({
 
   const pastMessages = db.prepare(`
     SELECT * FROM customer_replies
-    WHERE from_phone = ?
+    WHERE tenant_id = ? AND from_phone = ?
     ORDER BY id ASC
-  `).all(targetPhone);
+  `).all(tenantId, targetPhone);
 
   const isExistingGuest = Boolean(existingContact || pastMessages.length > 0);
 
@@ -627,13 +627,14 @@ function startConversationFromLink({
   const sentMessage = String(message || link.default_message || "").trim();
   const waMsgId = `wamsg_link_${crypto.randomUUID()}`;
 
-  // 2. Insert customer message into customer_replies table
+  // 2. Insert customer message into customer_replies table (tenant-scoped)
   db.prepare(`
     INSERT INTO customer_replies (
-      wa_message_id, from_phone, customer_name, message_type,
+      tenant_id, wa_message_id, from_phone, customer_name, message_type,
       message_body, reply_text, link_id, source, is_read, user_id, received_at
-    ) VALUES (?, ?, ?, 'text', ?, NULL, ?, 'CHAT_LINK', 0, ?, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, 'text', ?, NULL, ?, 'CHAT_LINK', 0, ?, CURRENT_TIMESTAMP)
   `).run(
+    tenantId,
     waMsgId,
     targetPhone,
     cleanGuestName,
@@ -737,11 +738,12 @@ function startConversationFromLink({
 
       db.prepare(`
         INSERT INTO customer_replies (
-          wa_message_id, from_phone, customer_name, message_type,
+          tenant_id, wa_message_id, from_phone, customer_name, message_type,
           message_body, reply_text, reply_sent_at, reply_status,
           link_id, source, is_read, user_id, received_at, raw_payload
-        ) VALUES (?, ?, ?, 'outbound', ?, ?, CURRENT_TIMESTAMP, 'SENT', ?, 'CHAT_LINK', 1, 'bot', CURRENT_TIMESTAMP, ?)
+        ) VALUES (?, ?, ?, ?, 'outbound', ?, ?, CURRENT_TIMESTAMP, 'SENT', ?, 'CHAT_LINK', 1, 'bot', CURRENT_TIMESTAMP, ?)
       `).run(
+        tenantId,
         autoReplyId,
         targetPhone,
         cleanGuestName,
@@ -954,11 +956,14 @@ function sendWebCustomerMessage(phone, text, linkId = null, extraData = {}) {
     throw err;
   }
 
+  const link = linkId ? db.prepare("SELECT * FROM chat_links WHERE id = ? OR slug = ?").get(linkId, linkId) : null;
+  const resolvedTenantId = Number(link?.tenant_id || 1);
+
   // Lookup contact name from CRM contacts table, then fallback to past replies
-  const contact = db.prepare("SELECT name FROM contacts WHERE phone_e164 = ? LIMIT 1").get(clean);
-  const prior = db.prepare("SELECT customer_name, link_id, user_id FROM customer_replies WHERE from_phone = ? AND customer_name IS NOT NULL AND customer_name != 'Guest Customer' ORDER BY id DESC LIMIT 1").get(clean);
+  const contact = db.prepare("SELECT name FROM contacts WHERE tenant_id = ? AND phone_e164 = ? LIMIT 1").get(resolvedTenantId, clean);
+  const prior = db.prepare("SELECT customer_name, link_id, user_id FROM customer_replies WHERE tenant_id = ? AND from_phone = ? AND customer_name IS NOT NULL AND customer_name != 'Guest Customer' ORDER BY id DESC LIMIT 1").get(resolvedTenantId, clean);
   const guestName = contact?.name || prior?.customer_name || "Guest Customer";
-  const targetLinkId = linkId || prior?.link_id || null;
+  const targetLinkId = link?.id || linkId || prior?.link_id || null;
 
   // Never assign 'bot' as user_id for customer's incoming message
   let assignedUserId = null;
@@ -976,10 +981,11 @@ function sendWebCustomerMessage(phone, text, linkId = null, extraData = {}) {
 
   db.prepare(`
     INSERT INTO customer_replies (
-      wa_message_id, from_phone, customer_name, message_type,
+      tenant_id, wa_message_id, from_phone, customer_name, message_type,
       message_body, link_id, source, is_read, user_id, received_at
-    ) VALUES (?, ?, ?, 'text', ?, ?, 'CHAT_LINK', 0, ?, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, 'text', ?, ?, 'CHAT_LINK', 0, ?, CURRENT_TIMESTAMP)
   `).run(
+    resolvedTenantId,
     waMsgId,
     clean,
     guestName,
@@ -995,7 +1001,6 @@ function sendWebCustomerMessage(phone, text, linkId = null, extraData = {}) {
 
   // Automated Intelligent Response (if enabled)
   let autoReplyRecord = null;
-  const link = targetLinkId ? db.prepare("SELECT * FROM chat_links WHERE id = ? OR slug = ?").get(targetLinkId, targetLinkId) : null;
   let botReplyText = null;
   let rawPayload = null;
 
@@ -1030,11 +1035,12 @@ function sendWebCustomerMessage(phone, text, linkId = null, extraData = {}) {
     const autoReplyId = `auto_${crypto.randomUUID()}`;
     db.prepare(`
       INSERT INTO customer_replies (
-        wa_message_id, from_phone, customer_name, message_type,
+        tenant_id, wa_message_id, from_phone, customer_name, message_type,
         message_body, reply_text, reply_sent_at, reply_status,
         link_id, source, is_read, user_id, received_at, raw_payload
-      ) VALUES (?, ?, ?, 'outbound', ?, ?, CURRENT_TIMESTAMP, 'SENT', ?, 'CHAT_LINK', 1, 'bot', CURRENT_TIMESTAMP, ?)
+      ) VALUES (?, ?, ?, ?, 'outbound', ?, ?, CURRENT_TIMESTAMP, 'SENT', ?, 'CHAT_LINK', 1, 'bot', CURRENT_TIMESTAMP, ?)
     `).run(
+      resolvedTenantId,
       autoReplyId,
       clean,
       guestName,

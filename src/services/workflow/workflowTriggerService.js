@@ -26,7 +26,7 @@ class WorkflowTriggerService {
     let targetPhoneId = phoneNumberId;
     let flowRow = null;
     try {
-      flowRow = db.prepare("SELECT phone_number_id, trigger_keywords FROM conversation_flows WHERE id = ?").get(flowId);
+      flowRow = db.prepare("SELECT phone_number_id, trigger_keywords_json FROM conversation_flows WHERE id = ?").get(flowId);
       if (targetPhoneId === undefined) {
         targetPhoneId = flowRow?.phone_number_id || null;
       }
@@ -69,11 +69,12 @@ class WorkflowTriggerService {
         }
 
         let rawKeywords = data.keywords || data.triggerKeywords || (data.keyword ? [data.keyword] : []);
-        if ((!rawKeywords || (Array.isArray(rawKeywords) && rawKeywords.length === 0)) && flowRow?.trigger_keywords) {
+        const rawFlowKw = flowRow?.trigger_keywords_json ?? flowRow?.trigger_keywords;
+        if ((!rawKeywords || (Array.isArray(rawKeywords) && rawKeywords.length === 0)) && rawFlowKw) {
           try {
-            rawKeywords = JSON.parse(flowRow.trigger_keywords);
+            rawKeywords = JSON.parse(rawFlowKw);
           } catch (_) {
-            rawKeywords = String(flowRow.trigger_keywords).split(",").map(k => k.trim()).filter(Boolean);
+            rawKeywords = String(rawFlowKw).split(",").map(k => k.trim()).filter(Boolean);
           }
         }
         const keywords = Array.isArray(rawKeywords)

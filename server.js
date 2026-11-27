@@ -11,6 +11,8 @@ require("./src/config/database"); // Initializes local SQLite DB
 const schedulerService = require("./src/services/schedulerService");
 const { JobWorkerEngine } = require("./src/services/queue/jobWorkerEngine");
 const webhookWorker = new JobWorkerEngine({ queueName: "webhook", pollIntervalMs: 1000 });
+const defaultWorker = new JobWorkerEngine({ queueName: "default", pollIntervalMs: 3000 });
+const maintenanceWorker = new JobWorkerEngine({ queueName: "maintenance", pollIntervalMs: 10000 });
 const apiRoutes = require("./src/routes/apiRoutes");
 const webhookController = require("./src/controllers/webhookController");
 const securityHeaders = require("./src/middleware/securityHeaders");
@@ -328,8 +330,17 @@ app.get(["/c/:slug", "/chat/:slug"], (req, res, next) => {
   next();
 });
 
-// 4b. Database-Verified Readiness & Health Check Endpoint
-app.get(["/api/health", "/health"], (req, res) => {
+// 4b. Liveness, Database-Verified Readiness & Lightweight Operational Metrics Endpoints
+app.get("/livez", (req, res) => {
+  return res.status(200).json({
+    status: "alive",
+    uptimeSeconds: Math.round(process.uptime()),
+    requestId: req.requestId || null,
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get(["/api/health", "/health", "/readyz"], (req, res) => {
   const startedAt = process.hrtime.bigint();
   try {
     const { db } = require("./src/config/database");
@@ -357,11 +368,47 @@ app.get(["/api/health", "/health"], (req, res) => {
   }
 });
 
+app.get("/metrics", (req, res) => {
+  const mem = process.memoryUsage();
+  let queueStats = { pending: 0, dead_letter: 0 };
+  try {
+    const { db } = require("./src/config/database");
+    const qRow = db.prepare(`
+      SELECT
+        SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) as pending,
+        SUM(CASE WHEN status = 'DEAD_LETTER' THEN 1 ELSE 0 END) as dead_letter
+      FROM system_job_queue
+    `).get();
+    if (qRow) {
+      queueStats = {
+        pending: Number(qRow.pending || 0),
+        dead_letter: Number(qRow.dead_letter || 0)
+      };
+    }
+  } catch (_) {}
+  const lines = [
+    `# HELP process_uptime_seconds Node.js process uptime in seconds`,
+    `# TYPE process_uptime_seconds gauge`,
+    `process_uptime_seconds ${Math.round(process.uptime())}`,
+    `# HELP process_resident_memory_bytes Resident set size in bytes`,
+    `# TYPE process_resident_memory_bytes gauge`,
+    `process_resident_memory_bytes ${mem.rss}`,
+    `# HELP survya_job_queue_pending Pending jobs in system_job_queue`,
+    `# TYPE survya_job_queue_pending gauge`,
+    `survya_job_queue_pending ${queueStats.pending}`,
+    `# HELP survya_job_queue_dead_letter Dead-letter jobs in system_job_queue`,
+    `# TYPE survya_job_queue_dead_letter gauge`,
+    `survya_job_queue_dead_letter ${queueStats.dead_letter}`
+  ];
+  res.setHeader("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+  return res.status(200).send(lines.join("\n") + "\n");
+});
+
 // 4c. In-App Experience & Survya Studio APIs
 const inappExperienceRoutes = require("./src/routes/inappExperienceRoutes");
 app.use("/api/v1/inapp", inappExperienceRoutes);
 const studioRoutes = require("./src/routes/studioRoutes");
-app.use("/api/v1/studio", studioRoutes);
+app.use(["/api/v1/studio", "/api/studio", "/v1/studio"], studioRoutes);
 
 // 4d. Public Dynamic In-App Experience Runtime (/api/v1/public/x/:slug)
 const publicInappRoutes = require("./src/routes/publicInappRoutes");
@@ -514,6 +561,8 @@ if (require.main === module) {
     schedulerService.initScheduler();
     // Dedicated worker: only durable webhook ingestion, never unrelated jobs.
     webhookWorker.start();
+    defaultWorker.start();
+    maintenanceWorker.start();
 
     // Auto-subscribe Meta Webhooks for WABA if credentials are valid
     try {
@@ -572,6 +621,8 @@ if (require.main === module) {
 
       server.close(async (err) => {
         try { await webhookWorker.stop(); } catch (e) { console.warn("[Server] Webhook worker shutdown warning:", e.message); }
+        try { await defaultWorker.stop(); } catch (e) { console.warn("[Server] Default worker shutdown warning:", e.message); }
+        try { await maintenanceWorker.stop(); } catch (e) { console.warn("[Server] Maintenance worker shutdown warning:", e.message); }
         if (err) {
           console.warn("[Server] Error closing HTTP server:", err.message);
         } else {

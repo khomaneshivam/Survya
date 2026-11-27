@@ -122,15 +122,15 @@ export const PAGE_REGISTRY = {
   },
   automation: {
     id: 'automation',
-    title: 'Flow Builder',
+    title: 'Automation Studio',
     module: 'Flow',
     group: 'Operations & Messaging',
     badge: 'Studio',
     badgeTone: 'purple',
     icon: GitBranch,
-    description: 'Visual builder for WhatsApp conversation flows, modular sub-flows, and live session monitor.',
+    description: 'Pre-built industry templates, client automations, and visual workflow builder.',
     adminOnly: false,
-    component: FlowBuilderPage
+    component: AutomationStudio
   },
   inbox: {
     id: 'inbox',

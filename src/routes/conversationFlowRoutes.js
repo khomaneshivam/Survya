@@ -60,7 +60,7 @@ router.post(["/flows/conversation-templates/:slug/clone", "/conversation-templat
 // Approval checkpoints are administrative, auditable gates for AI-generated flows.
 router.get(["/flows/conversation-flows/:id(\\d+)/approvals", "/conversation-flows/:id(\\d+)/approvals", "/:id(\\d+)/approvals"], authenticateToken, flowApprovalController.getFlowApprovals);
 router.post(["/flows/conversation-flows/:id(\\d+)/approvals/request", "/conversation-flows/:id(\\d+)/approvals/request", "/:id(\\d+)/approvals/request"], authenticateToken, flowApprovalController.requestFlowApproval);
-router.post(["/flows/conversation-flows/:id(\\d+)/approvals/decision", "/conversation-flows/:id(\\d+)/approvals/decision", "/:id(\\d+)/approvals/decision"], authenticateToken, flowApprovalController.decideFlowApproval);
+router.post(["/flows/conversation-flows/:id(\\d+)/approvals/decision", "/conversation-flows/:id(\\d+)/approvals/decision", "/:id(\\d+)/approvals/decision"], authenticateToken, requireWorkspaceAdmin, flowApprovalController.decideFlowApproval);
 router.get(["/flows/conversation-flows/:id(\\d+)", "/conversation-flows/:id(\\d+)", "/:id(\\d+)"], authenticateToken, flowController.getFlowById);
 router.put(["/flows/conversation-flows/:id(\\d+)", "/conversation-flows/:id(\\d+)", "/:id(\\d+)"], authenticateToken, flowController.updateFlow);
 router.post(["/flows/conversation-flows/:id(\\d+)/duplicate", "/conversation-flows/:id(\\d+)/duplicate", "/:id(\\d+)/duplicate"], authenticateToken, flowController.duplicateFlow);

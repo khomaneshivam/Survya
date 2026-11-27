@@ -60,6 +60,8 @@ router.get("/v1/workspace/users", authenticateToken, requireWorkspaceAdmin, work
 router.post("/v1/workspace/users", authenticateToken, requireWorkspaceAdmin, workspaceTeamController.createWorkspaceUser);
 router.patch("/v1/workspace/users/:userId", authenticateToken, requireWorkspaceAdmin, workspaceTeamController.updateWorkspaceUser);
 router.delete("/v1/workspace/users/:userId", authenticateToken, requireWorkspaceAdmin, workspaceTeamController.deleteWorkspaceUser);
+router.get("/v1/workspace/sandbox", authenticateToken, requireWorkspaceAdmin, workspaceTeamController.getWorkspaceSandboxMode);
+router.put("/v1/workspace/sandbox", authenticateToken, requireWorkspaceAdmin, workspaceTeamController.updateWorkspaceSandboxMode);
 
 // WhatsApp Phone Number Registry (Protected & Admin Only for mutations)
 router.get("/admin/phone-numbers", authenticateToken, adminController.listPhoneNumbers);
@@ -340,12 +342,10 @@ router.post("/settings/register-meta-phone", authenticateToken, requireAdmin, se
 router.post("/settings/deregister-phone", authenticateToken, requireAdmin, settingsController.deregisterMetaPhone);
 
 // Direct Meta Graph Phone Registration/Deregistration endpoints (accepts { id, pin, token })
-// These support the Meta Embedded-Signup OAuth callback flow where the token is passed in the request body.
-// The dedicated /settings/deregister-phone and /phone-numbers/:id/deregister-meta routes require auth.
-// This legacy endpoint keeps optionalAuth; the controller validates the body token before calling Meta.
-router.post("/meta/register-phone", optionalAuth, settingsController.registerMetaPhone);
-router.post("/meta/phone-registration", optionalAuth, settingsController.registerMetaPhone);
-router.post("/meta/deregister-phone", optionalAuth, settingsController.deregisterMetaPhone);
+// BUG-P9-01 FIX: Require authenticated Workspace Admin on all Meta phone registration/deregistration endpoints.
+router.post("/meta/register-phone", authenticateToken, requireWorkspaceAdmin, settingsController.registerMetaPhone);
+router.post("/meta/phone-registration", authenticateToken, requireWorkspaceAdmin, settingsController.registerMetaPhone);
+router.post("/meta/deregister-phone", authenticateToken, requireWorkspaceAdmin, settingsController.deregisterMetaPhone);
 
 // System Time & Timezone & Health Telemetry (Deployments + Local)
 const systemController = require("../controllers/systemController");
@@ -778,14 +778,43 @@ router.get("/broadcast/stream", authenticateStreamToken, (req, res) => {
     }
   };
 
+  const reqTenantId = Number(req.user?.tenant_id || 1);
+  const streamIsPlatformAdmin = isPlatformAdmin(req.user);
+
+  const eventBelongsToTenant = (data) => {
+    if (streamIsPlatformAdmin) return true;
+    if (!data || typeof data !== "object") return false;
+    const explicitTid = data.tenant_id ?? data.tenantId ?? data.data?.tenant_id ?? data.data?.tenantId;
+    if (explicitTid != null) {
+      return Number(explicitTid) === reqTenantId;
+    }
+    const campId = data.campaignId || data.campaign_id;
+    if (campId) {
+      try {
+        const c = db.prepare("SELECT tenant_id FROM campaigns WHERE id = ? LIMIT 1").get(campId);
+        if (c) return Number(c.tenant_id || 1) === reqTenantId;
+      } catch (_) {}
+    }
+    const phoneId = data.channel_account_id || data.phone_number_id || data.phoneNumberId;
+    if (phoneId) {
+      try {
+        const p = db.prepare("SELECT tenant_id FROM waba_phone_numbers WHERE phone_number_id = ? AND delete_status = 0 LIMIT 1").get(phoneId);
+        if (p) return Number(p.tenant_id || 1) === reqTenantId;
+      } catch (_) {}
+    }
+    return false;
+  };
+
   // Initial connection heartbeat
-  safeWrite(`data: ${JSON.stringify({ type: "init", message: "SSE stream connected", userId: req.user.id })}\n\n`);
+  safeWrite(`data: ${JSON.stringify({ type: "init", message: "SSE stream connected", userId: req.user.id, tenantId: reqTenantId })}\n\n`);
 
   const onProgress = (data) => {
+    if (!eventBelongsToTenant(data)) return;
     safeWrite(`data: ${JSON.stringify({ type: "progress", TYPE: "PROGRESS", ...data })}\n\n`);
   };
 
   const onStatus = (data) => {
+    if (!eventBelongsToTenant(data)) return;
     safeWrite(`data: ${JSON.stringify({ type: "status", TYPE: "STATUS", ...data })}\n\n`);
     const statusUpper = String(data?.status || "").toUpperCase();
     if (req.query?.campaignId && data?.campaignId === req.query.campaignId && ["COMPLETED", "FAILED", "CANCELLED"].includes(statusUpper)) {
@@ -800,18 +829,22 @@ router.get("/broadcast/stream", authenticateStreamToken, (req, res) => {
   };
 
   const onReply = (data) => {
+    if (!eventBelongsToTenant(data)) return;
     safeWrite(`data: ${JSON.stringify({ type: "reply", TYPE: "REPLY", data })}\n\n`);
   };
 
   const onWebhookStatus = (data) => {
+    if (!eventBelongsToTenant(data)) return;
     safeWrite(`data: ${JSON.stringify({ type: "webhook_status", TYPE: "WEBHOOK_STATUS", data })}\n\n`);
   };
 
   const onReplyUpdated = (data) => {
+    if (!eventBelongsToTenant(data)) return;
     safeWrite(`data: ${JSON.stringify({ type: "reply_updated", TYPE: "REPLY_UPDATED", data })}\n\n`);
   };
 
   const onThrottle = (data) => {
+    if (!eventBelongsToTenant(data)) return;
     safeWrite(`data: ${JSON.stringify({ type: "throttle", TYPE: "THROTTLE", ...data })}\n\n`);
   };
 

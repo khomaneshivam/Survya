@@ -410,12 +410,13 @@ function updateEnquiry(tenantId = 1, id, data = {}, userId = "system") {
  * Tenant Dashboard Summary (PRD Section 8: GET /api/v1/dashboard/summary)
  */
 function getDashboardSummary(tenantId = 1, user = null) {
-  const isNonAdmin = user && user.role !== "ADMIN";
+  const { isWorkspaceAdmin } = require("../middleware/authMiddleware");
+  const isNonAdmin = Boolean(user) && !isWorkspaceAdmin(user);
   const userFilterSql = isNonAdmin ? " AND (assigned_to = ? OR assigned_to = ?)" : "";
   const userFilterParams = isNonAdmin ? [user.id, user.name || user.id] : [];
 
   // Counts by status
-  const statuses = ["NEW", "QUALIFIED", "QUOTED", "WON", "LOST", "CANCELLED"];
+  const statuses = ["NEW", "QUALIFIED", "QUOTED", "WON", "CONFIRMED", "LOST", "CANCELLED"];
   const counts = { TOTAL: 0 };
   for (const s of statuses) {
     counts[s] = 0;
@@ -424,7 +425,7 @@ function getDashboardSummary(tenantId = 1, user = null) {
   const rows = db.prepare(`
     SELECT status, COUNT(*) as c 
     FROM booking_enquiries 
-    WHERE tenant_id = ? ${userFilterSql}
+    WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0 ${userFilterSql}
     GROUP BY status
   `).all(tenantId, ...userFilterParams);
 
@@ -435,37 +436,76 @@ function getDashboardSummary(tenantId = 1, user = null) {
   }
   counts.TOTAL = total;
 
-  // Financial quotation metrics
+  // Financial quotation metrics (use LATEST quote per enquiry to prevent multi-quote WON inflation)
   const financialUserFilterSql = isNonAdmin ? " AND (e.assigned_to = ? OR e.assigned_to = ?)" : "";
   const financialUserFilterParams = isNonAdmin ? [user.id, user.name || user.id] : [];
   const financial = db.prepare(`
     SELECT 
-      COUNT(*) as total_quotes,
-      COALESCE(SUM(CASE WHEN q.status = 'SENT' THEN q.total ELSE 0 END), 0) as quoted_pipeline_value,
-      COALESCE(SUM(CASE WHEN e.status = 'WON' THEN q.total ELSE 0 END), 0) as won_revenue,
+      COUNT(q.id) as total_quotes,
+      COALESCE(SUM(CASE WHEN q.status = 'SENT' AND q.id = (SELECT q2.id FROM quotes q2 WHERE q2.enquiry_id = q.enquiry_id ORDER BY q2.id DESC LIMIT 1) THEN q.total ELSE 0 END), 0) as quoted_pipeline_value,
+      COALESCE(SUM(CASE WHEN e.status IN ('WON', 'CONFIRMED') AND q.id = (SELECT q2.id FROM quotes q2 WHERE q2.enquiry_id = q.enquiry_id ORDER BY q2.id DESC LIMIT 1) THEN q.total ELSE 0 END), 0) as quotes_won_revenue,
       COALESCE(AVG(q.total), 0) as avg_quote_value
     FROM quotes q
     JOIN booking_enquiries e ON q.enquiry_id = e.id
-    WHERE q.tenant_id = ? ${financialUserFilterSql}
+    WHERE q.tenant_id = ? AND COALESCE(e.delete_status, 0) = 0 ${financialUserFilterSql}
   `).get(tenantId, ...financialUserFilterParams);
+
+  // Reconcile paid revenue from universal_transactions (avoids divergence between Bookings/Orders and Dashboard)
+  let universalPaidRevenue = 0;
+  try {
+    const utRow = db.prepare(`
+      SELECT COALESCE(SUM(GREATEST(COALESCE(amount_paid, 0), CASE WHEN payment_status IN ('PAID', 'SETTLED') THEN COALESCE(grand_total, 0) ELSE 0 END)), 0) as revenue_inr
+      FROM universal_transactions
+      WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0
+        AND payment_status IN ('PAID', 'PARTIALLY_PAID', 'SETTLED')
+    `).get(tenantId);
+    universalPaidRevenue = Number(utRow?.revenue_inr || 0);
+  } catch (_) {}
+
+  const wonRevenueReconciled = Number(((financial?.quotes_won_revenue || 0) + universalPaidRevenue).toFixed(2));
 
   // Conversion rate: Won / (Total - Cancelled) or 0
   const activeEnquiryBase = (counts.TOTAL - (counts.CANCELLED || 0));
+  const wonCountCombined = (counts.WON || 0) + (counts.CONFIRMED || 0);
   const conversionRate = activeEnquiryBase > 0 
-    ? Number(((counts.WON / activeEnquiryBase) * 100).toFixed(1))
+    ? Number(((wonCountCombined / activeEnquiryBase) * 100).toFixed(1))
     : 0;
 
-  // Upcoming check-ins (from today onwards)
-  const todayStr = new Date().toISOString().split("T")[0];
-  const upcomingCheckins = db.prepare(`
+  // Upcoming check-ins in IST (YYYY-MM-DD) combining booking_enquiries AND confirmed universal_transactions
+  const istNow = new Date(Date.now() + 330 * 60000);
+  const todayStr = istNow.toISOString().split("T")[0];
+  const enquiryCheckins = db.prepare(`
     SELECT e.id, e.guest_name, e.phone_e164, e.check_in, e.check_out, e.adults, e.children, e.status,
-           r.name as room_type_name
+           r.name as room_type_name, 'ENQUIRY' as source_type
     FROM booking_enquiries e
     LEFT JOIN room_types r ON e.room_type_id = r.id
-    WHERE e.tenant_id = ? AND e.check_in >= ? AND e.status != 'CANCELLED' ${financialUserFilterSql}
-    ORDER BY e.check_in ASC
+    WHERE e.tenant_id = ? AND COALESCE(e.delete_status, 0) = 0
+      AND SUBSTR(e.check_in, 1, 10) >= ? AND e.status NOT IN ('CANCELLED', 'LOST') ${financialUserFilterSql}
+    ORDER BY SUBSTR(e.check_in, 1, 10) ASC
     LIMIT 6
   `).all(tenantId, todayStr, ...financialUserFilterParams);
+
+  let txnCheckins = [];
+  if (!isNonAdmin) {
+    try {
+      txnCheckins = db.prepare(`
+        SELECT ut.id, ut.customer_name as guest_name, ut.customer_phone as phone_e164,
+               ut.service_date as check_in, COALESCE(ut.service_end_date, ut.service_date) as check_out,
+               1 as adults, 0 as children, ut.fulfillment_status as status,
+               ut.reference_code as room_type_name, 'UNIVERSAL_TXN' as source_type
+        FROM universal_transactions ut
+        WHERE ut.tenant_id = ? AND COALESCE(ut.delete_status, 0) = 0
+          AND ut.service_date IS NOT NULL AND ut.service_date >= ?
+          AND ut.fulfillment_status IN ('CONFIRMED', 'PENDING', 'IN_PROGRESS')
+        ORDER BY ut.service_date ASC
+        LIMIT 6
+      `).all(tenantId, todayStr);
+    } catch (_) {}
+  }
+
+  const upcomingCheckins = [...enquiryCheckins, ...txnCheckins]
+    .sort((a, b) => String(a.check_in || "").localeCompare(String(b.check_in || "")))
+    .slice(0, 6);
 
   // Recent 6 enquiries
   const recentEnquiries = db.prepare(`
@@ -474,7 +514,7 @@ function getDashboardSummary(tenantId = 1, user = null) {
            (SELECT q.total FROM quotes q WHERE q.enquiry_id = e.id ORDER BY q.id DESC LIMIT 1) as quote_amount
     FROM booking_enquiries e
     LEFT JOIN room_types r ON e.room_type_id = r.id
-    WHERE e.tenant_id = ? ${financialUserFilterSql}
+    WHERE e.tenant_id = ? AND COALESCE(e.delete_status, 0) = 0 ${financialUserFilterSql}
     ORDER BY e.id DESC
     LIMIT 6
   `).all(tenantId, ...financialUserFilterParams);
@@ -494,7 +534,9 @@ function getDashboardSummary(tenantId = 1, user = null) {
     financial: {
       total_quotes: financial?.total_quotes || 0,
       pipeline_value: financial?.quoted_pipeline_value || 0,
-      won_revenue: financial?.won_revenue || 0,
+      won_revenue: wonRevenueReconciled,
+      quotes_won_revenue: financial?.quotes_won_revenue || 0,
+      universal_paid_revenue: universalPaidRevenue,
       avg_quote_value: Math.round(financial?.avg_quote_value || 0)
     },
     conversion_rate: conversionRate,

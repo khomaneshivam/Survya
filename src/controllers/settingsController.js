@@ -71,6 +71,7 @@ async function updateSettings(req, res) {
       WHATSAPP_BUSINESS_ACCOUNT_ID,
       WHATSAPP_WABA_ID,
       META_APP_SECRET,
+      WEBHOOK_VERIFY_TOKEN,
       DEFAULT_COUNTRY_CODE,
       BROADCAST_DELAY_MS,
       WHATSAPP_TEMPLATE_ID,
@@ -86,7 +87,8 @@ async function updateSettings(req, res) {
       WHATSAPP_PHONE_NUMBER_ID,
       WHATSAPP_BUSINESS_ACCOUNT_ID,
       WHATSAPP_WABA_ID,
-      META_APP_SECRET
+      META_APP_SECRET,
+      WEBHOOK_VERIFY_TOKEN
     ].some(v => v !== undefined);
 
     // Only administrators are permitted to alter platform-wide settings
@@ -109,10 +111,17 @@ async function updateSettings(req, res) {
       setSetting("WHATSAPP_PHONE_NUMBER_ID", WHATSAPP_PHONE_NUMBER_ID.trim());
     }
     if (WHATSAPP_BUSINESS_ACCOUNT_ID !== undefined) {
-      setSetting("WHATSAPP_BUSINESS_ACCOUNT_ID", WHATSAPP_BUSINESS_ACCOUNT_ID.trim());
+      const cleanWaba = WHATSAPP_BUSINESS_ACCOUNT_ID.trim();
+      setSetting("WHATSAPP_BUSINESS_ACCOUNT_ID", cleanWaba);
+      if (WHATSAPP_WABA_ID === undefined) setSetting("WHATSAPP_WABA_ID", cleanWaba);
     }
     if (WHATSAPP_WABA_ID !== undefined) {
-      setSetting("WHATSAPP_WABA_ID", WHATSAPP_WABA_ID.trim());
+      const cleanWaba = WHATSAPP_WABA_ID.trim();
+      setSetting("WHATSAPP_WABA_ID", cleanWaba);
+      if (WHATSAPP_BUSINESS_ACCOUNT_ID === undefined) setSetting("WHATSAPP_BUSINESS_ACCOUNT_ID", cleanWaba);
+    }
+    if (WEBHOOK_VERIFY_TOKEN !== undefined && String(WEBHOOK_VERIFY_TOKEN).trim().length >= 8) {
+      setSetting("WEBHOOK_VERIFY_TOKEN", String(WEBHOOK_VERIFY_TOKEN).trim());
     }
     if (DEFAULT_COUNTRY_CODE !== undefined) {
       setSetting("DEFAULT_COUNTRY_CODE", DEFAULT_COUNTRY_CODE.trim());

@@ -112,7 +112,7 @@ function buildSystemCapabilitiesContext(tenantId = 1, propertyId = 1) {
     const rows = db.prepare(`
       SELECT id, name, language, category, body_text, buttons
       FROM templates
-      WHERE (tenant_id = ? OR tenant_id = 1) AND status = 'APPROVED'
+      WHERE (tenant_id = ? OR tenant_id IS NULL) AND status = 'APPROVED'
       ORDER BY name ASC
       LIMIT 20
     `).all(numericTenantId);
@@ -139,9 +139,9 @@ function buildSystemCapabilitiesContext(tenantId = 1, propertyId = 1) {
     const rawPhones = db.prepare(`
       SELECT id, display_name, phone_number, phone_number_id, quality_rating, status, is_default
       FROM waba_phone_numbers
-      WHERE delete_status = 0
+      WHERE tenant_id = ? AND delete_status = 0
       ORDER BY is_default DESC, id ASC
-    `).all();
+    `).all(numericTenantId);
     const seenPhoneIds = new Set();
     connectedPhoneNumbers = rawPhones.filter(p => {
       const pid = p.phone_number_id || p.id;

@@ -119,8 +119,8 @@ router.post("/v1/entities/:id/orders", optionalAuth, unifiedOrderController.crea
 router.post("/entities/:id/orders", optionalAuth, unifiedOrderController.createOrder);
 router.get("/v1/entities/:id/orders", authenticateToken, unifiedOrderController.listOrders);
 router.get("/entities/:id/orders", authenticateToken, unifiedOrderController.listOrders);
-router.get("/v1/orders/:id", optionalAuth, unifiedOrderController.getOrder);
-router.get("/orders/:id", optionalAuth, unifiedOrderController.getOrder);
+router.get("/v1/orders/:id", authenticateToken, unifiedOrderController.getOrder);
+router.get("/orders/:id", authenticateToken, unifiedOrderController.getOrder);
 router.patch("/v1/orders/:id/status", authenticateToken, unifiedOrderController.updateStatus);
 router.patch("/orders/:id/status", authenticateToken, unifiedOrderController.updateStatus);
 

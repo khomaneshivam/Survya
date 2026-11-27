@@ -13,12 +13,13 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { getSetting } = require('../../config/database');
 const config = require('../../config/env');
 
 class VoiceTranscriptionService {
   constructor() {
-    this.geminiApiKey = process.env.GEMINI_API_KEY || config.GEMINI_API_KEY || '';
-    this.openaiApiKey = process.env.OPENAI_API_KEY || config.OPENAI_API_KEY || '';
+    this.geminiApiKey = String(getSetting('GEMINI_API_KEY') || process.env.GEMINI_API_KEY || config.GEMINI_API_KEY || '').trim();
+    this.openaiApiKey = String(getSetting('OPENAI_API_KEY') || process.env.OPENAI_API_KEY || config.OPENAI_API_KEY || '').trim();
   }
 
   /**

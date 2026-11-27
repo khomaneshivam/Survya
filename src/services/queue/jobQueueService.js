@@ -118,9 +118,12 @@ function enqueueJob({
 /**
  * Retrieve a single job by ID
  */
-function getJobById(jobId, tenantId = 1) {
+function getJobById(jobId, tenantId = 1, options = {}) {
+  const scopeSql = options.includeSystemQueue
+    ? "WHERE id = ? AND tenant_id IN (0, ?)"
+    : "WHERE id = ? AND tenant_id = ?";
   const row = db.prepare(`
-    SELECT * FROM system_job_queue WHERE id = ? AND tenant_id = ?
+    SELECT * FROM system_job_queue ${scopeSql}
   `).get(jobId, tenantId);
 
   if (!row) return null;
@@ -133,6 +136,7 @@ function getJobById(jobId, tenantId = 1) {
  */
 function listJobs({
   tenantId = 1,
+  includeSystemQueue = false,
   queueName,
   jobType,
   status,
@@ -143,8 +147,9 @@ function listJobs({
   const pageLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
   const offset = (pageNum - 1) * pageLimit;
 
-  let query = "SELECT * FROM system_job_queue WHERE tenant_id = ?";
-  let countQuery = "SELECT COUNT(*) as total FROM system_job_queue WHERE tenant_id = ?";
+  const tenantClause = includeSystemQueue ? "tenant_id IN (0, ?)" : "tenant_id = ?";
+  let query = `SELECT * FROM system_job_queue WHERE ${tenantClause}`;
+  let countQuery = `SELECT COUNT(*) as total FROM system_job_queue WHERE ${tenantClause}`;
   const params = [tenantId];
   const countParams = [tenantId];
 
@@ -187,11 +192,12 @@ function listJobs({
 /**
  * Return aggregate statistics for queue monitoring
  */
-function getQueueStats(tenantId = 1) {
+function getQueueStats(tenantId = 1, options = {}) {
+  const tenantClause = options.includeSystemQueue ? "tenant_id IN (0, ?)" : "tenant_id = ?";
   const counts = db.prepare(`
     SELECT status, COUNT(*) as count
     FROM system_job_queue
-    WHERE tenant_id = ?
+    WHERE ${tenantClause}
     GROUP BY status
   `).all(tenantId);
 
@@ -220,7 +226,7 @@ function getQueueStats(tenantId = 1) {
   const queueRows = db.prepare(`
     SELECT queue_name, COUNT(*) as count
     FROM system_job_queue
-    WHERE tenant_id = ?
+    WHERE ${tenantClause}
     GROUP BY queue_name
   `).all(tenantId);
 
@@ -231,7 +237,7 @@ function getQueueStats(tenantId = 1) {
   const workerRows = db.prepare(`
     SELECT DISTINCT locked_by
     FROM system_job_queue
-    WHERE tenant_id = ? AND status = 'PROCESSING' AND locked_by IS NOT NULL
+    WHERE ${tenantClause} AND status = 'PROCESSING' AND locked_by IS NOT NULL
   `).all(tenantId);
 
   stats.activeWorkers = workerRows.map(w => w.locked_by);

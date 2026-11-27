@@ -163,9 +163,10 @@ export default function FlowStudioPage() {
     try {
       const res = await fetch(`/api/v1/flows/${flowId}`, { headers: getHeaders() });
       if (res.ok) {
-        const flow = await res.json();
+        const data = await res.json();
+        const flow = data?.flow || data;
         setCurrentFlow(flow);
-        const draft = flow.draftVersion || flow;
+        const draft = flow.draftVersion || flow.publishedVersion || flow;
         const nodes = Array.isArray(draft.nodes) ? draft.nodes : JSON.parse(draft.nodes_json || '[]');
         const transitions = Array.isArray(draft.transitions) ? draft.transitions : JSON.parse(draft.transitions_json || '[]');
         const variables = typeof draft.variables === 'object' && draft.variables !== null ? draft.variables : JSON.parse(draft.variables_json || '{}');

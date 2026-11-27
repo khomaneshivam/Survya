@@ -127,8 +127,28 @@ function resolveCredentials(customCredentials = null) {
 
   // 2. Fall back to active global token from settings/.env ONLY for Tenant 1 (never for tenant_id > 1 channels)
   const effectiveTenantId = resolvedLineTenantId || requestedTenantId || 1;
+  let isSandboxTenant = Boolean(customCredentials?.isSimulation);
+  if (db && effectiveTenantId) {
+    try {
+      const tenantSandboxRow = db.prepare("SELECT is_sandbox FROM tenants WHERE id = ? LIMIT 1").get(effectiveTenantId);
+      if (Number(tenantSandboxRow?.is_sandbox) === 1) {
+        isSandboxTenant = true;
+      }
+    } catch (_) {}
+  }
+
   if (!token && effectiveTenantId === 1 && (!lineFound || resolvedLineTenantId === 1)) {
     token = active.token;
+  }
+
+  if (isSandboxTenant) {
+    return {
+      token: (token || "sandbox_mock_token").trim(),
+      phoneNumberId: (phoneNumberId || `sandbox_line_${effectiveTenantId}`).trim(),
+      isSimulation: true,
+      isSandbox: true,
+      tenantId: effectiveTenantId
+    };
   }
 
   if (!token) {
@@ -142,7 +162,7 @@ function resolveCredentials(customCredentials = null) {
     throw new Error("Meta WhatsApp Phone Number ID is missing. Please add a WhatsApp Phone Number in Settings or Topbar.");
   }
 
-  return { token: token.trim(), phoneNumberId: phoneNumberId.trim() };
+  return { token: token.trim(), phoneNumberId: phoneNumberId.trim(), isSimulation: false, isSandbox: false, tenantId: effectiveTenantId };
 }
 
 /**
@@ -631,28 +651,48 @@ async function getTemplateDetails(templateIdOrName, customCredentials = null) {
 }
 
 /**
- * Resolves active WhatsApp Business Account ID (WABA ID) from settings or phone records
+ * Resolves active WhatsApp Business Account ID (WABA ID) from phone records (tenant-scoped) or settings
  */
-function resolveWabaId(customWabaId = null) {
+function resolveWabaId(customWabaId = null, tenantId = null) {
   if (customWabaId && String(customWabaId).trim()) {
     return String(customWabaId).trim();
   }
 
-  // 1. Check settings table
+  const numericTenantId = tenantId ? Number(tenantId) : null;
+
+  // 1. Check tenant's registered phone records first (isolates Tenant 2+ from Tenant 1 settings)
+  try {
+    if (db) {
+      if (numericTenantId) {
+        const tenantPhone = db.prepare(`
+          SELECT waba_id FROM waba_phone_numbers
+          WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0
+            AND waba_id IS NOT NULL AND waba_id != ''
+          ORDER BY is_default DESC, id ASC LIMIT 1
+        `).get(numericTenantId);
+        if (tenantPhone?.waba_id) {
+          return String(tenantPhone.waba_id).trim();
+        }
+        if (numericTenantId > 1) return null;
+      }
+    }
+  } catch (e) {}
+
+  // 2. Check settings table (Tenant 1 / legacy platform level)
   const settingWaba = getSetting("WHATSAPP_BUSINESS_ACCOUNT_ID") || getSetting("WHATSAPP_WABA_ID");
   if (settingWaba && String(settingWaba).trim()) {
     return String(settingWaba).trim();
   }
 
-  // 2. Check default or registered phone in waba_phone_numbers
+  // 3. Check default or registered phone in waba_phone_numbers
   try {
     if (db) {
-      const defaultPhone = db.prepare("SELECT waba_id FROM waba_phone_numbers WHERE is_default = 1 AND waba_id IS NOT NULL AND waba_id != ''").get();
+      const defaultPhone = db.prepare("SELECT waba_id FROM waba_phone_numbers WHERE is_default = 1 AND COALESCE(delete_status, 0) = 0 AND waba_id IS NOT NULL AND waba_id != ''").get();
       if (defaultPhone?.waba_id) {
         return String(defaultPhone.waba_id).trim();
       }
 
-      const anyPhone = db.prepare("SELECT waba_id FROM waba_phone_numbers WHERE waba_id IS NOT NULL AND waba_id != '' ORDER BY id ASC LIMIT 1").get();
+      const anyPhone = db.prepare("SELECT waba_id FROM waba_phone_numbers WHERE COALESCE(delete_status, 0) = 0 AND waba_id IS NOT NULL AND waba_id != '' ORDER BY id ASC LIMIT 1").get();
       if (anyPhone?.waba_id) {
         return String(anyPhone.waba_id).trim();
       }
@@ -661,9 +701,9 @@ function resolveWabaId(customWabaId = null) {
     // Ignore DB error
   }
 
-  // 3. Fallback to env
-  if (config.WHATSAPP_BUSINESS_ACCOUNT_ID) {
-    return String(config.WHATSAPP_BUSINESS_ACCOUNT_ID).trim();
+  // 4. Fallback to env
+  if (config.WHATSAPP_BUSINESS_ACCOUNT_ID || config.META_WABA_ID) {
+    return String(config.WHATSAPP_BUSINESS_ACCOUNT_ID || config.META_WABA_ID).trim();
   }
 
   return null;
@@ -861,6 +901,19 @@ async function sendTemplateMessage({ to, templateName, languageCode, components 
     template: templatePayload
   };
 
+  if (customCredentials?.isSimulation || creds?.isSimulation) {
+    return {
+      success: true,
+      simulated: true,
+      sandbox: true,
+      messageId: `mock_tpl_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      recipient: cleanTo,
+      templateName: resolvedName,
+      languageCode: resolvedLang,
+      payload
+    };
+  }
+
   let res, data;
   try {
     res = await fetch(url, {
@@ -934,6 +987,17 @@ async function sendTextMessage({ to, body, previewUrl = false, customCredentials
       body: body
     }
   };
+
+  if (customCredentials?.isSimulation || creds?.isSimulation) {
+    return {
+      success: true,
+      simulated: true,
+      sandbox: true,
+      messageId: `mock_txt_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      recipient: cleanTo,
+      payload
+    };
+  }
 
   let res, data;
   try {
@@ -1304,6 +1368,18 @@ async function sendFlowMessage({
     type: "interactive",
     interactive
   };
+
+  if (customCredentials?.isSimulation || creds?.isSimulation) {
+    return {
+      success: true,
+      simulated: true,
+      sandbox: true,
+      messageId: `mock_flow_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      recipient: cleanTo,
+      flowToken,
+      payload
+    };
+  }
 
   let res, data;
   try {

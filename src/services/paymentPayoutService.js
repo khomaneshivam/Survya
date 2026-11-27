@@ -175,68 +175,80 @@ function verifyPaymentWebhook(rawPayload, signature, secret) {
 }
 
 function captureOrderPayment({ orderNumber, paymentMethod = "UPI_INTENT", paymentReference = null, amountPaid = null }) {
-  const order = db.prepare("SELECT * FROM unified_orders WHERE order_number = ?").get(orderNumber);
-  if (!order) throw new Error(`Order ${orderNumber} not found`);
-
   const ref = paymentReference || `UTR_${Date.now()}_${Math.floor(Math.random() * 9000 + 1000)}`;
-  const finalAmount = amountPaid !== null ? parseFloat(amountPaid) : order.grand_total;
 
-  // Strict idempotency: if already paid, do not double-decrement inventory or alter status
-  if (order.payment_status === "PAID") {
+  db.prepare("START TRANSACTION").run();
+  try {
+    const order = db.prepare("SELECT * FROM unified_orders WHERE order_number = ? FOR UPDATE").get(orderNumber);
+    if (!order) {
+      db.prepare("ROLLBACK").run();
+      throw new Error(`Order ${orderNumber} not found`);
+    }
+
+    const finalAmount = amountPaid !== null ? parseFloat(amountPaid) : order.grand_total;
+
+    // Strict idempotency under FOR UPDATE lock: if already paid, do not double-decrement inventory or alter status
+    if (order.payment_status === "PAID") {
+      db.prepare("COMMIT").run();
+      return {
+        success: true,
+        orderId: order.id,
+        orderNumber,
+        paymentStatus: "PAID",
+        orderStatus: order.order_status,
+        paymentReference: order.payment_reference || ref,
+        amountPaid: finalAmount,
+        alreadyCaptured: true
+      };
+    }
+
+    db.prepare(`
+      UPDATE unified_orders
+      SET payment_status = 'PAID',
+          order_status = CASE WHEN order_status = 'PENDING' THEN 'CONFIRMED' ELSE order_status END,
+          payment_method = ?,
+          payment_reference = ?,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(paymentMethod, ref, order.id);
+
+    // If order has items, update inventory atomically inside the locked transaction
+    const items = db.prepare("SELECT * FROM unified_order_items WHERE order_id = ?").all(order.id);
+    for (const item of items) {
+      if (order.check_in_date && order.check_out_date) {
+        db.prepare(`
+          UPDATE daily_inventory_matrix
+          SET booked_qty = COALESCE(booked_qty, 0) + ?,
+              available_qty = GREATEST(0, COALESCE(available_qty, 0) - ?),
+              updated_at = CURRENT_TIMESTAMP
+          WHERE entity_id = ? AND item_id = ?
+            AND inventory_date >= ? AND inventory_date <= DATE_SUB(?, INTERVAL 1 DAY)
+        `).run(item.quantity, item.quantity, order.entity_id, item.item_id, order.check_in_date, order.check_out_date);
+      }
+
+      db.prepare(`
+        UPDATE catalog_items
+        SET stock_quantity = GREATEST(0, COALESCE(stock_quantity, 0) - ?),
+            stock_qty = GREATEST(0, COALESCE(stock_qty, stock_quantity, 0) - ?),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND (COALESCE(inventory_tracking, 0) = 1 OR COALESCE(track_inventory, 0) = 1)
+      `).run(item.quantity, item.quantity, item.item_id);
+    }
+
+    db.prepare("COMMIT").run();
     return {
       success: true,
       orderId: order.id,
       orderNumber,
       paymentStatus: "PAID",
-      orderStatus: order.order_status,
-      paymentReference: order.payment_reference || ref,
-      amountPaid: finalAmount,
-      alreadyCaptured: true
+      orderStatus: order.order_status === "PENDING" ? "CONFIRMED" : order.order_status,
+      paymentReference: ref,
+      amountPaid: finalAmount
     };
+  } catch (err) {
+    try { db.prepare("ROLLBACK").run(); } catch (_) {}
+    throw err;
   }
-
-  db.prepare(`
-    UPDATE unified_orders
-    SET payment_status = 'PAID',
-        order_status = CASE WHEN order_status = 'PENDING' THEN 'CONFIRMED' ELSE order_status END,
-        payment_method = ?,
-        payment_reference = ?,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(paymentMethod, ref, order.id);
-
-  // If order has items, update inventory
-  const items = db.prepare("SELECT * FROM unified_order_items WHERE order_id = ?").all(order.id);
-  for (const item of items) {
-    // If stay with checkin/checkout dates, update daily matrix
-    if (order.check_in_date && order.check_out_date) {
-      db.prepare(`
-        UPDATE daily_inventory_matrix
-        SET booked_qty = booked_qty + ?,
-            available_qty = MAX(0, available_qty - ?),
-            updated_at = CURRENT_TIMESTAMP
-        WHERE entity_id = ? AND item_id = ? AND inventory_date BETWEEN ? AND date(?, '-1 day')
-      `).run(item.quantity, item.quantity, order.entity_id, item.item_id, order.check_in_date, order.check_out_date);
-    }
-
-    // If retail product, decrement stock
-    db.prepare(`
-      UPDATE catalog_items
-      SET stock_quantity = MAX(0, stock_quantity - ?),
-          updated_at = CURRENT_TIMESTAMP
-      WHERE id = ? AND inventory_tracking = 1
-    `).run(item.quantity, item.item_id);
-  }
-
-  return {
-    success: true,
-    orderId: order.id,
-    orderNumber,
-    paymentStatus: "PAID",
-    orderStatus: "CONFIRMED",
-    paymentReference: ref,
-    amountPaid: finalAmount
-  };
 }
 
 /**

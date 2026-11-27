@@ -797,7 +797,7 @@ export default function SystemAdminPanel({ onNavigate }) {
               icon={Smartphone}
               action={
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <MetaEmbeddedSignupButton onSuccess={() => fetchPhoneNumbers()} />
+                  <MetaEmbeddedSignupButton onSuccess={() => loadAdminData()} />
                   <Button variant="secondary" onClick={() => { setPhoneModalData(null); setShowPhoneModal(true); }}>
                     <Plus size={14} /> Manual Register
                   </Button>

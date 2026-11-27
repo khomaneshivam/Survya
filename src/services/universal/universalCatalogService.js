@@ -1883,31 +1883,45 @@ function seedIndustryBlueprint(tenantId = 1, sectorCode = "HOSPITALITY", userId 
     { id: "t_bp_10", source: "node_addon_quote", target: "node_confirm", sourceHandle: "default" }
   ];
 
+  // Check tenant primary domain to prevent non-primary blueprint imports (e.g. EDUCATION_COACHING)
+  // from hijacking the workspace's Global / Default WhatsApp line (phone_number_id IS NULL).
+  const tenantRow = db.prepare("SELECT primary_domain FROM tenants WHERE id = ?").get(numericTenantId);
+  const tenantPrimary = String(tenantRow?.primary_domain || "HOSPITALITY").trim().toUpperCase();
+  const requestedPhoneLineId = flowOptions.phoneLineId || flowOptions.phoneNumberId || null;
+  const shouldAutoPublish = flowOptions.autoPublish !== undefined
+    ? Boolean(flowOptions.autoPublish)
+    : (upperSector === tenantPrimary || Boolean(requestedPhoneLineId));
+
   const existingDefault = db.prepare(`
-    SELECT id FROM conversation_flows WHERE tenant_id = ? AND is_default = 1 LIMIT 1
-  `).get(numericTenantId);
+    SELECT id FROM conversation_flows
+    WHERE tenant_id = ? AND COALESCE(phone_number_id, '') = COALESCE(?, '') AND category = ? AND is_default = 1 AND COALESCE(delete_status, 0) = 0
+    LIMIT 1
+  `).get(numericTenantId, requestedPhoneLineId, blueprint.domain);
 
   const createdFlow = flowService.createFlow({
     tenant_id: numericTenantId,
+    phone_number_id: requestedPhoneLineId,
     name: `${displayBusinessName} - ${blueprint.sectorName} Flow`,
     description: `Auto-generated hybrid WhatsApp <-> Survya flow for ${blueprint.sectorName}`,
     category: blueprint.domain,
     trigger_keywords: mergedTriggerKeywords,
     initialNodes: nodes,
     initialTransitions: transitions,
-    is_default: existingDefault ? 0 : 1,
+    is_default: (!existingDefault && shouldAutoPublish) ? 1 : 0,
     priority: 80
   }, { id: userId, name: userId });
 
   const createdFlowId = createdFlow?.flow?.id || createdFlow?.id;
 
   let published = null;
-  try {
-    if (createdFlowId) {
-      published = flowService.publishFlow(createdFlowId, { id: userId, name: userId }, numericTenantId);
+  if (shouldAutoPublish) {
+    try {
+      if (createdFlowId) {
+        published = flowService.publishFlow(createdFlowId, { id: userId, name: userId }, numericTenantId);
+      }
+    } catch (pubErr) {
+      console.warn(`[UniversalCatalog] Blueprint flow auto-publish note:`, pubErr.message);
     }
-  } catch (pubErr) {
-    console.warn(`[UniversalCatalog] Blueprint flow auto-publish note:`, pubErr.message);
   }
 
   return {
@@ -1948,7 +1962,9 @@ function importFullIndustrySuite(tenantId = 1, options = {}, userId = "system") 
   // 2. Seed Universal Catalog Blueprint (Entity, Items, Addons, Pricing Rules, Ready Workflow)
   const catalogResult = seedIndustryBlueprint(numericTenantId, sectorCode, userId, {
     businessName: customBusinessName,
-    experienceSlug: options.experienceSlug || ""
+    experienceSlug: options.experienceSlug || "",
+    phoneLineId,
+    autoPublish: options.autoPublish
   });
 
   // 3. If custom business details were provided, update the newly created business_entity
@@ -2030,18 +2046,25 @@ function importFullIndustrySuite(tenantId = 1, options = {}, userId = "system") 
     `).run(flowName, phoneLineId, catalogResult.flowId, numericTenantId);
   }
 
-  // 6. Sync flow_global_settings
-  const flowGlobalSettingsService = require("../flowGlobalSettingsService");
-  flowGlobalSettingsService.updateSettings(numericTenantId, phoneLineId, {
-    root_flow_id: catalogResult.flowId,
-    fallback_message: `👋 Thank you for contacting *${finalBizName}*! Please type *menu* to view our options.`,
-    menu_keywords: ["menu", "restart", "start", "main menu"],
-    back_keywords: ["0", "back", "prev"],
-    handoff_keywords: ["agent", "human", "help", "support"]
-  });
+  // 6. Sync flow_global_settings ONLY when flow matches tenant primary domain or targets a dedicated phone line
+  const { db: _dbCheck } = require("../../config/database");
+  const tenantInfo = db.prepare("SELECT primary_domain FROM tenants WHERE id = ?").get(numericTenantId);
+  const tenantPrimaryDomain = String(tenantInfo?.primary_domain || "HOSPITALITY").trim().toUpperCase();
+  const isPrimaryOrLineScoped = (sectorCode === tenantPrimaryDomain) || Boolean(phoneLineId);
 
-  // 7. Update legacy Tenant-1 global settings table ONLY when modifying Tenant 1 (prevent cross-tenant pollution)
-  if (numericTenantId === 1) {
+  if (isPrimaryOrLineScoped && catalogResult.flowId) {
+    const flowGlobalSettingsService = require("../flowGlobalSettingsService");
+    flowGlobalSettingsService.updateSettings(numericTenantId, phoneLineId, {
+      root_flow_id: catalogResult.flowId,
+      fallback_message: `👋 Thank you for contacting *${finalBizName}*! Please type *menu* to view our options.`,
+      menu_keywords: ["menu", "restart", "start", "main menu"],
+      back_keywords: ["0", "back", "prev"],
+      handoff_keywords: ["agent", "human", "help", "support"]
+    });
+  }
+
+  // 7. Update legacy Tenant-1 global settings ONLY for Tenant 1 primary hospitality property (prevent Education/secondary hijack)
+  if (numericTenantId === 1 && sectorCode === "HOSPITALITY" && (!propId || Number(propId) === 1)) {
     try {
       const { setSetting } = require("../../config/database");
       setSetting("BOT_BUSINESS_NAME", finalBizName);

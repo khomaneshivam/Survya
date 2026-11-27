@@ -53,12 +53,17 @@ $env:JWT_SECRET='test_jwt_secret_at_least_32_characters_long_12345'
 node --test --test-concurrency=1 tests/*.test.js
 ```
 
-### Production Process Startup (PM2)
+### Production Process Startup & SRE Health Probes (PM2)
 ```bash
 pm2 start ecosystem.config.js --update-env
 pm2 status
 ```
 Monitor both `sarvya-api` and `sarvya-worker` individually (`pm2 logs sarvya-api`, `pm2 logs sarvya-worker`).
+- **Health & Observability Endpoints:**
+  - `GET /livez` — Process liveness probe (`status: "alive"`).
+  - `GET /readyz`, `GET /api/health`, `GET /health` — MySQL-verified readiness probe (`status: "healthy"`, latency, `requestId`).
+  - `GET /metrics` — Prometheus-format gauges (`process_uptime_seconds`, `process_resident_memory_bytes`, `survya_job_queue_pending`, `survya_job_queue_dead_letter`).
+- **Workspace Sandbox Mode:** Workspaces with `tenants.is_sandbox = 1` (managed via `GET/PUT /api/v1/workspace/sandbox`) simulate outbound Meta WhatsApp delivery cleanly without hitting live Graph API or billing usage (`WAIVED_SANDBOX`).
 
 ---
 

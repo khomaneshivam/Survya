@@ -560,15 +560,11 @@ class WebhookService {
     const challenge = query["hub.challenge"];
     const expectedToken = this.getVerifyToken();
 
-    const validTokens = new Set([
-      expectedToken,
-      getSetting("WEBHOOK_VERIFY_TOKEN"),
-      config.WEBHOOK_VERIFY_TOKEN,
-      process.env.WEBHOOK_VERIFY_TOKEN,
-      "wb_verify_konkantrip_7f3a9e2c4b810d56"
-    ].filter(Boolean).map(t => String(t).trim()));
+    // BUG-P3-04 FIX: Only accept the currently active configured verify token
+    // (never stale .env / hardcoded legacy tokens after rotation).
+    const activeToken = expectedToken ? String(expectedToken).trim() : "";
 
-    if (mode === "subscribe" && token && validTokens.has(String(token).trim())) {
+    if (mode === "subscribe" && token && activeToken && String(token).trim() === activeToken) {
       console.log("[Webhook] Meta handshake verification SUCCEEDED for token:", token);
       return { verified: true, challenge };
     }
@@ -651,10 +647,12 @@ class WebhookService {
                 // Emit real-time event for SSE clients
                 broadcastEngine.emit("webhook:reply", result.reply);
 
-                // Conversational Flow Engine & Auto-Reply trigger (asynchronous)
-                this.triggerAutoReply(result.reply, msg, val).catch(arErr => {
+                // Conversational Flow Engine & Auto-Reply trigger (awaited inside durable worker)
+                try {
+                  await this.triggerAutoReply(result.reply, msg, val);
+                } catch (arErr) {
                   console.error("[Webhook Flow] Error:", arErr.message);
-                });
+                }
               } else if (result && !result.saved && result.id) {
                 // Duplicate webhook delivery from Meta - ignore to prevent duplicate bot replies
                 console.log(`[Webhook] Duplicate delivery ignored for message #${result.id}`);
@@ -2051,6 +2049,12 @@ class WebhookService {
       return null;
     }
     const { tenantId, propertyId } = tenantContext;
+    let isSandboxTenant = false;
+    try {
+      const tRow = db.prepare("SELECT is_sandbox FROM tenants WHERE id = ? LIMIT 1").get(tenantId);
+      isSandboxTenant = Number(tRow?.is_sandbox) === 1;
+    } catch (_) {}
+    const effectiveSimulation = Boolean(isSimulation || isSandboxTenant);
 
     // Deduplication lock: prevent concurrent dispatch for the same message ID or phone turn
     const dispatchKey = `${incomingPhoneId || "simulation"}:${cleanPhone}:${replyRecord.id || replyRecord.wa_message_id || "unknown"}`;
@@ -2196,7 +2200,7 @@ class WebhookService {
       // Resolve multi-line sender phone ID and simulation sandbox
       const customCredentials = {
         ...(incomingPhoneId ? { phoneNumberId: incomingPhoneId } : {}),
-        ...(isSimulation ? { isSimulation: true } : {})
+        ...(effectiveSimulation ? { isSimulation: true } : {})
       };
 
       // 5b. Strict Inbound-Only Mode & Meta 24-Hour Customer Care Window Guard
@@ -2210,7 +2214,7 @@ class WebhookService {
 
       const receivedAtMs = replyRecord.received_at ? parseUtcMs(replyRecord.received_at) : Date.now();
       const isWithinMeta24hWindow = (Date.now() - receivedAtMs) <= 24 * 60 * 60 * 1000;
-      if (!isWithinMeta24hWindow && !isSimulation) {
+      if (!isWithinMeta24hWindow && !effectiveSimulation) {
         console.log(`[Webhook Flow] Inbound message from ${cleanPhone} received outside Meta 24-hour customer window (${replyRecord.received_at}). Suppressing freeform reply.`);
         return null;
       }
@@ -2384,7 +2388,7 @@ class WebhookService {
               channel: "WHATSAPP",
               phoneNumberId: incomingPhoneId,
               isSimulation: false,
-              transportSimulation: isSimulation,
+              transportSimulation: effectiveSimulation,
               triggerKey: matchedTrigger?.triggerKey || null
             }
           });
@@ -2504,14 +2508,16 @@ class WebhookService {
 
             const nowIso = new Date().toISOString().replace("T", " ").substring(0, 19);
             const botReplyId = sentMsgId || `bot_flow_${Date.now()}`;
+            const botTenantId = Number(replyRecord.tenant_id || tenantId || 1);
+            const botChannelId = replyRecord.channel_account_id || incomingPhoneId || null;
             try {
               db.prepare(`
                 INSERT INTO customer_replies (
                   wa_message_id, from_phone, customer_name, message_type,
                   message_body, reply_text, reply_sent_at, reply_status,
-                  link_id, source, is_read, user_id, received_at
-                ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'AUTO_REPLIED', ?, 'CONVERSATION_FLOW', 1, 'bot', ?)
-              `).run(botReplyId, cleanPhone, replyRecord.customer_name || "Guest", flowResult.replyText, flowResult.replyText, nowIso, replyRecord.link_id || null, nowIso);
+                  link_id, source, is_read, user_id, received_at, tenant_id, channel_account_id
+                ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'AUTO_REPLIED', ?, 'CONVERSATION_FLOW', 1, 'bot', ?, ?, ?)
+              `).run(botReplyId, cleanPhone, replyRecord.customer_name || "Guest", flowResult.replyText, flowResult.replyText, nowIso, replyRecord.link_id || null, nowIso, botTenantId, botChannelId);
             } catch (e) {}
 
             db.prepare(`
@@ -2764,9 +2770,9 @@ class WebhookService {
               INSERT INTO customer_replies (
                 wa_message_id, from_phone, customer_name, message_type,
                 message_body, reply_text, reply_sent_at, reply_status,
-                link_id, source, is_read, user_id, received_at
-              ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
-            `).run(botReplyId, cleanPhone, replyRecord.customer_name || "Guest", feedbackText, feedbackText, nowIso, replyRecord.link_id || null, nowIso);
+                link_id, source, is_read, user_id, received_at, tenant_id, channel_account_id
+              ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?, ?, ?)
+            `).run(botReplyId, cleanPhone, replyRecord.customer_name || "Guest", feedbackText, feedbackText, nowIso, replyRecord.link_id || null, nowIso, Number(replyRecord.tenant_id || tenantId || 1), replyRecord.channel_account_id || incomingPhoneId || null);
 
             db.prepare(`
               UPDATE customer_replies 
@@ -2804,9 +2810,9 @@ class WebhookService {
               INSERT INTO customer_replies (
                 wa_message_id, from_phone, customer_name, message_type,
                 message_body, reply_text, reply_sent_at, reply_status,
-                link_id, source, is_read, user_id, received_at
-              ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
-            `).run(botReplyId, cleanPhone, replyRecord.customer_name || "Guest", ticketText, ticketText, nowIso, replyRecord.link_id || null, nowIso);
+                link_id, source, is_read, user_id, received_at, tenant_id, channel_account_id
+              ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?, ?, ?)
+            `).run(botReplyId, cleanPhone, replyRecord.customer_name || "Guest", ticketText, ticketText, nowIso, replyRecord.link_id || null, nowIso, Number(replyRecord.tenant_id || tenantId || 1), replyRecord.channel_account_id || incomingPhoneId || null);
 
             db.prepare(`
               UPDATE customer_replies 
@@ -3020,8 +3026,8 @@ class WebhookService {
           INSERT INTO customer_replies (
             wa_message_id, from_phone, customer_name, message_type,
             message_body, reply_text, reply_sent_at, reply_status,
-            link_id, source, is_read, user_id, received_at
-          ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
+            link_id, source, is_read, user_id, received_at, tenant_id, channel_account_id
+          ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?, ?, ?)
         `).run(
           botReplyId,
           cleanPhone,
@@ -3030,7 +3036,9 @@ class WebhookService {
           handoffText,
           nowIso,
           replyRecord.link_id || null,
-          nowIso
+          nowIso,
+          Number(replyRecord.tenant_id || tenantId || 1),
+          replyRecord.channel_account_id || incomingPhoneId || null
         );
 
         db.prepare(`
@@ -3102,8 +3110,8 @@ class WebhookService {
             INSERT INTO customer_replies (
               wa_message_id, from_phone, customer_name, message_type,
               message_body, reply_text, reply_sent_at, reply_status,
-              link_id, source, is_read, user_id, received_at
-            ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
+              link_id, source, is_read, user_id, received_at, tenant_id, channel_account_id
+            ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?, ?, ?)
           `).run(
             botReplyId,
             cleanPhone,
@@ -3112,7 +3120,9 @@ class WebhookService {
             menuText,
             nowIso,
             replyRecord.link_id || null,
-            nowIso
+            nowIso,
+            Number(replyRecord.tenant_id || tenantId || 1),
+            replyRecord.channel_account_id || incomingPhoneId || null
           );
 
           db.prepare(`
@@ -3486,8 +3496,8 @@ class WebhookService {
           INSERT INTO customer_replies (
             wa_message_id, from_phone, customer_name, message_type,
             message_body, reply_text, reply_sent_at, reply_status,
-            link_id, source, is_read, user_id, received_at, raw_payload
-          ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?, ?)
+            link_id, source, is_read, user_id, received_at, raw_payload, tenant_id, channel_account_id
+          ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?, ?, ?, ?)
         `).run(
           botReplyId,
           cleanPhone,
@@ -3497,7 +3507,9 @@ class WebhookService {
           nowIso,
           replyRecord.link_id || null,
           nowIso,
-          rawPayload ? JSON.stringify(rawPayload) : null
+          rawPayload ? JSON.stringify(rawPayload) : null,
+          Number(replyRecord.tenant_id || tenantId || 1),
+          replyRecord.channel_account_id || incomingPhoneId || null
         );
 
         // Mark incoming customer reply record as AUTO_REPLIED so webhooks/retries do not re-trigger
@@ -3553,11 +3565,12 @@ class WebhookService {
                 INSERT INTO customer_replies (
                   wa_message_id, from_phone, customer_name, message_type,
                   message_body, reply_text, reply_sent_at, reply_status,
-                  link_id, source, is_read, user_id, received_at
-                ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'AI_AGENT', 1, 'bot', ?)
+                  link_id, source, is_read, user_id, received_at, tenant_id, channel_account_id
+                ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'AI_AGENT', 1, 'bot', ?, ?, ?)
               `).run(
                 botReplyId, cleanPhone, replyRecord.customer_name || "Guest",
-                aiResult.replyText, aiResult.replyText, nowIso, replyRecord.link_id || null, nowIso
+                aiResult.replyText, aiResult.replyText, nowIso, replyRecord.link_id || null, nowIso,
+                Number(replyRecord.tenant_id || tenantId || 1), replyRecord.channel_account_id || incomingPhoneId || null
               );
               const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
               broadcastEngine.emit("webhook:reply", savedBot);
@@ -4104,9 +4117,9 @@ class WebhookService {
           INSERT INTO customer_replies (
             wa_message_id, from_phone, customer_name, message_type,
             message_body, reply_text, reply_sent_at, reply_status,
-            link_id, source, is_read, user_id, received_at
-          ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?)
-        `).run(botReplyId, cleanPhone, cName, text, text, nowIso, replyRecord.link_id || null, nowIso);
+            link_id, source, is_read, user_id, received_at, tenant_id, channel_account_id
+          ) VALUES (?, ?, ?, 'outbound', ?, ?, ?, 'SENT', ?, 'WHATSAPP_FLOW', 1, 'bot', ?, ?, ?)
+        `).run(botReplyId, cleanPhone, cName, text, text, nowIso, replyRecord.link_id || null, nowIso, Number(replyRecord.tenant_id || tenantId || 1), replyRecord.channel_account_id || incomingPhoneId || null);
         const savedBot = db.prepare("SELECT * FROM customer_replies WHERE wa_message_id = ?").get(botReplyId);
         broadcastEngine.emit("webhook:reply", savedBot);
       } catch (_) {}

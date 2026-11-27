@@ -826,10 +826,17 @@ function handleCustomerInquiry({
         }, "chat_bot");
 
         if (enquiry && enquiry.id) {
-          const subtotal = sData.last_quote?.pricing_summary?.subtotal_before_tax || 4500;
+          const summary = sData.last_quote?.pricing_summary || {};
+          const subtotal = Number(summary.subtotal_before_tax || 4500);
+          const taxTotal = summary.tax_total !== undefined ? Number(summary.tax_total) : undefined;
+          const taxRate = summary.tax_rate !== undefined
+            ? Number(summary.tax_rate)
+            : (taxTotal !== undefined && subtotal > 0 ? Number((taxTotal / subtotal).toFixed(4)) : undefined);
           const avgNightly = Math.round(subtotal / (sData.nights || 1));
           quote = quotationService.createQuote(tenantId, enquiry.id, {
             currency: "INR",
+            ...(taxRate !== undefined ? { tax_rate: taxRate } : {}),
+            ...(taxTotal !== undefined ? { tax_total: taxTotal } : {}),
             items: [
               {
                 room_type_id: sData.selected_room_id,

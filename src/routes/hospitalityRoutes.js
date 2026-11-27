@@ -3,36 +3,37 @@ const router = express.Router();
 const controller = require("../controllers/hospitalityController");
 const { authenticateToken, requireWorkspaceAdmin } = require("../middleware/authMiddleware");
 const { mediaUpload } = require("../middleware/uploadMiddleware");
+const { publicLimiter } = require("../middleware/rateLimiter");
 
 /**
  * -------------------------------------------------------------------------
- * PUBLIC / CONVERSATIONAL CHAT ROUTES (Unauthenticated source of truth)
+ * PUBLIC / CONVERSATIONAL CHAT ROUTES (Unauthenticated source of truth, rate-limited)
  * -------------------------------------------------------------------------
  */
-router.get("/v1/public/hospitality/properties", controller.publicSearchProperties);
-router.get("/public/hospitality/properties", controller.publicSearchProperties);
-router.get("/v1/public/hospitality/properties/:id", controller.publicGetProperty);
-router.get("/public/hospitality/properties/:id", controller.publicGetProperty);
-router.get("/v1/public/hospitality/properties/:id/gallery", controller.publicGetPropertyGallery);
-router.get("/public/hospitality/properties/:id/gallery", controller.publicGetPropertyGallery);
-router.get("/v1/public/hospitality/properties/:id/rooms", controller.publicGetRoomCategories);
-router.get("/public/hospitality/properties/:id/rooms", controller.publicGetRoomCategories);
-router.get("/v1/public/hospitality/properties/:id/rooms/:roomId", controller.publicGetRoomDetails);
-router.get("/public/hospitality/properties/:id/rooms/:roomId", controller.publicGetRoomDetails);
-router.get("/v1/public/hospitality/properties/:id/availability", controller.publicCheckAvailability);
-router.get("/public/hospitality/properties/:id/availability", controller.publicCheckAvailability);
-router.post("/v1/public/hospitality/properties/:id/quote", controller.publicCalculateQuote);
-router.post("/public/hospitality/properties/:id/quote", controller.publicCalculateQuote);
-router.post("/v1/public/hospitality/chat-action", controller.publicChatAction);
-router.post("/public/hospitality/chat-action", controller.publicChatAction);
+router.get("/v1/public/hospitality/properties", publicLimiter, controller.publicSearchProperties);
+router.get("/public/hospitality/properties", publicLimiter, controller.publicSearchProperties);
+router.get("/v1/public/hospitality/properties/:id", publicLimiter, controller.publicGetProperty);
+router.get("/public/hospitality/properties/:id", publicLimiter, controller.publicGetProperty);
+router.get("/v1/public/hospitality/properties/:id/gallery", publicLimiter, controller.publicGetPropertyGallery);
+router.get("/public/hospitality/properties/:id/gallery", publicLimiter, controller.publicGetPropertyGallery);
+router.get("/v1/public/hospitality/properties/:id/rooms", publicLimiter, controller.publicGetRoomCategories);
+router.get("/public/hospitality/properties/:id/rooms", publicLimiter, controller.publicGetRoomCategories);
+router.get("/v1/public/hospitality/properties/:id/rooms/:roomId", publicLimiter, controller.publicGetRoomDetails);
+router.get("/public/hospitality/properties/:id/rooms/:roomId", publicLimiter, controller.publicGetRoomDetails);
+router.get("/v1/public/hospitality/properties/:id/availability", publicLimiter, controller.publicCheckAvailability);
+router.get("/public/hospitality/properties/:id/availability", publicLimiter, controller.publicCheckAvailability);
+router.post("/v1/public/hospitality/properties/:id/quote", publicLimiter, controller.publicCalculateQuote);
+router.post("/public/hospitality/properties/:id/quote", publicLimiter, controller.publicCalculateQuote);
+router.post("/v1/public/hospitality/chat-action", publicLimiter, controller.publicChatAction);
+router.post("/public/hospitality/chat-action", publicLimiter, controller.publicChatAction);
 
 // Public aliases under /hospitality/public/...
-router.get("/v1/hospitality/public/properties", controller.publicSearchProperties);
-router.get("/hospitality/public/properties", controller.publicSearchProperties);
-router.get("/v1/hospitality/public/properties/:id", controller.publicGetProperty);
-router.get("/hospitality/public/properties/:id", controller.publicGetProperty);
-router.post("/v1/hospitality/public/chat-action", controller.publicChatAction);
-router.post("/hospitality/public/chat-action", controller.publicChatAction);
+router.get("/v1/hospitality/public/properties", publicLimiter, controller.publicSearchProperties);
+router.get("/hospitality/public/properties", publicLimiter, controller.publicSearchProperties);
+router.get("/v1/hospitality/public/properties/:id", publicLimiter, controller.publicGetProperty);
+router.get("/hospitality/public/properties/:id", publicLimiter, controller.publicGetProperty);
+router.post("/v1/hospitality/public/chat-action", publicLimiter, controller.publicChatAction);
+router.post("/hospitality/public/chat-action", publicLimiter, controller.publicChatAction);
 
 /**
  * -------------------------------------------------------------------------

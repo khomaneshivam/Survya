@@ -535,13 +535,21 @@ function updateFlow(flowId, data, user = { id: "admin", name: "Administrator" },
     throw error;
   }
 
-  // If this flow is being set as default, clear default on other flows with same category & tenant
+  // If this flow is being set as default, clear default on other flows for the same WhatsApp line (or Global/Default line)
   if (is_default) {
-    db.prepare(`
-      UPDATE conversation_flows
-      SET is_default = 0
-      WHERE tenant_id = ? AND category = ? AND id != ?
-    `).run(tenantId, category, flowId);
+    if (targetPhoneId) {
+      db.prepare(`
+        UPDATE conversation_flows
+        SET is_default = 0
+        WHERE tenant_id = ? AND phone_number_id = ? AND id != ?
+      `).run(tenantId, targetPhoneId, flowId);
+    } else {
+      db.prepare(`
+        UPDATE conversation_flows
+        SET is_default = 0
+        WHERE tenant_id = ? AND phone_number_id IS NULL AND id != ?
+      `).run(tenantId, flowId);
+    }
   }
 
   db.prepare(`
@@ -743,13 +751,21 @@ function publishFlow(flowId, user = { id: "admin", name: "Administrator" }, tena
     WHERE id = ?
   `).run(user.name || user.id || "admin", JSON.stringify(report), draftVersion.id);
 
-  // If this flow is default, enforce single active default per category/property
+  // If this flow is default, enforce single active default per WhatsApp line (or Global/Default)
   if (flow.is_default) {
-    db.prepare(`
-      UPDATE conversation_flows
-      SET is_default = 0
-      WHERE tenant_id = ? AND category = ? AND id != ?
-    `).run(tenantId, flow.category, flowId);
+    if (flow.phone_number_id) {
+      db.prepare(`
+        UPDATE conversation_flows
+        SET is_default = 0
+        WHERE tenant_id = ? AND phone_number_id = ? AND id != ?
+      `).run(tenantId, flow.phone_number_id, flowId);
+    } else {
+      db.prepare(`
+        UPDATE conversation_flows
+        SET is_default = 0
+        WHERE tenant_id = ? AND phone_number_id IS NULL AND id != ?
+      `).run(tenantId, flowId);
+    }
   }
 
   // Set flow status to PUBLISHED and point published_version_id
@@ -845,24 +861,29 @@ function setDefaultFlow(flowId, user = { id: "admin", name: "Administrator" }, t
   const flow = db.prepare("SELECT * FROM conversation_flows WHERE id = ? AND tenant_id = ?").get(flowId, tenantId);
   if (!flow) throw new Error(`Conversation flow #${flowId} not found.`);
 
+  const lineFilterSql = flow.phone_number_id ? "phone_number_id = ?" : "phone_number_id IS NULL";
+  const lineFilterParams = flow.phone_number_id ? [tenantId, flow.phone_number_id] : [tenantId];
+
   // This shortcut changes live routing for the selected flow and the current
-  // default. It must not bypass the approval reset enforced by updateFlow.
+  // default on the same line. It must not bypass the approval reset enforced by updateFlow.
   const governedPublishedDefault = db.prepare(`
     SELECT id FROM conversation_flows
-    WHERE tenant_id = ? AND is_default = 1 AND approval_required = 1
+    WHERE tenant_id = ? AND ${flow.phone_number_id ? "phone_number_id = ?" : "phone_number_id IS NULL"}
+      AND is_default = 1 AND approval_required = 1
       AND status = 'PUBLISHED' AND id != ?
     LIMIT 1
-  `).get(tenantId, flowId);
+  `).get(...lineFilterParams, flowId);
   if ((Number(flow.approval_required) && flow.status === "PUBLISHED" && !flow.is_default) || governedPublishedDefault) {
     const error = new Error("Pause the governed live flow, change its default routing in the reviewed draft, then complete a new approval sequence before publishing.");
     error.code = "FLOW_REVIEW_REQUIRED";
     throw error;
   }
 
-  db.prepare("UPDATE conversation_flows SET is_default = 0 WHERE tenant_id = ?").run(tenantId);
-  db.prepare("UPDATE conversation_flows SET is_default = 1, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(
+  db.prepare(`UPDATE conversation_flows SET is_default = 0 WHERE tenant_id = ? AND ${lineFilterSql} AND id != ?`).run(...lineFilterParams, flowId);
+  db.prepare("UPDATE conversation_flows SET is_default = 1, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ?").run(
     user.name || user.id || "admin",
-    flowId
+    flowId,
+    tenantId
   );
 
   invalidateFlow(flowId);
@@ -1025,10 +1046,14 @@ function listVersions(flowId, tenantId = 1) {
 /**
  * List starter templates
  */
-function listTemplates(industry = null, category = null) {
+function listTemplates(industry = null, category = null, tenantId = null) {
   const conditions = ["1=1"];
   const params = [];
 
+  if (tenantId !== null && tenantId !== undefined) {
+    conditions.push("(is_system = 1 OR tenant_id IS NULL OR tenant_id = ?)");
+    params.push(Number(tenantId));
+  }
   if (industry && industry !== "ALL") {
     conditions.push("industry = ?");
     params.push(industry);
@@ -1039,7 +1064,7 @@ function listTemplates(industry = null, category = null) {
   }
 
   const rows = db.prepare(`
-    SELECT id, slug, title, description, industry, category, is_system, created_at,
+    SELECT id, tenant_id, slug, title, description, industry, category, is_system, created_at,
            nodes_json, transitions_json, variables_json
     FROM conversation_flow_templates
     WHERE ${conditions.join(" AND ")}
@@ -1122,10 +1147,11 @@ function createTemplate(data, user = { id: "admin", name: "Administrator" }, ten
 
   const res = db.prepare(`
     INSERT INTO conversation_flow_templates (
-      slug, title, description, industry, category, is_system,
+      tenant_id, slug, title, description, industry, category, is_system,
       nodes_json, transitions_json, variables_json
-    ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
   `).run(
+    Number(tenantId) || 1,
     slug,
     title.trim(),
     description || "Custom template saved from Studio Designer",
@@ -1314,7 +1340,7 @@ function duplicateFlow(flowId, data = {}, user = { id: "admin", name: "Administr
  * List Flow Executions / Sessions with filter and pagination
  */
 function listFlowExecutions(flowId = null, options = {}, tenantId = 1) {
-  const { status, phone, page = 1, limit = 20 } = options;
+  const { status, phone, search, page = 1, limit = 20 } = options;
   const offset = (Math.max(1, Number(page)) - 1) * Math.max(1, Number(limit));
 
   const conditions = ["s.tenant_id = ?"];
@@ -1328,9 +1354,10 @@ function listFlowExecutions(flowId = null, options = {}, tenantId = 1) {
     conditions.push("s.session_status = ?");
     params.push(status);
   }
-  if (phone && phone.trim()) {
+  const phoneFilter = (phone && String(phone).trim()) || (search && String(search).trim());
+  if (phoneFilter) {
     conditions.push("s.sender_phone LIKE ?");
-    params.push(`%${phone.trim().replace(/\D/g, "")}%`);
+    params.push(`%${phoneFilter.replace(/\D/g, "") || phoneFilter}%`);
   }
 
   const whereClause = conditions.join(" AND ");

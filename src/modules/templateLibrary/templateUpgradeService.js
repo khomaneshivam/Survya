@@ -160,6 +160,7 @@ class TemplateUpgradeService {
       upgradeAvailable,
       currentVersion: currentVer,
       latestVersion: latestVer,
+      targetVersion: latestVer,
       newerVersionsCount: newerVersions.length,
       availableVersions: newerVersions,
       diffPreview
@@ -181,9 +182,10 @@ class TemplateUpgradeService {
       throw new Error("Template definition not found.");
     }
 
-    const targetVersion = templateRepository.findVersion(template.id, targetVersionNumber);
+    const resolvedTargetVersion = targetVersionNumber || template.current_version || null;
+    const targetVersion = templateRepository.findVersion(template.id, resolvedTargetVersion);
     if (!targetVersion) {
-      throw new Error(`Target version '${targetVersionNumber || "latest"}' not found for template.`);
+      throw new Error(`Target version '${resolvedTargetVersion || "latest"}' not found for template.`);
     }
 
     const flow = db.prepare("SELECT * FROM conversation_flows WHERE id = ? AND tenant_id = ?").get(installation.flow_id, tenantId);
@@ -198,8 +200,10 @@ class TemplateUpgradeService {
 
     // Fetch existing tenant bindings to re-inject into the upgraded graph
     const currentBindings = templateRepository.getBindings(installationId, tenantId);
+    const phoneBinding = currentBindings.find(b => b.resource_type === 'WHATSAPP_LINE' || b.logical_key === 'sender_line');
     const propertyBinding = currentBindings.find(b => b.resource_type === 'PROPERTY' || b.logical_key === 'property_id');
     const crmBinding = currentBindings.find(b => b.resource_type === 'CRM_PIPELINE' || b.logical_key === 'crm_pipeline');
+    const categoryBinding = currentBindings.find(b => b.resource_type === 'CATALOG_CATEGORY' || b.logical_key === 'catalog_category' || b.logical_key === 'category_id');
 
     const upgradedNodes = (Array.isArray(graphData.nodes) ? graphData.nodes : []).map(n => {
       const copy = JSON.parse(JSON.stringify(n));
@@ -222,11 +226,18 @@ class TemplateUpgradeService {
         }
       }
 
+      if (phoneBinding && (!copy.config.phone_number_id || copy.config.phone_number_id === 'ALL')) {
+        copy.config.phone_number_id = String(phoneBinding.target_resource_id);
+      }
       if (propertyBinding && (!copy.config.property_id || copy.config.property_id === 1)) {
         copy.config.property_id = Number(propertyBinding.target_resource_id);
       }
       if (crmBinding && (!copy.config.pipeline_id || copy.config.pipeline_id === 'b2b-sales-pipeline')) {
         copy.config.pipeline_id = crmBinding.target_resource_id;
+      }
+      if (categoryBinding) {
+        copy.config.category_id = categoryBinding.target_resource_id;
+        copy.config.master_category_id = Number(categoryBinding.target_resource_id) || categoryBinding.target_resource_id;
       }
       return copy;
     });
@@ -331,9 +342,17 @@ class TemplateUpgradeService {
       updated_by: userId
     });
 
+    if (isCurrentlyPublished) {
+      try {
+        const workflowTriggerService = require("../../services/workflow/workflowTriggerService");
+        workflowTriggerService.syncFlowTriggers(tenantId, flow.id, upgradedNodes, phoneBinding?.target_resource_id || flow.phone_number_id);
+      } catch (_) {}
+    }
+
     try {
       const runtimeCache = require("../../services/workflow/runtimeCache");
       runtimeCache.invalidateFlow(flow.id);
+      runtimeCache.invalidateTriggers(tenantId);
     } catch (_) {}
 
     return {

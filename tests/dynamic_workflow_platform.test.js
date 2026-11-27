@@ -208,7 +208,7 @@ describe("Dynamic Multi-Industry Workflow Platform Test Suite (Phases 2, 3 & 4)"
       assert.equal(res.status, 200);
       const data = await res.json();
       assert.equal(data.success, true);
-      assert.equal(data.data.stage_id, "won");
+      assert.equal(data.data.stage_id, "WON");
       assert.equal(data.data.status, "WON");
     });
   });

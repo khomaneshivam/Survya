@@ -55,16 +55,20 @@ export function AutomationDetailsPage({
         if (instRes && instRes.success) {
           const inst = instRes.installation;
           setInstallation(inst);
-          const parsedConfig = typeof inst.config_values_json === 'string'
-            ? JSON.parse(inst.config_values_json)
-            : (inst.config_values_json || {});
+          const rawCfg = inst.config_values || inst.config_values_json;
+          const parsedConfig = typeof rawCfg === 'string'
+            ? JSON.parse(rawCfg)
+            : (rawCfg || {});
           setConfigValues(parsedConfig);
 
           // Check if upgrade available
           if (installationId) {
             automationApi.checkUpgrade(installationId).then(uRes => {
               if (uRes && uRes.upgradeAvailable) {
-                setUpgradeInfo(uRes);
+                setUpgradeInfo({
+                  ...uRes,
+                  targetVersion: uRes.targetVersion || uRes.latestVersion
+                });
               }
             }).catch(() => {});
           }
@@ -167,8 +171,8 @@ export function AutomationDetailsPage({
             </Badge>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Trigger Keyword: <span className="font-mono font-semibold text-slate-700">{flow?.trigger_keyword || 'DEFAULT'}</span>
-            {installation && ` • Installed from ${installation.template_key} (v${installation.installed_version_number})`}
+            Trigger Keyword: <span className="font-mono font-semibold text-slate-700">{(Array.isArray(flow?.trigger_keywords) && flow.trigger_keywords[0]) || flow?.trigger_keyword || 'DEFAULT'}</span>
+            {installation && ` • Installed from ${installation.template_key || installation.template_title || 'template'} (v${installation.installed_version_number})`}
           </p>
         </div>
 

@@ -299,27 +299,19 @@ function buildTemplateComponentsPayload({
 /**
  * Resolves credentials for a specific registered waba_phone_numbers ID or falls back to active defaults.
  */
-function resolveCredentialsForPhone(requestedPhoneNumberId = null) {
-  const token = getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN;
-  let phoneNumberId = requestedPhoneNumberId ? String(requestedPhoneNumberId).trim() : null;
-
-  if (phoneNumberId) {
-    const row = db.prepare("SELECT phone_number_id, waba_id FROM waba_phone_numbers WHERE id = ? OR phone_number_id = ? LIMIT 1").get(phoneNumberId, phoneNumberId);
-    if (row?.phone_number_id) {
-      phoneNumberId = row.phone_number_id;
-    }
-  }
-
-  if (!phoneNumberId) {
-    const base = metaWhatsAppService.getActiveCredentials();
-    return base;
-  }
-
-  if (!token) {
-    throw new Error("Meta WhatsApp API Token is missing. Configure it in SARVYA Connect Settings.");
-  }
-
-  return { token: String(token).trim(), phoneNumberId };
+function resolveCredentialsForPhone(requestedPhoneNumberId = null, tenantId = null) {
+  const cleanPhoneId = requestedPhoneNumberId ? String(requestedPhoneNumberId).trim() : null;
+  const creds = metaWhatsAppService.resolveCredentials({
+    phoneNumberId: cleanPhoneId || undefined,
+    tenantId: tenantId ? Number(tenantId) : undefined
+  });
+  return {
+    token: creds.token,
+    phoneNumberId: creds.phoneNumberId,
+    isSimulation: Boolean(creds.isSimulation),
+    isSandbox: Boolean(creds.isSandbox),
+    tenantId: creds.tenantId
+  };
 }
 
 /**
@@ -344,7 +336,8 @@ async function sendOneToOneMessage({
   phoneNumberId = null,
   userId = "system",
   tenantId = 1,
-  flowActionData = null
+  flowActionData = null,
+  bypassWindowCheck = false
 }) {
   const defaultCountry = getSetting("DEFAULT_COUNTRY_CODE") || "91";
   const cleanTo = metaWhatsAppService.cleanPhone(to, defaultCountry);
@@ -367,8 +360,19 @@ async function sendOneToOneMessage({
   const normalizedType = String(type || (templateIdOrName ? "TEMPLATE" : "TEXT")).toUpperCase();
   const windowState = check24HourCustomerServiceWindow(cleanTo);
 
-  // Rule 2: Outside 24-hour customer service window -> Free-form TEXT/MEDIA blocked
-  if (normalizedType !== "TEMPLATE") {
+  // Rule 2 (fast policy gate): Outside 24-hour customer service window -> Free-form TEXT/MEDIA blocked
+  if (normalizedType !== "TEMPLATE" && !bypassWindowCheck && !windowState.isOpen) {
+    const err = new Error("24-hour customer-service window is closed for this recipient. Send an APPROVED template message to initiate outreach.");
+    err.statusCode = 422;
+    err.code = "WINDOW_CLOSED_24H";
+    err.window = windowState;
+    throw err;
+  }
+
+  const creds = resolveCredentialsForPhone(phoneNumberId, tenantId);
+
+  // Rule 2 (bypass gate): Only Workspace Sandbox / Simulation mode may bypass the 24h window check
+  if (normalizedType !== "TEMPLATE" && !(bypassWindowCheck && (creds.isSandbox || creds.isSimulation))) {
     if (!windowState.isOpen) {
       const err = new Error("24-hour customer-service window is closed for this recipient. Send an APPROVED template message to initiate outreach.");
       err.statusCode = 422;
@@ -377,8 +381,6 @@ async function sendOneToOneMessage({
       throw err;
     }
   }
-
-  const creds = resolveCredentialsForPhone(phoneNumberId);
   let sendRes = null;
   let resolvedTpl = null;
   let renderedBody = String(text || "").trim();
@@ -544,12 +546,15 @@ async function sendOneToOneMessage({
     unitCost
   );
 
+  const ledgerStatus = (creds?.isSimulation || creds?.isSandbox) ? "WAIVED_SANDBOX" : "ESTIMATED";
+  const effectiveUnitCost = (creds?.isSimulation || creds?.isSandbox) ? 0 : unitCost;
+
   // Record in usage ledger
   db.prepare(`
     INSERT INTO whatsapp_usage_ledger (
       tenant_id, user_id, phone_number_id, campaign_id, message_id, meta_message_id,
       recipient_phone, category, unit_cost, currency, billing_status
-    ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'INR', 'ESTIMATED')
+    ) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, 'INR', ?)
   `).run(
     tenantId,
     userId,
@@ -558,18 +563,21 @@ async function sendOneToOneMessage({
     metaMsgId,
     cleanTo,
     messageCategory,
-    unitCost
+    effectiveUnitCost,
+    ledgerStatus
   );
 
-  // Sync into shared inbox timeline cleanly
+  // Sync into shared inbox timeline cleanly with tenant & channel scope
   try {
     db.prepare(`
-      INSERT OR IGNORE INTO customer_replies (
-        wa_message_id, from_phone, customer_name, message_type,
+      INSERT IGNORE INTO customer_replies (
+        tenant_id, channel_account_id, wa_message_id, from_phone, customer_name, message_type,
         message_body, reply_text, media_url, media_type,
         reply_sent_at, reply_status, is_read, user_id, received_at
-      ) VALUES (?, ?, 'Customer', 'outbound', ?, ?, ?, ?, CURRENT_TIMESTAMP, 'SENT', 1, ?, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, 'Customer', 'outbound', ?, ?, ?, ?, CURRENT_TIMESTAMP, 'SENT', 1, ?, CURRENT_TIMESTAMP)
     `).run(
+      tenantId,
+      creds.phoneNumberId || null,
       metaMsgId,
       cleanTo,
       renderedBody,
@@ -667,6 +675,13 @@ async function validateAndLaunchCampaign(campaignId, reqUser = null, delayOverri
   const estimatedCost = parseFloat((deliverableCount * unitCost).toFixed(2));
   db.prepare("UPDATE campaigns SET estimated_cost = ? WHERE id = ?").run(estimatedCost, campaignId);
 
+  const campaignTenantId = Number(campaign.tenant_id || reqUser?.tenant_id || 1);
+  let isSandboxTenant = false;
+  try {
+    const tRow = db.prepare("SELECT is_sandbox FROM tenants WHERE id = ? LIMIT 1").get(campaignTenantId);
+    isSandboxTenant = Number(tRow?.is_sandbox) === 1;
+  } catch (_) {}
+
   // Record campaign launch ledger entry if none recorded yet for this campaign
   const existingLedger = db.prepare("SELECT id FROM whatsapp_usage_ledger WHERE campaign_id = ? LIMIT 1").get(campaignId);
   if (!existingLedger) {
@@ -674,15 +689,17 @@ async function validateAndLaunchCampaign(campaignId, reqUser = null, delayOverri
       INSERT INTO whatsapp_usage_ledger (
         tenant_id, user_id, phone_number_id, campaign_id, message_id, meta_message_id,
         recipient_phone, category, unit_cost, currency, billing_status
-      ) VALUES (1, ?, ?, ?, ?, NULL, ?, ?, ?, 'INR', 'ESTIMATED')
+      ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, 'INR', ?)
     `).run(
+      campaignTenantId,
       reqUser?.id || campaign.user_id || "system",
       campaign.phone_number_id || null,
       campaignId,
       campaignId,
       `BATCH:${deliverableCount}`,
       tplCategory,
-      estimatedCost
+      isSandboxTenant ? 0 : estimatedCost,
+      isSandboxTenant ? "WAIVED_SANDBOX" : "ESTIMATED"
     );
   }
 
@@ -712,6 +729,7 @@ module.exports = {
   getCategoryUnitRate,
   extractTemplateVariables,
   buildTemplateComponentsPayload,
+  resolveCredentialsForPhone,
   sendOneToOneMessage,
   validateAndLaunchCampaign
 };

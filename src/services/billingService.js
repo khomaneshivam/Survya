@@ -579,10 +579,24 @@ function getTenantEntitlementSnapshot(tenantId) {
     WHERE COALESCE(tenant_id, 1) = ? AND COALESCE(delete_status, 0) = 0
   `).get(numericTenantId)?.count || 0;
 
-  const messagesUsed = db.prepare(`
+  const directMessagesUsed = Number(db.prepare(`
     SELECT COUNT(*) as count FROM whatsapp_messages
     WHERE COALESCE(tenant_id, 1) = ? AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
-  `).get(numericTenantId)?.count || 0;
+  `).get(numericTenantId)?.count || 0);
+
+  let campaignMessagesUsed = 0;
+  try {
+    campaignMessagesUsed = Number(db.prepare(`
+      SELECT COUNT(*) as count
+      FROM campaign_recipients r
+      JOIN campaigns c ON c.id = r.campaign_id
+      WHERE COALESCE(c.tenant_id, 1) = ?
+        AND r.status IN ('SENT', 'DELIVERED', 'READ')
+        AND COALESCE(r.sent_at, c.created_at) >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 30 DAY)
+    `).get(numericTenantId)?.count || 0);
+  } catch (_) {}
+
+  const messagesUsed = directMessagesUsed + campaignMessagesUsed;
 
   return {
     tenantId: numericTenantId,
@@ -597,6 +611,8 @@ function getTenantEntitlementSnapshot(tenantId) {
     quotaWabaLines: Number(tenant.quota_waba_lines || 0),
     wabaLinesUsed: Number(wabaLinesUsed || 0),
     messagesUsed: Number(messagesUsed || 0),
+    directMessagesUsed,
+    campaignMessagesUsed,
     isTrialExpired,
     isInactive
   };

@@ -81,15 +81,15 @@ export function TemplateAdminPage() {
       }
 
       const payload = {
-        templateKey: newKey.toLowerCase().replace(/[^a-z0-9.-]/g, '-'),
-        name: newName,
+        template_key: newKey.toLowerCase().replace(/[^a-z0-9._-]/g, '-'),
+        title: newName,
         description: newDesc,
         industry: newIndustry,
         category: newCategory,
-        configSchema: parsedSchema,
-        requiredBindings: ['WHATSAPP_LINE'],
-        workflowGraph: {
-          nodes: [{ id: 'START', type: 'TRIGGER', title: 'Start', config: {} }],
+        config_schema_json: parsedSchema,
+        required_bindings_json: [{ resource_type: 'WHATSAPP_LINE', logical_key: 'sender_line', label: 'WhatsApp Line', required: true }],
+        graph_json: {
+          nodes: [{ id: 'START', type: 'TRIGGER_WHATSAPP', title: 'Start', config: {} }],
           transitions: []
         }
       };
@@ -117,17 +117,17 @@ export function TemplateAdminPage() {
     setErrorMsg(null);
     try {
       const payload = {
-        versionNumber: releaseVersionNumber,
+        version_number: releaseVersionNumber,
         changelog: releaseChangelog,
-        workflowGraph: {
-          nodes: [{ id: 'START', type: 'TRIGGER', title: 'Start', config: {} }],
+        graph_json: {
+          nodes: [{ id: 'START', type: 'TRIGGER_WHATSAPP', title: 'Start', config: {} }],
           transitions: []
         }
       };
 
       const res = await automationApi.createVersionRelease(selectedTemplate.id, payload);
       if (res && res.success) {
-        setActionMsg(`Version ${releaseVersionNumber} released for "${selectedTemplate.name}"!`);
+        setActionMsg(`Version ${releaseVersionNumber} released for "${selectedTemplate.title || selectedTemplate.name}"!`);
         setIsReleaseModalOpen(false);
         await fetchAdminTemplates();
       } else {
@@ -142,7 +142,8 @@ export function TemplateAdminPage() {
 
   const filtered = templates.filter((t) => {
     const q = search.toLowerCase();
-    return !search || t.name.toLowerCase().includes(q) || t.template_key.toLowerCase().includes(q);
+    const displayName = (t.title || t.name || '').toLowerCase();
+    return !search || displayName.includes(q) || (t.template_key || '').toLowerCase().includes(q);
   });
 
   return (
@@ -236,7 +237,7 @@ export function TemplateAdminPage() {
                   <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-3 px-4">
                       <div>
-                        <span className="font-semibold text-slate-900 block">{item.name}</span>
+                        <span className="font-semibold text-slate-900 block">{item.title || item.name}</span>
                         <span className="font-mono text-[11px] text-slate-400">{item.template_key}</span>
                       </div>
                     </td>
@@ -246,7 +247,7 @@ export function TemplateAdminPage() {
                       </span>
                     </td>
                     <td className="py-3 px-3 font-mono text-[11px] font-bold text-slate-800">
-                      v{item.active_version_number || '1.0.0'}
+                      v{item.current_version || item.active_version_number || '1.0.0'}
                     </td>
                     <td className="py-3 px-3 font-mono text-[11px] text-slate-600 tabular-nums">
                       {item.installations_count || item.total_installations || 0} tenants

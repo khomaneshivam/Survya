@@ -27,7 +27,8 @@ import {
 import { formatIndianDate } from '../utils/indianTime';
 
 export default function DashboardPage({ setActiveTab }) {
-  const { token } = useAuth();
+  const { token, primaryDomain } = useAuth();
+  const isHospitality = !primaryDomain || primaryDomain === 'HOSPITALITY';
   const [overview, setOverview] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
   const [resortSummary, setResortSummary] = useState(null);
@@ -230,9 +231,10 @@ export default function DashboardPage({ setActiveTab }) {
         />
       </div>
 
-      {/* Hospitality Snapshot + Upcoming Check-ins */}
+      {/* Domain Availability + Upcoming Schedule */}
       {resortSummary && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '16px' }}>
+          {isHospitality && (
           <Card>
             <CardHeader
               title="Today's Room Availability"
@@ -275,11 +277,12 @@ export default function DashboardPage({ setActiveTab }) {
               )}
             </CardBody>
           </Card>
+          )}
 
           <Card>
             <CardHeader
-              title="Upcoming Check-ins"
-              subtitle="Confirmed & quoted stays arriving soon"
+              title={isHospitality ? "Upcoming Check-ins" : "Upcoming Bookings & Schedule"}
+              subtitle={isHospitality ? "Confirmed & quoted stays arriving soon" : "Confirmed bookings, appointments & scheduled orders"}
               actions={
                 <Button variant="ghost" size="sm" onClick={() => setActiveTab('automation')}>
                   Lifecycle Rules
@@ -289,7 +292,7 @@ export default function DashboardPage({ setActiveTab }) {
             <CardBody>
               {(!resortSummary.upcoming_checkins || resortSummary.upcoming_checkins.length === 0) ? (
                 <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                  No upcoming check-ins scheduled in pipeline.
+                  {isHospitality ? 'No upcoming check-ins scheduled in pipeline.' : 'No upcoming scheduled bookings in pipeline.'}
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -357,7 +360,7 @@ export default function DashboardPage({ setActiveTab }) {
                 key: 'name',
                 label: 'Campaign',
                 sortable: true,
-                render: (row) => (
+                render: (_, row) => (
                   <div>
                     <div style={{ fontWeight: 600 }}>{row.name}</div>
                     <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>{row.template}</div>
@@ -368,7 +371,7 @@ export default function DashboardPage({ setActiveTab }) {
                 key: 'status',
                 label: 'Status',
                 sortable: true,
-                render: (row) => {
+                render: (_, row) => {
                   const s = (row.status || '').toUpperCase();
                   const tone = s === 'COMPLETED' ? 'green' : s === 'FAILED' || s === 'CANCELLED' ? 'coral' : 'blue';
                   return <Badge tone={tone} dot>{s}</Badge>;
@@ -379,21 +382,21 @@ export default function DashboardPage({ setActiveTab }) {
                 label: 'Targeted',
                 sortable: true,
                 align: 'end',
-                render: (row) => <span className="tabular-nums">{(row.recipients || 0).toLocaleString('en-IN')}</span>
+                render: (_, row) => <span className="tabular-nums">{(row.recipients || 0).toLocaleString('en-IN')}</span>
               },
               {
                 key: 'delivered',
                 label: 'Delivered',
                 sortable: true,
                 align: 'end',
-                render: (row) => <span className="tabular-nums" style={{ fontWeight: 600 }}>{(row.delivered || 0).toLocaleString('en-IN')}</span>
+                render: (_, row) => <span className="tabular-nums" style={{ fontWeight: 600 }}>{(row.delivered || 0).toLocaleString('en-IN')}</span>
               },
               {
                 key: 'failed',
                 label: 'Failed',
                 sortable: true,
                 align: 'end',
-                render: (row) => (
+                render: (_, row) => (
                   <span className="tabular-nums" style={{ color: row.failed > 0 ? 'var(--status-error-text)' : 'var(--text-muted)' }}>
                     {(row.failed || 0).toLocaleString('en-IN')}
                   </span>
@@ -403,7 +406,7 @@ export default function DashboardPage({ setActiveTab }) {
                 key: 'created_at',
                 label: 'Created',
                 sortable: true,
-                render: (row) => (
+                render: (_, row) => (
                   <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
                     {row.created_at ? formatIndianDate(row.created_at) : '—'}
                   </span>

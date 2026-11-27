@@ -361,9 +361,30 @@ function activateDomainForTenant(tenantId, domain, { makePrimary = false, busine
     }
   }
 
+  // Preserve existing workspace business name on Re-Sync when caller did not explicitly override it
+  let resolvedBusinessName = businessName;
+  if (!resolvedBusinessName) {
+    if (resolvedDomain === "HOSPITALITY") {
+      const existingProp = db.prepare(`
+        SELECT name FROM properties
+        WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0
+        ORDER BY id ASC LIMIT 1
+      `).get(numericTenantId);
+      if (existingProp?.name) resolvedBusinessName = existingProp.name;
+    }
+    if (!resolvedBusinessName) {
+      const existingEntity = db.prepare(`
+        SELECT name FROM business_entities
+        WHERE tenant_id = ? AND domain = ? AND COALESCE(delete_status, 0) = 0
+        ORDER BY id ASC LIMIT 1
+      `).get(numericTenantId, resolvedDomain);
+      if (existingEntity?.name) resolvedBusinessName = existingEntity.name;
+    }
+  }
+
   const suiteResult = importFullIndustrySuite(numericTenantId, {
     sectorCode: resolvedDomain,
-    businessName: businessName || undefined,
+    businessName: resolvedBusinessName || undefined,
     experienceSlug: domainExp?.slug || ""
   }, userId);
 

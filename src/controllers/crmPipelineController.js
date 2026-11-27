@@ -108,9 +108,11 @@ async function updateRecord(req, res) {
 async function updateStage(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
-    const { stage_id, stage_name, status } = req.body;
+    const { stage_id, stage_key, stageKey, stage_name, status } = req.body || {};
+    const resolvedStageKey = stage_key || stageKey || stage_id || stage_name;
     const record = crmService.updateRecord(req.params.id, {
-      stageId: stage_id,
+      stageKey: resolvedStageKey,
+      stageId: stage_id || resolvedStageKey,
       stageName: stage_name,
       status: status,
       userId: req.user?.id

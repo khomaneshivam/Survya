@@ -2,6 +2,7 @@ const chatLinkService = require("../services/chatLinkService");
 const hospitalityConfigService = require("../services/hospitalityConfigService");
 const { generateQrSvg } = require("../utils/qrCodeUtil");
 const config = require("../config/env");
+const { db } = require("../config/database");
 const { isWorkspaceAdmin } = require("../middleware/authMiddleware");
 
 function getBaseUrl(req) {

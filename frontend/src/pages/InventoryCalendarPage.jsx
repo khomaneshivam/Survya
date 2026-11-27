@@ -66,11 +66,29 @@ export default function InventoryCalendarPage() {
   const { token, user, isAdmin } = useAuth();
   const [activeSubTab, setActiveSubTab] = useState('overview');
 
-  // Multi-property & Active Property State
+  // Multi-property & Active Property State (never hardcode Property #1)
   const [properties, setProperties] = useState([]);
-  const [selectedPropertyId, setSelectedPropertyId] = useState(1);
+  const [selectedPropertyId, setSelectedPropertyId] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem('survya_selected_property_id'));
+      return Number.isInteger(saved) && saved > 0 ? saved : null;
+    } catch {
+      return null;
+    }
+  });
   const [currentProperty, setCurrentProperty] = useState(null);
   const [setupOverview, setSetupOverview] = useState(null);
+  const [showCreatePropertyModal, setShowCreatePropertyModal] = useState(false);
+  const [newPropertyForm, setNewPropertyForm] = useState({
+    name: '',
+    property_type: 'RESORT',
+    city: '',
+    state: '',
+    phone: '',
+    email: '',
+    currency: 'INR',
+    description: ''
+  });
 
   // Domain Datasets
   const [roomCategories, setRoomCategories] = useState([]);
@@ -252,8 +270,12 @@ export default function InventoryCalendarPage() {
       const propData = await propRes.json();
       if (propData.success && propData.properties?.length > 0) {
         setProperties(propData.properties);
-        const activeId = selectedPropertyId || propData.properties[0].id;
-        setSelectedPropertyId(activeId);
+        const matchingSelected = propData.properties.find((p) => Number(p.id) === Number(selectedPropertyId));
+        const activeId = matchingSelected ? matchingSelected.id : propData.properties[0].id;
+        if (Number(activeId) !== Number(selectedPropertyId)) {
+          setSelectedPropertyId(activeId);
+        }
+        try { localStorage.setItem('survya_selected_property_id', String(activeId)); } catch {}
 
         // Parallel fetch for active property
         const [
@@ -333,6 +355,11 @@ export default function InventoryCalendarPage() {
         if (gD.success) setInventoryGrid(gD);
         if (bD.success) setInventoryBlocks(bD.blocks || []);
         if (kD.success) setPhysicalRooms(kD.rooms || []);
+      } else {
+        setProperties([]);
+        setCurrentProperty(null);
+        setSetupOverview(null);
+        setRoomCategories([]);
       }
     } catch (err) {
       console.warn('Hospitality data load error:', err.message);
@@ -416,16 +443,91 @@ export default function InventoryCalendarPage() {
   };
 
   // -------------------------------------------------------------------------
-  // PROPERTY SETUP SAVE
+  // PROPERTY SETUP SAVE, CREATE, DUPLICATE & ARCHIVE
   // -------------------------------------------------------------------------
+  const handleCreateProperty = async (e) => {
+    e.preventDefault();
+    if (!newPropertyForm.name.trim()) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/v1/hospitality/properties', {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(newPropertyForm)
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Failed to create property');
+      setShowCreatePropertyModal(false);
+      setNewPropertyForm({ name: '', property_type: 'RESORT', city: '', state: '', phone: '', email: '', currency: 'INR', description: '' });
+      if (data.property?.id) {
+        setSelectedPropertyId(data.property.id);
+        try { localStorage.setItem('survya_selected_property_id', String(data.property.id)); } catch {}
+      }
+      showNotification(`Created "${data.property?.name || 'Property'}" independently as DRAFT.`);
+      await loadHospitalityData();
+    } catch (err) {
+      showNotification(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDuplicateProperty = async () => {
+    if (!selectedPropertyId) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/v1/hospitality/properties/${selectedPropertyId}/duplicate`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ name: `${currentProperty?.name || 'Property'} (Copy)` })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Failed to duplicate property');
+      if (data.property?.id) {
+        setSelectedPropertyId(data.property.id);
+        try { localStorage.setItem('survya_selected_property_id', String(data.property.id)); } catch {}
+      }
+      showNotification(`Duplicated "${currentProperty?.name}" cleanly.`);
+      await loadHospitalityData();
+    } catch (err) {
+      showNotification(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleArchiveProperty = async () => {
+    if (!selectedPropertyId || !currentProperty) return;
+    if (!window.confirm(`Archive "${currentProperty.name}"? You can restore it later from the Recycle Bin.`)) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/v1/hospitality/properties/${selectedPropertyId}/archive`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({})
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Failed to archive property');
+      showNotification(`Archived "${currentProperty.name}".`);
+      setSelectedPropertyId(null);
+      try { localStorage.removeItem('survya_selected_property_id'); } catch {}
+      await loadHospitalityData();
+    } catch (err) {
+      showNotification(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSavePropertyDetails = async (e) => {
     e.preventDefault();
+    if (!selectedPropertyId || !currentProperty) return;
     setSaving(true);
     try {
       const res = await fetch(`/api/v1/hospitality/properties/${selectedPropertyId}`, {
         method: 'PUT',
         headers: getHeaders(),
-        body: JSON.stringify(currentProperty)
+        body: JSON.stringify({ ...currentProperty, expected_version: currentProperty.version })
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || 'Failed to save property');
@@ -997,12 +1099,17 @@ export default function InventoryCalendarPage() {
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          {/* Property Dropdown Selector */}
-          {properties.length > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          {/* Property Dropdown Selector (always visible when properties exist) */}
+          {properties.length >= 1 && (
             <select
-              value={selectedPropertyId}
-              onChange={(e) => setSelectedPropertyId(Number(e.target.value))}
+              aria-label="Select Property"
+              value={selectedPropertyId || ''}
+              onChange={(e) => {
+                const nextId = Number(e.target.value);
+                setSelectedPropertyId(nextId);
+                try { localStorage.setItem('survya_selected_property_id', String(nextId)); } catch {}
+              }}
               style={{
                 padding: '0.5rem 0.75rem',
                 borderRadius: '0.375rem',
@@ -1018,6 +1125,15 @@ export default function InventoryCalendarPage() {
               ))}
             </select>
           )}
+
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowCreatePropertyModal(true)}
+          >
+            <Plus size={14} />
+            New Property
+          </Button>
 
           <Button
             variant="secondary"
@@ -1375,11 +1491,21 @@ export default function InventoryCalendarPage() {
                 </Button>
               </div>
 
-              <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
                 <Button variant="primary" type="submit" disabled={saving}>
                   <Save size={16} />
                   Save Property Information
                 </Button>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <Button variant="secondary" type="button" onClick={handleDuplicateProperty} disabled={saving}>
+                    <Copy size={14} />
+                    Duplicate Property
+                  </Button>
+                  <Button variant="outline" type="button" onClick={handleArchiveProperty} disabled={saving} style={{ color: '#b91c1c', borderColor: '#fca5a5' }}>
+                    <Trash2 size={14} />
+                    Archive Property
+                  </Button>
+                </div>
               </div>
             </form>
           </CardBody>
@@ -3421,6 +3547,104 @@ export default function InventoryCalendarPage() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem' }}>
               <Button variant="outline" type="button" onClick={() => setShowKeyModal(false)}>Cancel</Button>
               <Button variant="primary" type="submit" disabled={saving}>Add Room Unit</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ----------------------------------------------------------------- */}
+      {/* MODAL: CREATE NEW PROPERTY */}
+      {/* ----------------------------------------------------------------- */}
+      {showCreatePropertyModal && (
+        <Modal
+          title="Create New Property"
+          isOpen={showCreatePropertyModal}
+          onClose={() => setShowCreatePropertyModal(false)}
+        >
+          <form onSubmit={handleCreateProperty} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Property Name *</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Greenvally Hotel & Resort"
+                value={newPropertyForm.name}
+                onChange={(e) => setNewPropertyForm({ ...newPropertyForm, name: e.target.value })}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid var(--border-color)' }}
+              />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Property Type</label>
+                <select
+                  value={newPropertyForm.property_type}
+                  onChange={(e) => setNewPropertyForm({ ...newPropertyForm, property_type: e.target.value })}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid var(--border-color)' }}
+                >
+                  <option value="RESORT">Resort</option>
+                  <option value="HOTEL">Hotel</option>
+                  <option value="VILLA">Private Villa</option>
+                  <option value="HOMESTAY">Homestay</option>
+                  <option value="GUESTHOUSE">Guesthouse</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Currency</label>
+                <input
+                  type="text"
+                  value={newPropertyForm.currency}
+                  onChange={(e) => setNewPropertyForm({ ...newPropertyForm, currency: e.target.value })}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid var(--border-color)' }}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>City</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Lonavala"
+                  value={newPropertyForm.city}
+                  onChange={(e) => setNewPropertyForm({ ...newPropertyForm, city: e.target.value })}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid var(--border-color)' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>State</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Maharashtra"
+                  value={newPropertyForm.state}
+                  onChange={(e) => setNewPropertyForm({ ...newPropertyForm, state: e.target.value })}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid var(--border-color)' }}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Reservations Phone</label>
+                <input
+                  type="text"
+                  placeholder="+91..."
+                  value={newPropertyForm.phone}
+                  onChange={(e) => setNewPropertyForm({ ...newPropertyForm, phone: e.target.value })}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid var(--border-color)' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>Reservations Email</label>
+                <input
+                  type="email"
+                  placeholder="bookings@example.com"
+                  value={newPropertyForm.email}
+                  onChange={(e) => setNewPropertyForm({ ...newPropertyForm, email: e.target.value })}
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0.375rem', border: '1px solid var(--border-color)' }}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <Button variant="outline" type="button" onClick={() => setShowCreatePropertyModal(false)}>Cancel</Button>
+              <Button variant="primary" type="submit" disabled={saving}>Create Property</Button>
             </div>
           </form>
         </Modal>

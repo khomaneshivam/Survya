@@ -66,12 +66,13 @@ async function execute(node, context) {
       ) VALUES (?, ?, ?, 'OUTBOUND', 'TEMPLATE', ?, ?, 'SENT', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `).run(msgId, tenantId, senderPhone, templateName, renderedBody);
 
-    const unitRate = metaRateService.calculateUnitRate('UTILITY', null, tenantId);
+    const isSandboxOrSim = Boolean(dryRun || context.isSimulation || context.transportSimulation);
+    const unitRate = isSandboxOrSim ? 0 : metaRateService.calculateUnitRate('UTILITY', null, tenantId);
     db.prepare(`
       INSERT INTO whatsapp_usage_ledger (
         tenant_id, recipient_phone, category, unit_cost, currency, billing_status, created_at
-      ) VALUES (?, ?, 'UTILITY', ?, 'INR', 'BILLED', CURRENT_TIMESTAMP)
-    `).run(tenantId, senderPhone, unitRate);
+      ) VALUES (?, ?, 'UTILITY', ?, 'INR', ?, CURRENT_TIMESTAMP)
+    `).run(tenantId, senderPhone, unitRate, isSandboxOrSim ? 'WAIVED_SANDBOX' : 'BILLED');
   } catch (dbErr) {
     // Non-fatal logging
   }

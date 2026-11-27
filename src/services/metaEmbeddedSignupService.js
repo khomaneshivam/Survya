@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { db } = require("../config/database");
+const { db, getSetting } = require("../config/database");
 const config = require("../config/env");
 const cryptoUtil = require("../utils/cryptoUtil");
 const timeUtil = require("../utils/timeUtil");
@@ -76,10 +76,10 @@ async function exchangeCode({
       WHERE tenant_id = ? AND delete_status = 0
     `).get(targetTenantId)?.count || 0;
 
-    // Check if updating existing line or creating new
+    // Check if updating existing line or creating new (scope to tenant)
     const isExistingLine = db.prepare(`
-      SELECT id FROM waba_phone_numbers WHERE id = ?
-    `).get(cleanPhoneId);
+      SELECT id FROM waba_phone_numbers WHERE (id = ? OR phone_number_id = ?) AND tenant_id = ? LIMIT 1
+    `).get(cleanPhoneId, cleanPhoneId, targetTenantId);
 
     if (!isExistingLine && existingLinesCount >= (tenant.quota_waba_lines || 1)) {
       throw new Error(
@@ -88,21 +88,26 @@ async function exchangeCode({
     }
   }
 
-  // 2. Exchange OAuth code for permanent access token
+  // 2. Exchange OAuth code for permanent access token (resolve secret from config -> env -> DB setting)
+  const rawDbSecret = typeof getSetting === "function" ? getSetting("META_APP_SECRET") : "";
+  const validDbSecret = (rawDbSecret && !String(rawDbSecret).startsWith("enc:aes-256-gcm:")) ? String(rawDbSecret).trim() : "";
+  const resolvedAppSecret = (config.META_APP_SECRET || process.env.META_APP_SECRET || validDbSecret || "").trim();
+  const resolvedAppId = (config.META_APP_ID || process.env.META_APP_ID || "1436154674311899").trim();
+
   let accessToken = "";
   const isMockCode =
     isSimulation ||
     String(code).startsWith("mock_") ||
     process.env.NODE_ENV === "test" ||
-    !config.META_APP_SECRET;
+    !resolvedAppSecret;
 
   if (isMockCode) {
     accessToken = `EAAMock_${crypto.randomBytes(24).toString("hex")}`;
   } else {
     try {
       const tokenUrl = new URL(`${getMetaBaseUrl()}/oauth/access_token`);
-      tokenUrl.searchParams.set("client_id", config.META_APP_ID || process.env.META_APP_ID);
-      tokenUrl.searchParams.set("client_secret", config.META_APP_SECRET || process.env.META_APP_SECRET);
+      tokenUrl.searchParams.set("client_id", resolvedAppId);
+      tokenUrl.searchParams.set("client_secret", resolvedAppSecret);
       tokenUrl.searchParams.set("code", String(code).trim());
 
       const res = await fetch(tokenUrl.toString(), { method: "GET" });

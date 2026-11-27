@@ -586,12 +586,23 @@ describe("Layer 10: Customer Journeys A–J End-to-End Platform Verification", {
     universalAvailabilityService.releaseHold(tenantClinicId, rescheduledHold.holdToken);
 
     // 2. Payment failure / unconfirmed webhook leaves transaction UNPAID
+    const unpaidItemRes = universalCatalogService.createItem(tenantClinicId, {
+      entity_id: createdEntityId,
+      item_type: "SERVICE",
+      inventory_mode: "UNIT_STOCK",
+      title: "Dental X-Ray Checkup",
+      sku: `J10-XRAY-${ts}`,
+      base_price: 500,
+      stock_qty: 3,
+      reserved_qty: 0,
+      track_inventory: 1
+    }, ownerUserId);
     const pmRow = db.prepare("SELECT id FROM master_payment_modes WHERE tenant_id = ? LIMIT 1").get(tenantClinicId);
     const failedTxn = await universalFulfillmentService.createTransactionFromQuote({
       tenantId: tenantClinicId,
       sourceChannel: "WHATSAPP_FLOW",
       customer: { phone: customerPhone, name: "Unpaid Guest" },
-      cartItems: [{ itemId: createdItemId, quantity: 1 }],
+      cartItems: [{ itemId: Number(unpaidItemRes.id), quantity: 1 }],
       paymentModeId: Number(pmRow.id)
     });
     const badWh = await fetch(`${baseUrl}/pay/webhook/razorpay`, {

@@ -115,13 +115,14 @@ router.get("/:slug/messages", (req, res) => {
     }
 
     const phone = session.visitor_phone || session.session_token;
+    const sessionTenantId = Number(session.tenant_id || 1);
     const messages = db.prepare(`
       SELECT id, wa_message_id, from_phone, customer_name, message_type,
              message_body, reply_text, reply_sent_at, received_at, media_url, source
       FROM customer_replies
-      WHERE (from_phone = ? OR link_id = ?)
+      WHERE tenant_id = ? AND (from_phone = ? OR link_id = ?)
       ORDER BY id ASC LIMIT 100
-    `).all(phone, String(session.id));
+    `).all(sessionTenantId, phone, String(session.id));
 
     return res.status(200).json({ success: true, data: messages });
   } catch (err) {
@@ -145,17 +146,19 @@ router.post("/:slug/messages", (req, res) => {
 
     const phone = session.visitor_phone || `guest_${session.id}`;
     const name = session.visitor_name || "In-App Visitor";
+    const sessionTenantId = Number(session.tenant_id || 1);
     const waMsgId = `inapp_msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
     const insertRes = db.prepare(`
       INSERT INTO customer_replies (
-        wa_message_id, from_phone, customer_name, message_type, message_body,
+        tenant_id, wa_message_id, from_phone, customer_name, message_type, message_body,
         media_url, is_read, received_at, link_id, source
       ) VALUES (
-        ?, ?, ?, 'text', ?,
+        ?, ?, ?, ?, 'text', ?,
         ?, 0, CURRENT_TIMESTAMP, ?, 'INAPP_CHAT'
       )
     `).run(
+      sessionTenantId,
       waMsgId,
       phone,
       name,

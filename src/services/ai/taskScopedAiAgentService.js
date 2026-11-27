@@ -8,7 +8,7 @@
  * 4. Regional Parity: Responds in the customer's chosen language (English, Hindi, Marathi, Hinglish).
  * 5. Automatic Human Handoff: Triggers when confidence < threshold, keywords matched, or turns exceeded.
  */
-const { getDb } = require('../../config/database');
+const { getDb, getSetting } = require('../../config/database');
 const knowledgeRetrievalService = require('./knowledgeRetrievalService');
 const voiceTranscriptionService = require('./voiceTranscriptionService');
 const config = require('../../config/env');
@@ -62,15 +62,20 @@ class TaskScopedAiAgentService {
   resolveTenantAiProfile(tenantId = 1) {
     const db = getDb();
     const numericTid = Number(tenantId) || 1;
+    let tenantRow = null;
     let entity = null;
     let property = null;
+    try {
+      tenantRow = db.prepare("SELECT name, primary_domain FROM tenants WHERE id = ? LIMIT 1").get(numericTid);
+    } catch (_) {}
+    const preferredDomain = String(tenantRow?.primary_domain || "").trim().toUpperCase();
     try {
       entity = db.prepare(`
         SELECT name, domain, city, state, phone_e164, checkin_time, opening_time
         FROM business_entities
-        WHERE tenant_id = ? AND delete_status = 0
-        ORDER BY id ASC LIMIT 1
-      `).get(numericTid);
+        WHERE tenant_id = ? AND delete_status = 0 AND status = 'ACTIVE'
+        ORDER BY CASE WHEN UPPER(COALESCE(domain, '')) = ? THEN 0 ELSE 1 END, id ASC LIMIT 1
+      `).get(numericTid, preferredDomain);
     } catch (_) {}
 
     if (!entity && numericTid === 1) {
@@ -78,14 +83,14 @@ class TaskScopedAiAgentService {
         property = db.prepare(`
           SELECT name, city, state, phone, property_type, check_in_time
           FROM properties
-          WHERE tenant_id = 1
+          WHERE tenant_id = 1 AND COALESCE(delete_status, 0) = 0
           ORDER BY id ASC LIMIT 1
         `).get();
       } catch (_) {}
     }
 
-    const rawDomain = String(entity?.domain || (property ? 'HOSPITALITY' : 'GENERAL')).toUpperCase();
-    const businessName = entity?.name || property?.name || 'our business';
+    const rawDomain = String(entity?.domain || preferredDomain || (property ? 'HOSPITALITY' : 'GENERAL')).toUpperCase();
+    const businessName = entity?.name || tenantRow?.name || property?.name || 'our business';
 
     const domainMap = {
       HOSPITALITY: {
@@ -522,7 +527,7 @@ class TaskScopedAiAgentService {
     let llmTriggeredHandoff = false;
     let promptTokens = estimateTokens(userInput) + estimateTokens(retrievalResult.contextText);
     let completionTokens = 0;
-    const geminiKey = process.env.GEMINI_API_KEY || config.GEMINI_API_KEY;
+    const geminiKey = String(getSetting('GEMINI_API_KEY') || process.env.GEMINI_API_KEY || config.GEMINI_API_KEY || '').trim();
 
     if (!isSimulation && geminiKey) {
       try {

@@ -381,8 +381,9 @@ async function simulateTurn(req, res) {
 
 async function listTemplates(req, res) {
   try {
+    const tenantId = req.user?.tenant_id || 1;
     const { industry, category } = req.query;
-    const templates = flowService.listTemplates(industry, category);
+    const templates = flowService.listTemplates(industry, category, tenantId);
     return res.json({ success: true, templates });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
@@ -516,8 +517,8 @@ async function updateGlobalSettings(req, res) {
 async function listSessions(req, res) {
   try {
     const tenantId = req.user?.tenant_id || 1;
-    const { flowId, status, search, page, limit } = req.query;
-    const data = flowService.listFlowExecutions(tenantId, { flowId, status, search, page, limit });
+    const { flowId, status, search, phone, page, limit } = req.query;
+    const data = flowService.listFlowExecutions(flowId || null, { status, phone: phone || search, search, page, limit }, tenantId);
     return res.json({ success: true, ...data });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
