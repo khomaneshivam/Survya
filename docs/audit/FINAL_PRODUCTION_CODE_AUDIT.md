@@ -11,7 +11,7 @@
 | Metric | Pre-Rationalization Baseline | Post-WS7/WS8 Rationalization | Notes |
 |---|---|---|---|
 | **Database Tables (`src/config/schema.js`)** | `109` | `109` | Zero drops of historical tables/columns; removed duplicate `CREATE TABLE flow_global_settings`; added composite hot indexes & cryptographic fallback verify token. |
-| **Removed Dead Source Files (`REMOVAL_REGISTER.md`)** | — | **`34` files removed** | `8` unmounted dead routers (`src/routes/*`), `src/utils/tenantScope.js`, `24` dead/unreferenced frontend pages/components + `useFlowEditor.js`, plus `1` dead function (`executeBusinessAction`). |
+| **Removed Dead Source Files (`REMOVAL_REGISTER.md`)** | — | **`27` files removed** | `8` unmounted dead routers (`src/routes/*`), `src/utils/tenantScope.js`, `18` dead/unreferenced frontend files (`5` pages, `9` unused `flow-studio` components/modals, `useFlowEditor.js`, `3` legacy `inapp-runtime` shells), plus `1` dead function (`executeBusinessAction`). `SchemaDrivenConfigFields.jsx` and the `6` `inapp-runtime` screen widgets imported by `componentRegistry.jsx` remain intact. |
 | **Removed Dependencies** | — | **`3` packages** | Removed `@types/react`, `@types/react-dom` (`frontend/package.json`), and `uuid` (`package.json`, replaced by `crypto.randomUUID()`). |
 | **Authoritative Inventory Register** | `docs/audit/SOURCE_FILE_REGISTER.csv` | Refreshed via `generate_registers.js` | Reflects live tracked + added files with dead files deleted from disk. |
 
