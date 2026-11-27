@@ -33,3 +33,33 @@
   1. `universalCatalogController.seedBlueprint` / `importFullSuite` perform no check against tenant allowed domains (`ENTERPRISE` unlocks all 8 sectors), seed `EDUCATION_COACHING` (`phone_number_id = NULL` shown as `Global / Default`), merge generic greeting triggers (`"hi"`, `"hello"`, `"menu"`), immediately auto-publish (`publishFlow`), and overwrite Tenant 1 `settings.BOT_BUSINESS_NAME` (`"NextGen Tech Institute & Code Academy"` verified in live DB).
   2. `workflowTriggerService.syncFlowTriggers` queries nonexistent column `trigger_keywords` instead of `trigger_keywords_json` (`try/catch` discards errors).
   3. `conversation_flow_templates` has no `tenant_id`, `templateController.listTemplates` omits `tenant_id`, and `conversationFlowController.listSessions` swaps `(tenantId, options)` into `(flowId, options, tenantId)`.
+
+---
+
+## 5. Incident: Cross-File Credential Drift, Webhook Secret Override & Plaintext Token Persistence (WS3)
+
+- **Root Causes:**
+  1. `webhookController.verifyMetaSignature` checked `config.META_APP_SECRET` ahead of DB `getSetting("META_APP_SECRET")`, ignoring UI secret rotations whenever `.env` had an older secret.
+  2. `cryptoUtil.decrypt` returned the original `enc:aes-256-gcm:` ciphertext verbatim on key mismatch, causing downstream Meta Graph callers to dispatch ciphertext in `Authorization: Bearer` headers.
+  3. `adminController.registerPhoneNumber` persisted plaintext `access_token` instead of `access_token_enc`, while `sarvyaConnectController` returned `access_token_enc` in API JSON responses and `flowService` bypassed `resolveCredentials()` and `isSandbox` checks.
+
+## 6. Incident: Payment/Settlement Mismatch, Simulated Escrow Retirement & CRM Schema Drift (WS4)
+
+- **Root Causes:**
+  1. `paymentPayoutService` and `PayoutsPage.jsx` modeled simulated PA/PG escrow fees (`2%`), NPCI penny-drop references (`NPCI_PD_...`), and IMPS UTR dispatches (`4319...`), rather than operating purely in Merchant-Direct mode.
+  2. `hospitalityAvailabilityService.reserveConfirmedBookingAtomically` wrote `booking_enquiries` without synchronizing `room_inventory_daily`, and `checkRoomAvailability` omitted `overall_status`.
+  3. `complianceService.js` and `recycleBinService.js` queried legacy `crm_records`/`crm_pipelines` columns (`title`, `stage`, `value`, `custom_data`, `description`) that do not exist in `src/config/schema.js`.
+  4. `reportsController` and `metaRateService` aggregated `is_sandbox = 1` / `WAIVED_SANDBOX` rows alongside production tenants.
+
+## 7. Incident: Workflow Executor Output Contract Mismatch & AI Unbounded Calls (WS5–WS6)
+
+- **Root Causes:**
+  1. `masterPickerExecutor` returned `message` rather than `replyMessages` + `replyInteractive` expected by `conversationFlowEngine.processTurn`.
+  2. `catalogBookingExecutor` silently fabricated `7840 / 7000 / 840` rupee quotes and `isAvail = true` on pricing/availability exceptions, while `resolveNextTransition` followed single outbound edges even on explicit `failure`/`unavailable`/`max_retries` handles.
+  3. `voiceTranscriptionService` imported an unlisted `'form-data'` package and cached API keys at startup; external AI calls lacked `AbortSignal.timeout` and `is_sandbox` short-circuits.
+
+## 8. Incident: Dead Code Bloat, CI Quality Bypass & Hanging Test Handles (WS7–WS8)
+
+- **Root Causes:**
+  1. 8 legacy unmounted routers (`src/routes/*`), `tenantScope.js`, 24 dead frontend files/components, and `@types/*`/`uuid` packages remained in the repository alongside stale `KonkanTrip` UI placeholders.
+  2. `.github/workflows/conversation-foundation.yml` set `VERIFY_WEBHOOK_SIGNATURE: "false"`, while `.github/workflows/ci-cd.yml` ran a partial subset without `DISABLE_SCHEDULER: "true"` or `WHATSAPP_API_TOKEN`, and HTTP test suites left MySQL pool/socket handles open.

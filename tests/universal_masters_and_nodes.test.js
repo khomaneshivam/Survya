@@ -1,5 +1,7 @@
+const { test, after } = require("node:test");
 const assert = require("assert");
 const { db } = require("../src/config/database");
+const { closeAsyncPool } = require("../src/config/asyncDb");
 const masterCacheService = require("../src/services/masters/masterCacheService");
 const masterDataService = require("../src/services/masters/masterDataService");
 const masterPickerExecutor = require("../src/services/workflow/nodeExecutors/masterPickerExecutor");
@@ -325,7 +327,10 @@ async function runMasterTest() {
   console.log("================================================================================\n");
 }
 
-runMasterTest().catch(err => {
-  console.error("\n❌ Master Test Failed:", err);
-  process.exit(1);
+test("Universal Multi-Domain Master Data Layer & Nodes Suite", async () => {
+  await runMasterTest();
+});
+
+after(async () => {
+  await closeAsyncPool();
 });

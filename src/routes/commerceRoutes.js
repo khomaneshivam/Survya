@@ -49,8 +49,8 @@ router.post("/v1/universal/holds/:token/release", authenticateToken, universalCa
 
 // Dynamic Quotation Engine
 router.post("/v1/universal/pricing/quote", authenticateToken, universalCatalogController.calculateQuote);
-router.post("/quote", optionalAuth, universalCatalogController.calculateQuote);
-router.get("/catalog/search", optionalAuth, universalCatalogController.searchCatalog);
+router.post("/quote", authenticateToken, universalCatalogController.calculateQuote);
+router.get("/catalog/search", authenticateToken, universalCatalogController.searchCatalog);
 
 // 8 Industry Blueprints 1-Click Seeder
 router.get(["/v1/universal/blueprints", "/v1/universal-catalog/blueprints", "/universal/blueprints"], authenticateToken, universalCatalogController.listBlueprints);

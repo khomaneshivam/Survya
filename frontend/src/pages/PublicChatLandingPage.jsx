@@ -932,7 +932,7 @@ export default function PublicChatLandingPage({ slug }) {
         : (linkData?.defaultMessage || linkData?.default_message || 'Hello, I would like to inquire about booking.');
 
       const introMsg = activeMessage.trim() || defaultIntro;
-      const fullMessage = `Hi ${linkData?.welcomeTitle || 'KonkanTrip Resort'}, my name is ${cleanName}. ${introMsg}`;
+      const fullMessage = `Hi ${linkData?.welcomeTitle || 'Concierge Desk'}, my name is ${cleanName}. ${introMsg}`;
 
       const res = await fetch(`/api/v1/public/chat-links/${encodeURIComponent(slug)}/start-chat`, {
         method: 'POST',
@@ -1915,7 +1915,7 @@ export default function PublicChatLandingPage({ slug }) {
                 <div className="public-chat-bubble-concierge">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
                     <span style={{ fontWeight: 700, fontSize: '0.75rem', color: '#2876B8' }}>
-                      {linkData.welcomeTitle || 'KonkanTrip Concierge'}
+                      {linkData.welcomeTitle || 'Guest Concierge'}
                     </span>
                     <span style={{
                       fontSize: '0.65rem',
@@ -1932,7 +1932,7 @@ export default function PublicChatLandingPage({ slug }) {
                     </span>
                   </div>
                   <div style={{ color: '#171719', lineHeight: 1.5 }}>
-                    {formatChatText(linkData.autoReplyMessage || `Hello ${customerName}! Thank you for reaching out to ${linkData.welcomeTitle || 'KonkanTrip'}. We have received your inquiry and our desk is assisting you.`)}
+                    {formatChatText(linkData.autoReplyMessage || `Hello ${customerName}! Thank you for reaching out to ${linkData.welcomeTitle || 'our hospitality desk'}. We have received your inquiry and our desk is assisting you.`)}
                   </div>
                   <div style={{ fontSize: '0.675rem', color: '#96969C', textAlign: 'right', marginTop: '4px' }}>
                     Just now

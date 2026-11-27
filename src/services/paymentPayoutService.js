@@ -3,8 +3,8 @@ const { db } = require("../config/database");
 const { generateQrSvg } = require("../utils/qrCodeUtil");
 const cryptoUtil = require("../utils/cryptoUtil");
 
-const PLATFORM_FEE_RATE = 0.02; // 2% platform fee
-const GST_ON_FEE_RATE = 0.18;   // 18% GST on platform fee
+const PLATFORM_FEE_RATE = 0; // Merchant-Direct Mode (0% platform escrow fee)
+const GST_ON_FEE_RATE = 0;   // Merchant-Direct Mode
 const IFSC_REGEX = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 
 function maskAccountNumber(accountNumber) {
@@ -127,13 +127,14 @@ function createPayInSession(entityId, orderData) {
   const entity = db.prepare("SELECT * FROM business_entities WHERE id = ?").get(entityId);
   const orderNumber = orderData.order_number || `ORD-${Date.now()}`;
   const amount = parseFloat(orderData.grand_total || orderData.amount || 0);
+  const fallbackVpa = `${(entity?.slug || "merchant").replace(/[^a-z0-9]/g, "")}@upi`;
 
   const upiUri = generateUpiUri({
-    vpa: config.upi_vpa || "konkantrip@icici",
-    payeeName: config.upi_payee_name || entity?.name || "KonkanTrip Hospitality",
+    vpa: config.upi_vpa || fallbackVpa,
+    payeeName: config.upi_payee_name || entity?.name || "Merchant",
     amount,
     orderNumber,
-    note: `SARVYA Pay ${orderNumber}`
+    note: `${entity?.name || "Survya"} Pay ${orderNumber}`
   });
 
   const upiQrSvg = generateUpiQrSvg({ upiUri, size: 280 });
@@ -145,7 +146,7 @@ function createPayInSession(entityId, orderData) {
     entity: {
       id: entityId,
       name: entity?.name || "Merchant",
-      city: entity?.city || "Alibaug"
+      city: entity?.city || ""
     },
     upi: {
       vpa: config.upi_vpa,
@@ -212,9 +213,26 @@ function captureOrderPayment({ orderNumber, paymentMethod = "UPI_INTENT", paymen
       WHERE id = ?
     `).run(paymentMethod, ref, order.id);
 
-    // If order has items, update inventory atomically inside the locked transaction
+    // If order has items, validate and update inventory atomically inside the locked transaction
     const items = db.prepare("SELECT * FROM unified_order_items WHERE order_id = ?").all(order.id);
     for (const item of items) {
+      const lockedCatalogItem = db.prepare(`
+        SELECT id, title, stock_qty, stock_quantity, track_inventory, inventory_tracking
+        FROM catalog_items
+        WHERE id = ?
+        FOR UPDATE
+      `).get(item.item_id);
+
+      const tracksInv = lockedCatalogItem && (Number(lockedCatalogItem.track_inventory || 0) === 1 || Number(lockedCatalogItem.inventory_tracking || 0) === 1);
+      if (tracksInv) {
+        const availableStock = Number(lockedCatalogItem.stock_qty ?? lockedCatalogItem.stock_quantity ?? 0);
+        if (availableStock < Number(item.quantity || 1)) {
+          const stockErr = new Error(`Insufficient stock for '${lockedCatalogItem.title || item.item_title || item.item_id}'`);
+          stockErr.statusCode = 409;
+          throw stockErr;
+        }
+      }
+
       if (order.check_in_date && order.check_out_date) {
         db.prepare(`
           UPDATE daily_inventory_matrix
@@ -226,13 +244,15 @@ function captureOrderPayment({ orderNumber, paymentMethod = "UPI_INTENT", paymen
         `).run(item.quantity, item.quantity, order.entity_id, item.item_id, order.check_in_date, order.check_out_date);
       }
 
-      db.prepare(`
-        UPDATE catalog_items
-        SET stock_quantity = GREATEST(0, COALESCE(stock_quantity, 0) - ?),
-            stock_qty = GREATEST(0, COALESCE(stock_qty, stock_quantity, 0) - ?),
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND (COALESCE(inventory_tracking, 0) = 1 OR COALESCE(track_inventory, 0) = 1)
-      `).run(item.quantity, item.quantity, item.item_id);
+      if (tracksInv) {
+        db.prepare(`
+          UPDATE catalog_items
+          SET stock_quantity = GREATEST(0, COALESCE(stock_quantity, 0) - ?),
+              stock_qty = GREATEST(0, COALESCE(stock_qty, stock_quantity, 0) - ?),
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(item.quantity, item.quantity, item.item_id);
+      }
     }
 
     db.prepare("COMMIT").run();
@@ -319,33 +339,10 @@ function addBeneficiary(entityId, data, tenantId = 1) {
 }
 
 function verifyPennyDrop(beneficiaryId) {
-  const beneficiary = db.prepare("SELECT * FROM merchant_payout_beneficiaries WHERE id = ?").get(beneficiaryId);
-  if (!beneficiary) throw new Error("Beneficiary not found");
-
-  if (!IFSC_REGEX.test(beneficiary.ifsc_code)) {
-    throw new Error("Cannot verify beneficiary with invalid IFSC");
-  }
-
-  const mockRef = `NPCI_PD_${Date.now()}_${Math.floor(Math.random() * 90000 + 10000)}`;
-  const registeredName = beneficiary.account_holder_name.toUpperCase();
-
-  db.prepare(`
-    UPDATE merchant_payout_beneficiaries
-    SET verification_status = 'PENNY_VERIFIED',
-        penny_drop_reference = ?,
-        registered_legal_name = ?,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(mockRef, registeredName, beneficiaryId);
-
-  return {
-    success: true,
-    beneficiaryId,
-    verificationStatus: 'PENNY_VERIFIED',
-    pennyDropReference: mockRef,
-    registeredLegalName: registeredName,
-    message: "₹1.00 Penny-Drop verification successful via NPCI IMPS gateway. Account confirmed active."
-  };
+  const err = new Error("Simulated NPCI Penny-Drop verification is retired. Survya operates in Merchant-Direct Payment Mode.");
+  err.statusCode = 410;
+  err.code = "MERCHANT_DIRECT_MODE";
+  throw err;
 }
 
 function getPayoutSummary(entityId) {
@@ -355,50 +352,39 @@ function getPayoutSummary(entityId) {
     SELECT * FROM merchant_payout_beneficiaries WHERE entity_id = ? ORDER BY id ASC LIMIT 1
   `).get(entityId);
 
-  // Calculate gross revenue from paid orders
   const revenueRow = db.prepare(`
-    SELECT COALESCE(SUM(grand_total), 0) as total_revenue
+    SELECT COUNT(*) as paid_count,
+           COALESCE(SUM(grand_total), 0) as total_revenue
     FROM unified_orders
-    WHERE entity_id = ? AND payment_status = 'PAID'
+    WHERE entity_id = ? AND payment_status IN ('PAID', 'SETTLED')
   `).get(entityId);
-  const totalRevenue = revenueRow ? revenueRow.total_revenue : 0;
+  const totalRevenue = Number(revenueRow?.total_revenue || 0);
+  const paidCount = Number(revenueRow?.paid_count || 0);
 
-  // Calculate already settled payouts
-  const settledRow = db.prepare(`
-    SELECT COALESCE(SUM(gross_amount), 0) as total_settled_gross,
-           COALESCE(SUM(net_payout_amount), 0) as total_settled_net,
-           COALESCE(SUM(platform_fee + tax_on_fee), 0) as total_fees
-    FROM merchant_payout_ledger
-    WHERE entity_id = ? AND status = 'SETTLED'
+  const pendingRow = db.prepare(`
+    SELECT COALESCE(SUM(grand_total), 0) as pending_revenue
+    FROM unified_orders
+    WHERE entity_id = ?
+      AND payment_status IN ('UNPAID', 'PENDING', 'PARTIALLY_PAID')
+      AND order_status != 'CANCELLED'
   `).get(entityId);
-  const totalSettledGross = settledRow ? settledRow.total_settled_gross : 0;
-  const totalSettledNet = settledRow ? settledRow.total_settled_net : 0;
-  const totalFeesPaid = settledRow ? settledRow.total_fees : 0;
-
-  // Calculate pending / in-progress payouts
-  const processingRow = db.prepare(`
-    SELECT COALESCE(SUM(gross_amount), 0) as total_processing
-    FROM merchant_payout_ledger
-    WHERE entity_id = ? AND status IN ('PENDING', 'PROCESSING')
-  `).get(entityId);
-  const totalProcessing = processingRow ? processingRow.total_processing : 0;
-
-  // Unsettled gross revenue available for dispatch
-  const unsettledGross = Math.max(0, totalRevenue - totalSettledGross - totalProcessing);
-  const estimatedPlatformFee = Math.round(unsettledGross * PLATFORM_FEE_RATE * 100) / 100;
-  const estimatedTaxOnFee = Math.round(estimatedPlatformFee * GST_ON_FEE_RATE * 100) / 100;
-  const netAvailableForPayout = Math.max(0, Math.round((unsettledGross - (estimatedPlatformFee + estimatedTaxOnFee)) * 100) / 100);
+  const pendingCollections = Number(pendingRow?.pending_revenue || 0);
 
   return {
     entityId,
+    paymentMode: "MERCHANT_DIRECT",
+    platformFeeRate: 0,
     totalGrossRevenue: totalRevenue,
-    unsettledGrossRevenue: unsettledGross,
-    estimatedPlatformFee,
-    estimatedTaxOnFee,
-    availableForPayout: netAvailableForPayout,
-    lifetimeSettledNet: totalSettledNet,
-    lifetimeSettledGross: totalSettledGross,
-    lifetimeFeesPaid: totalFeesPaid,
+    totalSettledInr: totalRevenue,
+    pendingCollectionsInr: pendingCollections,
+    merchantDirectTransactionsCount: paidCount,
+    unsettledGrossRevenue: 0,
+    estimatedPlatformFee: 0,
+    estimatedTaxOnFee: 0,
+    availableForPayout: 0,
+    lifetimeSettledNet: totalRevenue,
+    lifetimeSettledGross: totalRevenue,
+    lifetimeFeesPaid: 0,
     primaryBeneficiary: primaryBeneficiary ? {
       id: primaryBeneficiary.id,
       bankName: primaryBeneficiary.bank_name,
@@ -413,82 +399,10 @@ function getPayoutSummary(entityId) {
 }
 
 function triggerInstantPayout(entityId, requestedAmount = null, tenantId = 1) {
-  db.prepare("START TRANSACTION").run();
-  try {
-    // Acquire exclusive entity row lock so concurrent payout calls cannot overspend unsettled revenue
-    db.prepare("SELECT id FROM business_entities WHERE id = ? AND tenant_id = ? FOR UPDATE").get(entityId, tenantId);
-    const summary = getPayoutSummary(entityId);
-    const beneficiary = summary.primaryBeneficiary;
-
-    if (!beneficiary) {
-      throw new Error("No settlement bank account configured. Please add a bank account first.");
-    }
-    if (beneficiary.verificationStatus !== "PENNY_VERIFIED" && beneficiary.verificationStatus !== "MANUAL_VERIFIED") {
-      throw new Error("Settlement bank account is not verified. Complete Penny-Drop verification first.");
-    }
-
-    const parsedRequested = requestedAmount !== null ? parseFloat(requestedAmount) : summary.unsettledGrossRevenue;
-    const grossToDisperse = Math.round(parsedRequested * 100) / 100;
-    if (!Number.isFinite(grossToDisperse) || grossToDisperse <= 0) {
-      throw new Error("No unsettled cleared balance available for payout");
-    }
-    if (grossToDisperse > summary.unsettledGrossRevenue) {
-      throw new Error(`Requested payout ₹${grossToDisperse} exceeds available unsettled balance ₹${summary.unsettledGrossRevenue}`);
-    }
-
-    const platformFee = Math.round(grossToDisperse * PLATFORM_FEE_RATE * 100) / 100;
-    const taxOnFee = Math.round(platformFee * GST_ON_FEE_RATE * 100) / 100;
-    const netPayoutAmount = Math.round((grossToDisperse - (platformFee + taxOnFee)) * 100) / 100;
-
-    const batchId = `BATCH_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}_${Math.floor(Math.random() * 900 + 100)}`;
-    const bankUtr = `4319${Date.now().toString().slice(-8)}`;
-
-    const stmt = db.prepare(`
-      INSERT INTO merchant_payout_ledger (
-        tenant_id, entity_id, beneficiary_id, payout_batch_id,
-        gross_amount, platform_fee, tax_on_fee, net_payout_amount,
-        currency, status, bank_utr, dispatched_at, settled_at
-      ) VALUES (
-        ?, ?, ?, ?,
-        ?, ?, ?, ?,
-        'INR', 'SETTLED', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-      )
-    `);
-
-    const info = stmt.run(
-      tenantId,
-      entityId,
-      beneficiary.id,
-      batchId,
-      grossToDisperse,
-      platformFee,
-      taxOnFee,
-      netPayoutAmount,
-      bankUtr
-    );
-
-    db.prepare("COMMIT").run();
-
-    return {
-      success: true,
-      ledgerId: info.lastInsertRowid,
-      batchId,
-      bankUtr,
-      grossAmount: grossToDisperse,
-      platformFee,
-      taxOnFee,
-      netPayoutAmount,
-      status: "SETTLED",
-      beneficiary: {
-        bankName: beneficiary.bankName,
-        accountNumberMasked: beneficiary.accountNumberMasked
-      },
-      message: `Payout of ₹${netPayoutAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} successfully dispatched via IMPS. Bank UTR: ${bankUtr}`
-    };
-  } catch (err) {
-    try { db.prepare("ROLLBACK").run(); } catch (_) {}
-    throw err;
-  }
+  const err = new Error("Simulated pooled instant IMPS payouts are retired. Customer payments settle directly via your merchant UPI VPA or Razorpay account.");
+  err.statusCode = 410;
+  err.code = "MERCHANT_DIRECT_MODE";
+  throw err;
 }
 
 function getPayoutLedger(entityId, options = {}) {

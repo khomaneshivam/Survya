@@ -153,12 +153,15 @@ describe("Layer 10: Customer Journeys A–J End-to-End Platform Verification", {
     baseUrl = `http://127.0.0.1:${server.address().port}`;
   });
 
-  after(() => {
+  after(async () => {
     config.META_API_URL = origMetaUrl;
     config.META_APP_SECRET = origMetaSecret;
-    if (server) server.close();
-    if (mockMetaServer) mockMetaServer.close();
+    if (mockMetaServer) {
+      try { mockMetaServer.closeAllConnections?.(); await new Promise(r => mockMetaServer.close(r)); } catch (_) {}
+    }
     cleanup();
+    const { closeTestResources } = require("./helpers/testFixtures");
+    await closeTestResources(server);
   });
 
   test("Journey A & B: Self-serve Onboarding (TRIAL + OWNER), Workspace Team Invite & 3-Tier RBAC Isolation", async () => {

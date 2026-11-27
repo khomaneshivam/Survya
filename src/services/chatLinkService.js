@@ -380,20 +380,28 @@ function bulkGenerateLinks(items = [], { tenantId = 1, userId = "system", defaul
  * Gets a single link by ID or Slug (optionally tracking click counter)
  */
 function getLinkByIdOrSlug(idOrSlug, {
-  tenantId = 1,
+  tenantId = null,
   userId = null,
   isAdmin = false,
   incrementClicks = false,
   queryParams = {},
   baseUrl = ""
 } = {}) {
-  const row = db.prepare(`
-    SELECT cl.*, u.name as creator_name, u.email as creator_email
-    FROM chat_links cl
-    LEFT JOIN users u ON cl.user_id = u.id
-    WHERE (cl.id = ? OR cl.slug = ?) AND cl.tenant_id = ?
-    LIMIT 1
-  `).get(idOrSlug, idOrSlug, tenantId);
+  const row = tenantId
+    ? db.prepare(`
+        SELECT cl.*, u.name as creator_name, u.email as creator_email
+        FROM chat_links cl
+        LEFT JOIN users u ON cl.user_id = u.id
+        WHERE (cl.id = ? OR cl.slug = ?) AND cl.tenant_id = ? AND COALESCE(cl.delete_status, 0) = 0
+        LIMIT 1
+      `).get(idOrSlug, idOrSlug, tenantId)
+    : db.prepare(`
+        SELECT cl.*, u.name as creator_name, u.email as creator_email
+        FROM chat_links cl
+        LEFT JOIN users u ON cl.user_id = u.id
+        WHERE (cl.id = ? OR cl.slug = ?) AND COALESCE(cl.delete_status, 0) = 0
+        LIMIT 1
+      `).get(idOrSlug, idOrSlug);
 
   if (!row) return null;
 
@@ -805,16 +813,27 @@ function startConversationFromLink({
  * Retrieves message history for an in-app web conversation session
  * Restricted to chat link or web guest messages to prevent leaking CRM broadcasts
  */
-function getWebConversationMessages(phone, linkId = null) {
+function getWebConversationMessages(phone, linkId = null, tenantId = null) {
   const defaultCountry = getSetting("DEFAULT_COUNTRY_CODE") || "91";
   const clean = cleanPhone(phone, defaultCountry);
   if (!clean) return [];
+
+  let resolvedTenantId = tenantId ? Number(tenantId) : null;
+  if (!resolvedTenantId && linkId) {
+    const linkRow = db.prepare("SELECT tenant_id FROM chat_links WHERE id = ? OR slug = ? LIMIT 1").get(linkId, linkId);
+    if (linkRow?.tenant_id) resolvedTenantId = Number(linkRow.tenant_id);
+  }
 
   let query = `
     SELECT * FROM customer_replies
     WHERE from_phone = ?
   `;
   const params = [clean];
+
+  if (resolvedTenantId) {
+    query += ` AND tenant_id = ?`;
+    params.push(resolvedTenantId);
+  }
 
   if (linkId) {
     query += ` AND (link_id = ? OR source = 'CHAT_LINK' OR from_phone LIKE '919000%')`;

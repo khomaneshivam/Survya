@@ -131,7 +131,11 @@ const corsOptions = {
 
     const allowed = buildAllowedOrigins();
     if (allowed.size === 0) {
-      return callback(null, true);
+      const corsErr = new Error("Origin not allowed");
+      corsErr.statusCode = 403;
+      corsErr.status = 403;
+      corsErr.isCors = true;
+      return callback(corsErr);
     }
 
     const normOrigin = normalizeOrigin(origin);
@@ -260,7 +264,7 @@ app.get("/uploads/inbound/:filename", async (req, res, next) => {
     const rawId = safeFilename.replace(/\.[a-zA-Z0-9]+$/, "");
     if (/^[a-zA-Z0-9_.-]+$/.test(rawId)) {
       const { downloadAndSaveInboundMedia } = require("./src/services/metaWhatsAppService");
-      const downloadRes = await downloadAndSaveInboundMedia(rawId);
+      const downloadRes = await downloadAndSaveInboundMedia(rawId, req.user?.tenant_id || null);
       if (downloadRes?.localPath && fs.existsSync(downloadRes.localPath)) {
         res.setHeader("Cache-Control", "private, no-store");
         return res.sendFile(downloadRes.localPath);
@@ -404,41 +408,43 @@ app.get("/metrics", (req, res) => {
   return res.status(200).send(lines.join("\n") + "\n");
 });
 
-// 4c. In-App Experience & Survya Studio APIs
+const { apiLimiter, publicLimiter } = require("./src/middleware/rateLimiter");
+
+// 4c. In-App Experience & Survya Studio APIs (rate-limited uniformly with /api)
 const inappExperienceRoutes = require("./src/routes/inappExperienceRoutes");
-app.use("/api/v1/inapp", inappExperienceRoutes);
+app.use(["/api/v1/inapp", "/api/inapp"], apiLimiter, inappExperienceRoutes);
 const studioRoutes = require("./src/routes/studioRoutes");
-app.use(["/api/v1/studio", "/api/studio", "/v1/studio"], studioRoutes);
+app.use(["/api/v1/studio", "/api/studio", "/v1/studio"], apiLimiter, studioRoutes);
 
 // 4d. Public Dynamic In-App Experience Runtime (/api/v1/public/x/:slug)
 const publicInappRoutes = require("./src/routes/publicInappRoutes");
-app.use(["/api/v1/public/x", "/v1/public/x", "/public/x"], publicInappRoutes);
+app.use(["/api/v1/public/x", "/v1/public/x", "/public/x"], publicLimiter, publicInappRoutes);
 
 // 4e. Admin Transactional Job Queue API (/api/v1/admin/queue)
 const jobQueueRoutes = require("./src/routes/jobQueueRoutes");
-app.use(["/api/v1/admin/queue", "/api/admin/queue", "/api/queue"], jobQueueRoutes);
+app.use(["/api/v1/admin/queue", "/api/admin/queue", "/api/queue"], apiLimiter, jobQueueRoutes);
 
 // 4f. Task-Scoped AI Agent & Inbox Copilot API (/api/v1/ai)
 const aiAssistantRoutes = require("./src/routes/aiAssistantRoutes");
-app.use(["/api/v1/ai", "/api/ai"], aiAssistantRoutes);
+app.use(["/api/v1/ai", "/api/ai"], apiLimiter, aiAssistantRoutes);
 
 // 4g. Universal Master Data Layer API (/api/v1/masters)
 const masterRoutes = require("./src/routes/masterRoutes");
-app.use(["/api/v1/masters", "/api/masters"], masterRoutes);
+app.use(["/api/v1/masters", "/api/masters"], apiLimiter, masterRoutes);
 
 // 4h. Universal Catalog, Availability, Addons & Pricing Engine API (/api/v1/universal-catalog)
 const universalCatalogRoutes = require("./src/routes/universalCatalogRoutes");
-app.use(["/api/v1/universal-catalog", "/api/universal-catalog"], universalCatalogRoutes);
+app.use(["/api/v1/universal-catalog", "/api/universal-catalog"], apiLimiter, universalCatalogRoutes);
 
 // 4i. Universal Multi-Flow Hub & Studio API (/api/v1/flows)
 const conversationFlowRoutes = require("./src/routes/conversationFlowRoutes");
-app.use(["/api/v1/flows", "/v1/flows", "/api/flows", "/flows"], conversationFlowRoutes);
+app.use(["/api/v1/flows", "/v1/flows", "/api/flows", "/flows"], apiLimiter, conversationFlowRoutes);
 
 // 4j. Universal Fulfillment & Transactions API (/api/v1/transactions)
 const universalFulfillmentRoutes = require("./src/routes/universalFulfillmentRoutes");
 const publicUniversalFulfillmentRoutes = require("./src/routes/publicUniversalFulfillmentRoutes");
-app.use(["/api/v1/transactions", "/api/transactions"], universalFulfillmentRoutes);
-app.use(["/api/v1/public", "/api/public", "/public"], publicUniversalFulfillmentRoutes);
+app.use(["/api/v1/transactions", "/api/transactions"], apiLimiter, universalFulfillmentRoutes);
+app.use(["/api/v1/public", "/api/public", "/public"], publicLimiter, publicUniversalFulfillmentRoutes);
 
 // 5. API routes
 app.use("/api", apiRoutes);

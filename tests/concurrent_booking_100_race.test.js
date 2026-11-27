@@ -88,9 +88,8 @@ describe("Phase 5 Regression: 100-Race HTTP Concurrency, Expired Hold Defense, R
   });
 
   after(async () => {
-    if (server) {
-      await new Promise((resolve) => server.close(resolve));
-    }
+    const { closeTestResources } = require("./helpers/testFixtures");
+    await closeTestResources(server);
   });
 
   test("1. 100 simultaneous HTTP checkouts on single Express process never oversell & write accurate GST transaction items", async () => {

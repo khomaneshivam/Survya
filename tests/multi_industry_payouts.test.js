@@ -37,8 +37,7 @@ describe("SARVYA Multi-Industry Polymorphic Commerce, Pay-In & Merchant Payouts"
     );
   });
 
-  after(() => {
-    if (server) server.close();
+  after(async () => {
     if (adminUser?.id) {
       db.prepare("DELETE FROM users WHERE id = ?").run(adminUser.id);
     }
@@ -54,6 +53,8 @@ describe("SARVYA Multi-Industry Polymorphic Commerce, Pay-In & Merchant Payouts"
       db.prepare("DELETE FROM catalog_categories WHERE entity_id = ?").run(eid);
       db.prepare("DELETE FROM business_entities WHERE id = ?").run(eid);
     }
+    const { closeTestResources } = require("./helpers/testFixtures");
+    await closeTestResources(server);
   });
 
   test("1. Lists seeded default entities (Hospitality and Dining)", async () => {
@@ -335,21 +336,20 @@ describe("SARVYA Multi-Industry Polymorphic Commerce, Pay-In & Merchant Payouts"
     assert.equal(goodJson.beneficiary.verification_status, "PENDING");
     const beneficiaryId = goodJson.beneficiary.id;
 
-    // 3. Trigger Penny-Drop Verification -> transitions to PENNY_VERIFIED
+    // 3. Simulated Penny-Drop Verification is retired in Merchant-Direct Mode -> 410 Gone
     const verifyRes = await fetch(`${baseUrl}/api/v1/payouts/beneficiaries/${beneficiaryId}/verify-penny-drop`, {
       method: "POST",
       headers: { Authorization: `Bearer ${adminToken}` }
     });
-    assert.equal(verifyRes.status, 200);
+    assert.equal(verifyRes.status, 410);
     const verifyJson = await verifyRes.json();
-    assert.equal(verifyJson.verificationStatus, "PENNY_VERIFIED");
-    assert.ok(verifyJson.pennyDropReference.startsWith("NPCI_PD_"));
+    assert.equal(verifyJson.code, "MERCHANT_DIRECT_MODE");
   });
 
-  test("9. Calculates real-time payout summary, fees, and settles instant payout batch", async () => {
+  test("9. Returns Merchant-Direct reconciliation summary and retires simulated instant payouts", async () => {
     const entity = db.prepare("SELECT id FROM business_entities WHERE id = 1").get();
 
-    // Ensure entity 1 has a verified primary beneficiary in isolated clean DBs
+    // Ensure entity 1 has a primary beneficiary in isolated clean DBs
     const existingBen = db.prepare("SELECT id FROM merchant_payout_beneficiaries WHERE entity_id = ? LIMIT 1").get(entity.id);
     if (!existingBen) {
       const addRes = await fetch(`${baseUrl}/api/v1/entities/${entity.id}/payouts/beneficiaries`, {
@@ -359,7 +359,7 @@ describe("SARVYA Multi-Industry Polymorphic Commerce, Pay-In & Merchant Payouts"
           Authorization: `Bearer ${adminToken}`
         },
         body: JSON.stringify({
-          account_holder_name: "KONKANTRIP RESORT SETTLEMENTS",
+          account_holder_name: "MERCHANT SETTLEMENTS",
           bank_name: "HDFC BANK",
           account_number: "50200012345678",
           ifsc_code: "HDFC0000240",
@@ -367,50 +367,40 @@ describe("SARVYA Multi-Industry Polymorphic Commerce, Pay-In & Merchant Payouts"
         })
       });
       assert.equal(addRes.status, 201);
-      const addJson = await addRes.json();
-      const verRes = await fetch(`${baseUrl}/api/v1/payouts/beneficiaries/${addJson.beneficiary.id}/verify-penny-drop`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${adminToken}` }
-      });
-      assert.equal(verRes.status, 200);
     }
 
-    // Retrieve summary
+    // Retrieve Merchant-Direct summary
     const summaryRes = await fetch(`${baseUrl}/api/v1/entities/${entity.id}/payouts/summary`, {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
     assert.equal(summaryRes.status, 200);
     const summaryJson = await summaryRes.json();
     assert.equal(summaryJson.success, true);
+    assert.equal(summaryJson.summary.paymentMode, "MERCHANT_DIRECT");
+    assert.equal(summaryJson.summary.platformFeeRate, 0);
+    assert.equal(summaryJson.summary.unsettledGrossRevenue, 0);
     assert.ok(summaryJson.summary.primaryBeneficiary);
-    assert.equal(summaryJson.summary.primaryBeneficiary.verificationStatus, "PENNY_VERIFIED");
 
-    // If unsettled balance exists, trigger instant payout
-    if (summaryJson.summary.unsettledGrossRevenue > 0) {
-      const payoutRes = await fetch(`${baseUrl}/api/v1/entities/${entity.id}/payouts/request-instant`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${adminToken}`
-        },
-        body: JSON.stringify({ amount: summaryJson.summary.unsettledGrossRevenue })
-      });
-      assert.equal(payoutRes.status, 200);
-      const payoutJson = await payoutRes.json();
-      assert.equal(payoutJson.success, true);
-      assert.equal(payoutJson.status, "SETTLED");
-      assert.ok(payoutJson.bankUtr.startsWith("4319"));
-      assert.ok(payoutJson.netPayoutAmount > 0);
-    }
+    // Trigger instant payout is permanently retired (410 Gone)
+    const payoutRes = await fetch(`${baseUrl}/api/v1/entities/${entity.id}/payouts/request-instant`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ amount: 1000 })
+    });
+    assert.equal(payoutRes.status, 410);
+    const payoutJson = await payoutRes.json();
+    assert.equal(payoutJson.code, "MERCHANT_DIRECT_MODE");
 
-    // Verify settlement ledger
+    // Verify historical ledger read remains accessible
     const ledgerRes = await fetch(`${baseUrl}/api/v1/entities/${entity.id}/payouts/ledger`, {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
     assert.equal(ledgerRes.status, 200);
     const ledgerJson = await ledgerRes.json();
-    assert.ok(ledgerJson.ledger.length >= 1);
-    assert.ok(ledgerJson.ledger[0].bank_utr);
+    assert.ok(Array.isArray(ledgerJson.ledger));
   });
 
   test("10. Enforces payment capture idempotency to prevent duplicate inventory deduction", async () => {
@@ -456,7 +446,7 @@ describe("SARVYA Multi-Industry Polymorphic Commerce, Pay-In & Merchant Payouts"
     assert.equal(cap2Json.alreadyCaptured, true);
   });
 
-  test("11. Rejects invalid, NaN, or negative instant payout amounts", async () => {
+  test("11. Instant payout endpoint remains retired (410 Gone) even with invalid payloads", async () => {
     const badRes = await fetch(`${baseUrl}/api/v1/entities/1/payouts/request-instant`, {
       method: "POST",
       headers: {
@@ -465,7 +455,7 @@ describe("SARVYA Multi-Industry Polymorphic Commerce, Pay-In & Merchant Payouts"
       },
       body: JSON.stringify({ amount: -500 })
     });
-    assert.equal(badRes.status, 400);
+    assert.equal(badRes.status, 410);
 
     const nanRes = await fetch(`${baseUrl}/api/v1/entities/1/payouts/request-instant`, {
       method: "POST",
@@ -475,7 +465,7 @@ describe("SARVYA Multi-Industry Polymorphic Commerce, Pay-In & Merchant Payouts"
       },
       body: JSON.stringify({ amount: "invalid_nan" })
     });
-    assert.equal(nanRes.status, 400);
+    assert.equal(nanRes.status, 410);
   });
 });
 

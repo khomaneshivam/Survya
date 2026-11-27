@@ -4,6 +4,79 @@ const { getSetting, db } = require("../config/database");
 const config = require("../config/env");
 const cryptoUtil = require("../utils/cryptoUtil");
 
+function normalizeAppSecret(val) {
+  if (!val || typeof val !== "string") return "";
+  const cleaned = val.trim().replace(/^["']|["']$/g, "");
+  if (!cleaned) return "";
+  if (cryptoUtil.isEncrypted(cleaned)) return "";
+  if (/placeholder|your_meta_app_secret|your_app_secret|dummy|optional/i.test(cleaned)) return "";
+  return cleaned;
+}
+
+/**
+ * Canonical Meta App Secret resolver.
+ * Precedence: DB settings (valid decrypted) > config.META_APP_SECRET > process.env.META_APP_SECRET.
+ */
+function resolveMetaAppSecret() {
+  const rawDbSecret = typeof getSetting === "function" ? getSetting("META_APP_SECRET") : null;
+  if (typeof rawDbSecret === "string" && cryptoUtil.isEncrypted(rawDbSecret)) {
+    console.error("[Webhook Security] DB META_APP_SECRET failed AES-GCM decryption and was ignored.");
+  }
+  const dbSecret = normalizeAppSecret(rawDbSecret);
+  const envConfigSecret = normalizeAppSecret(config.META_APP_SECRET);
+  const processEnvSecret = normalizeAppSecret(process.env.META_APP_SECRET);
+
+  let appSecret = "";
+  let source = "none";
+  if (dbSecret) {
+    appSecret = dbSecret;
+    source = "db_settings";
+  } else if (envConfigSecret) {
+    appSecret = envConfigSecret;
+    source = "env_config";
+  } else if (processEnvSecret) {
+    appSecret = processEnvSecret;
+    source = "process_env";
+  }
+
+  return {
+    appSecret,
+    source,
+    dbSecret,
+    envSecret: envConfigSecret || processEnvSecret,
+    conflict: Boolean(dbSecret && (envConfigSecret || processEnvSecret) && dbSecret !== (envConfigSecret || processEnvSecret))
+  };
+}
+
+/**
+ * Resolves a line-specific decrypted token from waba_phone_numbers row, respecting tenant boundaries.
+ */
+function resolveLineAccessToken(lineRow, { tenantId = null, customToken = null } = {}) {
+  const cleanedCustom = customToken && typeof customToken === "string" ? customToken.trim() : "";
+  if (cleanedCustom && !cleanedCustom.includes("••••") && !cleanedCustom.startsWith("EAAX_") && cleanedCustom !== "your_whatsapp_cloud_api_access_token_here") {
+    return cleanedCustom;
+  }
+  if (lineRow) {
+    if (lineRow.access_token_enc && String(lineRow.access_token_enc).trim()) {
+      const dec = cryptoUtil.decrypt(String(lineRow.access_token_enc).trim());
+      if (dec && !cryptoUtil.isEncrypted(dec) && String(dec).trim()) {
+        return String(dec).trim();
+      }
+    }
+    if (lineRow.access_token && String(lineRow.access_token).trim()) {
+      return String(lineRow.access_token).trim();
+    }
+  }
+  const numericTenantId = Number(lineRow?.tenant_id || tenantId || 0);
+  if (!numericTenantId || numericTenantId === 1) {
+    const globalTok = getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN || "";
+    if (globalTok && !cryptoUtil.isEncrypted(globalTok) && !globalTok.startsWith("EAAX_") && !globalTok.includes("placeholder")) {
+      return String(globalTok).trim();
+    }
+  }
+  return null;
+}
+
 function getMetaGraphVersion() {
   return getSetting("META_GRAPH_VERSION") || config.META_GRAPH_VERSION || "v21.0";
 }
@@ -273,6 +346,18 @@ function cleanPhone(phone, defaultCountryCode = "91") {
  */
 async function testConnection(customCredentials = null) {
   const creds = resolveCredentials(customCredentials);
+  if (creds.isSandbox || creds.isSimulation) {
+    return {
+      success: true,
+      isSandbox: true,
+      phoneNumberId: creds.phoneNumberId,
+      displayPhoneNumber: "+910000000000",
+      verifiedName: "Sandbox Simulated Line",
+      qualityRating: "GREEN",
+      codeVerificationStatus: "VERIFIED",
+      status: "CONNECTED"
+    };
+  }
 
   if (!creds.token) {
     throw new Error("Meta WhatsApp API Token is missing. Configure it in Settings or provide an Access Token.");
@@ -340,17 +425,36 @@ async function registerPhoneNumberWithMeta({ phoneNumberId, pin, token, dataLoca
     throw err;
   }
 
-  let resolvedToken = token;
-  if (!resolvedToken || resolvedToken.includes("••••") || resolvedToken.startsWith("EAAX_") || resolvedToken === "your_whatsapp_cloud_api_access_token_here") {
-    resolvedToken = getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN;
-  }
+  const cleanPhoneId = String(phoneNumberId).trim();
+  let lineRow = null;
+  let lineTenantId = null;
+  try {
+    if (db) {
+      lineRow = db.prepare("SELECT * FROM waba_phone_numbers WHERE phone_number_id = ? AND COALESCE(delete_status, 0) = 0 LIMIT 1").get(cleanPhoneId);
+      if (lineRow?.tenant_id) lineTenantId = Number(lineRow.tenant_id);
+    }
+  } catch (_) {}
+
+  try {
+    const sandboxCheck = resolveCredentials({ phoneNumberId: cleanPhoneId, tenantId: lineTenantId || undefined, token });
+    if (sandboxCheck.isSandbox || sandboxCheck.isSimulation) {
+      return {
+        success: true,
+        isSandbox: true,
+        phoneNumberId: cleanPhoneId,
+        message: "Phone number registration simulated in Workspace Sandbox mode.",
+        metaResponse: { success: true, simulated: true }
+      };
+    }
+  } catch (_) {}
+
+  let resolvedToken = resolveLineAccessToken(lineRow, { tenantId: lineTenantId, customToken: token });
   if (!resolvedToken || !String(resolvedToken).trim() || resolvedToken.startsWith("EAAX_")) {
     const err = new Error("Meta WhatsApp API Token is required. Provide a valid Bearer token in request or Settings.");
     err.statusCode = 400;
     throw err;
   }
 
-  const cleanPhoneId = String(phoneNumberId).trim();
   const url = `${getMetaBaseUrl()}/${encodeURIComponent(cleanPhoneId)}/register`;
 
   const payload = {
@@ -393,24 +497,43 @@ async function registerPhoneNumberWithMeta({ phoneNumberId, pin, token, dataLoca
  * Deregisters a phone number from Meta WhatsApp Cloud API
  * Meta Cloud API: POST https://graph.facebook.com/{version}/{phoneNumberId}/deregister
  */
-async function deregisterPhoneNumberWithMeta({ phoneNumberId, token }) {
+async function deregisterPhoneNumberWithMeta({ phoneNumberId, token, tenantId = null }) {
   if (!phoneNumberId || !String(phoneNumberId).trim()) {
     const err = new Error("Phone Number ID is required to deregister from Meta Cloud API.");
     err.statusCode = 400;
     throw err;
   }
 
-  let resolvedToken = token;
-  if (!resolvedToken || resolvedToken.includes("••••") || resolvedToken.startsWith("EAAX_") || resolvedToken === "your_whatsapp_cloud_api_access_token_here") {
-    resolvedToken = getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN;
-  }
+  const cleanPhoneId = String(phoneNumberId).trim();
+  let lineRow = null;
+  let lineTenantId = tenantId ? Number(tenantId) : null;
+  try {
+    if (db) {
+      lineRow = db.prepare("SELECT * FROM waba_phone_numbers WHERE phone_number_id = ? AND COALESCE(delete_status, 0) = 0 LIMIT 1").get(cleanPhoneId);
+      if (!lineTenantId && lineRow?.tenant_id) lineTenantId = Number(lineRow.tenant_id);
+    }
+  } catch (_) {}
+
+  try {
+    const sandboxCheck = resolveCredentials({ phoneNumberId: cleanPhoneId, tenantId: lineTenantId || undefined, token });
+    if (sandboxCheck.isSandbox || sandboxCheck.isSimulation) {
+      return {
+        success: true,
+        isSandbox: true,
+        phoneNumberId: cleanPhoneId,
+        message: "Phone number deregistration simulated in Workspace Sandbox mode.",
+        metaResponse: { success: true, simulated: true }
+      };
+    }
+  } catch (_) {}
+
+  const resolvedToken = resolveLineAccessToken(lineRow, { tenantId: lineTenantId, customToken: token });
   if (!resolvedToken || !String(resolvedToken).trim() || resolvedToken.startsWith("EAAX_")) {
     const err = new Error("Meta WhatsApp API Token is required. Provide a valid Bearer token in request or Settings.");
     err.statusCode = 400;
     throw err;
   }
 
-  const cleanPhoneId = String(phoneNumberId).trim();
   const url = `${getMetaBaseUrl()}/${encodeURIComponent(cleanPhoneId)}/deregister`;
 
   let res;
@@ -720,9 +843,13 @@ function clearTemplateCache() {
  * Fetch and parse all message templates from Meta Graph API by WABA ID, optionally filtered by category
  * Supported categories: 'MARKETING', 'UTILITY', 'AUTHENTICATION' (or null / 'ALL' for all categories)
  */
-async function fetchWabaTemplates({ category = null, status = null, limit = 100, customCredentials = null, wabaId = null } = {}) {
-  const creds = resolveCredentials(customCredentials);
-  const resolvedWabaId = resolveWabaId(wabaId);
+async function fetchWabaTemplates({ category = null, status = null, limit = 100, customCredentials = null, wabaId = null, tenantId = null } = {}) {
+  const creds = resolveCredentials(tenantId && !customCredentials?.tenantId ? { ...(customCredentials || {}), tenantId } : customCredentials);
+  const resolvedWabaId = resolveWabaId(wabaId, creds.tenantId);
+
+  if (creds.isSandbox || creds.isSimulation) {
+    return { success: true, isSandbox: true, wabaId: resolvedWabaId || "sandbox_waba", templates: [] };
+  }
 
   if (!resolvedWabaId) {
     const err = new Error("WhatsApp Business Account ID (WABA ID) is not configured. Please specify your WABA ID in Settings or WhatsApp Sender Line to sync templates directly from Meta.");
@@ -1038,6 +1165,14 @@ async function sendTextMessage({ to, body, previewUrl = false, customCredentials
  */
 async function uploadMedia({ fileBuffer, fileName, mimeType, customCredentials = null }) {
   const creds = resolveCredentials(customCredentials);
+  if (creds.isSandbox || creds.isSimulation) {
+    return {
+      success: true,
+      isSandbox: true,
+      mediaId: `mock_media_${Date.now()}`,
+      data: { id: `mock_media_${Date.now()}`, simulated: true }
+    };
+  }
   const url = `${getMetaBaseUrl()}/${creds.phoneNumberId}/media`;
 
   const formData = new FormData();
@@ -1431,7 +1566,17 @@ async function sendFlowMessage({
  */
 async function createWabaTemplate({ name, category = "MARKETING", language = "en_US", components = [], parameterFormat = "POSITIONAL", wabaId = null, customCredentials = null }) {
   const creds = resolveCredentials(customCredentials);
-  const resolvedWabaId = resolveWabaId(wabaId);
+  const resolvedWabaId = resolveWabaId(wabaId, creds.tenantId);
+
+  if (creds.isSandbox || creds.isSimulation) {
+    return {
+      success: true,
+      isSandbox: true,
+      id: `mock_tpl_${Date.now()}`,
+      status: "APPROVED",
+      category: String(category || "MARKETING").toUpperCase()
+    };
+  }
 
   if (!resolvedWabaId) {
     const err = new Error("WhatsApp Business Account ID (WABA ID) is required to submit templates to Meta.");
@@ -1748,7 +1893,8 @@ async function sendInteractiveList({
 async function ensureWabaSubscribedApp(customCredentials = null) {
   try {
     const creds = resolveCredentials(customCredentials);
-    const wabaId = resolveWabaId(creds.wabaId);
+    if (creds.isSandbox || creds.isSimulation) return true;
+    const wabaId = resolveWabaId(creds.wabaId, creds.tenantId);
     if (!wabaId || !creds.token || creds.token.length < 50) return false;
 
     const url = `${getMetaBaseUrl()}/${wabaId}/subscribed_apps`;
@@ -1775,6 +1921,8 @@ async function ensureWabaSubscribedApp(customCredentials = null) {
 module.exports = {
   getMetaGraphVersion,
   getMetaBaseUrl,
+  resolveMetaAppSecret,
+  resolveLineAccessToken,
   getActiveCredentials,
   resolveCredentials,
   testConnection,

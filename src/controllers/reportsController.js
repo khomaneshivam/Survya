@@ -421,7 +421,9 @@ async function getOverviewAnalytics(req, res) {
     // Tenant-scoped real DB revenue & messaging/AI cost aggregation
     const requestedTenantId = req.query?.tenantId ? Number(req.query.tenantId) : null;
     const effectiveFinTenantId = (!platformAdmin) ? activeTenantId : (Number.isFinite(requestedTenantId) ? requestedTenantId : null);
-    const finTenantFilter = effectiveFinTenantId !== null ? "COALESCE(tenant_id, 1) = ?" : "1=1";
+    const finTenantFilter = effectiveFinTenantId !== null
+      ? "COALESCE(tenant_id, 1) = ?"
+      : "COALESCE(tenant_id, 1) NOT IN (SELECT id FROM tenants WHERE COALESCE(is_sandbox, 0) = 1)";
     const finTenantParams = effectiveFinTenantId !== null ? [effectiveFinTenantId] : [];
 
     let txStats = { total_transactions: 0, paid_count: 0, revenue_inr: 0 };
@@ -449,7 +451,9 @@ async function getOverviewAnalytics(req, res) {
 
     let quoteStats = { won_count: 0, revenue_inr: 0 };
     try {
-      const qTenantFilter = effectiveFinTenantId !== null ? "COALESCE(q.tenant_id, 1) = ?" : "1=1";
+      const qTenantFilter = effectiveFinTenantId !== null
+        ? "COALESCE(q.tenant_id, 1) = ?"
+        : "COALESCE(q.tenant_id, 1) NOT IN (SELECT id FROM tenants WHERE COALESCE(is_sandbox, 0) = 1)";
       // Reconcile latest quote per WON/CONFIRMED enquiry without multi-quote inflation
       quoteStats = db.prepare(`
         SELECT
@@ -480,9 +484,9 @@ async function getOverviewAnalytics(req, res) {
       waCostStats = db.prepare(`
         SELECT
           COUNT(*) as total_messages,
-          COALESCE(SUM(CASE WHEN billing_status != 'WAIVED' THEN 1 ELSE 0 END), 0) as billed_messages,
-          COALESCE(SUM(CASE WHEN billing_status = 'WAIVED' THEN 1 ELSE 0 END), 0) as waived_messages,
-          COALESCE(SUM(CASE WHEN billing_status != 'WAIVED' THEN COALESCE(unit_cost, 0) ELSE 0 END), 0) as cost_inr
+          COALESCE(SUM(CASE WHEN billing_status NOT IN ('WAIVED', 'WAIVED_SANDBOX') THEN 1 ELSE 0 END), 0) as billed_messages,
+          COALESCE(SUM(CASE WHEN billing_status IN ('WAIVED', 'WAIVED_SANDBOX') THEN 1 ELSE 0 END), 0) as waived_messages,
+          COALESCE(SUM(CASE WHEN billing_status NOT IN ('WAIVED', 'WAIVED_SANDBOX') THEN COALESCE(unit_cost, 0) ELSE 0 END), 0) as cost_inr
         FROM whatsapp_usage_ledger
         WHERE ${finTenantFilter}
       `).get(...finTenantParams) || waCostStats;

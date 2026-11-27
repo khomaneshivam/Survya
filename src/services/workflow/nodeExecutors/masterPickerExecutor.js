@@ -135,56 +135,39 @@ module.exports = {
     const isButtons = options.length <= maxButtons;
 
     if (isButtons) {
-      // WhatsApp Interactive Buttons (max 3 buttons, max 20 chars per title)
-      const buttons = options.slice(0, 3).map((opt) => ({
-        type: "reply",
-        reply: {
-          id: `mst_${opt.value}`,
-          title: opt.label.slice(0, 20)
-        }
+      const btnOptions = options.slice(0, 3).map((opt) => ({
+        id: `mst_${opt.value}`,
+        title: String(opt.label || opt.value).slice(0, 20)
       }));
 
       return {
         action: "WAIT_FOR_INPUT",
         nodeWaiting: node.id,
-        message: {
-          type: "interactive",
-          interactive: {
-            type: "button",
-            body: { text: bodyText },
-            action: { buttons }
-          }
+        replyMessages: [bodyText],
+        replyInteractive: {
+          type: "BUTTONS",
+          options: btnOptions
         },
-        traceNote: `Rendered ${buttons.length} master quick-reply buttons for node '${node.id}'`
+        traceNote: `Rendered ${btnOptions.length} master quick-reply buttons for node '${node.id}'`
       };
     } else {
-      // WhatsApp Interactive List Menu (up to 10 rows per section)
       const rows = options.slice(0, 10).map((opt) => ({
         id: `mst_${opt.value}`,
-        title: opt.label.slice(0, 24),
+        title: String(opt.label || opt.value).slice(0, 24),
         description: opt.metadata?.description
-          ? opt.metadata.description.slice(0, 72)
+          ? String(opt.metadata.description).slice(0, 72)
           : undefined
       }));
 
       return {
         action: "WAIT_FOR_INPUT",
         nodeWaiting: node.id,
-        message: {
-          type: "interactive",
-          interactive: {
-            type: "list",
-            body: { text: bodyText },
-            action: {
-              button: listButtonTitle,
-              sections: [
-                {
-                  title: "Available Options",
-                  rows
-                }
-              ]
-            }
-          }
+        replyMessages: [bodyText],
+        replyInteractive: {
+          type: "LIST",
+          listTitle: "Available Options",
+          listButtonText: String(listButtonTitle || "Select Option").slice(0, 20),
+          options: rows
         },
         traceNote: `Rendered interactive list menu with ${rows.length} master options for node '${node.id}'`
       };

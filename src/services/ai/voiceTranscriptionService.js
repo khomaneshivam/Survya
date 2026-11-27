@@ -17,9 +17,11 @@ const { getSetting } = require('../../config/database');
 const config = require('../../config/env');
 
 class VoiceTranscriptionService {
-  constructor() {
-    this.geminiApiKey = String(getSetting('GEMINI_API_KEY') || process.env.GEMINI_API_KEY || config.GEMINI_API_KEY || '').trim();
-    this.openaiApiKey = String(getSetting('OPENAI_API_KEY') || process.env.OPENAI_API_KEY || config.OPENAI_API_KEY || '').trim();
+  _resolveKeys() {
+    return {
+      geminiApiKey: String(getSetting('GEMINI_API_KEY') || process.env.GEMINI_API_KEY || config.GEMINI_API_KEY || '').trim(),
+      openaiApiKey: String(getSetting('OPENAI_API_KEY') || process.env.OPENAI_API_KEY || config.OPENAI_API_KEY || '').trim()
+    };
   }
 
   /**
@@ -59,13 +61,23 @@ class VoiceTranscriptionService {
       filePath,
       mimeType = 'audio/ogg',
       isSimulation = false,
+      tenantId = 1,
       sampleText
     } = options;
 
     const startTime = Date.now();
+    const { geminiApiKey, openaiApiKey } = this._resolveKeys();
+    let isSandboxTenant = Boolean(isSimulation);
+    if (!isSandboxTenant && tenantId) {
+      try {
+        const { db } = require('../../config/database');
+        const trow = db.prepare('SELECT is_sandbox FROM tenants WHERE id = ? LIMIT 1').get(Number(tenantId));
+        if (Number(trow?.is_sandbox) === 1) isSandboxTenant = true;
+      } catch (_) {}
+    }
 
     // 1. Simulation / Test Sandbox Fallback
-    if (isSimulation || sampleText || (!this.geminiApiKey && !this.openaiApiKey)) {
+    if (isSandboxTenant || sampleText || (!geminiApiKey && !openaiApiKey)) {
       const simulatedTranscript = sampleText || 'Namaste, mujhe weekend ke liye room availability aur pricing janni hai.';
       const detectedLanguage = this.detectLanguageFromText(simulatedTranscript);
       return {
@@ -91,7 +103,7 @@ class VoiceTranscriptionService {
     if (!audioData && mediaId) {
       try {
         const { downloadAndSaveInboundMedia } = require('../metaWhatsAppService');
-        const dl = await downloadAndSaveInboundMedia(mediaId);
+        const dl = await downloadAndSaveInboundMedia(mediaId, tenantId);
         if (dl?.localPath && fs.existsSync(dl.localPath)) {
           audioData = fs.readFileSync(dl.localPath);
         }
@@ -111,7 +123,7 @@ class VoiceTranscriptionService {
     }
 
     // 3. Try Gemini Multimodal Audio
-    if (this.geminiApiKey) {
+    if (geminiApiKey) {
       try {
         const base64Audio = audioData.toString('base64');
         const prompt = `Transcribe this voice audio accurately. The speaker may be speaking in English, Hindi (हिन्दी), Marathi (मराठी), or Hinglish.
@@ -124,7 +136,7 @@ Return strictly valid JSON format with keys:
 }`;
 
         const modelName = 'gemini-2.5-flash';
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${this.geminiApiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiApiKey}`;
 
         const response = await fetch(url, {
           method: 'POST',
@@ -147,7 +159,8 @@ Return strictly valid JSON format with keys:
               temperature: 0.1,
               response_mime_type: 'application/json'
             }
-          })
+          }),
+          signal: AbortSignal.timeout(12000)
         });
 
         if (response.ok) {
@@ -170,25 +183,21 @@ Return strictly valid JSON format with keys:
       }
     }
 
-    // 4. Try OpenAI Whisper Audio Transcription
-    if (this.openaiApiKey) {
+    // 4. Try OpenAI Whisper Audio Transcription (built-in Node FormData & Blob)
+    if (openaiApiKey) {
       try {
-        const FormData = require('form-data');
         const form = new FormData();
-        form.append('file', audioData, {
-          filename: 'voice_note.ogg',
-          contentType: mimeType || 'audio/ogg'
-        });
+        form.append('file', new Blob([audioData], { type: mimeType || 'audio/ogg' }), 'voice_note.ogg');
         form.append('model', 'whisper-1');
         form.append('response_format', 'verbose_json');
 
         const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${this.openaiApiKey}`,
-            ...form.getHeaders()
+            Authorization: `Bearer ${openaiApiKey}`
           },
-          body: form
+          body: form,
+          signal: AbortSignal.timeout(12000)
         });
 
         if (whisperRes.ok) {

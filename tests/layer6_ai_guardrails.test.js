@@ -67,8 +67,7 @@ describe("Layer 6: Domain-Agnostic AI, Prompt Guardrails, Strict JSON & Token Me
     baseUrl = `http://127.0.0.1:${server.address().port}`;
   });
 
-  after(() => {
-    if (server) server.close();
+  after(async () => {
     for (const tid of [clinicTenant, b2bTenant]) {
       try {
         db.prepare("DELETE FROM ai_interaction_logs WHERE tenant_id = ?").run(tid);
@@ -86,6 +85,8 @@ describe("Layer 6: Domain-Agnostic AI, Prompt Guardrails, Strict JSON & Token Me
     try {
       db.prepare("DELETE FROM tenants WHERE id IN (9601, 9602)").run();
     } catch (_) {}
+    const { closeTestResources } = require("./helpers/testFixtures");
+    await closeTestResources(server);
   });
 
   test("1. Non-hospitality tenants receive domain-accurate AI persona, off-topic refusals & copilot suggestions (zero hospitality leak)", async () => {

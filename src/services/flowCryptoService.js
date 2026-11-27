@@ -235,23 +235,52 @@ class FlowCryptoService {
       if (Object.keys(errorMessages).length > 0) {
         responseData.error_messages = errorMessages;
       } else if (checkIn && checkOut) {
-        // Dynamic room options & pricing calculation
+        // Dynamic tenant/property-scoped room options & availability calculation
         try {
           const { db } = require("../config/database");
           const availabilityService = require("./hospitalityAvailabilityService");
-          const roomTypes = db.prepare("SELECT id, name, base_rate FROM room_types WHERE status = 'ACTIVE' LIMIT 6").all();
-          if (Array.isArray(roomTypes) && roomTypes.length > 0) {
-            responseData.dynamic_rooms = roomTypes.map(rt => {
-              let isAvail = true;
-              try {
-                const av = availabilityService.checkRoomAvailability(1, rt.id, checkIn, checkOut, 1, 1);
-                isAvail = Boolean(av.is_available ?? av.available);
-              } catch (e) {}
-              return {
-                id: String(rt.id),
-                title: isAvail ? `${rt.name} - ₹${Number(rt.base_rate).toLocaleString("en-IN")}/night` : `${rt.name} (Sold Out)`
-              };
-            });
+          let resolvedPropId = Number(data.property_id || payload.property_id || 0) || null;
+          let resolvedTenantId = Number(data.tenant_id || payload.tenant_id || 0) || null;
+          if (payload.flow_token && (!resolvedTenantId || !resolvedPropId)) {
+            try {
+              const sess = db.prepare("SELECT tenant_id, property_id FROM flow_sessions WHERE id = ? OR session_key = ? LIMIT 1").get(payload.flow_token, payload.flow_token);
+              if (sess) {
+                resolvedTenantId = resolvedTenantId || Number(sess.tenant_id || 1);
+                resolvedPropId = resolvedPropId || (sess.property_id ? Number(sess.property_id) : null);
+              }
+            } catch (_) {}
+          }
+          if (resolvedPropId && !resolvedTenantId) {
+            const pRow = db.prepare("SELECT tenant_id FROM properties WHERE id = ? AND COALESCE(delete_status, 0) = 0 LIMIT 1").get(resolvedPropId);
+            if (pRow) resolvedTenantId = Number(pRow.tenant_id || 1);
+          } else if (resolvedTenantId && !resolvedPropId) {
+            const pRow = db.prepare("SELECT id FROM properties WHERE tenant_id = ? AND COALESCE(delete_status, 0) = 0 ORDER BY id ASC LIMIT 1").get(resolvedTenantId);
+            if (pRow) resolvedPropId = Number(pRow.id);
+          }
+
+          if (resolvedPropId && resolvedTenantId) {
+            const propCheck = db.prepare("SELECT id FROM properties WHERE id = ? AND tenant_id = ? AND COALESCE(delete_status, 0) = 0 LIMIT 1").get(resolvedPropId, resolvedTenantId);
+            if (propCheck) {
+              const roomTypes = db.prepare(`
+                SELECT id, property_id, tenant_id, name, base_rate
+                FROM room_types
+                WHERE property_id = ? AND tenant_id = ? AND status = 'ACTIVE'
+                ORDER BY id ASC LIMIT 6
+              `).all(resolvedPropId, resolvedTenantId);
+              if (Array.isArray(roomTypes) && roomTypes.length > 0) {
+                responseData.dynamic_rooms = roomTypes.map(rt => {
+                  let isAvail = true;
+                  try {
+                    const av = availabilityService.checkRoomAvailability(rt.property_id, rt.id, checkIn, checkOut, 1, rt.tenant_id);
+                    isAvail = Boolean(av.is_available ?? av.available);
+                  } catch (e) {}
+                  return {
+                    id: String(rt.id),
+                    title: isAvail ? `${rt.name} - ₹${Number(rt.base_rate).toLocaleString("en-IN")}/night` : `${rt.name} (Sold Out)`
+                  };
+                });
+              }
+            }
           }
         } catch (e) {}
       }

@@ -13,7 +13,7 @@ const adminController = require("../controllers/adminController");
 const workspaceTeamController = require("../controllers/workspaceTeamController");
 const reportsController = require("../controllers/reportsController");
 const resortController = require("../controllers/resortController");
-const { authenticateToken, requireAdmin, requireWorkspaceAdmin, authenticateStreamToken, optionalAuth } = require("../middleware/authMiddleware");
+const { authenticateToken, requireAdmin, requireWorkspaceAdmin, authenticateStreamToken, optionalAuth, isPlatformAdmin } = require("../middleware/authMiddleware");
 const { authLimiter, broadcastLimiter, uploadLimiter, apiLimiter } = require("../middleware/rateLimiter");
 const broadcastEngine = require("../services/broadcastEngine");
 const metaWhatsAppService = require("../services/metaWhatsAppService");
@@ -929,15 +929,15 @@ router.post("/v1/auth/login", authLimiter, authController.login);
 const sarvyaConnectController = require("../controllers/sarvyaConnectController");
 
 // Channel & Connected Sender Accounts
-router.post("/v1/channels/whatsapp/connect", authenticateToken, sarvyaConnectController.connectWhatsAppAccount);
+router.post("/v1/channels/whatsapp/connect", authenticateToken, requireWorkspaceAdmin, sarvyaConnectController.connectWhatsAppAccount);
 router.get("/v1/channels/whatsapp/accounts", authenticateToken, sarvyaConnectController.listWhatsAppAccounts);
 
 // Custom Visual Template Builder Lifecycle
 router.get("/v1/whatsapp/templates", authenticateToken, sarvyaConnectController.listCustomTemplates);
-router.post("/v1/whatsapp/templates", authenticateToken, sarvyaConnectController.createCustomTemplate);
-router.put("/v1/whatsapp/templates/:id", authenticateToken, sarvyaConnectController.updateCustomTemplate);
-router.post("/v1/whatsapp/templates/:id/clone", authenticateToken, sarvyaConnectController.cloneCustomTemplate);
-router.post("/v1/whatsapp/templates/:id/submit", authenticateToken, sarvyaConnectController.submitTemplateToMeta);
+router.post("/v1/whatsapp/templates", authenticateToken, requireWorkspaceAdmin, sarvyaConnectController.createCustomTemplate);
+router.put("/v1/whatsapp/templates/:id", authenticateToken, requireWorkspaceAdmin, sarvyaConnectController.updateCustomTemplate);
+router.post("/v1/whatsapp/templates/:id/clone", authenticateToken, requireWorkspaceAdmin, sarvyaConnectController.cloneCustomTemplate);
+router.post("/v1/whatsapp/templates/:id/submit", authenticateToken, requireWorkspaceAdmin, sarvyaConnectController.submitTemplateToMeta);
 
 // Messaging Governance, 1-to-1 Dispatch & Message Status Tracking
 router.get("/v1/whatsapp/contacts/eligibility", authenticateToken, sarvyaConnectController.checkContactEligibility);
@@ -984,9 +984,7 @@ router.use(["/v1/billing", "/billing"], require("./billingRoutes"));
 // Agency White-Label & Multi-Workspace Switcher
 router.use(["/v1/agency", "/agency"], require("./agencyRoutes"));
 
-// Universal Fulfillment, Transactions, Invoices & Payment Reconciliation
-router.use(["/v1/transactions", "/transactions"], require("./universalFulfillmentRoutes"));
-router.use(["/v1/public", "/public"], require("./publicUniversalFulfillmentRoutes"));
+// Universal Fulfillment routes are mounted with rate limiting directly in server.js
 
 // Universal Flow Template Library & Client Configuration Engine
 router.use(["/v1/template-library", "/template-library"], require("../modules/templateLibrary/templateRoutes"));

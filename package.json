@@ -18,7 +18,7 @@
     "broadcast",
     "excel-parser"
   ],
-  "author": "KonkanTrip",
+  "author": "Survya",
   "license": "ISC",
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -29,7 +29,6 @@
     "multer": "^1.4.5-lts.1",
     "mysql2": "^3.24.6",
     "nodemailer": "^10.6.1",
-    "uuid": "^11.0.5",
     "xlsx": "^0.18.5"
   }
 }

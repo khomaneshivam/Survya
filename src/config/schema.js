@@ -1,6 +1,6 @@
 /**
  * Canonical Database Schema & Deployment-Ready Initializer
- * Auto-creates all 55 tables, indexes, column migrations, and baseline seed data on startup.
+ * Auto-creates all schema tables, indexes, column migrations, and baseline seed data on startup.
  */
 const crypto = require("crypto");
 
@@ -244,7 +244,10 @@ const INDEXES = [
   "CREATE INDEX idx_contact_consents_tenant_contact ON contact_consents (tenant_id, contact_id, status)",
   "CREATE INDEX idx_workflow_jobs_due ON workflow_scheduled_jobs (status, run_at)",
   "CREATE INDEX idx_properties_tenant ON properties (tenant_id, delete_status)",
-  "CREATE INDEX idx_room_inv_tenant_prop_date ON room_inventory_daily (tenant_id, property_id, inventory_date)"
+  "CREATE INDEX idx_room_inv_tenant_prop_date ON room_inventory_daily (tenant_id, property_id, inventory_date)",
+  "CREATE INDEX idx_booking_enquiries_tenant_prop ON booking_enquiries (tenant_id, property_id, status)",
+  "CREATE INDEX idx_customer_replies_tenant_phone ON customer_replies (tenant_id, from_phone(64), received_at)",
+  "CREATE INDEX idx_templates_tenant_name_lang ON templates (tenant_id, name(128), language(32))"
 ];
 
 function runColumnMigrations(db) {
@@ -442,27 +445,7 @@ function runColumnMigrations(db) {
     }
   } catch (e) {}
 
-  // Ensure flow_global_settings exists
-  try {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS flow_global_settings (
-        id BIGINT NOT NULL AUTO_INCREMENT,
-        tenant_id BIGINT NOT NULL DEFAULT 1,
-        phone_number_id VARCHAR(64) NULL,
-        root_flow_id BIGINT NULL,
-        menu_keywords_json JSON NULL,
-        back_keywords_json JSON NULL,
-        handoff_keywords_json JSON NULL,
-        session_ttl_minutes INT NOT NULL DEFAULT 1440,
-        fallback_message TEXT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (id),
-        UNIQUE KEY uq_fgs (tenant_id, phone_number_id)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `);
-  } catch (e) {}
-
+  // flow_global_settings is defined in TABLE_SCHEMAS above.
   try {
     const wtCols = db.prepare("DESCRIBE workflow_triggers").all().map(c => c.Field);
     if (!wtCols.includes("phone_number_id")) {
@@ -817,7 +800,7 @@ function seedDefaults(db, config) {
       ["WHATSAPP_TEMPLATE_ID", config.WHATSAPP_TEMPLATE_ID || ""],
       ["DEFAULT_TEMPLATE_NAME", config.DEFAULT_TEMPLATE_NAME || "kt_restaurant_invitation"],
       ["DEFAULT_TEMPLATE_LANG", config.DEFAULT_TEMPLATE_LANG || "en"],
-      ["WEBHOOK_VERIFY_TOKEN", config.WEBHOOK_VERIFY_TOKEN || "wb_verify_konkantrip_7f3a9e2c4b810d56"],
+      ["WEBHOOK_VERIFY_TOKEN", config.WEBHOOK_VERIFY_TOKEN || ("wb_verify_" + crypto.randomBytes(16).toString("hex"))],
       ["AUTO_REPLY_ENABLED", "true"],
       ["AUTO_REPLY_MODE", "ONCE_PER_CONTACT"],
       ["AUTO_REPLY_MESSAGE", "Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message and our team will get back to you shortly."],
@@ -1437,7 +1420,7 @@ function initSchema(db, config) {
     // 1. Temporarily disable foreign key checks during batch table creation
     try { db.exec("SET FOREIGN_KEY_CHECKS = 0;"); } catch (e) {}
 
-    // 2. Create all 49 tables if not exist
+    // 2. Create all schema tables if not exist
     const tableNames = Object.keys(TABLE_SCHEMAS);
     for (const tbl of tableNames) {
       try {
@@ -1459,7 +1442,9 @@ function initSchema(db, config) {
       try {
         db.exec(idxSql);
       } catch (err) {
-        // Ignored if duplicate index or already exists
+        if (!/duplicate key name|already exists/i.test(String(err?.message || ""))) {
+          console.warn("[Database] Notice creating index:", err.message);
+        }
       }
     }
 

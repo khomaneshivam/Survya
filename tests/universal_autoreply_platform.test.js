@@ -1,5 +1,7 @@
+const { test, after } = require("node:test");
 const assert = require("assert");
 const { db } = require("../src/config/database");
+const { closeAsyncPool } = require("../src/config/asyncDb");
 const universalCatalogService = require("../src/services/universal/universalCatalogService");
 const universalAvailabilityService = require("../src/services/universal/universalAvailabilityService");
 const universalPricingService = require("../src/services/universal/universalPricingService");
@@ -354,7 +356,10 @@ async function runMasterTest() {
   }
 }
 
-runMasterTest().catch(err => {
-  console.error("\n❌ TEST SUITE FAILED:", err);
-  process.exit(1);
+test("Universal Multi-Sector Auto-Reply & Flow Studio Suite", async () => {
+  await runMasterTest();
+});
+
+after(async () => {
+  await closeAsyncPool();
 });

@@ -1,0 +1,705 @@
+Source File,Line,HTTP Method,Path,Auth & Role Middleware,Rate Limiter Scope,Tenant & Resource Ownership,Issues / Notes
+server.js,249,GET,/uploads/inbound/:filename,Public / Custom Verify,Check mount (WS2 hardens direct mounts),Public slug/signature check,Audited
+server.js,338,GET,/livez,Public / Custom Verify,Check mount (WS2 hardens direct mounts),Public slug/signature check,Audited
+server.js,375,GET,/metrics,Public / Custom Verify,Check mount (WS2 hardens direct mounts),Public slug/signature check,Audited
+server.js,453,GET,/robots.txt,Public / Custom Verify,Check mount (WS2 hardens direct mounts),Public slug/signature check,Audited
+server.js,485,GET,/sitemap.xml,Public / Custom Verify,Check mount (WS2 hardens direct mounts),Public slug/signature check,Audited
+server.js,524,GET,*,Public / Custom Verify,Check mount (WS2 hardens direct mounts),Public slug/signature check,Audited
+src/modules/templateLibrary/templateInstallationRoutes.js,14,GET,/,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateInstallationRoutes.js,15,GET,/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateInstallationRoutes.js,16,PATCH,/:id/config,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateInstallationRoutes.js,17,POST,/:id/validate,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateInstallationRoutes.js,18,POST,/:id/activate,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateInstallationRoutes.js,19,GET,/:id/upgrade,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateInstallationRoutes.js,20,POST,/:id/upgrade,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateRoutes.js,15,GET,/admin/all,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateRoutes.js,16,GET,/resources,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateRoutes.js,17,GET,/,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateRoutes.js,18,GET,/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateRoutes.js,21,POST,/,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateRoutes.js,22,POST,/:id/versions,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateRoutes.js,25,POST,/:id/install,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateRoutes.js,28,GET,/installations/list,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateRoutes.js,29,GET,/installations/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateRoutes.js,30,PATCH,/installations/:id/config,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateRoutes.js,31,POST,/installations/:id/validate,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateRoutes.js,32,POST,/installations/:id/activate,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateRoutes.js,33,GET,/installations/:id/upgrade,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/modules/templateLibrary/templateRoutes.js,34,POST,/installations/:id/upgrade,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,8,GET,/users,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,9,POST,/users,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,10,GET,/users/:userId,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,11,PUT,/users/:userId,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,12,DELETE,/users/:userId,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,13,POST,/users/:userId/status,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,14,POST,/users/:userId/role,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,15,POST,/users/:userId/reset-password,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,16,POST,/users/:userId/assign-phone,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,17,POST,/users/:userId/claim-history,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,18,GET,/unassigned-summary,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,19,POST,/impersonate/:userId,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,20,GET,/overview,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,23,GET,/ai-flow-config,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,24,PUT,/ai-flow-config,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,27,GET,/recycle-bin,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,28,POST,/recycle-bin/:entityType/:id/restore,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,29,DELETE,/recycle-bin/:entityType/:id/hard-delete,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,32,POST,/compliance/consent,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,33,GET,/compliance/export/:phone,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,34,POST,/compliance/erasure/:phone,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,35,GET,/compliance/requests,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,36,POST,/compliance/requests,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,37,PATCH,/compliance/requests/:id,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,38,GET,/compliance/consent-ledger,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,41,GET,/phone-numbers,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,42,POST,/phone-numbers,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,43,POST,/phone-numbers/register-meta,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,44,POST,/phone-numbers/:id/register-meta,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,45,POST,/phone-numbers/:id/deregister-meta,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,46,POST,/phone-numbers/:id/default,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,47,POST,/phone-numbers/:id/token,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,48,POST,/phone-numbers/:id/test,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,49,DELETE,/phone-numbers/:id,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,52,GET,/webhooks/config,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,53,POST,/webhooks/generate-token,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,54,POST,/webhooks/save-token,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,55,POST,/webhooks/test-handshake,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,56,POST,/webhooks/url-override,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,59,GET,/audit-logs,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/adminRoutes.js,60,POST,/backup,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/agencyRoutes.js,9,GET,/workspaces,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/agencyRoutes.js,10,POST,/workspaces,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/agencyRoutes.js,11,POST,/switch-workspace,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/agencyRoutes.js,12,PUT,/branding,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/aiAssistantRoutes.js,10,GET,/config,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/aiAssistantRoutes.js,11,PUT,/config,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/aiAssistantRoutes.js,14,GET,/knowledge,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/aiAssistantRoutes.js,15,POST,/knowledge,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/aiAssistantRoutes.js,16,PUT,/knowledge/:id,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/aiAssistantRoutes.js,17,DELETE,/knowledge/:id,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/aiAssistantRoutes.js,20,POST,/test-query,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/aiAssistantRoutes.js,23,GET,/logs,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/aiAssistantRoutes.js,24,GET,/usage,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/aiAssistantRoutes.js,27,POST,/copilot/draft-reply,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/aiAssistantRoutes.js,28,POST,/copilot/translate,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/aiAssistantRoutes.js,29,POST,/copilot/summarize,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,28,GET,/auth/domains,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/apiRoutes.js,29,POST,/auth/register,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/apiRoutes.js,30,POST,/auth/login,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/apiRoutes.js,31,POST,/auth/forgot-password,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/apiRoutes.js,32,POST,/auth/verify-reset-token,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/apiRoutes.js,33,POST,/auth/reset-password,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/apiRoutes.js,34,POST,/auth/change-password,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,35,GET,/auth/me,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,36,POST,/auth/profile,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,45,GET,/admin/users,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,46,GET,/admin/users/:userId,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,47,POST,/admin/users/:userId/status,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,48,POST,/admin/users/:userId/role,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,49,POST,/admin/users/:userId/reset-password,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,50,POST,/admin/users/:userId/assign-phone,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,51,POST,/admin/users/:userId/claim-history,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,52,GET,/admin/unassigned-summary,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,53,POST,/admin/impersonate/:userId,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,54,GET,/admin/overview,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,55,GET,/admin/audit-logs,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,56,POST,/admin/backup,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,59,GET,/v1/workspace/users,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,60,POST,/v1/workspace/users,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,61,PATCH,/v1/workspace/users/:userId,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,62,DELETE,/v1/workspace/users/:userId,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,63,GET,/v1/workspace/sandbox,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,64,PUT,/v1/workspace/sandbox,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,67,GET,/admin/phone-numbers,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,68,POST,/admin/phone-numbers,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,69,POST,/admin/phone-numbers/register-meta,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,70,POST,/admin/phone-numbers/:id/register-meta,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,71,POST,/admin/phone-numbers/:id/deregister-meta,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,72,DELETE,/admin/phone-numbers/:id,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,73,POST,/admin/phone-numbers/:id/default,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,74,POST,/admin/phone-numbers/:id/token,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,75,POST,/admin/phone-numbers/:id/test,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,78,GET,/phone-numbers,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,79,POST,/phone-numbers,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,80,POST,/phone-numbers/register-meta,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,81,POST,/phone-numbers/:id/register-meta,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,82,POST,/phone-numbers/:id/deregister-meta,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,83,DELETE,/phone-numbers/:id,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,84,POST,/phone-numbers/:id/default,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,85,POST,/phone-numbers/:id/token,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,86,POST,/phone-numbers/:id/test,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,91,GET,/reports/campaigns,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,92,GET,/reports/campaigns/export,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,93,GET,/reports/automation,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,94,GET,/reports/overview,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,120,POST,/upload,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,172,POST,/upload/media,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,221,POST,/campaigns,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,222,GET,/campaigns,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,223,GET,/campaigns/:campaignId,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,224,DELETE,/campaigns/:campaignId,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,225,GET,/campaigns/:campaignId/export,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,232,POST,/broadcast/send,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,315,POST,/campaigns/:campaignId/start,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,316,POST,/campaigns/:campaignId/pause,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,317,POST,/campaigns/:campaignId/resume,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,318,POST,/campaigns/:campaignId/cancel,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,319,POST,/campaigns/:campaignId/throttle,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,320,PATCH,/campaigns/:campaignId/throttle,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,321,POST,/campaigns/:campaignId/reschedule,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,322,POST,/campaigns/:campaignId/run-now,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,323,POST,/broadcast/start,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,327,POST,/broadcast/test-send,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,330,POST,/broadcast/stream-token,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,335,GET,/settings,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,336,POST,/settings,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,337,POST,/settings/test-connection,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,338,GET,/settings/verify-meta,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,339,POST,/settings/verify-meta,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,340,POST,/settings/register-phone,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,341,POST,/settings/register-meta-phone,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,342,POST,/settings/deregister-phone,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,346,POST,/meta/register-phone,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,347,POST,/meta/phone-registration,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,348,POST,/meta/deregister-phone,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,352,GET,/system/time,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/apiRoutes.js,353,POST,/system/time,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,354,GET,/system/health,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/apiRoutes.js,360,GET,/templates,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,361,GET,/templates/categories,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,362,POST,/templates/sync,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,363,GET,/broadcast/templates,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,364,GET,/broadcast/templates/categories,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,365,POST,/broadcast/templates/sync,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,366,POST,/templates,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,367,GET,/templates/:templateId,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,368,DELETE,/templates/:templateId,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,404,POST,/flows/exchange,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/apiRoutes.js,407,GET,/flows,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,408,GET,/flows/starter-templates,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,409,GET,/flows/responses,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,410,GET,/flows/crypto/config,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,411,POST,/flows/crypto/generate-keypair,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,412,POST,/flows/crypto/save-private-key,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,413,POST,/flows/sync,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,414,POST,/flows,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,415,GET,/flows/:flowId,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,416,PUT,/flows/:flowId,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,417,POST,/flows/:flowId/push,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,418,POST,/flows/:flowId/publish,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,419,POST,/flows/:flowId/deprecate,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,420,DELETE,/flows/:flowId,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,421,POST,/flows/:flowId/send-test,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,433,GET,/webhook/config,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,434,POST,/webhook/generate-token,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,435,POST,/webhook/token,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,436,POST,/webhook/test-simulate,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,437,GET,/webhook/test-handshake,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,438,POST,/webhook/test-handshake,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,439,POST,/webhook/tunnel/restart,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,442,GET,/replies,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,443,GET,/inbox/replies,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,446,GET,/replies/dynamic-options,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,447,POST,/replies/dynamic-options,authenticateToken + requireAdmin (Platform Admin),Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,448,POST,/replies/:id/reply,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,449,POST,/replies/:id/mark-read,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,450,POST,/replies/mark-all-read,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,451,GET,/inbox/conversation/:phone,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,452,POST,/inbox/conversation/:phone/mark-read,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,453,POST,/replies/conversation/:phone/mark-read,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,454,DELETE,/replies/:id,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,455,DELETE,/inbox/conversation/:phone,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,456,DELETE,/inbox/conversation,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,457,DELETE,/replies/conversation/:phone,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,460,GET,/media/inbound/:mediaId,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,512,POST,/inbox/reply,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,749,GET,/automation/config,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,750,POST,/automation/config,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,751,GET,/automation/preview,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,752,POST,/automation/preview,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,753,POST,/automation/run-now,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,754,POST,/automation/evaluate,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,755,GET,/automation/history,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,756,GET,/automation/status,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,757,POST,/automation/contacts,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,758,GET,/automation/contacts,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,759,DELETE,/automation/contacts,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,764,GET,/broadcast/stream,authenticateStreamToken (SSE),Protected,Public slug/signature check,CRIT: isPlatformAdmin missing import in apiRoutes.js (WS2 fix)
+src/routes/apiRoutes.js,883,GET,/dashboard/summary,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,884,GET,/v1/dashboard/summary,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,885,GET,/resort-dashboard/summary,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,888,GET,/contacts,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,889,GET,/v1/contacts,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,892,GET,/room-types,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,893,GET,/v1/room-types,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,894,POST,/room-types,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,895,POST,/v1/room-types,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,896,PATCH,/room-types/:id,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,897,PATCH,/v1/room-types/:id,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,900,GET,/inventory/availability,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,901,GET,/v1/inventory/availability,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,902,PUT,/inventory/daily,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,903,PUT,/v1/inventory/daily,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,906,GET,/enquiries,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,907,GET,/v1/enquiries,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,908,POST,/enquiries,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,909,POST,/v1/enquiries,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,910,GET,/enquiries/:id,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,911,GET,/v1/enquiries/:id,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,912,PATCH,/enquiries/:id,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,913,PATCH,/v1/enquiries/:id,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,916,POST,/enquiries/:id/quotes,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,917,POST,/v1/enquiries/:id/quotes,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,918,GET,/quotes/:id,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,919,GET,/v1/quotes/:id,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,920,POST,/quotes/:id/send,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,921,POST,/v1/quotes/:id/send,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,924,POST,/v1/auth/login,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/apiRoutes.js,932,POST,/v1/channels/whatsapp/connect,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,933,GET,/v1/channels/whatsapp/accounts,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,936,GET,/v1/whatsapp/templates,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,937,POST,/v1/whatsapp/templates,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,938,PUT,/v1/whatsapp/templates/:id,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,939,POST,/v1/whatsapp/templates/:id/clone,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,940,POST,/v1/whatsapp/templates/:id/submit,authenticateToken + requireWorkspaceAdmin,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,943,GET,/v1/whatsapp/contacts/eligibility,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,944,POST,/v1/whatsapp/messages/send,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,945,GET,/v1/whatsapp/messages/:id,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,948,POST,/v1/whatsapp/campaigns,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,949,POST,/v1/whatsapp/campaigns/:id/launch,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,950,GET,/v1/whatsapp/usage,authenticateToken,Protected,Derived from req.user.tenant_id / resource query,Audited
+src/routes/apiRoutes.js,953,GET,/v1/webhooks/meta/whatsapp,Provider HMAC Signature,Protected,Public slug/signature check,Audited
+src/routes/apiRoutes.js,954,POST,/v1/webhooks/meta/whatsapp,Provider HMAC Signature,Protected,Public slug/signature check,Audited
+src/routes/billingRoutes.js,11,GET,/plans,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/billingRoutes.js,24,POST,/webhook/razorpay,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/billingRoutes.js,43,GET,/subscription,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/billingRoutes.js,90,POST,/checkout,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/billingRoutes.js,111,POST,/verify-payment,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/billingRoutes.js,150,GET,/invoices,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/billingRoutes.js,163,GET,/invoices/:id/html,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,8,GET,/v1/chat-links,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,9,GET,/chat-links,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,10,POST,/v1/chat-links,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,11,POST,/chat-links,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,12,POST,/v1/chat-links/bulk-generate,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,13,POST,/chat-links/bulk-generate,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,14,POST,/v1/chat-links/bulk,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,15,POST,/chat-links/bulk,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,16,GET,/v1/chat-links/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,17,GET,/chat-links/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,18,PUT,/v1/chat-links/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,19,PUT,/chat-links/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,20,PATCH,/v1/chat-links/:id/status,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,21,PATCH,/chat-links/:id/status,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,22,DELETE,/v1/chat-links/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,23,DELETE,/chat-links/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,24,GET,/v1/chat-links/:id/qr,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,25,GET,/chat-links/:id/qr,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/chatLinkRoutes.js,28,GET,/v1/public/chat-links/:slug/gallery,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/chatLinkRoutes.js,29,GET,/public/chat-links/:slug/gallery,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/chatLinkRoutes.js,30,GET,/v1/public/chat-links/:slug,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/chatLinkRoutes.js,31,GET,/public/chat-links/:slug,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/chatLinkRoutes.js,32,POST,/v1/public/chat-links/:slug/start-chat,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/chatLinkRoutes.js,33,POST,/public/chat-links/:slug/start-chat,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/chatLinkRoutes.js,34,GET,/v1/public/chat-links/:slug/messages,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/chatLinkRoutes.js,35,GET,/public/chat-links/:slug/messages,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/chatLinkRoutes.js,36,POST,/v1/public/chat-links/:slug/send-message,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/chatLinkRoutes.js,37,POST,/public/chat-links/:slug/send-message,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/chatLinkRoutes.js,38,POST,/v1/public/chat-links/:slug/messages,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/chatLinkRoutes.js,39,POST,/public/chat-links/:slug/messages,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/chatLinkRoutes.js,40,GET,/v1/public/chat-links/:slug/qr,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/chatLinkRoutes.js,41,GET,/public/chat-links/:slug/qr,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/commerceRoutes.js,13,GET,/v1/universal/items,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,14,POST,/v1/universal/items,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,15,GET,/v1/universal/items/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,16,PUT,/v1/universal/items/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,17,DELETE,/v1/universal/items/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,18,POST,/v1/universal/items/:id/media,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,19,PUT,/v1/universal/items/:id/media/reorder,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,20,PUT,/v1/universal/items/:id/media/:mediaId/primary,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,21,POST,/v1/universal/media/:mediaId/meta-cache,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,22,DELETE,/v1/universal/media/:mediaId,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,23,GET,/v1/universal/search,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,26,GET,/v1/universal/addon-groups,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,27,GET,/v1/universal/applicable-addons,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,28,POST,/v1/universal/addon-groups,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,29,PUT,/v1/universal/addon-groups/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,30,DELETE,/v1/universal/addon-groups/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,31,POST,/v1/universal/addon-groups/:groupId/addons,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,32,PUT,/v1/universal/addons/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,33,DELETE,/v1/universal/addons/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,36,GET,/v1/universal/pricing-rules,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,37,POST,/v1/universal/pricing-rules,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,38,PUT,/v1/universal/pricing-rules/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,39,DELETE,/v1/universal/pricing-rules/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,42,GET,/v1/universal/availability/check,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,43,GET,/v1/universal/availability/slots,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,44,POST,/v1/universal/availability/slots,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,45,POST,/v1/universal/availability/slots/generate,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,46,POST,/v1/universal/holds,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,47,POST,/v1/universal/holds/:token/confirm,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,48,POST,/v1/universal/holds/:token/release,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,51,POST,/v1/universal/pricing/quote,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,52,POST,/quote,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,53,GET,/catalog/search,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,69,GET,/v1/entities,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,70,GET,/entities,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,71,POST,/v1/entities,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,72,POST,/entities,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,73,GET,/v1/entities/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,74,GET,/entities/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,75,PUT,/v1/entities/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,76,PUT,/entities/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,77,DELETE,/v1/entities/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,78,DELETE,/entities/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,79,POST,/v1/entities/:id/seed-starter,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,80,POST,/entities/:id/seed-starter,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,83,GET,/v1/entities/:id/categories,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,84,GET,/entities/:id/categories,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,85,POST,/v1/entities/:id/categories,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,86,POST,/entities/:id/categories,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,87,PUT,/v1/entities/:id/categories/:catId,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,88,DELETE,/v1/entities/:id/categories/:catId,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,91,GET,/v1/entities/:id/items,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,92,GET,/entities/:id/items,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,93,POST,/v1/entities/:id/items,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,94,POST,/entities/:id/items,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,95,GET,/v1/items/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,96,PUT,/v1/items/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,97,DELETE,/v1/items/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,98,PATCH,/v1/items/:id/86-toggle,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,99,PATCH,/items/:id/86-toggle,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,102,POST,/v1/items/:id/variants,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,103,POST,/items/:id/variants,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,104,DELETE,/v1/variants/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,105,DELETE,/variants/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,108,POST,/v1/entities/:id/catalog/import,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,109,POST,/entities/:id/catalog/import,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,112,GET,/v1/entities/:id/inventory-matrix,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,113,GET,/entities/:id/inventory-matrix,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,114,POST,/v1/entities/:id/items/:itemId/inventory-matrix,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,115,POST,/entities/:id/items/:itemId/inventory-matrix,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,118,POST,/v1/entities/:id/orders,optionalAuth,Check mount (WS2 hardens direct mounts),RISK: fallback tenant_id = 1 if unauth,Audited
+src/routes/commerceRoutes.js,119,POST,/entities/:id/orders,optionalAuth,Check mount (WS2 hardens direct mounts),RISK: fallback tenant_id = 1 if unauth,Audited
+src/routes/commerceRoutes.js,120,GET,/v1/entities/:id/orders,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,121,GET,/entities/:id/orders,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,122,GET,/v1/orders/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,123,GET,/orders/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,124,PATCH,/v1/orders/:id/status,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/commerceRoutes.js,125,PATCH,/orders/:id/status,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/crmPipelineRoutes.js,9,GET,/pipelines,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/crmPipelineRoutes.js,10,POST,/pipelines,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/crmPipelineRoutes.js,11,GET,/pipelines/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/crmPipelineRoutes.js,12,PUT,/pipelines/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/crmPipelineRoutes.js,15,GET,/records,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/crmPipelineRoutes.js,16,POST,/records,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/crmPipelineRoutes.js,17,GET,/records/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/crmPipelineRoutes.js,18,PATCH,/records/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/crmPipelineRoutes.js,19,POST,/records/:id/stage,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/crmPipelineRoutes.js,20,DELETE,/records/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/embeddedSignupRoutes.js,13,GET,/config,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/embeddedSignupRoutes.js,27,POST,/exchange,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/embeddedSignupRoutes.js,62,POST,/test-coexistence,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/flowPreviewRoutes.js,38,GET,/public/flow-previews/:token,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/flowPreviewRoutes.js,39,POST,/public/flow-previews/:token/simulate,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/hospitalityRoutes.js,13,GET,/v1/public/hospitality/properties,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,14,GET,/public/hospitality/properties,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,15,GET,/v1/public/hospitality/properties/:id,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,16,GET,/public/hospitality/properties/:id,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,17,GET,/v1/public/hospitality/properties/:id/gallery,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,18,GET,/public/hospitality/properties/:id/gallery,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,19,GET,/v1/public/hospitality/properties/:id/rooms,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,20,GET,/public/hospitality/properties/:id/rooms,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,21,GET,/v1/public/hospitality/properties/:id/rooms/:roomId,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,22,GET,/public/hospitality/properties/:id/rooms/:roomId,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,23,GET,/v1/public/hospitality/properties/:id/availability,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,24,GET,/public/hospitality/properties/:id/availability,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,25,POST,/v1/public/hospitality/properties/:id/quote,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,26,POST,/public/hospitality/properties/:id/quote,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,27,POST,/v1/public/hospitality/chat-action,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,28,POST,/public/hospitality/chat-action,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,31,GET,/v1/hospitality/public/properties,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,32,GET,/hospitality/public/properties,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,33,GET,/v1/hospitality/public/properties/:id,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,34,GET,/hospitality/public/properties/:id,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,35,POST,/v1/hospitality/public/chat-action,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,36,POST,/hospitality/public/chat-action,Public / Custom Verify,Protected,Public slug/signature check,Check resolvePublicTenantId ?tenant_id bypass & publication_status (WS2 fix)
+src/routes/hospitalityRoutes.js,45,GET,/v1/hospitality/properties,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,46,GET,/hospitality/properties,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,47,POST,/v1/hospitality/properties,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,48,POST,/hospitality/properties,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,49,GET,/v1/hospitality/properties/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,50,GET,/hospitality/properties/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,51,PUT,/v1/hospitality/properties/:id,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,52,PUT,/hospitality/properties/:id,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,53,POST,/v1/hospitality/properties/:id/archive,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,54,POST,/hospitality/properties/:id/archive,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,55,POST,/v1/hospitality/properties/:id/duplicate,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,56,POST,/hospitality/properties/:id/duplicate,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,57,POST,/v1/hospitality/properties/:id/publish,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,58,POST,/hospitality/properties/:id/publish,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,59,POST,/v1/hospitality/properties/:id/unpublish,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,60,POST,/hospitality/properties/:id/unpublish,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,61,GET,/v1/hospitality/properties/:id/overview,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,62,GET,/hospitality/properties/:id/overview,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,65,GET,/v1/hospitality/properties/:id/room-categories,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,66,GET,/hospitality/properties/:id/room-categories,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,67,GET,/v1/hospitality/properties/:id/room-categories/:roomId,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,68,GET,/hospitality/properties/:id/room-categories/:roomId,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,69,POST,/v1/hospitality/properties/:id/room-categories,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,70,POST,/hospitality/properties/:id/room-categories,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,71,PUT,/v1/hospitality/properties/:id/room-categories/:roomId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,72,PUT,/hospitality/properties/:id/room-categories/:roomId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,73,DELETE,/v1/hospitality/properties/:id/room-categories/:roomId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,74,DELETE,/hospitality/properties/:id/room-categories/:roomId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,77,GET,/v1/hospitality/properties/:id/room-categories/:roomId/images,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,78,GET,/hospitality/properties/:id/room-categories/:roomId/images,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,79,POST,/v1/hospitality/properties/:id/room-categories/:roomId/images,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,80,POST,/hospitality/properties/:id/room-categories/:roomId/images,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,81,PUT,/v1/hospitality/properties/:id/room-categories/:roomId/images/:imageId/primary,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,82,PUT,/hospitality/properties/:id/room-categories/:roomId/images/:imageId/primary,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,83,POST,/v1/hospitality/properties/:id/room-categories/:roomId/images/reorder,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,84,POST,/hospitality/properties/:id/room-categories/:roomId/images/reorder,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,85,DELETE,/v1/hospitality/properties/:id/room-categories/:roomId/images/:imageId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,86,DELETE,/hospitality/properties/:id/room-categories/:roomId/images/:imageId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,89,GET,/v1/hospitality/properties/:id/gallery,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,90,GET,/hospitality/properties/:id/gallery,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,91,POST,/v1/hospitality/properties/:id/gallery,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,92,POST,/hospitality/properties/:id/gallery,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,93,PUT,/v1/hospitality/properties/:id/gallery/:imageId/primary,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,94,PUT,/hospitality/properties/:id/gallery/:imageId/primary,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,95,DELETE,/v1/hospitality/properties/:id/gallery/:imageId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,96,DELETE,/hospitality/properties/:id/gallery/:imageId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,99,GET,/v1/hospitality/properties/:id/physical-rooms,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,100,GET,/hospitality/properties/:id/physical-rooms,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,101,POST,/v1/hospitality/properties/:id/physical-rooms,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,102,POST,/hospitality/properties/:id/physical-rooms,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,103,PUT,/v1/hospitality/properties/:id/physical-rooms/:roomId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,104,PUT,/hospitality/properties/:id/physical-rooms/:roomId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,105,DELETE,/v1/hospitality/properties/:id/physical-rooms/:roomId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,106,DELETE,/hospitality/properties/:id/physical-rooms/:roomId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,109,GET,/v1/hospitality/properties/:id/facilities,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,110,GET,/hospitality/properties/:id/facilities,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,111,POST,/v1/hospitality/properties/:id/facilities,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,112,POST,/hospitality/properties/:id/facilities,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,113,PUT,/v1/hospitality/properties/:id/facilities/:facilityId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,114,PUT,/hospitality/properties/:id/facilities/:facilityId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,115,DELETE,/v1/hospitality/properties/:id/facilities/:facilityId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,116,DELETE,/hospitality/properties/:id/facilities/:facilityId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,119,GET,/v1/hospitality/properties/:id/policies,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,120,GET,/hospitality/properties/:id/policies,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,121,POST,/v1/hospitality/properties/:id/policies,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,122,POST,/hospitality/properties/:id/policies,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,123,GET,/v1/hospitality/properties/:id/faqs,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,124,GET,/hospitality/properties/:id/faqs,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,125,POST,/v1/hospitality/properties/:id/faqs,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,126,POST,/hospitality/properties/:id/faqs,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,127,PUT,/v1/hospitality/properties/:id/faqs/:faqId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,128,PUT,/hospitality/properties/:id/faqs/:faqId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,129,DELETE,/v1/hospitality/properties/:id/faqs/:faqId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,130,DELETE,/hospitality/properties/:id/faqs/:faqId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,133,GET,/v1/hospitality/properties/:id/inventory/grid,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,134,GET,/hospitality/properties/:id/inventory/grid,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,135,POST,/v1/hospitality/properties/:id/inventory/bulk-update,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,136,POST,/hospitality/properties/:id/inventory/bulk-update,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,137,GET,/v1/hospitality/properties/:id/inventory/blocks,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,138,GET,/hospitality/properties/:id/inventory/blocks,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,139,POST,/v1/hospitality/properties/:id/inventory/blocks,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,140,POST,/hospitality/properties/:id/inventory/blocks,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,141,POST,/v1/hospitality/properties/:id/inventory/blocks/:blockId/release,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,142,POST,/hospitality/properties/:id/inventory/blocks/:blockId/release,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,143,GET,/v1/hospitality/properties/:id/inventory/check,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,144,GET,/hospitality/properties/:id/inventory/check,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,147,GET,/v1/hospitality/properties/:id/rate-plans,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,148,GET,/hospitality/properties/:id/rate-plans,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,149,POST,/v1/hospitality/properties/:id/rate-plans,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,150,POST,/hospitality/properties/:id/rate-plans,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,151,PUT,/v1/hospitality/properties/:id/rate-plans/:planId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,152,PUT,/hospitality/properties/:id/rate-plans/:planId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,153,DELETE,/v1/hospitality/properties/:id/rate-plans/:planId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,154,DELETE,/hospitality/properties/:id/rate-plans/:planId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,156,GET,/v1/hospitality/properties/:id/seasonal-rates,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,157,GET,/hospitality/properties/:id/seasonal-rates,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,158,POST,/v1/hospitality/properties/:id/seasonal-rates,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,159,POST,/hospitality/properties/:id/seasonal-rates,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,160,PUT,/v1/hospitality/properties/:id/seasonal-rates/:seasonId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,161,PUT,/hospitality/properties/:id/seasonal-rates/:seasonId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,162,DELETE,/v1/hospitality/properties/:id/seasonal-rates/:seasonId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,163,DELETE,/hospitality/properties/:id/seasonal-rates/:seasonId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,165,GET,/v1/hospitality/properties/:id/daily-rates,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,166,GET,/hospitality/properties/:id/daily-rates,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,167,POST,/v1/hospitality/properties/:id/daily-rates,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,168,POST,/hospitality/properties/:id/daily-rates,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,169,POST,/v1/hospitality/properties/:id/daily-rates/bulk,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,170,POST,/hospitality/properties/:id/daily-rates/bulk,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,171,DELETE,/v1/hospitality/properties/:id/daily-rates/:dailyRateId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,172,DELETE,/hospitality/properties/:id/daily-rates/:dailyRateId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,174,GET,/v1/hospitality/properties/:id/tax-rules,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,175,GET,/hospitality/properties/:id/tax-rules,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,176,POST,/v1/hospitality/properties/:id/tax-rules,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,177,POST,/hospitality/properties/:id/tax-rules,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,178,DELETE,/v1/hospitality/properties/:id/tax-rules/:ruleId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,179,DELETE,/hospitality/properties/:id/tax-rules/:ruleId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,181,POST,/v1/hospitality/properties/:id/quote,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/hospitalityRoutes.js,182,POST,/hospitality/properties/:id/quote,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,10,GET,/experiences,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,11,POST,/experiences,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,12,POST,/experiences/from-starter,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,14,GET,/experiences/:id,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,15,PUT,/experiences/:id,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,16,DELETE,/experiences/:id,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,17,PATCH,/experiences/:id/status,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,18,GET,/experiences/:id/qr,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,21,GET,/experiences/:id/screens,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,22,POST,/experiences/:id/screens,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,23,POST,/experiences/:id/screens/reorder,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,25,PUT,/screens/:screenId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,26,DELETE,/screens/:screenId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,29,GET,/screens/:screenId/fields,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,30,POST,/screens/:screenId/fields,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,31,POST,/screens/:screenId/fields/reorder,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,33,PUT,/fields/:fieldId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,34,DELETE,/fields/:fieldId,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,36,POST,/screens/:screenId/validate,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,40,GET,/negotiations,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,49,POST,/negotiations/:id/agent-action,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,64,GET,/calls,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/inappExperienceRoutes.js,73,PATCH,/calls/:id,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/jobQueueRoutes.js,11,GET,/stats,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/jobQueueRoutes.js,24,GET,/jobs,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/jobQueueRoutes.js,44,GET,/jobs/:id,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/jobQueueRoutes.js,60,POST,/jobs/:id/retry,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/jobQueueRoutes.js,71,POST,/jobs/:id/cancel,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/jobQueueRoutes.js,82,DELETE,/jobs/:id,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/jobQueueRoutes.js,93,GET,/schedules,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/jobQueueRoutes.js,104,PATCH,/schedules/:id/toggle,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/jobQueueRoutes.js,115,POST,/enqueue,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/jobQueueRoutes.js,129,POST,/purge,authenticateToken + requireAdmin (Platform Admin),Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/masterRoutes.js,9,GET,/bundle,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/masterRoutes.js,20,POST,/seed-sector,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/masterRoutes.js,33,GET,/preview-options,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/masterRoutes.js,48,GET,/:masterType,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/masterRoutes.js,64,GET,/:masterType/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/masterRoutes.js,79,POST,/:masterType,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/masterRoutes.js,92,PUT,/:masterType/:id,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/masterRoutes.js,105,DELETE,/:masterType/:id,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/masterRoutes.js,118,PATCH,/:masterType/:id/toggle-active,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/masterRoutes.js,131,POST,/:masterType/reorder,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,8,GET,/v1/entities/:id/payment-config,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,9,GET,/entities/:id/payment-config,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,10,PUT,/v1/entities/:id/payment-config,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,11,PUT,/entities/:id/payment-config,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,14,POST,/v1/entities/:id/create-checkout,optionalAuth,Protected,RISK: fallback tenant_id = 1 if unauth,Audited
+src/routes/payoutRoutes.js,15,POST,/entities/:id/create-checkout,optionalAuth,Protected,RISK: fallback tenant_id = 1 if unauth,Audited
+src/routes/payoutRoutes.js,16,POST,/v1/orders/:orderNumber/capture-payment,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,17,POST,/orders/:orderNumber/capture-payment,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,18,POST,/v1/webhooks/payments/razorpay,Provider HMAC Signature,Check mount (WS2 hardens direct mounts),Public slug/signature check,Audited
+src/routes/payoutRoutes.js,19,POST,/webhooks/payments/razorpay,Provider HMAC Signature,Check mount (WS2 hardens direct mounts),Public slug/signature check,Audited
+src/routes/payoutRoutes.js,22,GET,/v1/entities/:id/payouts/beneficiaries,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,23,GET,/entities/:id/payouts/beneficiaries,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,24,POST,/v1/entities/:id/payouts/beneficiaries,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,25,POST,/entities/:id/payouts/beneficiaries,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,26,POST,/v1/payouts/beneficiaries/:id/verify-penny-drop,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,27,POST,/payouts/beneficiaries/:id/verify-penny-drop,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,30,GET,/v1/entities/:id/payouts/summary,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,31,GET,/entities/:id/payouts/summary,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,32,POST,/v1/entities/:id/payouts/request-instant,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Retire simulated IMPS payout endpoints (WS4)
+src/routes/payoutRoutes.js,33,POST,/entities/:id/payouts/request-instant,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Retire simulated IMPS payout endpoints (WS4)
+src/routes/payoutRoutes.js,34,GET,/v1/entities/:id/payouts/ledger,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/payoutRoutes.js,35,GET,/entities/:id/payouts/ledger,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/publicInappRoutes.js,14,GET,/:slug,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/publicInappRoutes.js,17,POST,/:slug/session,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/publicInappRoutes.js,18,POST,/:slug/continuation/redeem,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/publicInappRoutes.js,19,POST,/:slug/channel-switch,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/publicInappRoutes.js,22,GET,/:slug/catalog,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/publicInappRoutes.js,25,POST,/:slug/navigate,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/publicInappRoutes.js,30,GET,/:slug/stream,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/publicInappRoutes.js,48,POST,/:slug/negotiations,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/publicInappRoutes.js,58,GET,/:slug/negotiations/:id,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/publicInappRoutes.js,69,POST,/:slug/negotiations/:id/respond,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/publicInappRoutes.js,82,GET,/:slug/call-availability,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/publicInappRoutes.js,92,POST,/:slug/calls,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/publicInappRoutes.js,105,GET,/:slug/messages,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/publicInappRoutes.js,133,POST,/:slug/messages,Public / Custom Verify,Protected,Public slug/signature check,Audited
+src/routes/studioRoutes.js,8,GET,/overview,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,9,GET,/components,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,10,GET,/experiences,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,11,POST,/experiences/guided,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,12,POST,/experiences/:id/share-link,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,13,GET,/share-links,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,14,GET,/execution-history,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,17,GET,/blueprints,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,18,POST,/blueprints/:key/demo/start,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,19,POST,/blueprints/:key/demo/navigate,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,20,POST,/blueprints/:key/install,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,23,GET,/goals,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,24,GET,/email-settings,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,25,PUT,/email-settings,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,26,GET,/email-logs,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,27,POST,/email-logs/:id/retry,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,30,GET,/experiences/:id/validate,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,31,POST,/experiences/:id/approve,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,32,POST,/experiences/:id/publish,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,33,POST,/experiences/:id/rollback,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,34,GET,/experiences/:id/versions,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,35,GET,/audit-logs,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,36,GET,/analytics,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,37,GET,/domain-access,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/studioRoutes.js,38,POST,/domain-access/activate,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/templateRoutes.js,8,GET,/templates,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/templateRoutes.js,9,POST,/templates,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/templateRoutes.js,10,GET,/templates/inspect,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/templateRoutes.js,11,DELETE,/templates/:templateId,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/templateRoutes.js,14,POST,/templates/custom,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/templateRoutes.js,15,PUT,/templates/custom/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/templateRoutes.js,16,POST,/templates/custom/:id/submit,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/templateRoutes.js,17,DELETE,/templates/custom/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/templateRoutes.js,18,POST,/templates/sync-meta,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,7,GET,/items,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,8,POST,/items,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,9,GET,/items/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,10,PUT,/items/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,11,DELETE,/items/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,12,GET,/search,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,15,POST,/items/:id/media,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,16,DELETE,/media/:mediaId,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,17,PUT,/items/:id/media/reorder,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,18,PUT,/items/:id/media/:mediaId/primary,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,19,POST,/media/:mediaId/meta-cache,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,22,GET,/addon-groups,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,23,POST,/addon-groups,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,24,PUT,/addon-groups/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,25,DELETE,/addon-groups/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,26,GET,/applicable-addons,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,28,POST,/addon-groups/:groupId/addons,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,29,PUT,/addons/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,30,DELETE,/addons/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,33,GET,/pricing-rules,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,34,POST,/pricing-rules,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,35,PUT,/pricing-rules/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,36,DELETE,/pricing-rules/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,39,GET,/availability,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,40,GET,/availability/check,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,41,POST,/availability/check,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,42,GET,/slots,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,43,GET,/availability/slots,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,44,POST,/slots,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,45,POST,/availability/slots,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,46,POST,/slots/generate,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,47,POST,/availability/slots/generate,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,49,POST,/holds,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,50,POST,/availability/hold,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,51,POST,/holds/:token/confirm,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,52,POST,/holds/:token/release,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,55,POST,/quote-preview,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,56,POST,/quote,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,59,GET,/blueprints,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,60,POST,/blueprints/seed,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalCatalogRoutes.js,61,POST,/blueprints/import-full-suite,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalFulfillmentRoutes.js,31,GET,/,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalFulfillmentRoutes.js,74,GET,/drawer-context/:phone,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalFulfillmentRoutes.js,89,GET,/:id,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalFulfillmentRoutes.js,116,PATCH,/:id/status,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalFulfillmentRoutes.js,144,POST,/:id/record-offline-payment,authenticateToken + requireWorkspaceAdmin,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalFulfillmentRoutes.js,172,POST,/:id/send-payment-link,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited
+src/routes/universalFulfillmentRoutes.js,201,POST,/quick-link,authenticateToken,Check mount (WS2 hardens direct mounts),Derived from req.user.tenant_id / resource query,Audited

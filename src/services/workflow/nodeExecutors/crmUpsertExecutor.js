@@ -60,58 +60,25 @@ async function execute(node, context) {
     };
   }
 
-  // Live Mode: Resolve pipeline ID
-  let pipelineId = 1;
-  try {
-    const pipelineNameOrSlug = config.pipeline || 'b2b-sales-pipeline';
-    const pipeline = db.prepare(`
-      SELECT id FROM crm_pipelines
-      WHERE tenant_id = ? AND delete_status = 0 AND (slug = ? OR name = ? OR industry_type = ?)
-      ORDER BY id ASC LIMIT 1
-    `).get(tenantId, pipelineNameOrSlug, pipelineNameOrSlug, pipelineNameOrSlug);
-
-    if (pipeline) {
-      pipelineId = pipeline.id;
-    }
-  } catch (e) {}
-
-  // Check if existing record exists for this contact in this pipeline
+  // Live Mode: Upsert via canonical crmPipelineService
   let recordId = null;
+  let resolvedStage = stageKey;
   try {
-    const existing = db.prepare(`
-      SELECT id, tags_json, custom_attributes FROM crm_records
-      WHERE tenant_id = ? AND pipeline_id = ? AND contact_phone = ? AND delete_status = 0
-      LIMIT 1
-    `).get(tenantId, pipelineId, phone);
-
-    const customAttrsJson = JSON.stringify(customAttrs);
-    const tagsJson = JSON.stringify(tags);
-
-    if (existing) {
-      recordId = existing.id;
-      db.prepare(`
-        UPDATE crm_records
-        SET contact_name = COALESCE(?, contact_name),
-            contact_email = COALESCE(?, contact_email),
-            stage_key = ?,
-            lead_score = GREATEST(lead_score, ?),
-            deal_value = CASE WHEN ? > 0 THEN ? ELSE deal_value END,
-            tags_json = ?,
-            custom_attributes = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(name, email, stageKey, leadScore, dealValue, dealValue, tagsJson, customAttrsJson, recordId);
-    } else {
-      const ins = db.prepare(`
-        INSERT INTO crm_records (
-          tenant_id, pipeline_id, contact_phone, contact_name, contact_email,
-          stage_key, lead_score, deal_value, tags_json, custom_attributes,
-          source_flow_id, active_status, delete_status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      `).run(tenantId, pipelineId, phone, name, email, stageKey, leadScore, dealValue, tagsJson, customAttrsJson, context.flowId || null);
-
-      recordId = ins.lastInsertRowid;
-    }
+    const crmPipelineService = require('../../crmPipelineService');
+    const savedRecord = crmPipelineService.upsertRecord(tenantId, {
+      pipeline: pipelineNameOrSlug,
+      contactPhone: phone,
+      contactName: name,
+      contactEmail: email,
+      stageKey,
+      leadScore,
+      dealValue,
+      tags,
+      customAttributes: customAttrs,
+      sourceFlowId: context.flowId || null
+    });
+    recordId = savedRecord?.id || null;
+    resolvedStage = savedRecord?.stage_key || stageKey;
   } catch (err) {
     console.warn('[CRM Executor] Error upserting record:', err.message);
   }
@@ -121,10 +88,10 @@ async function execute(node, context) {
     nextHandle: 'success',
     updatedData: {
       'crm.record_id': recordId || 1,
-      'crm.stage': stageKey,
+      'crm.stage': resolvedStage,
       'crm.lead_score': leadScore
     },
-    traceNote: `CRM Record #${recordId || 1} upserted for ${phone} in stage "${stageKey}"`
+    traceNote: `CRM Record #${recordId || 1} upserted for ${phone} in stage "${resolvedStage}"`
   };
 }
 

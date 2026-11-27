@@ -23,6 +23,8 @@ function requireLegacyWorkspace(req, res) {
   return false;
 }
 
+const { resolveMetaAppSecret } = require("../services/metaWhatsAppService");
+
 function normalizeSecretCandidate(val) {
   if (!val || typeof val !== "string") return "";
   const cleaned = val.trim().replace(/^["']|["']$/g, "");
@@ -43,27 +45,11 @@ function verifyMetaSignature(req) {
   }
 
   const signature = req.headers["x-hub-signature-256"];
-  const rawDbSecret = typeof getSetting === "function" ? getSetting("META_APP_SECRET") : null;
-  if (typeof rawDbSecret === "string" && rawDbSecret.startsWith("enc:aes-256-gcm:")) {
-    console.error("[Webhook Security] DB META_APP_SECRET failed AES-GCM decryption (check APP_ENCRYPTION_KEY / JWT_SECRET) and was ignored. Re-save Meta App Secret in Admin Settings.");
-  }
-
-  const envConfigSecret = normalizeSecretCandidate(config.META_APP_SECRET);
-  const dbSecret = normalizeSecretCandidate(rawDbSecret);
-  const processEnvSecret = normalizeSecretCandidate(process.env.META_APP_SECRET);
-
-  let appSecret = "";
-  let secretSource = "none";
-  if (envConfigSecret) {
-    appSecret = envConfigSecret;
-    secretSource = "env_config";
-  } else if (dbSecret) {
-    appSecret = dbSecret;
-    secretSource = "db_settings";
-  } else if (processEnvSecret) {
-    appSecret = processEnvSecret;
-    secretSource = "process_env";
-  }
+  const {
+    appSecret,
+    source: secretSource,
+    conflict: dbDiffersFromEnv
+  } = resolveMetaAppSecret();
 
   // Fail closed for live traffic. Development fixtures may omit the secret.
   if (!appSecret) {
@@ -83,8 +69,7 @@ function verifyMetaSignature(req) {
   try {
     const clientBuf = Buffer.from(clientHash, "hex");
     const expectedBuf = Buffer.from(expectedHash, "hex");
-    const dbDiffersFromEnv = Boolean(dbSecret && envConfigSecret && dbSecret !== envConfigSecret);
-    const diag = `source=${secretSource} secretLen=${appSecret.length} looksHex32=${/^[a-f0-9]{32}$/.test(appSecret)} hasRawBody=${Buffer.isBuffer(req.rawBody)} bodyBytes=${rawBody.length} dbDiffersFromEnv=${dbDiffersFromEnv}`;
+    const diag = `source=${secretSource} secretLen=${appSecret.length} looksHex32=${/^[a-f0-9]{32}$/.test(appSecret)} hasRawBody=${Buffer.isBuffer(req.rawBody)} bodyBytes=${rawBody.length} dbDiffersFromEnv=${Boolean(dbDiffersFromEnv)}`;
     if (clientBuf.length !== expectedBuf.length) {
       console.warn(`[Webhook Security] Signature length mismatch (${diag}). Verify META_APP_SECRET in .env / Admin Settings against App Secret in developers.facebook.com.`);
       return false;

@@ -18,10 +18,15 @@ async function execute(node, context) {
     };
   }
 
-  // Look up approved template in database
+  // Look up approved template in database (strictly tenant-scoped)
   let tpl = null;
   try {
-    tpl = db.prepare('SELECT * FROM templates WHERE (name = ? OR id = ?) LIMIT 1').get(templateName, templateName);
+    tpl = db.prepare(`
+      SELECT * FROM templates
+      WHERE (name = ? OR id = ?) AND (COALESCE(tenant_id, 1) = ? OR tenant_id IS NULL)
+      ORDER BY CASE WHEN COALESCE(tenant_id, 1) = ? THEN 0 ELSE 1 END
+      LIMIT 1
+    `).get(templateName, templateName, Number(tenantId || 1), Number(tenantId || 1));
   } catch (e) {}
 
   const params = Array.isArray(config.parameters) ? config.parameters : [];
@@ -43,38 +48,45 @@ async function execute(node, context) {
     };
   }
 
-  // Live Mode: Dispatch via whatsappMessagingService & log
+  // Live Mode: Dispatch via whatsappMessagingService (which handles message + usage ledger logging)
+  let dispatchLogged = false;
   try {
     const whatsappMessagingService = require('../../whatsappMessagingService');
-    await whatsappMessagingService.sendOneToOneMessage({
+    const sent = await whatsappMessagingService.sendOneToOneMessage({
       to: senderPhone,
       type: 'TEMPLATE',
       templateIdOrName: templateName,
       variables: resolvedParams,
-      tenantId
-    }).catch(err => {
-      console.warn(`[templateExecutor] Note on sendOneToOneMessage:`, err.message);
+      tenantId,
+      isSimulation: Boolean(context.isSimulation || context.transportSimulation)
     });
-  } catch (e) {}
+    if (sent && sent.id) {
+      dispatchLogged = true;
+    }
+  } catch (err) {
+    console.warn(`[templateExecutor] Note on sendOneToOneMessage:`, err.message);
+  }
 
-  try {
-    const msgId = `flow_tpl_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    db.prepare(`
-      INSERT INTO whatsapp_messages (
-        id, tenant_id, recipient_phone, direction, message_type, template_name,
-        message_body, status, created_at, updated_at
-      ) VALUES (?, ?, ?, 'OUTBOUND', 'TEMPLATE', ?, ?, 'SENT', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `).run(msgId, tenantId, senderPhone, templateName, renderedBody);
+  if (!dispatchLogged) {
+    try {
+      const msgId = `flow_tpl_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      db.prepare(`
+        INSERT INTO whatsapp_messages (
+          id, tenant_id, recipient_phone, direction, message_type, template_name,
+          message_body, status, created_at, updated_at
+        ) VALUES (?, ?, ?, 'OUTBOUND', 'TEMPLATE', ?, ?, 'SENT', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `).run(msgId, tenantId, senderPhone, templateName, renderedBody);
 
-    const isSandboxOrSim = Boolean(dryRun || context.isSimulation || context.transportSimulation);
-    const unitRate = isSandboxOrSim ? 0 : metaRateService.calculateUnitRate('UTILITY', null, tenantId);
-    db.prepare(`
-      INSERT INTO whatsapp_usage_ledger (
-        tenant_id, recipient_phone, category, unit_cost, currency, billing_status, created_at
-      ) VALUES (?, ?, 'UTILITY', ?, 'INR', ?, CURRENT_TIMESTAMP)
-    `).run(tenantId, senderPhone, unitRate, isSandboxOrSim ? 'WAIVED_SANDBOX' : 'BILLED');
-  } catch (dbErr) {
-    // Non-fatal logging
+      const isSandboxOrSim = Boolean(dryRun || context.isSimulation || context.transportSimulation);
+      const unitRate = isSandboxOrSim ? 0 : metaRateService.calculateUnitRate('UTILITY', null, tenantId);
+      db.prepare(`
+        INSERT INTO whatsapp_usage_ledger (
+          tenant_id, recipient_phone, category, unit_cost, currency, billing_status, created_at
+        ) VALUES (?, ?, 'UTILITY', ?, 'INR', ?, CURRENT_TIMESTAMP)
+      `).run(tenantId, senderPhone, unitRate, isSandboxOrSim ? 'WAIVED_SANDBOX' : 'BILLED');
+    } catch (dbErr) {
+      // Non-fatal logging
+    }
   }
 
   return {

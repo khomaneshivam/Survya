@@ -11,8 +11,9 @@ module.exports = {
   type: "ADDON_UPSELL_AND_QUOTE",
 
   async execute(node, context) {
-    const { session = {}, userInput = "", userPayload = null, tenantId = 1, isWaitingForThisNode } = context;
+    const { session = {}, userInput = "", userPayload = null, tenantId = 1, isWaitingForThisNode, dryRun = false, isSandbox = false, isSimulation = false } = context;
     const cfg = { ...(node.config || {}), ...(node.data || {}) };
+    const isSim = Boolean(dryRun || isSandbox || isSimulation);
 
     const selectedItemId = session.selectedItemId || session.selected_item_id || cfg.defaultItemId || null;
     const entityId = cfg.entityId || session.entityId || null;
@@ -20,6 +21,7 @@ module.exports = {
 
     // Helper to acquire a 15-minute atomic inventory hold
     const acquireAtomicHold = () => {
+      if (isSim) return `SIM-HOLD-${Date.now()}`;
       if (!selectedItemId) return null;
       try {
         const holdRes = universalAvailabilityService.createInventoryHold(tenantId, {
@@ -74,26 +76,34 @@ module.exports = {
         const holdToken = acquireAtomicHold();
 
         let txnRes = null;
-        try {
-          const universalFulfillmentService = require("../../universal/universalFulfillmentService");
-          txnRes = await universalFulfillmentService.createTransactionFromQuote({
-            tenantId,
-            sourceChannel: "WHATSAPP_FLOW",
-            customer: {
-              phone: context.recipientPhone || session.sender_phone || session.customerPhone || "919999999999",
-              name: session.guest_name || session.customerName || "Valued Customer"
-            },
-            cartItems: selectedItemId ? [{ itemId: selectedItemId, quantity: session.quantity || 1 }] : [],
-            addOns: (session.selectedAddonIds || []).map(id => ({ addonId: id, quantity: 1 })),
-            promoCode: session.promoCode || null,
-            holdId: holdToken || session.holdToken || null,
-            serviceDate: session.check_in || session.checkIn || null,
-            serviceEndDate: session.check_out || session.checkOut || null,
-            serviceSlotTime: session.slot_time || session.slotTime || null,
-            flowSessionId: session.id || null
-          });
-        } catch (txnErr) {
-          console.warn("[ADDON_UPSELL_AND_QUOTE] Transaction creation warning:", txnErr.message);
+        if (!isSim) {
+          try {
+            const universalFulfillmentService = require("../../universal/universalFulfillmentService");
+            txnRes = await universalFulfillmentService.createTransactionFromQuote({
+              tenantId,
+              sourceChannel: "WHATSAPP_FLOW",
+              customer: {
+                phone: context.recipientPhone || session.sender_phone || session.customerPhone || "919999999999",
+                name: session.guest_name || session.customerName || "Valued Customer"
+              },
+              cartItems: selectedItemId ? [{ itemId: selectedItemId, quantity: session.quantity || 1 }] : [],
+              addOns: (session.selectedAddonIds || []).map(id => ({ addonId: id, quantity: 1 })),
+              promoCode: session.promoCode || null,
+              holdId: holdToken || session.holdToken || null,
+              serviceDate: session.check_in || session.checkIn || null,
+              serviceEndDate: session.check_out || session.checkOut || null,
+              serviceSlotTime: session.slot_time || session.slotTime || null,
+              flowSessionId: session.id || null
+            });
+          } catch (txnErr) {
+            console.warn("[ADDON_UPSELL_AND_QUOTE] Transaction creation warning:", txnErr.message);
+          }
+        } else {
+          txnRes = {
+            referenceCode: `SIM-REF-${Date.now().toString().slice(-4)}`,
+            isPayLater: false,
+            paymentLinkUrl: null
+          };
         }
 
         const refText = txnRes?.referenceCode ? ` (Ref: *${txnRes.referenceCode}*)` : "";

@@ -66,12 +66,12 @@ router.put(["/flows/conversation-flows/:id(\\d+)", "/conversation-flows/:id(\\d+
 router.post(["/flows/conversation-flows/:id(\\d+)/duplicate", "/conversation-flows/:id(\\d+)/duplicate", "/:id(\\d+)/duplicate"], authenticateToken, flowController.duplicateFlow);
 router.post(["/flows/conversation-flows/:id(\\d+)/draft", "/conversation-flows/:id(\\d+)/draft", "/:id(\\d+)/draft"], authenticateToken, flowController.saveFlowDraft);
 router.post(["/flows/conversation-flows/:id(\\d+)/validate", "/conversation-flows/:id(\\d+)/validate", "/:id(\\d+)/validate"], authenticateToken, flowController.validateFlow);
-router.post(["/flows/conversation-flows/:id(\\d+)/publish", "/conversation-flows/:id(\\d+)/publish", "/:id(\\d+)/publish"], authenticateToken, flowController.publishFlow);
-router.post(["/flows/conversation-flows/:id(\\d+)/pause", "/conversation-flows/:id(\\d+)/pause", "/:id(\\d+)/pause"], authenticateToken, flowController.pauseFlow);
-router.post(["/flows/conversation-flows/:id(\\d+)/archive", "/conversation-flows/:id(\\d+)/archive", "/:id(\\d+)/archive"], authenticateToken, flowController.archiveFlow);
-router.delete(["/flows/conversation-flows/:id(\\d+)", "/conversation-flows/:id(\\d+)", "/:id(\\d+)"], authenticateToken, flowController.deleteFlow);
-router.post(["/flows/conversation-flows/:id(\\d+)/delete", "/conversation-flows/:id(\\d+)/delete", "/:id(\\d+)/delete"], authenticateToken, flowController.deleteFlow);
-router.post(["/flows/conversation-flows/:id(\\d+)/rollback", "/conversation-flows/:id(\\d+)/rollback", "/:id(\\d+)/rollback"], authenticateToken, flowController.rollbackFlow);
+router.post(["/flows/conversation-flows/:id(\\d+)/publish", "/conversation-flows/:id(\\d+)/publish", "/:id(\\d+)/publish"], authenticateToken, requireWorkspaceAdmin, flowController.publishFlow);
+router.post(["/flows/conversation-flows/:id(\\d+)/pause", "/conversation-flows/:id(\\d+)/pause", "/:id(\\d+)/pause"], authenticateToken, requireWorkspaceAdmin, flowController.pauseFlow);
+router.post(["/flows/conversation-flows/:id(\\d+)/archive", "/conversation-flows/:id(\\d+)/archive", "/:id(\\d+)/archive"], authenticateToken, requireWorkspaceAdmin, flowController.archiveFlow);
+router.delete(["/flows/conversation-flows/:id(\\d+)", "/conversation-flows/:id(\\d+)", "/:id(\\d+)"], authenticateToken, requireWorkspaceAdmin, flowController.deleteFlow);
+router.post(["/flows/conversation-flows/:id(\\d+)/delete", "/conversation-flows/:id(\\d+)", "/:id(\\d+)/delete"], authenticateToken, requireWorkspaceAdmin, flowController.deleteFlow);
+router.post(["/flows/conversation-flows/:id(\\d+)/rollback", "/conversation-flows/:id(\\d+)/rollback", "/:id(\\d+)/rollback"], authenticateToken, requireWorkspaceAdmin, flowController.rollbackFlow);
 router.get(["/flows/conversation-flows/:id(\\d+)/versions", "/conversation-flows/:id(\\d+)/versions", "/:id(\\d+)/versions"], authenticateToken, flowController.listVersions);
 router.get(["/flows/conversation-flows/:id(\\d+)/analytics", "/conversation-flows/:id(\\d+)/analytics", "/:id(\\d+)/analytics"], authenticateToken, flowController.getFlowAnalytics);
 router.get(["/flows/conversation-flows/:id(\\d+)/ai-optimize", "/conversation-flows/:id(\\d+)/ai-optimize", "/:id(\\d+)/ai-optimize"], authenticateToken, requireWorkspaceAdmin, flowController.getAiOptimizationRecommendations);

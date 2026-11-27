@@ -1398,7 +1398,7 @@ export default function SystemAdminPanel({ onNavigate }) {
 
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
-                    Automated Penny-Drop Bank KYC
+                    Direct Merchant Bank Account Record
                   </label>
                   <select
                     className="sarvya-input"
@@ -1406,14 +1406,14 @@ export default function SystemAdminPanel({ onNavigate }) {
                     value={settlementConfig.pennyDropEnabled ? 'true' : 'false'}
                     onChange={(e) => setSettlementConfig({ ...settlementConfig, pennyDropEnabled: e.target.value === 'true' })}
                   >
-                    <option value="true">Enabled (₹1.00 Verification Required)</option>
-                    <option value="false">Manual Admin Review Only</option>
+                    <option value="true">Merchant-Direct Reconciliation Active</option>
+                    <option value="false">Manual Review Only</option>
                   </select>
                 </div>
 
                 <div>
                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>
-                    Instant Payout Dispatches
+                    Settlement Routing Mode
                   </label>
                   <select
                     className="sarvya-input"

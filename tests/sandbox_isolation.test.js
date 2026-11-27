@@ -298,4 +298,92 @@ describe("Phase 7 Regression: Workspace Sandbox Mode & Greenvally E2E Booking Li
       assert.equal(db.prepare("SELECT name FROM properties WHERE id = 1").get().name, t1Before.name);
     }
   });
+
+  test("3. Greenvally 4-category 25-unit inventory reservation, overbooking block, cancellation restoration & AI/Email sandbox quarantine", async () => {
+    const emailNotificationService = require("../src/services/studio/emailNotificationService");
+    const taskScopedAiAgentService = require("../src/services/ai/taskScopedAiAgentService");
+
+    // 4 exact Greenvally room types totaling 25 units
+    const gvCatalogSpecs = [
+      { title: "Deluxe Room", stockQty: 10, basePrice: 3500 },
+      { title: "Executive Suite", stockQty: 8, basePrice: 5500 },
+      { title: "Family Suite", stockQty: 5, basePrice: 7500 },
+      { title: "Private Pool Villa", stockQty: 2, basePrice: 12000 }
+    ];
+
+    const createdRooms = gvCatalogSpecs.map(spec => universalCatalogService.createItem(tenantId, {
+      title: spec.title,
+      inventoryMode: "DATE_RANGE",
+      basePrice: spec.basePrice,
+      stockQty: spec.stockQty,
+      trackInventory: 1
+    }));
+
+    const totalUnits = createdRooms.reduce((sum, r) => sum + Number(r.stock_qty || 0), 0);
+    assert.equal(createdRooms.length, 4);
+    assert.equal(totalUnits, 25);
+
+    const poolVilla = createdRooms.find(r => r.title === "Private Pool Villa");
+    const checkIn = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+    const checkOut = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+
+    // Reserve both available Private Pool Villas
+    const hold2 = universalAvailabilityService.createInventoryHold(tenantId, {
+      itemId: poolVilla.id,
+      quantity: 2,
+      checkIn,
+      checkOut,
+      customerPhone: "919822223333",
+      customerName: "Ananya Nair"
+    });
+    assert.equal(hold2.success, true);
+
+    // Attempting to hold a 3rd Private Pool Villa for overlapping dates must fail cleanly
+    assert.throws(() => {
+      universalAvailabilityService.createInventoryHold(tenantId, {
+        itemId: poolVilla.id,
+        quantity: 1,
+        checkIn,
+        checkOut,
+        customerPhone: "919822224444",
+        customerName: "Overbook Attempt"
+      });
+    }, /insufficient|available|stock|inventory/i);
+
+    // Release hold -> availability must restore to 2 units
+    const rel = universalAvailabilityService.releaseHold(tenantId, hold2.holdToken);
+    assert.equal(rel.success, true);
+
+    const holdAfterCancel = universalAvailabilityService.createInventoryHold(tenantId, {
+      itemId: poolVilla.id,
+      quantity: 2,
+      checkIn,
+      checkOut,
+      customerPhone: "919822225555",
+      customerName: "Restored Booking Guest"
+    });
+    assert.equal(holdAfterCancel.success, true);
+
+    // Email notifications and AI LLM calls are strictly quarantined in Sandbox
+    const emailRes = emailNotificationService.enqueueGoalEmailNotification({
+      tenantId,
+      eventName: "BOOKING_CONFIRMED",
+      idempotencyKey: `gv_sandbox_email_${Date.now()}`,
+      payload: { customerName: "Ananya Nair", monetaryValue: 24000 },
+      explicitRecipients: ["owner@greenvally.test"]
+    });
+    assert.equal(emailRes.queued, false);
+    assert.equal(emailRes.suppressed, true);
+    assert.equal(emailRes.status, "SANDBOX_SUPPRESSED");
+
+    const aiRes = await taskScopedAiAgentService.generateReply({
+      tenantId,
+      senderPhone: "919822225555",
+      userInput: "What is the price of Private Pool Villa?",
+      isSimulation: true
+    });
+    assert.equal(aiRes.handled, true);
+    assert.ok(aiRes.replyText && aiRes.replyText.length > 0);
+    assert.equal(externalFetchCalls.length, 0);
+  });
 });

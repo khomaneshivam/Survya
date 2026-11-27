@@ -49,15 +49,21 @@ async function execute(node, context) {
       };
     }
 
-    let isAvail = true;
-    let availQty = 3;
+    let isAvail = false;
+    let availQty = 0;
 
     try {
       const avail = availabilityService.checkRoomAvailability(propertyId, roomType.id, checkIn, checkOut, 1, tenantId);
-      isAvail = avail.overall_status !== 'UNAVAILABLE';
-      availQty = avail.min_sellable;
+      isAvail = Boolean(avail.is_available ?? avail.available ?? (avail.overall_status !== 'UNAVAILABLE'));
+      availQty = Number(avail.min_sellable || avail.available_rooms_count || 0);
     } catch (e) {
-      isAvail = true; // Fallback for simulation
+      if (dryRun) {
+        isAvail = true;
+        availQty = 3;
+      } else {
+        isAvail = false;
+        availQty = 0;
+      }
     }
 
     const nextHandle = isAvail ? 'available' : 'unavailable';
@@ -102,9 +108,16 @@ async function execute(node, context) {
       };
     }
 
-    const roomTypeId = Number(getPath(evalContext, 'catalog.room_type_id') || getPath(evalContext, 'matched_room_id') || 1);
-    let quoteResult = null;
+    const roomTypeId = Number(getPath(evalContext, 'catalog.room_type_id') || getPath(evalContext, 'matched_room_id') || 0);
+    if (!roomTypeId) {
+      return {
+        action: 'CONTINUE',
+        nextHandle: 'unavailable',
+        traceNote: 'No room category resolved for quote calculation [Handle: unavailable]'
+      };
+    }
 
+    let quoteResult = null;
     try {
       quoteResult = pricingService.calculateQuote({
         propertyId,
@@ -117,21 +130,31 @@ async function execute(node, context) {
         tenantId
       });
     } catch (err) {
-      // Fallback calculation
+      if (!dryRun) {
+        return {
+          action: 'CONTINUE',
+          nextHandle: 'unavailable',
+          traceNote: `Quote calculation unavailable: ${err.message}`
+        };
+      }
+      const rt = db.prepare("SELECT base_rate FROM room_types WHERE id = ? AND tenant_id = ?").get(roomTypeId, tenantId);
+      const rate = Number(rt?.base_rate || 3500);
       quoteResult = {
-        nights: 2,
-        subtotal: 7000,
-        tax_total: 840,
-        total: 7840,
-        currency: 'INR'
+        reservation_specs: { nights: 1 },
+        pricing_summary: {
+          subtotal_before_tax: rate,
+          taxes: { total_tax: Math.round(rate * 0.12), tax_percentage: 12 },
+          estimated_grand_total: Math.round(rate * 1.12)
+        }
       };
     }
 
-    const total = Number(quoteResult.total || quoteResult.grand_total || 7840);
-    const subtotal = Number(quoteResult.subtotal || quoteResult.base_amount || 7000);
-    const taxTotal = Number(quoteResult.tax_total || quoteResult.tax_amount || 840);
-    const taxPercent = subtotal > 0 ? Math.round((taxTotal / subtotal) * 100) : 12;
-    const nights = Number(quoteResult.nights || 2);
+    const pSummary = quoteResult?.pricing_summary || {};
+    const subtotal = Number(pSummary.subtotal_before_tax ?? quoteResult?.subtotal ?? quoteResult?.base_amount ?? 0);
+    const taxTotal = Number(pSummary.taxes?.total_tax ?? quoteResult?.tax_total ?? quoteResult?.tax_amount ?? 0);
+    const total = Number(pSummary.estimated_grand_total ?? quoteResult?.total ?? quoteResult?.grand_total ?? (subtotal + taxTotal));
+    const taxPercent = Number(pSummary.taxes?.tax_percentage ?? (subtotal > 0 ? Math.round((taxTotal / subtotal) * 100) : 12));
+    const nights = Number(quoteResult?.reservation_specs?.nights ?? quoteResult?.nights ?? 1);
 
     const saveQuoteAs = config.saveQuoteAs || 'quote_total';
     const saveSubtotalAs = config.saveSubtotalAs || 'quote_subtotal';
@@ -186,7 +209,7 @@ async function execute(node, context) {
         adults: guests,
         children,
         rooms_requested: 1,
-        room_type_id: Number(getPath(evalContext, 'catalog.room_type_id') || getPath(evalContext, 'matched_room_id') || 1),
+        room_type_id: Number(getPath(evalContext, 'catalog.room_type_id') || getPath(evalContext, 'matched_room_id') || 0) || null,
         notes: 'Automated WhatsApp Booking Flow'
       }, 'conversation_engine');
 

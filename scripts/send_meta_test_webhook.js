@@ -9,10 +9,9 @@ async function main() {
   console.log("🚀 Meta Webhook Inbound Message Receiving & Processing Live Verification");
   console.log("========================================================================");
 
-  // Align secret resolution with webhookController (env config -> DB plaintext -> process.env)
-  const rawDbSecret = typeof getSetting === "function" ? String(getSetting("META_APP_SECRET") || "").trim() : "";
-  const safeDbSecret = rawDbSecret.startsWith("enc:aes-256-gcm:") ? "" : rawDbSecret;
-  let appSecret = (config.META_APP_SECRET || safeDbSecret || process.env.META_APP_SECRET || "").trim().replace(/^["']|["']$/g, "");
+  // Align secret resolution with canonical DB -> env precedence
+  const { resolveMetaAppSecret } = require("../src/services/metaWhatsAppService");
+  let { appSecret } = resolveMetaAppSecret();
   if (appSecret && !/placeholder|dummy/i.test(appSecret)) {
     console.log(`🔐 Meta App Secret detected: [Configured - Length: ${appSecret.length} chars]`);
     console.log("   (Test requests will include X-Hub-Signature-256 HMAC signature)");

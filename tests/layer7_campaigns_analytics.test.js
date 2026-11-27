@@ -132,11 +132,14 @@ describe("Layer 7: Campaigns, Delivery Shield, Retention Jobs & Verified Analyti
     apiBaseUrl = `http://127.0.0.1:${apiServer.address().port}`;
   });
 
-  after(() => {
+  after(async () => {
     config.META_API_URL = origMetaUrl;
-    if (apiServer) apiServer.close();
-    if (mockMetaServer) mockMetaServer.close();
+    if (mockMetaServer) {
+      try { mockMetaServer.closeAllConnections?.(); await new Promise(r => mockMetaServer.close(r)); } catch (_) {}
+    }
     cleanup();
+    const { closeTestResources } = require("./helpers/testFixtures");
+    await closeTestResources(apiServer);
   });
 
   test("1. Strict cross-tenant campaign isolation & workspace RBAC enforcement", async () => {

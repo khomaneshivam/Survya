@@ -34,7 +34,7 @@ async function execute(node, context) {
   const durationLabel = `${durationValue} ${durationUnit.toLowerCase()}`;
 
   // In Simulator / Dry Run Mode:
-  if (dryRun) {
+  if (dryRun || context.isSimulation) {
     if (fastForward) {
       return {
         success: true,

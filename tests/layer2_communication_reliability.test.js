@@ -8,6 +8,7 @@ const cryptoUtil = require("../src/utils/cryptoUtil");
 const metaWhatsAppService = require("../src/services/metaWhatsAppService");
 const webhookService = require("../src/services/webhookService");
 const { JobWorkerEngine } = require("../src/services/queue/jobWorkerEngine");
+const { closeTestResources } = require("./helpers/testFixtures");
 
 describe("Layer 2: Communication Adapter, Channel Isolation, Durable Webhook & Handoff", () => {
   let server;
@@ -62,11 +63,10 @@ describe("Layer 2: Communication Adapter, Channel Isolation, Durable Webhook & H
     createdTenantIds.push(tenantBOwner.tenantId);
   });
 
-  after(() => {
+  after(async () => {
     global.fetch = originalFetch;
     config.META_APP_SECRET = origConfigSecret;
     try { if (prevAppSecret) setSetting("META_APP_SECRET", prevAppSecret); } catch (_) {}
-    if (server) server.close();
     for (const pid of createdPhoneIds) {
       try { db.prepare("DELETE FROM waba_phone_numbers WHERE id = ? OR phone_number_id = ?").run(pid, pid); } catch (_) {}
     }
@@ -81,6 +81,7 @@ describe("Layer 2: Communication Adapter, Channel Isolation, Durable Webhook & H
       try { db.prepare("DELETE FROM crm_pipelines WHERE tenant_id = ?").run(tid); } catch (_) {}
       try { db.prepare("DELETE FROM tenants WHERE id = ?").run(tid); } catch (_) {}
     }
+    await closeTestResources(server);
   });
 
   test("1. Non-Tenant-1 resolveCredentials decrypts encrypted line token and refuses Tenant 1 fallback", () => {

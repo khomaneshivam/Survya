@@ -63,8 +63,7 @@ describe("Layer 4: Template Studio Governance, Level-A/B Customization & Safe Up
     baseUrl = `http://127.0.0.1:${server.address().port}`;
   });
 
-  after(() => {
-    if (server) server.close();
+  after(async () => {
     for (const id of createdInstallationIds) {
       try {
         db.prepare("DELETE FROM template_bindings WHERE installation_id = ?").run(id);
@@ -94,6 +93,8 @@ describe("Layer 4: Template Studio Governance, Level-A/B Customization & Safe Up
     try {
       db.prepare("DELETE FROM tenants WHERE id IN (9401, 9402)").run();
     } catch (_) {}
+    const { closeTestResources } = require("./helpers/testFixtures");
+    await closeTestResources(server);
   });
 
   test("1. Master Template RBAC: Platform Admin creates PUBLIC master; Workspace Owner only creates PRIVATE; Employee blocked", async () => {

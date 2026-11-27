@@ -40,6 +40,13 @@ async function savePaymentConfig(req, res) {
 
 async function createCheckoutSession(req, res) {
   try {
+    const entity = catalogService.getEntityById(req.params.id);
+    if (!entity || Number(entity.delete_status || 0) === 1 || Number(entity.active_status ?? 1) === 0 || String(entity.status || "ACTIVE").toUpperCase() !== "ACTIVE") {
+      return res.status(404).json({ success: false, message: "Active business entity not found." });
+    }
+    if (req.user && !checkEntityAccess(req.params.id, req.user)) {
+      return res.status(403).json({ success: false, message: "Unauthorized access to this entity's checkout." });
+    }
     const session = paymentPayoutService.createPayInSession(req.params.id, req.body);
     res.json({ success: true, session });
   } catch (err) {
@@ -173,10 +180,13 @@ async function verifyPennyDrop(req, res) {
     if (!checkEntityAccess(beneficiary.entity_id, req.user)) {
       return res.status(403).json({ success: false, message: "Unauthorized access to verify this beneficiary." });
     }
-    const result = paymentPayoutService.verifyPennyDrop(req.params.id);
-    res.json(result);
+    return res.status(410).json({
+      success: false,
+      code: "MERCHANT_DIRECT_MODE",
+      message: "Simulated ₹1 Penny-Drop KYC verification has been retired. Configure your own gateway keys or UPI VPA in Merchant-Direct Payment Mode."
+    });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    res.status(err.statusCode || 400).json({ success: false, message: err.message });
   }
 }
 
@@ -197,12 +207,13 @@ async function triggerInstantPayout(req, res) {
     if (!checkEntityAccess(req.params.id, req.user)) {
       return res.status(403).json({ success: false, message: "Unauthorized access to disburse payouts for this entity." });
     }
-    const tenantId = req.user?.tenant_id || 1;
-    const { amount } = req.body;
-    const result = paymentPayoutService.triggerInstantPayout(req.params.id, amount, tenantId);
-    res.json(result);
+    return res.status(410).json({
+      success: false,
+      code: "MERCHANT_DIRECT_MODE",
+      message: "Simulated pooled IMPS payout disbursement has been retired. Customer payments settle directly to your merchant account."
+    });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    res.status(err.statusCode || 400).json({ success: false, message: err.message });
   }
 }
 

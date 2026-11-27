@@ -95,6 +95,15 @@ function getTemplateStatusSummary(user = null) {
   return counts;
 }
 
+function sanitizeWabaAccount(row) {
+  if (!row) return null;
+  const { access_token, access_token_enc, ...safe } = row;
+  return {
+    ...safe,
+    has_token: Boolean(access_token || access_token_enc)
+  };
+}
+
 /**
  * POST /api/v1/channels/whatsapp/connect
  * Registers or updates a WhatsApp Business sender account once for the workspace.
@@ -237,7 +246,8 @@ async function connectWhatsAppAccount(req, res) {
       );
     }
 
-    const account = db.prepare("SELECT * FROM waba_phone_numbers WHERE id = ?").get(accountId);
+    const rawAccount = db.prepare("SELECT * FROM waba_phone_numbers WHERE id = ?").get(accountId);
+    const account = sanitizeWabaAccount(rawAccount);
     return res.status(existing ? 200 : 201).json({
       success: true,
       message: `Connected sender account '${cleanDisplay}' (${cleanPhone}).`,
@@ -301,16 +311,18 @@ async function listWhatsAppAccounts(req, res) {
     const hasToken = activeAccount
       ? Boolean(activeAccount.access_token || activeAccount.access_token_enc || (allowGlobalFallback && (getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN)))
       : Boolean(allowGlobalFallback && (getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN));
-    const wabaId = activeAccount?.waba_id || (allowGlobalFallback ? metaWhatsAppService.resolveWabaId() : null);
+    const wabaId = activeAccount?.waba_id || (allowGlobalFallback ? metaWhatsAppService.resolveWabaId(null, tenantId) : null);
+    const safeAccounts = accounts.map(sanitizeWabaAccount);
+    const safeActiveAccount = sanitizeWabaAccount(activeAccount);
 
     return res.status(200).json({
       success: true,
       connected: Boolean(activeAccount || (hasToken && allowGlobalFallback && (getSetting("WHATSAPP_PHONE_NUMBER_ID") || config.WHATSAPP_PHONE_NUMBER_ID))),
       hasToken,
       wabaId,
-      activeAccount,
-      accounts,
-      data: accounts,
+      activeAccount: safeActiveAccount,
+      accounts: safeAccounts,
+      data: safeAccounts,
       summary: {
         templates: templateSummary,
         messagesSent: totalMessagesSent,
@@ -361,7 +373,8 @@ async function createCustomTemplate(req, res) {
       });
     }
 
-    const duplicate = db.prepare("SELECT id, name, language FROM templates WHERE name = ? AND language = ? LIMIT 1").get(cleanName, language || "en_US");
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const duplicate = db.prepare("SELECT id, name, language FROM templates WHERE name = ? AND language = ? AND tenant_id = ? LIMIT 1").get(cleanName, language || "en_US", tenantId);
     if (duplicate) {
       return res.status(409).json({
         success: false,
@@ -387,7 +400,7 @@ async function createCustomTemplate(req, res) {
         body_text, variables, components, buttons,
         header_type, header_text, header_media_url, footer_text,
         version, user_id, tenant_id, created_at, updated_at
-      ) VALUES (?, ?, NULL, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, NULL, ?, ?, 'DRAFT', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `).run(
       id,
       cleanName,
@@ -402,7 +415,8 @@ async function createCustomTemplate(req, res) {
       built.headerText,
       built.headerMediaUrl,
       built.footerText,
-      req.user?.id || null
+      req.user?.id || null,
+      tenantId
     );
 
     metaWhatsAppService.clearTemplateCache();
