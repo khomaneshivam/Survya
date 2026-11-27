@@ -28,7 +28,7 @@ async function runMasterTest() {
   // TEST 1: Universal 8-Sector Industry Blueprints Seeding
   // ---------------------------------------------------------------------------
   console.log("--- 1. Testing Industry Blueprint Seeding ---");
-  const blueprintResult = universalCatalogService.seedIndustryBlueprint(tenantId, "HOSPITALITY", "test_runner");
+  const blueprintResult = universalCatalogService.seedIndustryBlueprint(tenantId, "HOSPITALITY", "test_runner", { autoPublish: true });
   assert.strictEqual(blueprintResult.success, true);
   assert.strictEqual(blueprintResult.sector, "HOSPITALITY");
   assert(blueprintResult.itemCount >= 3, "Expected at least 3 seeded hospitality items");
@@ -36,7 +36,7 @@ async function runMasterTest() {
   assert(blueprintResult.pricingRuleCount >= 1, "Expected at least 1 pricing rule");
   console.log(`✓ Seeded Hospitality Blueprint: ${blueprintResult.itemCount} items, ${blueprintResult.addonGroupCount} add-on groups, flow #${blueprintResult.flowId}`);
 
-  const retailResult = universalCatalogService.seedIndustryBlueprint(tenantId, "RETAIL_ECOM", "test_runner");
+  const retailResult = universalCatalogService.seedIndustryBlueprint(tenantId, "RETAIL_ECOM", "test_runner", { autoPublish: true });
   assert.strictEqual(retailResult.success, true);
   assert.strictEqual(retailResult.sector, "RETAIL_ECOM");
   console.log(`✓ Seeded Retail D2C Blueprint: ${retailResult.itemCount} items, flow #${retailResult.flowId}`);
@@ -86,7 +86,7 @@ async function runMasterTest() {
   console.log(`✓ Journey 2 (Retail D2C): 2x ${hoodie.title} [Bulk 15% Off] + Express Air -> Grand Total: ₹${retailQuote.grandTotal}`);
 
   // Journey 3: Clinic / Healthcare (Zero GST on core health consultation)
-  const clinicBlueprint = universalCatalogService.seedIndustryBlueprint(tenantId, "CLINIC_HEALTH", "test_runner");
+  const clinicBlueprint = universalCatalogService.seedIndustryBlueprint(tenantId, "CLINIC_HEALTH", "test_runner", { autoPublish: true });
   const clinicItems = universalCatalogService.listItems(tenantId, { categoryName: "Consultations" });
   const consult = clinicItems[0];
   const clinicQuote = universalPricingService.calculateCartQuote(tenantId, {
@@ -98,7 +98,7 @@ async function runMasterTest() {
   console.log(`✓ Journey 3 (Clinic Healthcare): ${consult.title} -> Grand Total: ₹${clinicQuote.grandTotal} (Zero GST Medical)`);
 
   // Journey 4: Restaurant / Cloud Kitchen (Woodfired pizza + Promo Code Discount)
-  const foodBlueprint = universalCatalogService.seedIndustryBlueprint(tenantId, "RESTAURANT_FOOD", "test_runner");
+  const foodBlueprint = universalCatalogService.seedIndustryBlueprint(tenantId, "RESTAURANT_FOOD", "test_runner", { autoPublish: true });
   const foodItems = universalCatalogService.listItems(tenantId, { categoryName: "Pizzas" });
   const pizza = foodItems[0];
   const foodQuote = universalPricingService.calculateCartQuote(tenantId, {
@@ -109,7 +109,7 @@ async function runMasterTest() {
   console.log(`✓ Journey 4 (Restaurant Food): 2x ${pizza.title} -> Grand Total: ₹${foodQuote.grandTotal} with Promo Check`);
 
   // Journey 5: B2B Wholesale (1,000 Cartons + 8% MOQ Bulk Discount + Custom Logo Printing Add-On)
-  const b2bBlueprint = universalCatalogService.seedIndustryBlueprint(tenantId, "B2B_WHOLESALE", "test_runner");
+  const b2bBlueprint = universalCatalogService.seedIndustryBlueprint(tenantId, "B2B_WHOLESALE", "test_runner", { autoPublish: true });
   const b2bItems = universalCatalogService.listItems(tenantId, { categoryName: "Corrugated Boxes" });
   assert(b2bItems.length > 0, "B2B Corrugated Boxes item must exist");
   const cartons = b2bItems[0];

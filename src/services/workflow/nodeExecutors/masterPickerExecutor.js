@@ -148,6 +148,19 @@ module.exports = {
           type: "BUTTONS",
           options: btnOptions
         },
+        message: {
+          type: "interactive",
+          interactive: {
+            type: "button",
+            body: { text: bodyText },
+            action: {
+              buttons: btnOptions.map((b) => ({
+                type: "reply",
+                reply: { id: b.id, title: b.title }
+              }))
+            }
+          }
+        },
         traceNote: `Rendered ${btnOptions.length} master quick-reply buttons for node '${node.id}'`
       };
     } else {
@@ -158,6 +171,7 @@ module.exports = {
           ? String(opt.metadata.description).slice(0, 72)
           : undefined
       }));
+      const buttonLabel = String(listButtonTitle || "Select Option").slice(0, 20);
 
       return {
         action: "WAIT_FOR_INPUT",
@@ -166,8 +180,24 @@ module.exports = {
         replyInteractive: {
           type: "LIST",
           listTitle: "Available Options",
-          listButtonText: String(listButtonTitle || "Select Option").slice(0, 20),
+          listButtonText: buttonLabel,
           options: rows
+        },
+        message: {
+          type: "interactive",
+          interactive: {
+            type: "list",
+            body: { text: bodyText },
+            action: {
+              button: buttonLabel,
+              sections: [
+                {
+                  title: "Available Options",
+                  rows
+                }
+              ]
+            }
+          }
         },
         traceNote: `Rendered interactive list menu with ${rows.length} master options for node '${node.id}'`
       };

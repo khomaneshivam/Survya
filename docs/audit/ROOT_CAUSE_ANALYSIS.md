@@ -61,5 +61,5 @@
 ## 8. Incident: Dead Code Bloat, CI Quality Bypass & Hanging Test Handles (WS7–WS8)
 
 - **Root Causes:**
-  1. 8 legacy unmounted routers (`src/routes/*`), `tenantScope.js`, 24 dead frontend files/components, and `@types/*`/`uuid` packages remained in the repository alongside stale `KonkanTrip` UI placeholders.
+  1. 8 legacy unmounted routers (`src/routes/*`), `tenantScope.js`, 18 dead frontend files/components, and `@types/*`/`uuid` packages remained in the repository alongside stale `KonkanTrip` UI placeholders.
   2. `.github/workflows/conversation-foundation.yml` set `VERIFY_WEBHOOK_SIGNATURE: "false"`, while `.github/workflows/ci-cd.yml` ran a partial subset without `DISABLE_SCHEDULER: "true"` or `WHATSAPP_API_TOKEN`, and HTTP test suites left MySQL pool/socket handles open.

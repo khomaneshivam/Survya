@@ -2,11 +2,9 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   GitBranch,
   Play,
-  Pause,
   Trash2,
   Copy,
   Settings,
-  History,
   Search,
   Plus,
   RefreshCw,
@@ -14,16 +12,8 @@ import {
   CheckCircle2,
   Sliders,
   Phone,
-  Layers,
   Sparkles,
-  ExternalLink,
-  RotateCcw,
   X,
-  MessageSquare,
-  ShieldCheck,
-  ChevronRight,
-  Eye,
-  Smartphone,
   Save,
   ArrowLeft
 } from 'lucide-react';
