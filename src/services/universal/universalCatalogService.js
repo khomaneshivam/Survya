@@ -1885,12 +1885,8 @@ function seedIndustryBlueprint(tenantId = 1, sectorCode = "HOSPITALITY", userId 
 
   // Check tenant primary domain to prevent non-primary blueprint imports (e.g. EDUCATION_COACHING)
   // from hijacking the workspace's Global / Default WhatsApp line (phone_number_id IS NULL).
-  const tenantRow = db.prepare("SELECT primary_domain FROM tenants WHERE id = ?").get(numericTenantId);
-  const tenantPrimary = String(tenantRow?.primary_domain || "HOSPITALITY").trim().toUpperCase();
   const requestedPhoneLineId = flowOptions.phoneLineId || flowOptions.phoneNumberId || null;
-  const shouldAutoPublish = flowOptions.autoPublish !== undefined
-    ? Boolean(flowOptions.autoPublish)
-    : (upperSector === tenantPrimary || Boolean(requestedPhoneLineId));
+  const shouldAutoPublish = Boolean(flowOptions.autoPublish === true);
 
   const existingDefault = db.prepare(`
     SELECT id FROM conversation_flows

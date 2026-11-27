@@ -37,7 +37,7 @@ router.post("/screens/:screenId/validate", requireWorkspaceAdmin, inappControlle
 
 // Agent Rate Negotiations Management
 const inappNegotiationService = require("../services/inapp/inappNegotiationService");
-router.get("/negotiations", (req, res) => {
+router.get("/negotiations", requireWorkspaceAdmin, (req, res) => {
   try {
     const list = inappNegotiationService.listNegotiations(req.tenantId || req.user?.tenant_id || 1, req.query);
     return res.status(200).json({ success: true, data: list });
@@ -46,7 +46,7 @@ router.get("/negotiations", (req, res) => {
   }
 });
 
-router.post("/negotiations/:id/agent-action", (req, res) => {
+router.post("/negotiations/:id/agent-action", requireWorkspaceAdmin, (req, res) => {
   try {
     const result = inappNegotiationService.agentAction(
       req.tenantId || req.user?.tenant_id || 1,
@@ -61,7 +61,7 @@ router.post("/negotiations/:id/agent-action", (req, res) => {
 
 // Agent Call Requests Management
 const inappCallService = require("../services/inapp/inappCallService");
-router.get("/calls", (req, res) => {
+router.get("/calls", requireWorkspaceAdmin, (req, res) => {
   try {
     const list = inappCallService.listCalls(req.tenantId || req.user?.tenant_id || 1, req.query);
     return res.status(200).json({ success: true, data: list });
@@ -70,7 +70,7 @@ router.get("/calls", (req, res) => {
   }
 });
 
-router.patch("/calls/:id", (req, res) => {
+router.patch("/calls/:id", requireWorkspaceAdmin, (req, res) => {
   try {
     const result = inappCallService.updateCallStatus(
       req.tenantId || req.user?.tenant_id || 1,

@@ -1,6 +1,5 @@
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
-const { v4: uuidv4 } = require("uuid");
 const { db, getSetting } = require("../config/database");
 const config = require("../config/env");
 const broadcastEngine = require("../services/broadcastEngine");
@@ -122,7 +121,7 @@ async function createCampaign(req, res) {
       initialStatus = "SCHEDULED";
     }
 
-    const campaignId = uuidv4();
+    const campaignId = crypto.randomUUID();
     const defaultCountry = getSetting("DEFAULT_COUNTRY_CODE") || "91";
     
     // Server-side bounded dispatch delay (50ms - 10000ms safety envelope)

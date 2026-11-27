@@ -74,9 +74,10 @@ describe("Layer 9: SaaS Plan Quotas, Composite Indexes, Correlation Logging & DB
     baseUrl = `http://127.0.0.1:${server.address().port}`;
   });
 
-  after(() => {
-    if (server) server.close();
+  after(async () => {
     cleanup();
+    const { closeTestResources } = require("./helpers/testFixtures");
+    await closeTestResources(server);
   });
 
   test("1. Enforces monthly message quota & trial expiration fail-closed with HTTP 402", async () => {

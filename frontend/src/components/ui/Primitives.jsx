@@ -36,7 +36,25 @@ export function Button({ variant = 'secondary', size = 'md', className = '', chi
   );
 }
 
-export function Badge({ tone = 'neutral', dot = false, className = '', children }) {
+export function Badge({ tone, variant, dot = false, className = '', children }) {
+  const variantToTone = {
+    neutral: 'neutral',
+    secondary: 'neutral',
+    default: 'neutral',
+    blue: 'blue',
+    info: 'blue',
+    primary: 'blue',
+    green: 'green',
+    success: 'green',
+    purple: 'purple',
+    taupe: 'taupe',
+    warning: 'taupe',
+    coral: 'coral',
+    danger: 'coral',
+    error: 'coral'
+  };
+  const resolvedTone = tone || variantToTone[variant] || 'neutral';
+
   const toneClass = {
     neutral: 'sarvya-badge-neutral',
     blue: 'sarvya-badge-blue',
@@ -44,7 +62,7 @@ export function Badge({ tone = 'neutral', dot = false, className = '', children 
     purple: 'sarvya-badge-purple',
     taupe: 'sarvya-badge-taupe',
     coral: 'sarvya-badge-coral'
-  }[tone] || 'sarvya-badge-neutral';
+  }[resolvedTone] || 'sarvya-badge-neutral';
 
   const dotColor = {
     neutral: '#96969C',
@@ -53,7 +71,7 @@ export function Badge({ tone = 'neutral', dot = false, className = '', children 
     purple: '#9E3BA8',
     taupe: '#8E7B7A',
     coral: '#C9403D'
-  }[tone] || '#96969C';
+  }[resolvedTone] || '#96969C';
 
   return (
     <span className={`sarvya-badge ${toneClass} ${className}`.trim()}>

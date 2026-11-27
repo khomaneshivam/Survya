@@ -133,8 +133,9 @@ function resolveNextTransition(currentNodeId, handle, transitions = [], nodeMap 
     return { id: defaultMatch.target, targetNodeId: defaultMatch.target };
   }
 
-  // 3. If there is only one outbound edge, route along it as universal fallback (unless self-loop)
-  if (outbound.length === 1 && outbound[0].target !== currentNodeId) {
+  // 3. If there is only one outbound edge and we are NOT on an error/failure handle, route along it (unless self-loop)
+  const errHandles = new Set(["failure", "error", "unavailable", "max_retries"]);
+  if (!errHandles.has(String(handle || "").toLowerCase()) && outbound.length === 1 && outbound[0].target !== currentNodeId) {
     if (nodeMap && typeof nodeMap.has === "function" && nodeMap.has(outbound[0].target)) {
       return nodeMap.get(outbound[0].target);
     }
@@ -646,250 +647,6 @@ function matchOption(rawOptions, choiceValue, userInput, isInitialPreAnswer = fa
   }
 
   return null;
-}
-
-/**
- * Execute registered business actions safely
- */
-function executeBusinessAction(actionName, inputs = {}, context = {}) {
-  const { propertyId = 1, tenantId = 1 } = context;
-
-  switch (actionName) {
-    case "HOSPITALITY_CHECK_AVAILABILITY": {
-      const roomName = inputs.room_name || "";
-      const checkIn = inputs.check_in;
-      const checkOut = inputs.check_out;
-      const adults = Number(inputs.adults || 2);
-
-      // Resolve room category from DB
-      let roomType = null;
-      if (roomName) {
-        roomType = db.prepare(`
-          SELECT * FROM room_types
-          WHERE property_id = ? AND tenant_id = ? AND (name LIKE ? OR room_code LIKE ?)
-          ORDER BY id ASC LIMIT 1
-        `).get(propertyId, tenantId, `%${roomName}%`, `%${roomName}%`);
-      }
-      if (!roomType) {
-        roomType = db.prepare(`
-          SELECT * FROM room_types
-          WHERE property_id = ? AND tenant_id = ? AND status = 'ACTIVE'
-          ORDER BY id ASC LIMIT 1
-        `).get(propertyId, tenantId);
-      }
-
-      if (!roomType) {
-        return { is_available: false, available_qty: 0, matched_room_id: null, matched_room_name: "No room categories found" };
-      }
-
-      try {
-        const avail = availabilityService.checkRoomAvailability(propertyId, roomType.id, checkIn, checkOut, 1, tenantId);
-        return {
-          is_available: avail.overall_status !== "UNAVAILABLE",
-          available_qty: avail.min_sellable,
-          matched_room_id: roomType.id,
-          matched_room_name: roomType.name
-        };
-      } catch (err) {
-        return {
-          is_available: true,
-          available_qty: 1,
-          matched_room_id: roomType.id,
-          matched_room_name: roomType.name,
-          error: err.message
-        };
-      }
-    }
-
-    case "HOSPITALITY_CALCULATE_QUOTE": {
-      const roomTypeId = Number(inputs.room_type_id || 1);
-      const checkIn = inputs.check_in;
-      const checkOut = inputs.check_out;
-      const adults = Number(inputs.adults || 2);
-      const children = Number(inputs.children || 0);
-
-      try {
-        const quote = pricingService.calculateQuote({
-          propertyId,
-          roomTypeId,
-          checkInDate: checkIn,
-          checkOutDate: checkOut,
-          adults,
-          children,
-          rooms: 1,
-          tenantId
-        });
-
-        const nights = quote.reservation_specs?.nights || 1;
-        const roomName = quote.room_category?.name || "Villa";
-        const grandTotal = quote.pricing_summary?.estimated_grand_total || quote.total_payable || 8500;
-        const subtotal = quote.pricing_summary?.subtotal_before_tax || quote.subtotal_room_charges || 7589;
-        const taxTotal = quote.pricing_summary?.taxes?.total_tax || quote.total_taxes || 911;
-        const taxPercent = quote.pricing_summary?.taxes?.tax_percentage || 12;
-
-        return {
-          quote_total: grandTotal,
-          quote_subtotal: subtotal,
-          tax_total: taxTotal,
-          tax_percent: taxPercent,
-          nights: nights,
-          pricing_breakdown: `${nights} night(s) in ${roomName}`
-        };
-      } catch (err) {
-        // Fallback pricing calculation if checkIn/checkOut is mock
-        const rt = db.prepare("SELECT name, base_rate FROM room_types WHERE id = ?").get(roomTypeId) || { name: "Villa", base_rate: 8500 };
-        const subtotal = Number(rt.base_rate || 8500);
-        const tax = Math.round(subtotal * 0.12);
-        return {
-          quote_total: subtotal + tax,
-          quote_subtotal: subtotal,
-          tax_total: tax,
-          tax_percent: 12,
-          nights: 1,
-          pricing_breakdown: `1 night in ${rt.name}`
-        };
-      }
-    }
-
-    case "HOSPITALITY_CREATE_ENQUIRY": {
-      const guestName = inputs.guest_name || "WhatsApp Guest";
-      const phone = inputs.phone || "919999999999";
-      const checkIn = inputs.check_in || new Date().toISOString().split("T")[0];
-      const checkOut = inputs.check_out || new Date(Date.now() + 86400000).toISOString().split("T")[0];
-      const adults = Number(inputs.adults || 2);
-      const children = Number(inputs.children || 0);
-      const roomTypeId = inputs.room_type_id ? Number(inputs.room_type_id) : null;
-      const notes = inputs.notes || "Auto Reply Flow Enquiry";
-
-      try {
-        const enquiry = enquiryService.createEnquiry(tenantId, {
-          property_id: propertyId,
-          phone,
-          guest_name: guestName,
-          check_in: checkIn,
-          check_out: checkOut,
-          adults,
-          children,
-          rooms_requested: 1,
-          room_type_id: roomTypeId,
-          notes
-        }, "conversation_engine");
-
-        return {
-          enquiry_id: enquiry.id,
-          quote_id: enquiry.quote_id || enquiry.id,
-          assigned_staff: enquiry.assigned_to || "Duty Manager (Front Desk)"
-        };
-      } catch (err) {
-        return {
-          enquiry_id: 101,
-          quote_id: 101,
-          assigned_staff: "Duty Manager (Front Desk)"
-        };
-      }
-    }
-
-    case "HOSPITALITY_LOOKUP_FAQ": {
-      const category = inputs.category || "TIMINGS";
-      const faq = db.prepare(`
-        SELECT question, answer
-        FROM hospitality_faqs
-        WHERE property_id = ? AND tenant_id = ? AND category = ? AND is_active = 1
-        ORDER BY display_order ASC LIMIT 1
-      `).get(propertyId, tenantId, category);
-
-      if (faq) {
-        return {
-          faq_response: `📌 *${faq.question}*\n\n${faq.answer}`
-        };
-      }
-      return {
-        faq_response: "Check-in begins at 2:00 PM and check-out is by 11:00 AM. Breakfast is included with Continental and Half Board packages."
-      };
-    }
-
-    case "FETCH_PROPERTY_INFO": {
-      const prop = db.prepare("SELECT * FROM properties WHERE id = ? AND tenant_id = ?").get(propertyId, tenantId) || {
-        name: "Konkan Trip Beach Resort",
-        city: "Alibaug, Maharashtra"
-      };
-      return {
-        property_name: prop.name,
-        property_city: prop.city
-      };
-    }
-
-    case "ASSIGN_STAFF": {
-      return {
-        assigned_officer: "Front Desk Reservations Manager"
-      };
-    }
-
-    case "B2B_CALCULATE_SALES_QUOTE": {
-      const planName = String(inputs.plan_name || "GROWTH").toUpperCase();
-      const teamSize = Math.max(1, parseInt(inputs.team_size || 5, 10));
-      const monthlyVolume = Math.max(1000, parseInt(inputs.monthly_volume || 25000, 10));
-
-      let basePrice = 7999;
-      let baseSeats = 10;
-      let baseVolume = 25000;
-
-      if (planName.includes("STARTER")) {
-        basePrice = 2999;
-        baseSeats = 3;
-        baseVolume = 5000;
-      } else if (planName.includes("ENTERPRISE")) {
-        basePrice = 19999;
-        baseSeats = 25;
-        baseVolume = 100000;
-      }
-
-      const extraSeats = Math.max(0, teamSize - baseSeats);
-      const extraSeatsCost = extraSeats * 499;
-
-      const extraVolume = Math.max(0, monthlyVolume - baseVolume);
-      const volumeTierCost = Math.round(extraVolume * 0.20);
-
-      const subtotal = basePrice + extraSeatsCost + volumeTierCost;
-      const taxPercent = 18;
-      const taxTotal = Math.round(subtotal * (taxPercent / 100));
-      const grandTotal = subtotal + taxTotal;
-      const depositAmount = Math.min(5000, grandTotal);
-
-      return {
-        quote_total: grandTotal,
-        quote_subtotal: subtotal,
-        tax_total: taxTotal,
-        tax_percent: taxPercent,
-        extra_seats_cost: extraSeatsCost,
-        volume_tier_cost: volumeTierCost,
-        deposit_amount: depositAmount
-      };
-    }
-
-    case "B2B_CREATE_SALES_DEAL": {
-      const dealId = Math.floor(1000 + Math.random() * 9000);
-      return {
-        deal_id: dealId,
-        assigned_executive: "Enterprise Solutions Architect",
-        deal_stage: "QUALIFIED_PROSPECT"
-      };
-    }
-
-    case "GENERATE_PAYMENT_LINK": {
-      const amount = inputs.amount || inputs.quote_total || 5000;
-      const payRef = "PAY_" + Math.random().toString(36).substring(2, 8).toUpperCase();
-      const paymentLink = `https://survya.flex-us.com/pay/${payRef.toLowerCase()}?amt=${amount}`;
-      return {
-        payment_link: paymentLink,
-        payment_id: payRef,
-        payment_status: "PENDING"
-      };
-    }
-
-    default:
-      return {};
-  }
 }
 
 /**
@@ -1803,11 +1560,13 @@ async function processTurn({
       variableContext,
       dryRun: isInMemorySimulation,
       isSimulation: isInMemorySimulation,
+      transportSimulation: Boolean(context.transportSimulation),
       fastForward: Boolean(context.fastForward),
       tenantId,
       propertyId,
       phoneNumberId: effectivePhoneNumberId || flow?.phone_number_id || null,
       senderPhone: normalizedPhone,
+      recipientPhone: normalizedPhone,
       flowId: session?.flow_id || flow?.id || 1,
       flowSessionId: session?.id || null,
       sessionKey,
@@ -2180,7 +1939,6 @@ module.exports = {
   parseDateInput,
   parseGuestCounts,
   evaluateConditionRule,
-  executeBusinessAction,
   findNextNode,
   resolveNextTransition,
   compactSessionData,

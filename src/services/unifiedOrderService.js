@@ -26,11 +26,16 @@ function createOrder(data, tenantId = 1) {
   // Validate and compute items
   const preparedItems = [];
   for (const it of data.items) {
-    const catalogItem = db.prepare("SELECT * FROM catalog_items WHERE id = ?").get(it.item_id);
+    const catalogItem = db.prepare(`
+      SELECT i.*, mt.tax_rate as master_tax_rate
+      FROM catalog_items i
+      LEFT JOIN master_tax_slabs mt ON mt.id = i.master_tax_slab_id AND COALESCE(mt.delete_status, 0) = 0
+      WHERE i.id = ? AND COALESCE(i.delete_status, 0) = 0
+    `).get(it.item_id);
     if (!catalogItem) throw new Error(`Catalog item #${it.item_id} not found`);
 
-    if (catalogItem.is_sold_out_today) {
-      throw new Error(`Item '${catalogItem.title}' is currently marked sold-out/86'd today`);
+    if (catalogItem.is_sold_out_today || Number(catalogItem.is_sold_out || 0) === 1 || Number(catalogItem.active_status ?? 1) === 0 || Number(catalogItem.is_active ?? 1) === 0) {
+      throw new Error(`Item '${catalogItem.title}' is currently marked sold-out/unavailable`);
     }
 
     let unitPrice = catalogItem.base_price;
@@ -45,8 +50,18 @@ function createOrder(data, tenantId = 1) {
     }
 
     const qty = Math.max(1, parseInt(it.quantity, 10) || 1);
+    const tracksInventory = Number(catalogItem.track_inventory || 0) === 1 || Number(catalogItem.inventory_tracking || 0) === 1;
+    if (tracksInventory) {
+      const availStock = Number(catalogItem.stock_qty ?? catalogItem.stock_quantity ?? 0) - Number(catalogItem.reserved_qty || 0);
+      if (availStock < qty) {
+        throw new Error(`Insufficient stock for '${catalogItem.title}' (available: ${Math.max(0, availStock)}, requested: ${qty})`);
+      }
+    }
+
     const itemSubtotal = unitPrice * qty;
-    const taxRate = catalogItem.tax_rate || 0;
+    const taxRate = catalogItem.master_tax_rate !== null && catalogItem.master_tax_rate !== undefined
+      ? Number(catalogItem.master_tax_rate)
+      : Number(catalogItem.gst_percent ?? catalogItem.tax_rate ?? 0);
     const itemTax = Math.round((itemSubtotal * (taxRate / 100)) * 100) / 100;
     const itemTotal = itemSubtotal + itemTax;
 

@@ -1,7 +1,7 @@
 const express = require("express");
 const crypto = require("crypto");
 const router = express.Router();
-const { authenticateToken } = require("../middleware/authMiddleware");
+const { authenticateToken, requireWorkspaceAdmin } = require("../middleware/authMiddleware");
 const universalFulfillmentService = require("../services/universal/universalFulfillmentService");
 const { db } = require("../config/database");
 
@@ -10,9 +10,15 @@ const { db } = require("../config/database");
  * Mounts at /api/v1/transactions, /api/transactions, and public endpoints
  */
 
-// Helper to get tenantId from req
+// Helper to get tenantId strictly from authenticated workspace user
 function getTenantId(req) {
-  return Number(req.user?.tenant_id || req.user?.tenantId || req.query.tenantId || req.headers["x-tenant-id"] || 1);
+  const tid = Number(req.user?.tenant_id || req.user?.tenantId);
+  if (!Number.isInteger(tid) || tid <= 0) {
+    const err = new Error("Authenticated workspace tenant context is required.");
+    err.statusCode = 401;
+    throw err;
+  }
+  return tid;
 }
 
 // -------------------------------------------------------------
@@ -107,7 +113,7 @@ router.get("/:id", authenticateToken, async (req, res) => {
 /**
  * PATCH /:id/status - Update fulfillment status
  */
-router.patch("/:id/status", authenticateToken, async (req, res) => {
+router.patch("/:id/status", authenticateToken, requireWorkspaceAdmin, async (req, res) => {
   try {
     const tenantId = getTenantId(req);
     const id = Number(req.params.id);
@@ -135,7 +141,7 @@ router.patch("/:id/status", authenticateToken, async (req, res) => {
 /**
  * POST /:id/record-offline-payment - Record offline cash/UPI/POS payment
  */
-router.post("/:id/record-offline-payment", authenticateToken, async (req, res) => {
+router.post("/:id/record-offline-payment", authenticateToken, requireWorkspaceAdmin, async (req, res) => {
   try {
     const tenantId = getTenantId(req);
     const id = Number(req.params.id);

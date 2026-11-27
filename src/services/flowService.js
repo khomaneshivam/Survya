@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const { db, getSetting } = require("../config/database");
 const config = require("../config/env");
-const { getActiveCredentials, resolveWabaId, cleanPhone, getMetaBaseUrl, getMetaGraphVersion } = require("./metaWhatsAppService");
+const { resolveCredentials, resolveWabaId, cleanPhone, getMetaBaseUrl, getMetaGraphVersion } = require("./metaWhatsAppService");
 
 class FlowService {
   /**
@@ -66,9 +66,19 @@ class FlowService {
   /**
    * Creates a Flow on Meta WhatsApp Business Platform
    */
-  async createMetaFlow({ name, categories = ["OTHER"], endpoint_uri = null, customCredentials = null, wabaId = null }) {
-    const creds = customCredentials || getActiveCredentials();
-    const resolvedWaba = resolveWabaId(wabaId);
+  async createMetaFlow({ name, categories = ["OTHER"], endpoint_uri = null, customCredentials = null, wabaId = null, tenantId = null }) {
+    const effectiveTenantId = tenantId || customCredentials?.tenantId || null;
+    const creds = resolveCredentials({ ...(customCredentials || {}), ...(effectiveTenantId ? { tenantId: effectiveTenantId } : {}) });
+    const cats = Array.isArray(categories) && categories.length > 0 ? categories : ["OTHER"];
+    if (creds.isSandbox || creds.isSimulation) {
+      return {
+        metaFlowId: `sandbox_flow_${Date.now()}`,
+        name: String(name).trim(),
+        categories: cats,
+        isSandbox: true
+      };
+    }
+    const resolvedWaba = resolveWabaId(wabaId, creds.tenantId);
 
     if (!resolvedWaba) {
       const err = new Error("WhatsApp Business Account ID (WABA ID) is required to manage Meta Flows. Configure it in Line & API Settings.");
@@ -77,7 +87,6 @@ class FlowService {
       throw err;
     }
 
-    const cats = Array.isArray(categories) && categories.length > 0 ? categories : ["OTHER"];
     const payload = {
       name: String(name).trim(),
       categories: cats
@@ -115,12 +124,16 @@ class FlowService {
   /**
    * Uploads or updates Flow JSON assets in Meta
    */
-  async uploadFlowJsonAsset({ metaFlowId, flowJson, customCredentials = null }) {
+  async uploadFlowJsonAsset({ metaFlowId, flowJson, customCredentials = null, tenantId = null }) {
     if (!metaFlowId) {
       throw new Error("Meta Flow ID is required to upload flow assets.");
     }
 
-    const creds = customCredentials || getActiveCredentials();
+    const effectiveTenantId = tenantId || customCredentials?.tenantId || null;
+    const creds = resolveCredentials({ ...(customCredentials || {}), ...(effectiveTenantId ? { tenantId: effectiveTenantId } : {}) });
+    if (creds.isSandbox || creds.isSimulation) {
+      return { success: true, validationErrors: [], isSandbox: true };
+    }
     const jsonString = typeof flowJson === "string" ? flowJson : JSON.stringify(flowJson, null, 2);
 
     // Meta Flow Asset Upload requires multipart/form-data with file "flow.json"
@@ -172,7 +185,10 @@ class FlowService {
    */
   async getMetaFlowDetails(metaFlowId, customCredentials = null) {
     if (!metaFlowId) throw new Error("Meta Flow ID is required.");
-    const creds = customCredentials || getActiveCredentials();
+    const creds = resolveCredentials(customCredentials || {});
+    if (creds.isSandbox || creds.isSimulation) {
+      return { id: metaFlowId, status: "DRAFT", validation_errors: [], isSandbox: true };
+    }
 
     const fields = "id,name,status,categories,validation_errors,json_version,data_api_version,endpoint_uri,preview";
     const res = await fetch(`${getMetaBaseUrl()}/${metaFlowId}?fields=${fields}`, {
@@ -199,7 +215,10 @@ class FlowService {
    */
   async publishMetaFlow(metaFlowId, customCredentials = null) {
     if (!metaFlowId) throw new Error("Meta Flow ID is required to publish.");
-    const creds = customCredentials || getActiveCredentials();
+    const creds = resolveCredentials(customCredentials || {});
+    if (creds.isSandbox || creds.isSimulation) {
+      return { success: true, isSandbox: true };
+    }
 
     const res = await fetch(`${getMetaBaseUrl()}/${metaFlowId}/publish`, {
       method: "POST",
@@ -225,7 +244,10 @@ class FlowService {
    */
   async deprecateMetaFlow(metaFlowId, customCredentials = null) {
     if (!metaFlowId) throw new Error("Meta Flow ID is required to deprecate.");
-    const creds = customCredentials || getActiveCredentials();
+    const creds = resolveCredentials(customCredentials || {});
+    if (creds.isSandbox || creds.isSimulation) {
+      return { success: true, isSandbox: true };
+    }
 
     const res = await fetch(`${getMetaBaseUrl()}/${metaFlowId}/deprecate`, {
       method: "POST",
@@ -251,7 +273,10 @@ class FlowService {
    */
   async deleteMetaFlow(metaFlowId, customCredentials = null) {
     if (!metaFlowId) throw new Error("Meta Flow ID is required to delete.");
-    const creds = customCredentials || getActiveCredentials();
+    const creds = resolveCredentials(customCredentials || {});
+    if (creds.isSandbox || creds.isSimulation) {
+      return { success: true, isSandbox: true };
+    }
 
     const res = await fetch(`${getMetaBaseUrl()}/${metaFlowId}`, {
       method: "DELETE",
@@ -275,9 +300,13 @@ class FlowService {
   /**
    * Lists all Flows registered under the configured WABA from Meta
    */
-  async listMetaFlows({ limit = 100, customCredentials = null, wabaId = null } = {}) {
-    const creds = customCredentials || getActiveCredentials();
-    const resolvedWaba = resolveWabaId(wabaId);
+  async listMetaFlows({ limit = 100, customCredentials = null, wabaId = null, tenantId = null } = {}) {
+    const effectiveTenantId = tenantId || customCredentials?.tenantId || null;
+    const creds = resolveCredentials({ ...(customCredentials || {}), ...(effectiveTenantId ? { tenantId: effectiveTenantId } : {}) });
+    if (creds.isSandbox || creds.isSimulation) {
+      return [];
+    }
+    const resolvedWaba = resolveWabaId(wabaId, creds.tenantId);
 
     if (!resolvedWaba) {
       const err = new Error("WhatsApp Business Account ID (WABA ID) is not configured.");
@@ -310,7 +339,7 @@ class FlowService {
    * Reconciles and synchronizes Meta Flows with local SQLite database
    */
   async syncFlowsWithMeta({ userId, tenantId = 1, wabaId = null, customCredentials = null } = {}) {
-    const metaList = await this.listMetaFlows({ limit: 100, customCredentials, wabaId });
+    const metaList = await this.listMetaFlows({ limit: 100, customCredentials, wabaId, tenantId });
 
     let syncedCount = 0;
     let createdCount = 0;

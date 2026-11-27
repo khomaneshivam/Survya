@@ -57,7 +57,7 @@ function decrypt(cipherString) {
   try {
     const parts = str.slice(PREFIX.length).split(":");
     if (parts.length !== 3) {
-      return cipherString;
+      return null;
     }
     const [ivHex, tagHex, encryptedHex] = parts;
     const key = getMasterKey();
@@ -70,8 +70,8 @@ function decrypt(cipherString) {
     decrypted += decipher.final("utf8");
     return decrypted;
   } catch (err) {
-    console.warn("[cryptoUtil] Decryption failed, returning raw string:", err.message);
-    return cipherString;
+    console.warn("[cryptoUtil] Decryption failed, returning null for fail-closed handling:", err.message);
+    return null;
   }
 }
 

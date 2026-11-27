@@ -26,7 +26,10 @@ const SENSITIVE_KEYS = new Set([
   "WEBHOOK_VERIFY_TOKEN",
   "JWT_SECRET",
   "GEMINI_API_KEY",
-  "OPENAI_API_KEY"
+  "OPENAI_API_KEY",
+  "RAZORPAY_WEBHOOK_SECRET",
+  "FLOWS_PRIVATE_KEY",
+  "FLOWS_PASSPHRASE"
 ]);
 
 /**
@@ -42,6 +45,13 @@ async function getSettings(req, res) {
       if (safeSettings[key]) {
         safeSettings[key] = maskSecret(safeSettings[key]);
       }
+    }
+    const platformAdmin = isPlatformAdmin(req.user);
+    const tenantId = Number(req.user?.tenant_id || 1);
+    if (!platformAdmin && tenantId !== 1) {
+      delete safeSettings.WHATSAPP_PHONE_NUMBER_ID;
+      delete safeSettings.WHATSAPP_BUSINESS_ACCOUNT_ID;
+      delete safeSettings.WHATSAPP_WABA_ID;
     }
 
     return res.status(200).json({
@@ -91,8 +101,8 @@ async function updateSettings(req, res) {
       WEBHOOK_VERIFY_TOKEN
     ].some(v => v !== undefined);
 
-    // Only administrators are permitted to alter platform-wide settings
-    if (user.role !== "ADMIN") {
+    // Only Master/Platform administrators are permitted to alter platform-wide settings
+    if (!isPlatformAdmin(user)) {
       return res.status(403).json({
         success: false,
         message: "Forbidden. Platform settings can only be modified by Master Administrators."
@@ -380,11 +390,14 @@ async function registerMetaPhone(req, res) {
           if (tenantId === 1) setSetting("WHATSAPP_PHONE_NUMBER_ID", cleanPhoneId);
         }
 
+        const encryptedToken = (customToken && !customToken.startsWith("EAAX_") && !customToken.includes("placeholder"))
+          ? require("../utils/cryptoUtil").encrypt(customToken)
+          : null;
         db.prepare(`
           INSERT INTO waba_phone_numbers (
             id, tenant_id, display_name, phone_number, phone_number_id, waba_id,
-            quality_rating, status, is_default, registered_by, access_token
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'REGISTERED', ?, ?, ?)
+            quality_rating, status, is_default, registered_by, access_token, access_token_enc
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'REGISTERED', ?, ?, NULL, ?)
         `).run(
           newId,
           tenantId,
@@ -395,7 +408,7 @@ async function registerMetaPhone(req, res) {
           phoneMetaInfo?.qualityRating || "GREEN",
           shouldBeDefault ? 1 : 0,
           req.user ? req.user.id : null,
-          (customToken && !customToken.startsWith("EAAX_") && !customToken.includes("placeholder")) ? customToken : null
+          encryptedToken
         );
         localRecord = db.prepare("SELECT * FROM waba_phone_numbers WHERE id = ?").get(newId);
       }
@@ -460,7 +473,7 @@ async function deregisterMetaPhone(req, res) {
     }
 
     const cleanPhoneId = String(id).trim();
-    const existingPhone = db.prepare("SELECT id, tenant_id, access_token FROM waba_phone_numbers WHERE phone_number_id = ?").get(cleanPhoneId);
+    const existingPhone = db.prepare("SELECT id, tenant_id, access_token, access_token_enc FROM waba_phone_numbers WHERE phone_number_id = ? AND COALESCE(delete_status, 0) = 0 LIMIT 1").get(cleanPhoneId);
     if (existingPhone && req.user && !isPlatformAdmin(req.user) && Number(existingPhone.tenant_id || 1) !== Number(req.user?.tenant_id || 1)) {
       return res.status(403).json({
         success: false,
@@ -468,9 +481,12 @@ async function deregisterMetaPhone(req, res) {
       });
     }
 
+    const { decrypt } = require("../utils/cryptoUtil");
+    const decryptedLineToken = existingPhone?.access_token_enc ? decrypt(existingPhone.access_token_enc) : null;
     const result = await deregisterPhoneNumberWithMeta({
       phoneNumberId: cleanPhoneId,
-      token: customToken || existingPhone?.access_token
+      token: customToken || decryptedLineToken || existingPhone?.access_token || null,
+      tenantId: existingPhone?.tenant_id || req.user?.tenant_id || 1
     });
 
     try {

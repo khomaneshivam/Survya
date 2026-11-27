@@ -130,11 +130,20 @@ async function listTemplates(req, res) {
  */
 async function getCategoriesSummary(req, res) {
   try {
-    const rows = db.prepare(`
-      SELECT UPPER(COALESCE(category, 'MARKETING')) as category, COUNT(*) as count 
-      FROM templates 
-      GROUP BY UPPER(COALESCE(category, 'MARKETING'))
-    `).all();
+    const platformAdmin = isPlatformAdmin(req.user);
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const rows = platformAdmin
+      ? db.prepare(`
+          SELECT UPPER(COALESCE(category, 'MARKETING')) as category, COUNT(*) as count
+          FROM templates
+          GROUP BY UPPER(COALESCE(category, 'MARKETING'))
+        `).all()
+      : db.prepare(`
+          SELECT UPPER(COALESCE(category, 'MARKETING')) as category, COUNT(*) as count
+          FROM templates
+          WHERE tenant_id = ?
+          GROUP BY UPPER(COALESCE(category, 'MARKETING'))
+        `).all(tenantId);
 
     const countsMap = {
       MARKETING: 0,
@@ -228,9 +237,12 @@ async function syncTemplatesFromMeta(req, res) {
       });
     }
 
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const platformAdmin = isPlatformAdmin(req.user);
     const metaResult = await fetchWabaTemplates({
       category: category && String(category).toUpperCase() !== "ALL" ? category : null,
-      wabaId: activeWaba
+      wabaId: activeWaba,
+      tenantId
     });
 
     const metaTemplates = metaResult.templates || [];
@@ -244,9 +256,9 @@ async function syncTemplatesFromMeta(req, res) {
     if (metaTemplates.length > 0) {
       const upsertStmt = db.prepare(`
         INSERT INTO templates (
-          id, name, meta_id, language, category, status, parameter_format,
+          id, tenant_id, name, meta_id, language, category, status, parameter_format,
           body_text, variables, components, buttons, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           meta_id = excluded.meta_id,
@@ -271,6 +283,7 @@ async function syncTemplatesFromMeta(req, res) {
 
         upsertStmt.run(
           tpl.id,
+          tenantId,
           tpl.name,
           tpl.meta_id || tpl.id,
           tpl.language || "en",
@@ -289,15 +302,24 @@ async function syncTemplatesFromMeta(req, res) {
       clearTemplateCache();
     }
 
-    // Fetch updated complete list from SQLite
-    const updatedRows = db.prepare(`
-      SELECT * FROM templates 
-      ORDER BY 
-        CASE WHEN name = 'kt_invitation_' THEN 1 
-             WHEN name = 'kt_restaurant_invitation' THEN 2 
-             ELSE 3 END,
-        created_at ASC
-    `).all();
+    const updatedRows = platformAdmin
+      ? db.prepare(`
+          SELECT * FROM templates
+          ORDER BY
+            CASE WHEN name = 'kt_invitation_' THEN 1
+                 WHEN name = 'kt_restaurant_invitation' THEN 2
+                 ELSE 3 END,
+            created_at ASC
+        `).all()
+      : db.prepare(`
+          SELECT * FROM templates
+          WHERE tenant_id = ?
+          ORDER BY
+            CASE WHEN name = 'kt_invitation_' THEN 1
+                 WHEN name = 'kt_restaurant_invitation' THEN 2
+                 ELSE 3 END,
+            created_at ASC
+        `).all(tenantId);
     const updatedTemplates = updatedRows.map(formatTemplateRow);
 
     return res.status(200).json({
@@ -367,12 +389,15 @@ async function addTemplate(req, res) {
     const finalComponents = tplDetails?.components || [];
     const finalButtons = tplDetails?.buttons || buttons || [];
 
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const platformAdmin = isPlatformAdmin(req.user);
+
     // Save into SQLite templates table (Upsert)
     const upsertStmt = db.prepare(`
       INSERT INTO templates (
-        id, name, meta_id, language, category, status, parameter_format,
+        id, tenant_id, name, meta_id, language, category, status, parameter_format,
         body_text, variables, components, buttons, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         meta_id = excluded.meta_id,
@@ -389,6 +414,7 @@ async function addTemplate(req, res) {
 
     upsertStmt.run(
       finalId,
+      tenantId,
       finalName,
       finalMetaId,
       finalLang,
@@ -401,7 +427,7 @@ async function addTemplate(req, res) {
       JSON.stringify(finalButtons)
     );
 
-    const savedRow = db.prepare("SELECT * FROM templates WHERE id = ?").get(finalId);
+    const savedRow = db.prepare("SELECT * FROM templates WHERE id = ? AND tenant_id = ?").get(finalId, tenantId);
     const formatted = formatTemplateRow(savedRow);
 
     clearTemplateCache();
@@ -425,13 +451,21 @@ async function getTemplate(req, res) {
   try {
     const { templateId } = req.params;
     const clean = String(templateId).trim();
+    const tenantId = Number(req.user?.tenant_id || 1);
+    const platformAdmin = isPlatformAdmin(req.user);
 
-    // 1. Check local DB first
-    const row = db.prepare(`
-      SELECT * FROM templates 
-      WHERE id = ? OR meta_id = ? OR name = ? COLLATE NOCASE
-      LIMIT 1
-    `).get(clean, clean, clean);
+    // 1. Check local DB first (tenant-scoped unless Platform Admin)
+    const row = platformAdmin
+      ? db.prepare(`
+          SELECT * FROM templates
+          WHERE id = ? OR meta_id = ? OR name = ? COLLATE NOCASE
+          LIMIT 1
+        `).get(clean, clean, clean)
+      : db.prepare(`
+          SELECT * FROM templates
+          WHERE (id = ? OR meta_id = ? OR name = ? COLLATE NOCASE) AND tenant_id = ?
+          LIMIT 1
+        `).get(clean, clean, clean, tenantId);
 
     if (row) {
       const formatted = formatTemplateRow(row);
@@ -455,11 +489,12 @@ async function getTemplate(req, res) {
     try {
       db.prepare(`
         INSERT OR IGNORE INTO templates (
-          id, name, meta_id, language, category, status, parameter_format,
+          id, tenant_id, name, meta_id, language, category, status, parameter_format,
           body_text, variables, components, buttons
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         details.id || clean,
+        tenantId,
         details.name || clean,
         details.id || clean,
         details.language || "en",

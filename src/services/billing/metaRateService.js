@@ -34,10 +34,11 @@ function getMonthlyServiceMessageCount(phoneNumberId = null, tenantId = 1) {
       SELECT COUNT(*) as cnt
       FROM whatsapp_usage_ledger
       WHERE UPPER(category) = 'SERVICE'
-        AND billing_status != 'WAIVED'
+        AND billing_status NOT IN ('WAIVED', 'WAIVED_SANDBOX')
+        AND COALESCE(tenant_id, 1) = ?
         AND created_at >= DATE_FORMAT(UTC_TIMESTAMP(), '%Y-%m-01 00:00:00')
     `;
-    const params = [];
+    const params = [Number(tenantId || 1)];
     if (phoneNumberId) {
       sql += " AND phone_number_id = ?";
       params.push(String(phoneNumberId));

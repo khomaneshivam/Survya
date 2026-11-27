@@ -42,10 +42,9 @@ describe("Authentication & Bearer Token Resolution Suite", { concurrency: 1 }, (
     });
   });
 
-  after(() => {
-    if (serverInstance) {
-      serverInstance.close();
-    }
+  after(async () => {
+    const { closeTestResources } = require("./helpers/testFixtures");
+    await closeTestResources(serverInstance);
   });
 
   test("1. Direct middleware: rejects request without token with 401 and standard message", () => {

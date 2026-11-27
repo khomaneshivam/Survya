@@ -392,7 +392,8 @@ async function pushFlowToMeta(req, res) {
       const createRes = await flowService.createMetaFlow({
         name: flow.name,
         categories,
-        endpoint_uri: flow.endpoint_uri
+        endpoint_uri: flow.endpoint_uri,
+        tenantId: flow.tenant_id || tenantId
       });
       metaFlowId = createRes.metaFlowId;
       db.prepare("UPDATE whatsapp_flows SET meta_flow_id = ? WHERE id = ?").run(metaFlowId, flowId);
@@ -401,13 +402,14 @@ async function pushFlowToMeta(req, res) {
     // 2. Upload Flow JSON assets
     const uploadRes = await flowService.uploadFlowJsonAsset({
       metaFlowId,
-      flowJson: flow.flow_json
+      flowJson: flow.flow_json,
+      tenantId: flow.tenant_id || tenantId
     });
 
     // 3. Inspect updated status on Meta
     let metaDetails = null;
     try {
-      metaDetails = await flowService.getMetaFlowDetails(metaFlowId);
+      metaDetails = await flowService.getMetaFlowDetails(metaFlowId, { tenantId: flow.tenant_id || tenantId });
     } catch (e) {}
 
     const newStatus = metaDetails?.status || flow.status || "DRAFT";
@@ -481,7 +483,7 @@ async function publishFlow(req, res) {
         return res.status(400).json({ success: false, message: "Flow must be pushed to Meta before it can be published." });
       }
 
-      await flowService.publishMetaFlow(flow.meta_flow_id);
+      await flowService.publishMetaFlow(flow.meta_flow_id, { tenantId: flow.tenant_id || tenantId });
     }
 
     db.prepare(`
@@ -543,7 +545,7 @@ async function deprecateFlow(req, res) {
     }
 
     if (flow.meta_flow_id) {
-      await flowService.deprecateMetaFlow(flow.meta_flow_id);
+      await flowService.deprecateMetaFlow(flow.meta_flow_id, { tenantId: flow.tenant_id || tenantId });
     }
 
     db.prepare(`
@@ -595,7 +597,7 @@ async function deleteFlow(req, res) {
     // If registered on Meta and in DRAFT, attempt to delete on Meta
     if (flow.meta_flow_id && flow.status === "DRAFT" && isAdmin) {
       try {
-        await flowService.deleteMetaFlow(flow.meta_flow_id);
+        await flowService.deleteMetaFlow(flow.meta_flow_id, { tenantId: flow.tenant_id || tenantId });
       } catch (metaErr) {
         console.warn("[FlowController] Meta delete warning:", metaErr.message);
       }

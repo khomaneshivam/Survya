@@ -61,6 +61,8 @@ jobs:
           --health-retries=10
     env:
       NODE_ENV: test
+      DISABLE_SCHEDULER: "true"
+      VERIFY_WEBHOOK_SIGNATURE: "true"
       DB_CLIENT: mysql
       DB_HOST: 127.0.0.1
       DB_PORT: "3306"
@@ -69,7 +71,7 @@ jobs:
       DB_NAME: whatsapp_bulk_db
       JWT_SECRET: integration_test_jwt_secret_very_long_nonproduction
       META_APP_SECRET: integration_test_meta_secret_only
-      VERIFY_WEBHOOK_SIGNATURE: "false"
+      WHATSAPP_API_TOKEN: ci_test_whatsapp_api_token_at_least_50_characters_long_for_offline_simulation_only
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const config = require('../src/config/env');
 const { db } = require('../src/config/database');
 const apiRoutes = require('../src/routes/apiRoutes');
+const { ensureTestAdmin, ensureTestWabaLine, closeTestResources } = require('./helpers/testFixtures');
 
 describe('WhatsApp Broadcast Studio End-to-End Alignment Test Suite', () => {
   let server = null;
@@ -14,15 +15,8 @@ describe('WhatsApp Broadcast Studio End-to-End Alignment Test Suite', () => {
   const testCampaignIds = [];
 
   before(async () => {
-    let admin = db.prepare("SELECT * FROM users WHERE role = 'ADMIN' AND COALESCE(tenant_id, 1) = 1 AND COALESCE(delete_status, 0) = 0 LIMIT 1").get();
-    if (!admin) {
-      const adminId = 'admin_studio_' + Date.now();
-      db.prepare(`
-        INSERT INTO users (id, tenant_id, name, email, phone, password_hash, role, status)
-        VALUES (?, 1, 'Studio Admin', 'studio_admin@test.internal', '919999999993', 'hash', 'ADMIN', 'ACTIVE')
-      `).run(adminId);
-      admin = db.prepare("SELECT * FROM users WHERE id = ?").get(adminId);
-    }
+    const admin = ensureTestAdmin(1);
+    ensureTestWabaLine(1);
     adminToken = jwt.sign({ userId: admin.id, tenant_id: admin.tenant_id || 1, email: admin.email, role: 'ADMIN' }, config.JWT_SECRET, { expiresIn: '1h' });
 
     const app = express();
@@ -39,14 +33,14 @@ describe('WhatsApp Broadcast Studio End-to-End Alignment Test Suite', () => {
     });
   });
 
-  after(() => {
-    if (server) server.close();
+  after(async () => {
     for (const cId of testCampaignIds) {
       try {
         db.prepare('DELETE FROM campaigns WHERE id = ?').run(cId);
         db.prepare('DELETE FROM campaign_recipients WHERE campaign_id = ?').run(cId);
       } catch (e) {}
     }
+    await closeTestResources(server);
   });
 
   test('1. Loads approved templates via /api/broadcast/templates', async () => {

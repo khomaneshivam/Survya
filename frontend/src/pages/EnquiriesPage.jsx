@@ -1048,25 +1048,25 @@ export default function EnquiriesPage() {
                 key: 'name',
                 label: 'Contact',
                 sortable: true,
-                render: (row) => (
+                render: (_, row) => (
                   <div style={{ fontWeight: 600 }}>{row.name || row.guest_name || 'Guest Contact'}</div>
                 )
               },
               {
                 key: 'phone_e164',
                 label: 'Phone',
-                render: (row) => <span className="font-mono">{row.phone_e164 || row.phone}</span>
+                render: (_, row) => <span className="font-mono">{row.phone_e164 || row.phone}</span>
               },
               {
                 key: 'email',
                 label: 'Email',
-                render: (row) => row.email || '—'
+                render: (_, row) => row.email || '—'
               },
               {
                 key: 'created_at',
                 label: 'Added',
                 sortable: true,
-                render: (row) => (
+                render: (_, row) => (
                   <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                     {row.created_at ? formatIndianDateTime(row.created_at) : '—'}
                   </span>

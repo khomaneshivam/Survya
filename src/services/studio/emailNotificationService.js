@@ -201,6 +201,18 @@ function enqueueGoalEmailNotification({
   explicitRecipients = []
 } = {}) {
   const numericTenantId = Number(tenantId) || 1;
+  try {
+    const trow = db.prepare("SELECT is_sandbox FROM tenants WHERE id = ? LIMIT 1").get(numericTenantId);
+    if (Number(trow?.is_sandbox) === 1) {
+      return {
+        queued: false,
+        suppressed: true,
+        isSandbox: true,
+        status: "SANDBOX_SUPPRESSED",
+        reason: "External email dispatch is disabled in Workspace Sandbox Mode."
+      };
+    }
+  } catch (_) {}
   const settings = getTenantEmailSettings(numericTenantId);
 
   if (!settings.enabled) {
@@ -322,6 +334,14 @@ async function dispatchEmailJob(jobPayload = {}, { transportOverride = null } = 
   if (logRow.status === "SENT") {
     return { skipped: true, reason: "Already SENT", logId };
   }
+
+  try {
+    const trow = db.prepare("SELECT is_sandbox FROM tenants WHERE id = ? LIMIT 1").get(Number(logRow.tenant_id || 1));
+    if (Number(trow?.is_sandbox) === 1) {
+      db.prepare("UPDATE email_notification_logs SET status = 'SANDBOX_SUPPRESSED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(logRow.id);
+      return { skipped: true, status: "SANDBOX_SUPPRESSED", logId: logRow.id };
+    }
+  } catch (_) {}
 
   const settings = getTenantEmailSettings(logRow.tenant_id);
   const recipients = parseJsonSafe(logRow.recipients_json, []);

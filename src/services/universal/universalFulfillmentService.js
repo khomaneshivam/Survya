@@ -1112,71 +1112,21 @@ function generatePrintableReceiptHtml(transaction, items = [], tenant = {}) {
 }
 
 /**
- * Helper to sync CRM record
+ * Helper to sync CRM record through canonical crmPipelineService
  */
 function syncCrmRecord(tenantId, { customerPhone, customerName, customerEmail, dealValue, stageKey, crmRecordId }) {
-  if (crmRecordId) {
-    db.prepare(`
-      UPDATE crm_records
-      SET deal_value = ?, stage_key = ?, updated_at = UTC_TIMESTAMP()
-      WHERE tenant_id = ? AND id = ?
-    `).run(dealValue, stageKey, tenantId, crmRecordId);
-    return;
-  }
-
-  // Look for existing contact by phone
-  const existing = db.prepare(`
-    SELECT id FROM crm_records
-    WHERE tenant_id = ? AND contact_phone = ? AND delete_status = 0
-    ORDER BY id DESC LIMIT 1
-  `).get(tenantId, customerPhone);
-
-  if (existing) {
-    db.prepare(`
-      UPDATE crm_records
-      SET deal_value = ?, stage_key = ?, updated_at = UTC_TIMESTAMP()
-      WHERE id = ?
-    `).run(dealValue, stageKey, existing.id);
-  } else {
-    // Look up default pipeline
-    let pipeline = db.prepare(`
-      SELECT id FROM crm_pipelines
-      WHERE tenant_id = ? AND active_status = 1 AND delete_status = 0
-      LIMIT 1
-    `).get(tenantId);
-
-    if (!pipeline) {
-      pipeline = db.prepare(`SELECT id FROM crm_pipelines WHERE delete_status = 0 LIMIT 1`).get();
-    }
-
-    if (!pipeline) {
-      try {
-        const pRes = db.prepare(`
-          INSERT INTO crm_pipelines (
-            tenant_id, name, slug, industry_type, active_status, delete_status, created_at, updated_at
-          ) VALUES (?, 'Default Sales Pipeline', 'default-sales', 'GENERAL', 1, 0, UTC_TIMESTAMP(), UTC_TIMESTAMP())
-        `).run(tenantId);
-        pipeline = { id: pRes.lastInsertRowid };
-      } catch (_) {}
-    }
-
-    if (pipeline) {
-      db.prepare(`
-        INSERT INTO crm_records (
-          tenant_id, pipeline_id, contact_phone, contact_name, contact_email,
-          stage_key, deal_value, custom_attributes, active_status, delete_status,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', 1, 0, UTC_TIMESTAMP(), UTC_TIMESTAMP())
-      `).run(
-        tenantId,
-        pipeline.id,
-        customerPhone,
-        customerName || null,
-        customerEmail || null,
-        stageKey || "PROSPECT",
-        dealValue
-      );
-    }
+  try {
+    const crmPipelineService = require("../crmPipelineService");
+    crmPipelineService.upsertRecord(tenantId, {
+      crmRecordId,
+      contactPhone: customerPhone,
+      contactName: customerName || null,
+      contactEmail: customerEmail || null,
+      dealValue: Number(dealValue) || 0,
+      stageKey: stageKey || "PROSPECT"
+    });
+  } catch (e) {
+    console.warn(`[UniversalFulfillment] CRM sync warning: ${e.message}`);
   }
 }
 

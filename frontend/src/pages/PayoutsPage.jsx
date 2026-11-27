@@ -129,8 +129,6 @@ export default function PayoutsPage() {
   const [notification, setNotification] = useState(null);
 
   // Modals
-  const [showPayoutModal, setShowPayoutModal] = useState(false);
-  const [payoutAmount, setPayoutAmount] = useState('');
   const [showBankModal, setShowBankModal] = useState(false);
   const [bankForm, setBankForm] = useState({
     account_holder_name: '',
@@ -212,29 +210,7 @@ export default function PayoutsPage() {
   const currentEntity = entities.find(e => e.id === Number(selectedEntityId)) || entities[0];
   const primaryBeneficiary = summary?.primaryBeneficiary;
 
-  // 3. Trigger Penny Drop
-  const handlePennyDrop = async (beneficiaryId) => {
-    setActionLoading(true);
-    try {
-      const res = await fetch(`/api/v1/payouts/beneficiaries/${beneficiaryId}/verify-penny-drop`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast(data.message || 'Bank verified with Penny-Drop!');
-        fetchPayoutData(selectedEntityId);
-      } else {
-        showToast(data.message || 'Verification failed', 'error');
-      }
-    } catch (err) {
-      showToast('Error verifying bank account', 'error');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // 3b. Update Payment Gateway Mode (RBI PA/PG Master Directions)
+  // Legacy Penny-Drop and Pooled IMPS Payouts retired in favor of Merchant-Direct Mode
   const handlePaymentModeChange = async (newMode) => {
     setSavingPaymentMode(true);
     try {
@@ -263,42 +239,7 @@ export default function PayoutsPage() {
     }
   };
 
-  // 4. Request Instant Payout
-  const handleTriggerPayout = async (e) => {
-    e.preventDefault();
-    const amountNum = parseFloat(payoutAmount);
-    if (!amountNum || isNaN(amountNum) || amountNum <= 0) {
-      showToast('Enter a valid payout amount', 'error');
-      return;
-    }
-
-    setActionLoading(true);
-    try {
-      const res = await fetch(`/api/v1/entities/${selectedEntityId}/payouts/request-instant`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ amount: amountNum })
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast(data.message || 'Payout successfully dispatched!');
-        setShowPayoutModal(false);
-        setPayoutAmount('');
-        fetchPayoutData(selectedEntityId);
-      } else {
-        showToast(data.message || 'Failed to trigger payout', 'error');
-      }
-    } catch (err) {
-      showToast('Network error processing payout', 'error');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // 5. Add Beneficiary Account
+  // Add Beneficiary Account (Reconciliation Record Only)
   const handleSaveBank = async (e) => {
     e.preventDefault();
     setActionLoading(true);
@@ -314,14 +255,9 @@ export default function PayoutsPage() {
       });
       const data = await res.json();
       if (data.success) {
-        showToast('Bank account registered. Verifying...');
+        showToast('Settlement bank account saved for Merchant-Direct reconciliation.');
         setShowBankModal(false);
-        // Automatically verify penny-drop
-        if (data.beneficiary?.id) {
-          await handlePennyDrop(data.beneficiary.id);
-        } else {
-          fetchPayoutData(selectedEntityId);
-        }
+        fetchPayoutData(selectedEntityId);
       } else {
         showToast(data.message || 'Failed to save bank account', 'error');
       }
@@ -331,12 +267,6 @@ export default function PayoutsPage() {
       setActionLoading(false);
     }
   };
-
-  // Fee calculation helpers
-  const grossNum = parseFloat(payoutAmount || 0);
-  const feeNum = Math.round(grossNum * 0.02 * 100) / 100;
-  const gstNum = Math.round(feeNum * 0.18 * 100) / 100;
-  const netNum = Math.max(0, Math.round((grossNum - (feeNum + gstNum)) * 100) / 100);
 
   return (
     <div className="sarvya-page-container">
@@ -397,9 +327,9 @@ export default function PayoutsPage() {
               Instant IMPS & UPI Dispatches
             </span>
           </div>
-          <h1 className="sarvya-page-title">Payouts & Bank Settlements</h1>
+          <h1 className="sarvya-page-title">Merchant Payment & Settlement Ledger</h1>
           <p className="sarvya-page-subtitle">
-            Automated daily deposits direct to your registered business bank account with 0% hidden deductions.
+            Payments settle directly to your configured merchant UPI VPA or Razorpay gateway account with 0% platform commission.
           </p>
         </div>
 
@@ -424,20 +354,6 @@ export default function PayoutsPage() {
           >
             <Building size={15} />
             <span>Bank Account</span>
-          </button>
-
-          <button
-            type="button"
-            className="sarvya-btn sarvya-btn-primary"
-            onClick={() => {
-              setPayoutAmount(summary?.unsettledGrossRevenue ? String(summary.unsettledGrossRevenue) : '10000');
-              setShowPayoutModal(true);
-            }}
-            disabled={!summary?.primaryBeneficiary || summary.primaryBeneficiary.verificationStatus !== 'PENNY_VERIFIED'}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-          >
-            <ArrowUpRight size={16} />
-            <span>Request Instant Payout</span>
           </button>
         </div>
       </div>
@@ -503,34 +419,34 @@ export default function PayoutsPage() {
         </div>
       </div>
 
-      {/* KPI Cards Strip */}
+      {/* KPI Cards Strip (Merchant-Direct Reconciliation) */}
       <div className="sarvya-kpi-grid" style={{ marginBottom: '20px' }}>
         <div className="sarvya-kpi-card">
-          <div className="sarvya-kpi-label">Available for Instant Payout</div>
-          <div className="sarvya-kpi-value" style={{ color: 'var(--sarvya-blue)' }}>
-            ₹{(summary?.availableForPayout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </div>
-          <div className="sarvya-kpi-subtext">Gross cleared: ₹{(summary?.unsettledGrossRevenue || 0).toLocaleString('en-IN')}</div>
-        </div>
-
-        <div className="sarvya-kpi-card">
-          <div className="sarvya-kpi-label">Lifetime Deposited to Bank</div>
+          <div className="sarvya-kpi-label">Total Settled (Merchant Direct)</div>
           <div className="sarvya-kpi-value" style={{ color: '#16A34A' }}>
-            ₹{(summary?.lifetimeSettledNet || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            ₹{(summary?.totalSettledInr ?? summary?.totalGrossRevenue ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </div>
-          <div className="sarvya-kpi-subtext">Verified bank transfers</div>
+          <div className="sarvya-kpi-subtext">{summary?.merchantDirectTransactionsCount || 0} paid orders reconciled</div>
         </div>
 
         <div className="sarvya-kpi-card">
-          <div className="sarvya-kpi-label">Platform Fee Rate</div>
-          <div className="sarvya-kpi-value">2.0%</div>
-          <div className="sarvya-kpi-subtext">+18% GST on platform service fee</div>
+          <div className="sarvya-kpi-label">Pending Collections</div>
+          <div className="sarvya-kpi-value" style={{ color: 'var(--sarvya-blue)' }}>
+            ₹{(summary?.pendingCollectionsInr || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          </div>
+          <div className="sarvya-kpi-subtext">Open/unpaid active orders</div>
         </div>
 
         <div className="sarvya-kpi-card">
-          <div className="sarvya-kpi-label">Payout Schedule</div>
-          <div className="sarvya-kpi-value" style={{ fontSize: '18px' }}>Daily 06:00 AM</div>
-          <div className="sarvya-kpi-subtext">Auto batch transfer to verified current A/c</div>
+          <div className="sarvya-kpi-label">Platform Commission</div>
+          <div className="sarvya-kpi-value">0.0%</div>
+          <div className="sarvya-kpi-subtext">Zero escrow / zero platform surcharge</div>
+        </div>
+
+        <div className="sarvya-kpi-card">
+          <div className="sarvya-kpi-label">Settlement Architecture</div>
+          <div className="sarvya-kpi-value" style={{ fontSize: '18px' }}>Merchant Direct</div>
+          <div className="sarvya-kpi-subtext">Direct to merchant gateway / UPI VPA</div>
         </div>
       </div>
 
@@ -560,7 +476,7 @@ export default function PayoutsPage() {
           </div>
 
           <div>
-            {primaryBeneficiary?.verificationStatus === 'PENNY_VERIFIED' ? (
+            {primaryBeneficiary ? (
               <span style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -574,18 +490,8 @@ export default function PayoutsPage() {
                 fontWeight: 700
               }}>
                 <ShieldCheck size={14} />
-                Penny-Drop Verified (NPCI IMPS)
+                Registered ({primaryBeneficiary.verificationStatus || 'ON FILE'})
               </span>
-            ) : primaryBeneficiary ? (
-              <button
-                type="button"
-                className="sarvya-btn sarvya-btn-secondary"
-                disabled={actionLoading}
-                onClick={() => handlePennyDrop(primaryBeneficiary.id)}
-                style={{ fontSize: '12px', padding: '4px 10px' }}
-              >
-                Verify with ₹1 Penny-Drop
-              </button>
             ) : (
               <span style={{ fontSize: '12px', color: '#B45309', fontWeight: 600 }}>No Bank Configured</span>
             )}
@@ -689,118 +595,6 @@ export default function PayoutsPage() {
         />
       </div>
 
-      {/* MODAL 1: Request Instant Payout */}
-      {showPayoutModal && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.4)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1100,
-          padding: '20px'
-        }}>
-          <div className="sarvya-card" style={{ maxWidth: '480px', width: '100%', padding: '24px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <ArrowUpRight size={20} color="var(--sarvya-blue)" />
-                <h3 style={{ fontSize: '17px', fontWeight: 700 }}>Request Instant IMPS Payout</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPayoutModal(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleTriggerPayout}>
-              <div style={{ marginBottom: '16px' }}>
-                <label className="sarvya-field-label">Disbursement Amount (₹)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  placeholder="e.g. 15000"
-                  value={payoutAmount}
-                  onChange={(e) => setPayoutAmount(e.target.value)}
-                  className="sarvya-input"
-                  style={{ fontSize: '16px', fontWeight: 700 }}
-                />
-                <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  Available cleared balance: ₹{(summary?.unsettledGrossRevenue || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-
-              {/* Real-time Fee Breakdown Card */}
-              <div style={{
-                background: 'var(--bg-app)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '14px',
-                marginBottom: '20px',
-                fontSize: '13px'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Gross Amount:</span>
-                  <span style={{ fontWeight: 600 }}>₹{grossNum.toFixed(2)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Platform Fee (2%):</span>
-                  <span style={{ color: '#DC2626' }}>-₹{feeNum.toFixed(2)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>GST on Fee (18%):</span>
-                  <span style={{ color: '#DC2626' }}>-₹{gstNum.toFixed(2)}</span>
-                </div>
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  borderTop: '1px solid var(--border-color)',
-                  paddingTop: '8px',
-                  fontWeight: 700,
-                  fontSize: '14px'
-                }}>
-                  <span>Net Credited to Bank:</span>
-                  <span style={{ color: '#16A34A' }}>₹{netNum.toFixed(2)}</span>
-                </div>
-              </div>
-
-              <div style={{
-                fontSize: '12px',
-                color: 'var(--text-secondary)',
-                marginBottom: '18px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}>
-                <ShieldCheck size={14} color="#16A34A" />
-                <span>Depositing to: {primaryBeneficiary?.bankName} ({primaryBeneficiary?.accountNumberMasked})</span>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button
-                  type="button"
-                  className="sarvya-btn sarvya-btn-secondary"
-                  onClick={() => setShowPayoutModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading}
-                  className="sarvya-btn sarvya-btn-primary"
-                >
-                  {actionLoading ? 'Dispersing...' : 'Confirm & Transfer via IMPS'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* MODAL 2: Add Bank Account */}
       {showBankModal && (
         <div style={{
@@ -834,7 +628,7 @@ export default function PayoutsPage() {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. KONKANTRIP HOSPITALITY LLP"
+                  placeholder="e.g. GREEN VALLY HOSPITALITY LLP"
                   value={bankForm.account_holder_name}
                   onChange={(e) => setBankForm({ ...bankForm, account_holder_name: e.target.value.toUpperCase() })}
                   className="sarvya-input"
@@ -904,7 +698,7 @@ export default function PayoutsPage() {
               }}>
                 <ShieldCheck size={14} color="#16A34A" style={{ display: 'inline', marginRight: '6px' }} />
                 <span>
-                  <strong>Penny-Drop Verification:</strong> SARVYA will initiate an automated ₹1.00 micro-deposit via NPCI to confirm the account name and active status before initiating payouts.
+                  <strong>Direct Bank Account Record:</strong> Configure your legal settlement account details for Merchant-Direct payment reconciliation. Customer payments settle directly via your merchant UPI VPA or Razorpay gateway.
                 </span>
               </div>
 

@@ -93,7 +93,7 @@ export default function UniversalAddonsPricingTab({ token, selectedEntityId, sho
       key: 'title',
       header: 'Rule Title',
       sortable: true,
-      render: (v) => <span style={{ fontWeight: 600 }}>{v}</span>
+      render: (v, r) => <span style={{ fontWeight: 600 }}>{v || r?.name || r?.promo_code || '-'}</span>
     },
     {
       key: 'rule_type',
@@ -117,12 +117,16 @@ export default function UniversalAddonsPricingTab({ token, selectedEntityId, sho
       header: 'Discount / Surge Value',
       align: 'right',
       sortable: true,
-      render: (v, r) => (
-        <span className="tabular-nums" style={{ fontWeight: 600, color: Number(v) < 0 ? '#DC2626' : '#16A34A' }}>
-          {r.discount_mode === 'PERCENTAGE' ? `${v}%` : `₹${v}`}
-          {Number(v) < 0 ? ' (Surge)' : ' (Discount)'}
-        </span>
-      )
+      render: (v, r) => {
+        const amt = Number(v ?? r?.adjustment_value ?? 0);
+        const mode = r?.discount_mode || r?.adjustment_type || 'PERCENTAGE';
+        return (
+          <span className="tabular-nums" style={{ fontWeight: 600, color: amt < 0 ? '#DC2626' : '#16A34A' }}>
+            {mode === 'PERCENTAGE' ? `${amt}%` : `₹${amt}`}
+            {amt < 0 ? ' (Surge)' : ' (Discount)'}
+          </span>
+        );
+      }
     },
     {
       key: 'promo_code',

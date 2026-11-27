@@ -71,7 +71,6 @@ jobs:
   backend-test:
     name: Backend QA & MySQL Database Tests
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.skip_tests != 'true' }}
 
     services:
       mysql:
@@ -89,6 +88,8 @@ jobs:
 
     env:
       NODE_ENV: test
+      DISABLE_SCHEDULER: "true"
+      VERIFY_WEBHOOK_SIGNATURE: "true"
       DB_CLIENT: mysql
       DB_HOST: 127.0.0.1
       DB_PORT: 3306
@@ -96,12 +97,14 @@ jobs:
       DB_PASSWORD: root
       DB_NAME: whatsapp_bulk_test
       JWT_SECRET: ci_test_secret_at_least_32_characters_long_for_security_12345
+      META_APP_SECRET: ci_test_meta_app_secret_at_least_32_chars_long_1234
       APP_TIMEZONE: Asia/Kolkata
       DATA_DIR: ./data
       UPLOADS_DIR: ./uploads
-      # CI is offline-only. These deliberately invalid values ensure no test can
+      # CI is offline-only. These deliberately synthetic values ensure no test can
       # accidentally reach a real Meta Graph API endpoint.
       META_API_URL: http://127.0.0.1:9
+      WHATSAPP_API_TOKEN: ci_test_whatsapp_api_token_at_least_50_characters_long_for_offline_simulation_only
       META_API_TOKEN: ci-simulation-only
       WHATSAPP_ACCESS_TOKEN: ci-simulation-only
 
@@ -124,7 +127,7 @@ jobs:
         run: |
           mkdir -p data uploads public/uploads/inbound
 
-      - name: Verify Schema Initialization & Migrations (94 Tables)
+      - name: Verify Schema Initialization & Migrations (109 Tables)
         run: |
           npm run db:init
 
@@ -132,28 +135,9 @@ jobs:
         run: |
           node scripts/test_fresh_deployment.js
 
-      - name: Run Master Production QA & Layer 1-10 Regression Suites
+      - name: Run Complete Backend Regression Suite
         run: |
-          node tests/master_production_qa.test.js
-          node tests/layer1_security_foundation.test.js
-          node tests/layer2_communication_reliability.test.js
-          node tests/layer3_workflow_engine.test.js
-          node tests/layer4_template_studio.test.js
-          node tests/layer5_commerce_concurrency.test.js
-          node tests/layer6_ai_guardrails.test.js
-          node tests/layer7_campaigns_analytics.test.js
-          node tests/layer9_saas_sre.test.js
-          node tests/layer10_e2e_journeys.test.js
-
-      - name: Run Core Multi-Domain Platform Regression Tests
-        run: |
-          node tests/security_and_reliability.test.js
-          node tests/frontend_design_system.test.js
-          node tests/universal_autoreply_platform.test.js
-          node tests/universal_masters_and_nodes.test.js
-          node tests/universal_catalog_availability_pricing.test.js
-          node tests/universal_fulfillment_and_payments.test.js
-          node tests/hybrid_inapp_bridge_and_analytics.test.js
+          npm test
 
 # End of CI configuration.
 

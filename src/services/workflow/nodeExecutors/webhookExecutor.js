@@ -206,8 +206,17 @@ async function execute(node, context) {
       : JSON.stringify(config.body);
   }
 
-  // Simulator Mode: NEVER make live external HTTP calls
-  if (dryRun) {
+  // Simulator / Sandbox Mode: NEVER make live external HTTP calls
+  let isSandboxTenant = Boolean(context.isSandbox || context.isSimulation || context.transportSimulation);
+  if (!isSandboxTenant && context.tenantId) {
+    try {
+      const { db } = require('../../../config/database');
+      const trow = db.prepare('SELECT is_sandbox FROM tenants WHERE id = ? LIMIT 1').get(Number(context.tenantId));
+      if (Number(trow?.is_sandbox) === 1) isSandboxTenant = true;
+    } catch (_) {}
+  }
+
+  if (dryRun || isSandboxTenant) {
     const mockResponse = config.mockResponse || {
       ok: true,
       status: 'simulated_success',

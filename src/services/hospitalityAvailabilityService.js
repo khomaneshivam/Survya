@@ -119,7 +119,9 @@ function getDailyRoomAvailability(propertyId, roomTypeId, dateStr, tenantId = 1)
   `).get(tenantId, propertyId, roomTypeId, dateStr, dateStr);
 
   const realBookedCount = Number(activeBookings?.booked_count || 0);
-  allocatedQty += realBookedCount;
+  const dailyAllocated = dailyRecord ? Number(dailyRecord.allocated_qty || 0) : 0;
+  allocatedQty = Math.max(dailyAllocated, realBookedCount);
+  const unsyncedBookings = Math.max(0, realBookedCount - dailyAllocated);
 
   // Calculate sellable rooms
   let sellable = 0;
@@ -133,7 +135,7 @@ function getDailyRoomAvailability(propertyId, roomTypeId, dateStr, tenantId = 1)
     status = "UNAVAILABLE";
   } else if (dailyRecord && dailyRecord.available_qty != null) {
     const baseAvail = Number(dailyRecord.available_qty);
-    sellable = Math.max(0, baseAvail - extraBlocked - realBookedCount);
+    sellable = Math.max(0, baseAvail - extraBlocked - unsyncedBookings);
     if (sellable === 0) {
       status = "UNAVAILABLE";
     } else if (sellable <= 2) {
@@ -222,6 +224,7 @@ function checkRoomAvailability(propertyId, roomTypeId, checkInDate, checkOutDate
     is_available: isAvailable,
     available: isAvailable,
     status: overallStatus,
+    overall_status: overallStatus,
     min_sellable: minSellable,
     available_rooms_count: minSellable,
     daily_breakdown: dailyBreakdown
@@ -445,6 +448,44 @@ function reserveConfirmedBookingAtomically({
       checkInDate, checkOutDate, roomsReq, numericRoomId, lockedRoom.name,
       flowSessionId, notes, createdBy
     );
+
+    // Synchronize room_inventory_daily inside the same locked transaction
+    const physRow = db.prepare(`
+      SELECT COUNT(*) as total_phys FROM hospitality_physical_rooms
+      WHERE property_id = ? AND room_type_id = ? AND tenant_id = ?
+    `).get(numericPropId, numericRoomId, numericTenantId);
+    const defaultTotal = Number(physRow?.total_phys || 0) > 0 ? Number(physRow.total_phys) : 5;
+    const stayNights = getDatesInRange(checkInDate, checkOutDate, false);
+    for (const dateStr of stayNights) {
+      const existingDaily = db.prepare(`
+        SELECT id, total_rooms, blocked_qty, out_of_service_qty, allocated_qty, available_qty
+        FROM room_inventory_daily
+        WHERE room_type_id = ? AND inventory_date = ? AND tenant_id = ?
+        LIMIT 1 FOR UPDATE
+      `).get(numericRoomId, dateStr, numericTenantId);
+
+      if (existingDaily) {
+        const totalR = existingDaily.total_rooms != null ? Number(existingDaily.total_rooms) : defaultTotal;
+        const blockedQ = Number(existingDaily.blocked_qty || 0);
+        const oosQ = Number(existingDaily.out_of_service_qty || 0);
+        const newAlloc = Number(existingDaily.allocated_qty || 0) + roomsReq;
+        const nextAvail = existingDaily.available_qty != null
+          ? Math.max(0, Number(existingDaily.available_qty) - roomsReq)
+          : Math.max(0, totalR - blockedQ - oosQ - newAlloc);
+        db.prepare(`
+          UPDATE room_inventory_daily
+          SET allocated_qty = ?, available_qty = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(newAlloc, nextAvail, createdBy ? String(createdBy) : "system", existingDaily.id);
+      } else {
+        const nextAvail = Math.max(0, defaultTotal - roomsReq);
+        db.prepare(`
+          INSERT INTO room_inventory_daily
+            (tenant_id, room_type_id, inventory_date, total_rooms, blocked_qty, out_of_service_qty, allocated_qty, available_qty, is_closed, updated_by, updated_at)
+          VALUES (?, ?, ?, ?, 0, 0, ?, ?, 0, ?, CURRENT_TIMESTAMP)
+        `).run(numericTenantId, numericRoomId, dateStr, defaultTotal, roomsReq, nextAvail, createdBy ? String(createdBy) : "system");
+      }
+    }
 
     db.prepare("COMMIT").run();
     return {

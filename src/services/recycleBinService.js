@@ -66,13 +66,13 @@ const ENTITY_CONFIGS = {
     table: "crm_pipelines",
     primaryKey: "id",
     labelColumn: "name",
-    secondaryColumn: "description",
+    secondaryColumn: "industry_type",
     displayName: "CRM Pipeline"
   },
   crm_records: {
     table: "crm_records",
     primaryKey: "id",
-    labelColumn: "title",
+    labelColumn: "contact_name",
     secondaryColumn: "contact_phone",
     displayName: "CRM Lead/Deal"
   },

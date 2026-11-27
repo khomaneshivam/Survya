@@ -15,8 +15,8 @@ async function execute(node, context) {
   const config = { ...(node.data || {}), ...(node.config || {}) };
   const evalContext = variableContext || session;
 
-  const phone = session.senderPhone || session.phone_e164 || 'anonymous';
-  const tenantId = session.tenantId || session.tenant_id || 1;
+  const phone = context.senderPhone || session.senderPhone || session.phone_e164 || 'anonymous';
+  const tenantId = Number(context.tenantId || session.tenantId || session.tenant_id || 1);
   const turnCount = session.turn_count || 1;
 
   // Resolve user query: either explicit variable or recent userInput
@@ -29,7 +29,7 @@ async function execute(node, context) {
   }
 
   const overridePrompt = config.personaPrompt ? interpolateTemplate(config.personaPrompt, evalContext) : null;
-  const isSimulation = Boolean(context.isSimulation || session.isSimulation);
+  const isSimulation = Boolean(context.isSimulation || context.dryRun || context.transportSimulation || session.isSimulation);
 
   const result = await taskScopedAiAgentService.generateReply({
     tenantId,

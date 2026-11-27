@@ -87,7 +87,6 @@ describe("Phase 2 Regression: Property Lifecycle & Tenant Isolation (Greenvally 
   });
 
   after(async () => {
-    if (server) await new Promise((resolve) => server.close(resolve));
     if (origBotName) setSetting("BOT_BUSINESS_NAME", origBotName);
     try {
       for (const tid of [tenantAId, tenantBId]) {
@@ -105,6 +104,8 @@ describe("Phase 2 Regression: Property Lifecycle & Tenant Isolation (Greenvally 
         db.prepare("DELETE FROM tenants WHERE id = ?").run(tid);
       }
     } catch (_) {}
+    const { closeTestResources } = require("./helpers/testFixtures");
+    await closeTestResources(server);
   });
 
   test("1. Creating Greenvally Hotel & Resort via POST /properties does NOT overwrite Tenant 1 KonkanTrip", async () => {

@@ -319,6 +319,56 @@ function buildSystemCapabilitiesContext(tenantId = 1, propertyId = 1) {
       }
     },
     {
+      type: "SEND_WHATSAPP_FLOW",
+      description: "Dispatches an interactive Meta WhatsApp native Flow form screen",
+      handles: ["submitted", "default"],
+      configSchema: {
+        metaFlowId: "Meta Flow ID",
+        flowTitle: "Form Title",
+        flowCta: "Open Form",
+        initialScreen: "START",
+        saveResponseAs: "flow_submission_data"
+      }
+    },
+    {
+      type: "AI_KNOWLEDGE_REPLY",
+      description: "Answers customer inquiries strictly from grounded tenant knowledge base with automatic human handoff",
+      handles: ["replied", "handoff"],
+      configSchema: {
+        queryVariable: "optional_variable",
+        personaPrompt: "Optional persona instructions"
+      }
+    },
+    {
+      type: "CALL_SUBFLOW",
+      description: "Invokes a reusable sub-workflow with bounded recursion depth",
+      handles: ["completed", "default"],
+      configSchema: {
+        targetFlowId: "Target flow ID"
+      }
+    },
+    {
+      type: "SCHEMA_INPUT",
+      description: "Strict typed intake prompt with regex/range validation and bounded retries",
+      handles: ["valid", "max_retries"],
+      configSchema: {
+        saveAs: "variable_name",
+        inputType: "TEXT | EMAIL | PHONE | NUMBER | DATE",
+        prompt: "Question text",
+        maxRetries: 3
+      }
+    },
+    {
+      type: "OPEN_INAPP_EXPERIENCE",
+      description: "Generates a signed web interactive experience link and resumes when completed",
+      handles: ["completed", "cancelled", "default"],
+      configSchema: {
+        experienceSlug: "slug",
+        buttonLabel: "Open Interactive App",
+        waitForCompletion: true
+      }
+    },
+    {
       type: "END",
       description: "Terminates conversation session gracefully",
       handles: [],

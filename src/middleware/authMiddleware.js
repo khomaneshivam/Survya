@@ -134,12 +134,52 @@ function resolveWorkspaceAccess(user, req) {
   return user;
 }
 
+function hasExplicitTokenHeader(req) {
+  const authHeader = req.headers?.["authorization"] || req.headers?.["Authorization"];
+  const altHeader = req.headers?.["x-auth-token"] || req.headers?.["x-access-token"];
+  return Boolean((authHeader && String(authHeader).trim()) || (altHeader && String(altHeader).trim()));
+}
+
+function passesCookieCsrfCheck(req) {
+  const method = String(req.method || "GET").toUpperCase();
+  if (["GET", "HEAD", "OPTIONS"].includes(method)) return true;
+  if (hasExplicitTokenHeader(req)) return true;
+
+  const fetchSite = String(req.headers?.["sec-fetch-site"] || "").toLowerCase();
+  if (fetchSite === "cross-site") return false;
+
+  const origin = req.headers?.origin || req.headers?.referer;
+  if (!origin) return true;
+  try {
+    const parsedOrigin = new URL(String(origin)).origin.toLowerCase();
+    const host = String(req.headers?.["x-forwarded-host"] || req.headers?.host || "").trim().toLowerCase();
+    const proto = String(req.headers?.["x-forwarded-proto"] || req.protocol || "https").split(",")[0].trim().toLowerCase();
+    if (host && (parsedOrigin === `${proto}://${host}` || parsedOrigin === `http://${host}` || parsedOrigin === `https://${host}`)) {
+      return true;
+    }
+    const configured = String(config.PUBLIC_APP_URL || config.CORS_ORIGIN || "")
+      .split(",")
+      .map(s => s.trim().replace(/\/+$/, "").toLowerCase())
+      .filter(Boolean);
+    if (configured.includes(parsedOrigin)) return true;
+    return false;
+  } catch (_) {
+    return false;
+  }
+}
+
 /**
  * Authenticates incoming request using JWT Bearer token in Authorization header,
  * cookie, or session context.
  * Fails closed with 401 if token is missing, malformed, expired, or user is not found/active.
  */
 function authenticateToken(req, res, next) {
+  if (!passesCookieCsrfCheck(req)) {
+    return res.status(403).json({
+      success: false,
+      message: "Forbidden: Cross-site cookie mutation rejected."
+    });
+  }
   const token = extractRequestToken(req);
   if (!token) {
     return res.status(401).json({
@@ -196,11 +236,13 @@ function authenticateToken(req, res, next) {
  */
 function authenticateStreamToken(req, res, next) {
   let token = null;
+  let fromQuery = false;
   const authHeader = req.headers["authorization"] || req.headers["Authorization"];
   if (authHeader && typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
     token = authHeader.substring(7).trim();
   } else if (req.query && (req.query.streamToken || req.query.stream_token || req.query.token)) {
     token = String(req.query.streamToken || req.query.stream_token || req.query.token).trim();
+    fromQuery = true;
   }
 
   if (!token) {
@@ -212,6 +254,9 @@ function authenticateStreamToken(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, config.JWT_SECRET);
+    if (fromQuery && decoded?.purpose !== "sse_stream") {
+      return res.status(401).json({ success: false, message: "Invalid stream token purpose. Acquire a dedicated /broadcast/stream-token." });
+    }
     const uId = decoded?.userId || decoded?.id;
     if (!uId) {
       return res.status(401).json({ success: false, message: "Invalid stream token." });

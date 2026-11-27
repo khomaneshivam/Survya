@@ -6,6 +6,7 @@ const { app } = require("../server");
 const { db } = require("../src/config/database");
 const config = require("../src/config/env");
 const webhookExecutor = require("../src/services/workflow/nodeExecutors/webhookExecutor");
+const { ensureTestAdmin, closeTestResources } = require("./helpers/testFixtures");
 
 describe("Layer 1: Security Foundation, RBAC, Tenant Isolation & SSRF Defense", () => {
   let server;
@@ -27,7 +28,7 @@ describe("Layer 1: Security Foundation, RBAC, Tenant Isolation & SSRF Defense", 
     baseUrl = `http://127.0.0.1:${server.address().port}`;
 
     // Ensure at least one Platform Admin exists on Tenant 1 before testing self-serve registration
-    const adminRow = db.prepare("SELECT * FROM users WHERE role = 'ADMIN' AND tenant_id = 1 LIMIT 1").get();
+    const adminRow = ensureTestAdmin(1);
     assert.ok(adminRow, "Seeded Platform Admin on tenant 1 must exist");
     platformAdminToken = jwt.sign(
       { userId: adminRow.id, email: adminRow.email, role: "ADMIN", tenantId: 1 },
@@ -70,9 +71,8 @@ describe("Layer 1: Security Foundation, RBAC, Tenant Isolation & SSRF Defense", 
     createdTenantIds.push(Number(tenantBOwner.user.tenant_id));
   });
 
-  after(() => {
+  after(async () => {
     process.env.RAZORPAY_WEBHOOK_SECRET = prevWebhookSecret;
-    if (server) server.close();
     for (const ref of createdTxnRefs) {
       try { db.prepare("DELETE FROM universal_transactions WHERE reference_code = ?").run(ref); } catch (_) {}
     }
@@ -94,6 +94,7 @@ describe("Layer 1: Security Foundation, RBAC, Tenant Isolation & SSRF Defense", 
       try { db.prepare("DELETE FROM tenant_installations WHERE tenant_id = ?").run(tid); } catch (_) {}
       try { db.prepare("DELETE FROM tenants WHERE id = ?").run(tid); } catch (_) {}
     }
+    await closeTestResources(server);
   });
 
   test("1. Self-serve SaaS registration assigns USER platform role + workspace OWNER, never Platform ADMIN", async () => {
@@ -230,7 +231,7 @@ describe("Layer 1: Security Foundation, RBAC, Tenant Isolation & SSRF Defense", 
     // Seed campaign on Tenant 1 (admin) and verify Tenant B Owner cannot export or see it
     const campId = `camp_l1_${Date.now()}`;
     createdCampaignIds.push(campId);
-    const t1Admin = db.prepare("SELECT id FROM users WHERE role = 'ADMIN' AND tenant_id = 1 LIMIT 1").get();
+    const t1Admin = ensureTestAdmin(1);
     db.prepare(`
       INSERT INTO campaigns (id, name, total_contacts, sent_count, status, user_id, tenant_id)
       VALUES (?, 'Tenant1 Confidential Campaign', 1, 1, 'COMPLETED', ?, 1)

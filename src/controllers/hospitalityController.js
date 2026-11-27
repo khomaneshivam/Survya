@@ -328,8 +328,8 @@ async function setPropertyGalleryPrimary(req, res) {
 
 async function publicGetPropertyGallery(req, res) {
   try {
-    const tenantId = req.query.tenant_id ? Number(req.query.tenant_id) : 1;
-    const gallery = configService.getPropertyGallery(req.params.id, tenantId);
+    const tenantId = resolvePublicTenantId(req, req.params.id);
+    const gallery = configService.getPropertyGallery(req.params.id, tenantId, true);
     res.json({ success: true, photos: gallery.all_photos, ...gallery });
   } catch (err) {
     res.status(err.statusCode || 500).json({ success: false, message: err.message });
@@ -778,26 +778,10 @@ function resolvePublicTenantId(req, propertyId = null) {
   if (slug) {
     const linkRow = db.prepare(`
       SELECT tenant_id FROM chat_links
-      WHERE slug = ? AND COALESCE(delete_status, 0) = 0
+      WHERE slug = ? AND COALESCE(delete_status, 0) = 0 AND COALESCE(status, 'ACTIVE') = 'ACTIVE'
       LIMIT 1
     `).get(String(slug).trim());
     if (linkRow?.tenant_id) return Number(linkRow.tenant_id);
-  }
-  const rawExplicit = req.query?.tenant_id ?? req.body?.tenant_id;
-  if (rawExplicit !== undefined && rawExplicit !== null && rawExplicit !== "") {
-    const parsed = Number(rawExplicit);
-    if (!Number.isInteger(parsed) || parsed <= 0) {
-      const err = new Error("Invalid tenant scope.");
-      err.statusCode = 400;
-      throw err;
-    }
-    const tenantExists = db.prepare("SELECT id FROM tenants WHERE id = ? AND COALESCE(delete_status, 0) = 0 LIMIT 1").get(parsed);
-    if (!tenantExists) {
-      const err = new Error("Workspace not found.");
-      err.statusCode = 404;
-      throw err;
-    }
-    return parsed;
   }
   if (propertyId) {
     const propRow = db.prepare(`
@@ -805,9 +789,21 @@ function resolvePublicTenantId(req, propertyId = null) {
       WHERE id = ? AND COALESCE(delete_status, 0) = 0
       LIMIT 1
     `).get(Number(propertyId));
-    if (propRow && propRow.publication_status === "PUBLISHED") {
-      return Number(propRow.tenant_id);
+    if (!propRow || propRow.publication_status !== "PUBLISHED") {
+      const err = new Error("Published property not found.");
+      err.statusCode = 404;
+      throw err;
     }
+    return Number(propRow.tenant_id);
+  }
+  const rawExplicit = req.query?.tenant_id ?? req.body?.tenant_id;
+  if (rawExplicit !== undefined && rawExplicit !== null && rawExplicit !== "") {
+    const parsed = Number(rawExplicit);
+    const err = new Error(Number.isInteger(parsed) && parsed > 0
+      ? "Direct tenant enumeration on public routes is disabled. Provide a published property ID or chat link slug."
+      : "Invalid tenant scope.");
+    err.statusCode = 404;
+    throw err;
   }
   return 1;
 }

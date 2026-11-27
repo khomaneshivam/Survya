@@ -505,18 +505,24 @@ function getPropertyFaqAction({ propertyId = 1, question = "", tenantId = 1 }) {
 function requestHumanHandoff({ propertyId = 1, customerName = "", customerPhone = "", inquiryDetails = "", tenantId = 1 }) {
   const prop = configService.getPublishedProperty(propertyId, tenantId);
 
-  // Record an enquiry in the CRM system
+  // Record an enquiry in the canonical CRM booking_enquiries table
   let enquiryId = null;
   try {
+    const enquiryService = require("./enquiryService");
+    const cleanPhone = String(customerPhone || "").replace(/\D/g, "") || "0000000000";
+    const contact = enquiryService.upsertContact(tenantId, cleanPhone, customerName || "Guest");
     const res = db.prepare(`
-      INSERT INTO enquiries (tenant_id, property_id, customer_name, customer_phone, channel, status, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 'CHAT_LINK', 'NEW', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      INSERT INTO booking_enquiries (
+        tenant_id, property_id, contact_id, guest_name, phone_e164,
+        status, notes, assigned_to, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 'NEW', ?, 'human_handoff', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `).run(
       tenantId,
-      propertyId,
+      propertyId || 1,
+      contact?.id || null,
       customerName || "Customer Inquiry",
-      customerPhone || "N/A",
-      `Automated handoff inquiry from Hospitality Chat Engine: ${inquiryDetails}`
+      cleanPhone,
+      `Automated handoff inquiry from Hospitality Chat Engine: ${inquiryDetails || "General inquiry"}`
     );
     enquiryId = res.lastInsertRowid;
   } catch (e) {}

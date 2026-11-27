@@ -88,18 +88,27 @@ async function exchangeCode({
     }
   }
 
-  // 2. Exchange OAuth code for permanent access token (resolve secret from config -> env -> DB setting)
-  const rawDbSecret = typeof getSetting === "function" ? getSetting("META_APP_SECRET") : "";
-  const validDbSecret = (rawDbSecret && !String(rawDbSecret).startsWith("enc:aes-256-gcm:")) ? String(rawDbSecret).trim() : "";
-  const resolvedAppSecret = (config.META_APP_SECRET || process.env.META_APP_SECRET || validDbSecret || "").trim();
+  // 2. Exchange OAuth code for permanent access token using canonical DB -> env precedence
+  const { resolveMetaAppSecret } = require("./metaWhatsAppService");
+  const { appSecret: resolvedAppSecret } = resolveMetaAppSecret();
   const resolvedAppId = (config.META_APP_ID || process.env.META_APP_ID || "1436154674311899").trim();
+
+  let tenantIsSandbox = false;
+  try {
+    const tRow = db.prepare("SELECT is_sandbox FROM tenants WHERE id = ? LIMIT 1").get(numericTenantId);
+    tenantIsSandbox = Number(tRow?.is_sandbox) === 1;
+  } catch (_) {}
 
   let accessToken = "";
   const isMockCode =
     isSimulation ||
+    tenantIsSandbox ||
     String(code).startsWith("mock_") ||
-    process.env.NODE_ENV === "test" ||
-    !resolvedAppSecret;
+    process.env.NODE_ENV === "test";
+
+  if (!isMockCode && !resolvedAppSecret) {
+    throw new Error("META_APP_SECRET is not configured. Configure Meta App Secret in Admin Settings before exchanging live OAuth codes.");
+  }
 
   if (isMockCode) {
     accessToken = `EAAMock_${crypto.randomBytes(24).toString("hex")}`;

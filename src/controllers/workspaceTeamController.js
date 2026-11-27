@@ -324,6 +324,26 @@ async function updateWorkspaceSandboxMode(req, res) {
   try {
     const tenantId = Number(req.user?.tenant_id || 1);
     const desiredSandbox = Boolean(req.body?.isSandbox ?? req.body?.is_sandbox ?? (String(req.body?.mode || "").toUpperCase() === "SANDBOX"));
+
+    if (desiredSandbox && !isPlatformAdmin(req.user)) {
+      if (tenantId === 1) {
+        return res.status(403).json({
+          success: false,
+          code: "SANDBOX_PRODUCTION_GUARD",
+          message: "Primary live workspace cannot be switched into Sandbox mode by non-platform users. Provision a dedicated Sandbox workspace instead."
+        });
+      }
+      const paidTx = db.prepare("SELECT COUNT(*) as c FROM universal_transactions WHERE tenant_id = ? AND payment_status IN ('PAID', 'SETTLED') AND COALESCE(delete_status, 0) = 0").get(tenantId)?.c || 0;
+      const paidOrders = db.prepare("SELECT COUNT(*) as c FROM unified_orders WHERE tenant_id = ? AND payment_status IN ('PAID', 'SETTLED')").get(tenantId)?.c || 0;
+      if ((Number(paidTx) + Number(paidOrders)) > 0) {
+        return res.status(409).json({
+          success: false,
+          code: "SANDBOX_LIVE_TRANSACTIONS_EXIST",
+          message: "Cannot convert a workspace with settled live payments into Sandbox mode. Create a dedicated Sandbox workspace instead."
+        });
+      }
+    }
+
     db.prepare("UPDATE tenants SET is_sandbox = ? WHERE id = ?").run(desiredSandbox ? 1 : 0, tenantId);
     try {
       db.prepare(`

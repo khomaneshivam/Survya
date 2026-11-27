@@ -383,7 +383,7 @@ export default function ChatLinksPage({ onNavigate }) {
           slug: `${bulkPrefix}-${slugPart}`,
           phoneNumber: defaultPhoneNum,
           phoneNumberId: defaultPhone?.phone_number_id || null,
-          defaultMessage: `Hi KonkanTrip Beach Resort, I want to inquire about availability and package for ${title}.`,
+          defaultMessage: `Hi, I would like to inquire about availability and pricing for ${title}.`,
           welcomeTitle: title,
           welcomeDescription: `Direct inquiry desk for ${title}`,
           autoReplyEnabled: 1,
@@ -970,7 +970,7 @@ export default function ChatLinksPage({ onNavigate }) {
                   rows={3}
                   required
                   className="sarvya-textarea"
-                  placeholder="Hi KonkanTrip Beach Resort, I want to book a villa for {{date}} for {{guests}} guests."
+                  placeholder="Hi, I would like to book for {{date}} for {{guests}} guests."
                   value={form.defaultMessage}
                   onChange={(e) => setForm((p) => ({ ...p, defaultMessage: e.target.value }))}
                 />
@@ -1029,7 +1029,7 @@ export default function ChatLinksPage({ onNavigate }) {
                     id="link-welcome-title"
                     type="text"
                     className="sarvya-input"
-                    placeholder="KonkanTrip Beach Resort & Spa"
+                    placeholder="Your Business / Property Name"
                     value={form.welcomeTitle}
                     onChange={(e) => setForm((p) => ({ ...p, welcomeTitle: e.target.value }))}
                   />

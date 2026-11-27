@@ -159,7 +159,7 @@ async function exportDataSubjectPii(phoneE164, tenantId = 1) {
   let crmRecords = [];
   try {
     crmRecords = db.prepare(`
-      SELECT id, title, contact_name, contact_phone, contact_email, stage, value, notes, created_at
+      SELECT id, pipeline_id, contact_name as title, contact_name, contact_phone, contact_email, stage_key as stage, deal_value as value, tags_json, custom_attributes, created_at
       FROM crm_records WHERE contact_phone LIKE ?
     `).all(`%${cleanPhone}%`);
   } catch (e) {}
@@ -395,8 +395,8 @@ async function executeErasureOrAnonymization(phoneOrOptions, tenantIdOrOptions =
       UPDATE crm_records
       SET contact_name = 'Anonymized Contact',
           contact_email = NULL,
-          custom_data = NULL,
-          notes = '[Redacted pursuant to DPDP Act 2023]',
+          custom_attributes = '{}',
+          tags_json = '["redacted_dpdp_2023"]',
           active_status = 0,
           delete_status = 1,
           updated_at = CURRENT_TIMESTAMP

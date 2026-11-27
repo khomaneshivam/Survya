@@ -87,7 +87,7 @@ router.get("/subscription", (req, res) => {
  * POST /checkout
  * Prepares Razorpay order with SAC 998314 18% GST breakdown
  */
-router.post("/checkout", (req, res) => {
+router.post("/checkout", requireWorkspaceAdmin, (req, res) => {
   try {
     const { planCode, billingCycle, customerStateCode, gstin, billingAddress } = req.body || {};
     const result = billingService.createCheckout({

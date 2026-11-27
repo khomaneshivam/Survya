@@ -528,8 +528,15 @@ class TaskScopedAiAgentService {
     let promptTokens = estimateTokens(userInput) + estimateTokens(retrievalResult.contextText);
     let completionTokens = 0;
     const geminiKey = String(getSetting('GEMINI_API_KEY') || process.env.GEMINI_API_KEY || config.GEMINI_API_KEY || '').trim();
+    let isSandboxTenant = Boolean(isSimulation);
+    if (!isSandboxTenant) {
+      try {
+        const trow = db.prepare('SELECT is_sandbox FROM tenants WHERE id = ? LIMIT 1').get(Number(tenantId || 1));
+        if (Number(trow?.is_sandbox) === 1) isSandboxTenant = true;
+      } catch (_) {}
+    }
 
-    if (!isSimulation && geminiKey) {
+    if (!isSandboxTenant && geminiKey) {
       try {
         const persona = overridePrompt || agentConfig.business_persona ||
           `You are ${profile.businessName}'s courteous assistant.`;
@@ -554,7 +561,8 @@ Untrusted User Query: "${userInput}"`;
           body: JSON.stringify({
             contents: [{ parts: [{ text: systemPrompt }] }],
             generationConfig: { temperature: 0.2, maxOutputTokens: 320, response_mime_type: 'application/json' }
-          })
+          }),
+          signal: AbortSignal.timeout(12000)
         });
 
         if (res.ok) {

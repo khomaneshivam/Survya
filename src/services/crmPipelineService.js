@@ -410,6 +410,63 @@ function deleteRecord(recordId, tenantId = 1) {
   return { success: true };
 }
 
+/**
+ * Canonical tenant-safe CRM lead/deal upsert for fulfillments, flows, and webhooks.
+ */
+function upsertRecord(tenantId = 1, payload = {}) {
+  const numericTenantId = Number(tenantId || payload.tenantId || 1);
+  ensureDefaultPipelines(numericTenantId);
+
+  const phoneDigits = String(payload.contactPhone || payload.contact_phone || payload.phone || '').replace(/\D/g, '');
+  if (!phoneDigits) throw new Error('contactPhone is required for CRM upsert.');
+
+  let pipelineId = payload.pipelineId || payload.pipeline_id || null;
+  if (!pipelineId) {
+    const pipelineHint = payload.pipeline || payload.pipelineName || payload.pipelineSlug || payload.industryType || null;
+    if (pipelineHint) {
+      const matched = db.prepare(`
+        SELECT id FROM crm_pipelines
+        WHERE tenant_id = ? AND delete_status = 0 AND (slug = ? OR name = ? OR industry_type = ?)
+        ORDER BY id ASC LIMIT 1
+      `).get(numericTenantId, pipelineHint, pipelineHint, pipelineHint);
+      if (matched) pipelineId = matched.id;
+    }
+    if (!pipelineId) {
+      const def = db.prepare(`
+        SELECT id FROM crm_pipelines
+        WHERE tenant_id = ? AND active_status = 1 AND delete_status = 0
+        ORDER BY id ASC LIMIT 1
+      `).get(numericTenantId);
+      pipelineId = def?.id || null;
+    }
+  }
+  if (!pipelineId) throw new Error(`No CRM pipeline found for tenant #${numericTenantId}`);
+
+  if (payload.crmRecordId) {
+    const existingById = getRecordById(payload.crmRecordId, numericTenantId);
+    if (existingById) {
+      return updateRecord(existingById.id, { ...payload, tenantId: numericTenantId }, numericTenantId);
+    }
+  }
+
+  const existing = db.prepare(`
+    SELECT id FROM crm_records
+    WHERE tenant_id = ? AND pipeline_id = ? AND contact_phone = ? AND delete_status = 0
+    ORDER BY id DESC LIMIT 1
+  `).get(numericTenantId, pipelineId, phoneDigits);
+
+  if (existing) {
+    return updateRecord(existing.id, { ...payload, tenantId: numericTenantId }, numericTenantId);
+  }
+
+  return createRecord({
+    ...payload,
+    tenantId: numericTenantId,
+    pipelineId,
+    contactPhone: phoneDigits
+  });
+}
+
 module.exports = {
   ensureDefaultPipelines,
   listPipelines,
@@ -420,5 +477,6 @@ module.exports = {
   getRecordById,
   createRecord,
   updateRecord,
+  upsertRecord,
   deleteRecord
 };

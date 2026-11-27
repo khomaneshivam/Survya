@@ -33,14 +33,10 @@ import {
 // Code-split dynamic page imports with deployment chunk-mismatch auto-recovery
 const DashboardPage = lazyWithRetry(() => import('../pages/DashboardPage'));
 const EnquiriesPage = lazyWithRetry(() => import('../pages/EnquiriesPage'));
-const FlowsPage = lazyWithRetry(() => import('../pages/FlowsPage'));
 const FlowBuilderPage = lazyWithRetry(() => import('../pages/FlowBuilderPage'));
-const AutomationPage = lazyWithRetry(() => import('../pages/AutomationPage'));
 const InboxPage = lazyWithRetry(() => import('../pages/InboxPage'));
 const AutomationStudio = lazyWithRetry(() => import('../features/automation/AutomationStudio'));
-const AutoReplyBotPage = lazyWithRetry(() => import('../pages/AutoReplyBotPage'));
 const BroadcastPage = lazyWithRetry(() => import('../pages/BroadcastPage'));
-const FlowStudioPage = lazyWithRetry(() => import('../pages/FlowStudioPage'));
 const ChatLinksPage = lazyWithRetry(() => import('../pages/ChatLinksPage'));
 const InAppStudioPage = lazyWithRetry(() => import('../pages/InAppStudioPage'));
 const AiAssistantPage = lazyWithRetry(() => import('../pages/AiAssistantPage'));
@@ -307,13 +303,13 @@ export const PAGE_REGISTRY = {
   },
   payouts: {
     id: 'payouts',
-    title: 'Payouts & Bank Settlements',
+    title: 'Merchant Payment & Settlement Ledger',
     module: 'Governance',
     group: 'Platform Governance',
-    badge: 'IMPS/UTR',
-    badgeTone: 'coral',
+    badge: 'Merchant-Direct',
+    badgeTone: 'green',
     icon: Landmark,
-    description: 'Manage property bank accounts, penny-drop IFSC verification, settlement queues, and automated UTR reconciliations.',
+    description: 'View Merchant-Direct UPI & gateway reconciliation totals, bank account records, and historical settlement entries.',
     adminOnly: true,
     platformAdminOnly: true,
     component: PayoutsPage

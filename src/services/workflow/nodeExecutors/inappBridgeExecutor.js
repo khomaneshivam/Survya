@@ -61,6 +61,18 @@ module.exports = {
       }
     }
 
+    if (context.dryRun || context.isSimulation) {
+      const slug = cfg.experienceSlug || cfg.slug || 'interactive-experience';
+      const simUrl = `https://survya.example/x/${slug}?sim=1`;
+      return {
+        action: cfg.waitForCompletion !== false ? "WAIT_FOR_INPUT" : "CONTINUE",
+        nextHandle: "default",
+        replyMessages: [`${cfg.messageText || "Tap the button below:"}\n\n👉 *${cfg.buttonLabel || "Open Interactive App 📱"}:*\n${simUrl}`],
+        updatedData: { waiting_for_inapp: cfg.waitForCompletion !== false, inapp_session_token: "SIM-TOKEN" },
+        traceNote: "[Simulated] Generated In-App experience preview link without DB write."
+      };
+    }
+
     let linkRes;
     try {
       linkRes = inappRuntimeService.createLinkedSession({

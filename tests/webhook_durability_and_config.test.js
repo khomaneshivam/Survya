@@ -14,6 +14,7 @@ const jobQueueService = require("../src/services/queue/jobQueueService");
 const jobWorkerEngine = require("../src/services/queue/jobWorkerEngine");
 const { resolveWhatsAppContext } = require("../src/services/workflow/conversationContextResolver");
 const cryptoUtil = require("../src/utils/cryptoUtil");
+const { ensureTestAdmin, closeTestResources } = require("./helpers/testFixtures");
 
 describe("Phase 3 Regression: Webhook Durability, Duplicate WABA Mapping & Credential Precedence", () => {
   let server;
@@ -44,12 +45,11 @@ describe("Phase 3 Regression: Webhook Durability, Duplicate WABA Mapping & Crede
     `).run();
     tenant2Id = Number(t2.lastInsertRowid);
 
-    let sa = db.prepare("SELECT * FROM users WHERE role IN ('ADMIN','SUPER_ADMIN') AND COALESCE(tenant_id, 1) = 1 AND COALESCE(delete_status, 0) = 0 LIMIT 1").get();
+    const sa = ensureTestAdmin(1);
     superAdminToken = jwt.sign({ id: sa.id, userId: sa.id, tenant_id: 1, role: sa.role, is_platform_admin: true }, config.JWT_SECRET, { expiresIn: "1h" });
   });
 
   after(async () => {
-    if (server) await new Promise((resolve) => server.close(resolve));
     if (origVerifyToken) setSetting("WEBHOOK_VERIFY_TOKEN", origVerifyToken);
     if (origAppSecret !== undefined) setSetting("META_APP_SECRET", origAppSecret || "");
     try {
@@ -61,6 +61,7 @@ describe("Phase 3 Regression: Webhook Durability, Duplicate WABA Mapping & Crede
       }
       if (tenant2Id) db.prepare("DELETE FROM tenants WHERE id = ?").run(tenant2Id);
     } catch (_) {}
+    await closeTestResources(server);
   });
 
   test("1. Failed enqueue rolls back dedup keys cleanly (503) and retry succeeds (200) with zero silent message loss", async () => {

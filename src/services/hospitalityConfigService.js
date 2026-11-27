@@ -18,6 +18,27 @@ function logAudit(tenantId, userId, action, targetId, details) {
  * -------------------------------------------------------------------------
  */
 
+function assertPropertyOwnedByTenant(propertyId, tenantId) {
+  const pid = Number(propertyId);
+  const tid = Number(tenantId);
+  if (!Number.isInteger(pid) || pid <= 0 || !Number.isInteger(tid) || tid <= 0) {
+    const err = new Error("Invalid property or workspace scope.");
+    err.statusCode = 400;
+    throw err;
+  }
+  const prop = db.prepare(`
+    SELECT id, tenant_id, publication_status FROM properties
+    WHERE id = ? AND COALESCE(delete_status, 0) = 0
+    LIMIT 1
+  `).get(pid);
+  if (!prop || Number(prop.tenant_id) !== tid) {
+    const err = new Error("Property not found in your workspace.");
+    err.statusCode = prop ? 403 : 404;
+    throw err;
+  }
+  return prop;
+}
+
 /**
  * Retrieve property configuration by ID
  */
@@ -354,29 +375,29 @@ function duplicateProperty(propertyId, data = {}, tenantId, userId = null, isAdm
   for (const pl of srcPlans) {
     db.prepare(`
       INSERT INTO hospitality_rate_plans (
-        tenant_id, property_id, name, code, meal_plan, is_refundable, free_cancellation_hours,
-        price_multiplier, flat_addon_per_night, extra_guest_multiplier, description, is_active, is_default, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+        tenant_id, property_id, name, code, meal_plan, description, cancellation_policy,
+        is_refundable, included_services_json, is_active, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP())
     `).run(
-      tenantId, targetPropId, pl.name, pl.code, pl.meal_plan, pl.is_refundable, pl.free_cancellation_hours,
-      pl.price_multiplier, pl.flat_addon_per_night, pl.extra_guest_multiplier, pl.description, pl.is_default
+      tenantId, targetPropId, pl.name, pl.code, pl.meal_plan || 'EP', pl.description || null,
+      pl.cancellation_policy || null, pl.is_refundable ?? 1, pl.included_services_json || null
     );
   }
 
   const srcFacilities = db.prepare("SELECT * FROM hospitality_facilities WHERE property_id = ? AND tenant_id = ? AND is_active = 1").all(propertyId, tenantId);
   for (const fac of srcFacilities) {
     db.prepare(`
-      INSERT INTO hospitality_facilities (tenant_id, property_id, name, category, description, operational_hours, is_chargeable, price_info, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-    `).run(tenantId, targetPropId, fac.name, fac.category, fac.description, fac.operational_hours, fac.is_chargeable, fac.price_info);
+      INSERT INTO hospitality_facilities (tenant_id, property_id, category, name, description, icon, is_featured, is_active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    `).run(tenantId, targetPropId, fac.category || 'General', fac.name, fac.description || '', fac.icon || '', fac.is_featured || 0);
   }
 
   const srcPolicies = db.prepare("SELECT * FROM hospitality_policies WHERE property_id = ? AND tenant_id = ?").all(propertyId, tenantId);
   for (const pol of srcPolicies) {
     db.prepare(`
-      INSERT INTO hospitality_policies (tenant_id, property_id, policy_type, title, summary_text, full_text, display_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(tenantId, targetPropId, pol.policy_type, pol.title, pol.summary_text, pol.full_text, pol.display_order || 0);
+      INSERT INTO hospitality_policies (tenant_id, property_id, policy_type, title, content, rules_json)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(tenantId, targetPropId, pol.policy_type, pol.title, pol.content || '', pol.rules_json || null);
   }
 
   logAudit(tenantId, userId, "PROPERTY_DUPLICATED", targetPropId, { sourcePropertyId: propertyId, copiedRooms: roomMap.size });
@@ -523,6 +544,8 @@ function createRoomCategory(arg1 = 1, arg2 = {}, arg3 = 1, arg4 = "system") {
     err.statusCode = 400;
     throw err;
   }
+
+  assertPropertyOwnedByTenant(propertyId, tenantId);
 
   const amenities_json = Array.isArray(amenities) ? JSON.stringify(amenities) : (typeof amenities === "string" ? amenities : "[]");
   const cleanRate = Math.max(0, Number(base_rate) || 3500);
@@ -698,9 +721,9 @@ function setPrimaryImage(imageId, roomTypeId, tenantId = 1, userId = "system") {
     UPDATE hospitality_room_images SET is_primary = 1 WHERE id = ? AND room_type_id = ? AND tenant_id = ?
   `).run(imageId, roomTypeId, tenantId);
 
-  const img = db.prepare("SELECT image_url FROM hospitality_room_images WHERE id = ?").get(imageId);
+  const img = db.prepare("SELECT image_url FROM hospitality_room_images WHERE id = ? AND tenant_id = ?").get(imageId, tenantId);
   if (img?.image_url) {
-    db.prepare("UPDATE room_types SET primary_image_url = ? WHERE id = ?").run(img.image_url, roomTypeId);
+    db.prepare("UPDATE room_types SET primary_image_url = ? WHERE id = ? AND tenant_id = ?").run(img.image_url, roomTypeId, tenantId);
   }
 
   logAudit(tenantId, userId, "ROOM_PRIMARY_IMAGE_SET", imageId, { roomTypeId });
@@ -730,10 +753,10 @@ function deleteRoomImage(imageId, roomTypeId, tenantId = 1, userId = "system") {
   if (existing && Number(existing.is_primary) === 1) {
     const nextImg = db.prepare("SELECT * FROM hospitality_room_images WHERE room_type_id = ? AND tenant_id = ? ORDER BY display_order ASC, id ASC LIMIT 1").get(roomTypeId, tenantId);
     if (nextImg) {
-      db.prepare("UPDATE hospitality_room_images SET is_primary = 1 WHERE id = ?").run(nextImg.id);
-      db.prepare("UPDATE room_types SET primary_image_url = ? WHERE id = ?").run(nextImg.image_url, roomTypeId);
+      db.prepare("UPDATE hospitality_room_images SET is_primary = 1 WHERE id = ? AND tenant_id = ?").run(nextImg.id, tenantId);
+      db.prepare("UPDATE room_types SET primary_image_url = ? WHERE id = ? AND tenant_id = ?").run(nextImg.image_url, roomTypeId, tenantId);
     } else {
-      db.prepare("UPDATE room_types SET primary_image_url = NULL WHERE id = ?").run(roomTypeId);
+      db.prepare("UPDATE room_types SET primary_image_url = NULL WHERE id = ? AND tenant_id = ?").run(roomTypeId, tenantId);
     }
   }
 
@@ -747,9 +770,9 @@ function deleteRoomImage(imageId, roomTypeId, tenantId = 1, userId = "system") {
  * -------------------------------------------------------------------------
  */
 
-function getPropertyGallery(propertyId = 1, tenantId = 1) {
+function getPropertyGallery(propertyId = 1, tenantId = 1, publishedOnly = false) {
   const prop = getPropertyById(propertyId, tenantId, null, true);
-  if (!prop) {
+  if (!prop || (publishedOnly && prop.publication_status !== "PUBLISHED")) {
     const err = new Error("Property not found.");
     err.statusCode = 404;
     throw err;
@@ -1051,27 +1074,29 @@ function listFacilities(propertyId = 1, tenantId = 1, category = null) {
 }
 
 function addFacility(propertyId = 1, data = {}, tenantId = 1) {
-  const { name, category = "General", description = "", operational_hours = "", icon = "", is_active = 1 } = data;
+  assertPropertyOwnedByTenant(propertyId, tenantId);
+  const { name, category = "General", description = "", icon = "", is_featured = 0, is_active = 1 } = data;
   if (!name) throw new Error("Facility name is required.");
 
   const result = db.prepare(`
     INSERT INTO hospitality_facilities (
-      tenant_id, property_id, name, category, description, operational_hours, icon, is_active
+      tenant_id, property_id, category, name, description, icon, is_featured, is_active
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(tenantId, propertyId, name, category, description, operational_hours, icon, is_active ? 1 : 0);
+  `).run(tenantId, propertyId, category, name, description, icon, is_featured ? 1 : 0, is_active ? 1 : 0);
 
-  return db.prepare("SELECT * FROM hospitality_facilities WHERE id = ?").get(result.lastInsertRowid);
+  return db.prepare("SELECT * FROM hospitality_facilities WHERE id = ? AND tenant_id = ?").get(result.lastInsertRowid, tenantId);
 }
 
 function updateFacility(facilityId, propertyId = 1, data = {}, tenantId = 1) {
+  assertPropertyOwnedByTenant(propertyId, tenantId);
   db.prepare(`
     UPDATE hospitality_facilities
     SET name = COALESCE(?, name), category = COALESCE(?, category), description = COALESCE(?, description),
-        operational_hours = COALESCE(?, operational_hours), icon = COALESCE(?, icon), is_active = COALESCE(?, is_active)
+        icon = COALESCE(?, icon), is_featured = COALESCE(?, is_featured), is_active = COALESCE(?, is_active)
     WHERE id = ? AND property_id = ? AND tenant_id = ?
-  `).run(data.name, data.category, data.description, data.operational_hours, data.icon, data.is_active, facilityId, propertyId, tenantId);
+  `).run(data.name ?? null, data.category ?? null, data.description ?? null, data.icon ?? null, data.is_featured ?? null, data.is_active ?? null, facilityId, propertyId, tenantId);
 
-  return db.prepare("SELECT * FROM hospitality_facilities WHERE id = ?").get(facilityId);
+  return db.prepare("SELECT * FROM hospitality_facilities WHERE id = ? AND tenant_id = ?").get(facilityId, tenantId);
 }
 
 function deleteFacility(facilityId, propertyId = 1, tenantId = 1) {
@@ -1121,26 +1146,28 @@ function listFaqs(propertyId = 1, tenantId = 1) {
 }
 
 function createFaq(propertyId = 1, data = {}, tenantId = 1) {
-  const { question, answer, category = "General", keywords = "" } = data;
+  assertPropertyOwnedByTenant(propertyId, tenantId);
+  const { question, answer, category = "General", display_order = 0 } = data;
   if (!question || !answer) throw new Error("question and answer are required.");
 
   const res = db.prepare(`
-    INSERT INTO hospitality_faqs (tenant_id, property_id, category, question, answer, keywords, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-  `).run(tenantId, propertyId, category, question, answer, keywords);
+    INSERT INTO hospitality_faqs (tenant_id, property_id, category, question, answer, display_order, is_active, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+  `).run(tenantId, propertyId, category, question, answer, Number(display_order) || 0);
 
-  return db.prepare("SELECT * FROM hospitality_faqs WHERE id = ?").get(res.lastInsertRowid);
+  return db.prepare("SELECT * FROM hospitality_faqs WHERE id = ? AND tenant_id = ?").get(res.lastInsertRowid, tenantId);
 }
 
 function updateFaq(faqId, propertyId = 1, data = {}, tenantId = 1) {
+  assertPropertyOwnedByTenant(propertyId, tenantId);
   db.prepare(`
     UPDATE hospitality_faqs
     SET question = COALESCE(?, question), answer = COALESCE(?, answer), category = COALESCE(?, category),
-        keywords = COALESCE(?, keywords), updated_at = CURRENT_TIMESTAMP
+        display_order = COALESCE(?, display_order)
     WHERE id = ? AND property_id = ? AND tenant_id = ?
-  `).run(data.question, data.answer, data.category, data.keywords, faqId, propertyId, tenantId);
+  `).run(data.question ?? null, data.answer ?? null, data.category ?? null, data.display_order ?? null, faqId, propertyId, tenantId);
 
-  return db.prepare("SELECT * FROM hospitality_faqs WHERE id = ?").get(faqId);
+  return db.prepare("SELECT * FROM hospitality_faqs WHERE id = ? AND tenant_id = ?").get(faqId, tenantId);
 }
 
 function deleteFaq(faqId, propertyId = 1, tenantId = 1) {
@@ -1218,6 +1245,7 @@ function getSetupOverview(propertyId, tenantId) {
 }
 
 module.exports = {
+  assertPropertyOwnedByTenant,
   getPropertyById,
   getPublishedProperty,
   listProperties,

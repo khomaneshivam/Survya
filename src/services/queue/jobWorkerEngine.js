@@ -281,31 +281,26 @@ class JobWorkerEngine extends EventEmitter {
           contact = { id: res.lastInsertRowid };
         }
 
-        // 2. Upsert CRM lead record
-        const customAttrs = JSON.stringify({
-          source: "INDIAMART",
-          product_name: productName,
-          query_message: message,
-          attributed_channel: "INDIAMART_B2B",
-          synced_at: new Date().toISOString()
+        // 2. Upsert CRM lead record via canonical crmPipelineService
+        const crmPipelineService = require("../crmPipelineService");
+        crmPipelineService.upsertRecord(tenantId, {
+          pipelineId: payload.pipelineId || null,
+          industryType: "B2B_SALES",
+          contactPhone: phoneE164,
+          contactName: name,
+          contactEmail: email,
+          stageKey: "NEW",
+          leadScore: 60,
+          dealValue: lead.deal_value || 0,
+          tags: ["indiamart", "inbound_b2b"],
+          customAttributes: {
+            source: "INDIAMART",
+            product_name: productName,
+            query_message: message,
+            attributed_channel: "INDIAMART_B2B",
+            synced_at: new Date().toISOString()
+          }
         });
-
-        db.prepare(`
-          INSERT INTO crm_records (
-            tenant_id, pipeline_id, contact_phone, contact_name, contact_email,
-            stage_key, lead_score, deal_value, tags_json, custom_attributes,
-            created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, 'NEW', 60, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
-        `).run(
-          tenantId,
-          payload.pipelineId || 1,
-          phoneE164,
-          name,
-          email,
-          lead.deal_value || 0,
-          JSON.stringify(["indiamart", "inbound_b2b"]),
-          customAttrs
-        );
 
         syncedCount++;
       }

@@ -45,7 +45,9 @@ async function execute(node, context) {
   const flowTitle = config.flowTitle || 'Please fill in details';
 
   const { getSetting } = require('../../../config/database');
-  const flowsEnabled = getSetting('WHATSAPP_FLOWS_ENABLED') === 'true';
+  const envConfig = require('../../../config/env');
+  const settingVal = getSetting('WHATSAPP_FLOWS_ENABLED');
+  const flowsEnabled = settingVal !== null ? settingVal === 'true' : Boolean(envConfig.WHATSAPP_FLOWS_ENABLED);
 
   if (!flowsEnabled) {
     return {

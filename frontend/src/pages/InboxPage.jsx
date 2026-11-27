@@ -990,9 +990,9 @@ export default function InboxPage({ onNavigate }) {
     enabled: true,
     mode: 'ONCE_PER_CONTACT',
     engineMode: 'HOSPITALITY_FLOW',
-    businessName: 'KonkanTrip Beach Resort & Spa',
+    businessName: 'Your Business',
     welcomeMessage: '👋 Hello {{name}}! Welcome to *{{business_name}}*.\n\nHow can we help you today? Select an option below or reply with your travel dates to check real-time availability and live rates! 👇',
-    fallbackMessage: 'Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message and our team will get back to you shortly.',
+    fallbackMessage: 'Hi {{name}}, thank you for reaching out to {{business_name}}! We have received your message and our team will get back to you shortly.',
     button1: 'This Weekend',
     button2: 'Tomorrow (2 N)',
     button3: 'Talk to Staff',
@@ -1400,9 +1400,9 @@ export default function InboxPage({ onNavigate }) {
       enabled: true,
       mode: 'ONCE_PER_CONTACT',
       engineMode: 'HOSPITALITY_FLOW',
-      businessName: 'KonkanTrip Beach Resort & Spa',
+      businessName: 'Your Business',
       welcomeMessage: '👋 Hello {{name}}! Welcome to *{{business_name}}*.\n\nHow can we help you today? Select an option below or reply with your travel dates to check real-time availability and live rates! 👇',
-      fallbackMessage: 'Hi {{name}}, thank you for reaching out to KonkanTrip! We have received your message and our team will get back to you shortly.',
+      fallbackMessage: 'Hi {{name}}, thank you for reaching out to {{business_name}}! We have received your message and our team will get back to you shortly.',
       button1: 'This Weekend',
       button2: 'Tomorrow (2 N)',
       button3: 'Talk to Staff',
@@ -4510,7 +4510,7 @@ export default function InboxPage({ onNavigate }) {
                         className="saas-input"
                         value={autoReplySettings.businessName || ''}
                         onChange={e => setAutoReplySettings({ ...autoReplySettings, businessName: e.target.value })}
-                        placeholder="KonkanTrip Beach Resort & Spa"
+                        placeholder="Your Business / Property Name"
                         style={{ width: '100%', fontSize: '0.85rem', padding: '9px 12px' }}
                       />
                       <span style={{ fontSize: '0.72rem', color: '#96969C', marginTop: '4px', display: 'block' }}>
@@ -4766,7 +4766,7 @@ export default function InboxPage({ onNavigate }) {
                               {f.name} {f.meta_flow_id ? `(ID: ${f.meta_flow_id})` : ''} - [{f.status}]
                             </option>
                           ))}
-                          <option value="flow_hospitality_booking">KonkanTrip Stay & Booking Flow (Default Published)</option>
+                          <option value="flow_hospitality_booking">Booking & Enquiry Flow (Default)</option>
                         </select>
                         <span style={{ fontSize: '0.72rem', color: '#96969C', marginTop: '4px', display: 'block' }}>
                           When a customer asks for dates or rooms, the concierge bot automatically triggers this Flow screen.
@@ -5482,8 +5482,8 @@ export default function InboxPage({ onNavigate }) {
                           if (!dyn) return "No dynamic rules created yet. Go to the ⚡ Dynamic Rules tab to add your first rule!";
                           let msg = (dyn.responseText || `Thank you for asking about ${dyn.title}! Our team is delighted to assist you.`)
                             .replace(/\{\{name\}\}/gi, 'Shivam')
-                            .replace(/\{\{business_name\}\}/gi, autoReplySettings.businessName || 'KonkanTrip Beach Resort & Spa')
-                            .replace(/\{\{phone\}\}/gi, autoReplySettings.handoffPhone || '+91 87665 90634');
+                            .replace(/\{\{business_name\}\}/gi, autoReplySettings.businessName || 'Guest Concierge')
+                            .replace(/\{\{phone\}\}/gi, autoReplySettings.handoffPhone || '');
                           if (dyn.actionType === 'OPEN_URL' && dyn.url) msg += `\n\n🌐 Explore Link: ${dyn.url}`;
                           return msg;
                         })()}
@@ -5491,7 +5491,7 @@ export default function InboxPage({ onNavigate }) {
 
                       {/* Footer */}
                       <div style={{ fontSize: '0.68rem', color: '#96969C' }}>
-                        {autoReplySettings.businessName || 'KonkanTrip Concierge'} • 10:30 AM
+                        {autoReplySettings.businessName || 'Concierge Desk'} • 10:30 AM
                       </div>
 
                       {/* Interactive Buttons Mockup */}
@@ -5658,7 +5658,7 @@ export default function InboxPage({ onNavigate }) {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <FileText size={16} />
                           <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>
-                            {activePublishedFlow?.name || 'KonkanTrip Booking Intake'}
+                            {activePublishedFlow?.name || 'Active Booking Intake'}
                           </span>
                         </div>
                         <span style={{

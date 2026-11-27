@@ -5,6 +5,7 @@ const config = require("../config/env");
 const { db, getSetting, setSetting } = require("../config/database");
 const webhookService = require("../services/webhookService");
 const metaWhatsAppService = require("../services/metaWhatsAppService");
+const cryptoUtil = require("../utils/cryptoUtil");
 const recycleBinService = require("../services/recycleBinService");
 const complianceService = require("../services/complianceService");
 const billingService = require("../services/billingService");
@@ -268,14 +269,14 @@ async function listPhoneNumbers(req, res) {
       ${whereClause}
       ORDER BY p.is_default DESC, p.created_at DESC
     `).all(...params).map(n => {
-      const rawToken = n.access_token ? String(n.access_token).trim() : null;
+      const rawToken = metaWhatsAppService.resolveLineAccessToken(n, { tenantId: n.tenant_id }) || null;
       return {
         ...n,
         has_token: !!rawToken,
         access_token_preview: rawToken ? rawToken.substring(0, 8) + "••••••••" + rawToken.slice(-6) : null,
         token_type: n.token_type || "PERMANENT",
-        // Do not leak raw token in listing
-        access_token: undefined
+        access_token: undefined,
+        access_token_enc: undefined
       };
     });
 
@@ -423,6 +424,7 @@ async function registerPhoneNumber(req, res) {
     const tokenToSave = (customToken && String(customToken).trim() && !customToken.startsWith("EAAX_") && !customToken.includes("placeholder"))
       ? String(customToken).trim()
       : null;
+    const encryptedTokenToSave = tokenToSave ? cryptoUtil.encrypt(tokenToSave) : null;
 
     if (existing) {
       // Update existing record
@@ -434,7 +436,8 @@ async function registerPhoneNumber(req, res) {
             quality_rating = ?,
             status = ?,
             is_default = ?,
-            access_token = COALESCE(?, access_token),
+            access_token = CASE WHEN ? IS NOT NULL THEN NULL ELSE access_token END,
+            access_token_enc = COALESCE(?, access_token_enc),
             token_type = 'PERMANENT',
             last_verified_at = CURRENT_TIMESTAMP,
             updated_at = CURRENT_TIMESTAMP
@@ -447,10 +450,12 @@ async function registerPhoneNumber(req, res) {
         metaStatus,
         shouldBeDefault ? 1 : 0,
         tokenToSave,
+        encryptedTokenToSave,
         existing.id
       );
 
       const updated = db.prepare("SELECT * FROM waba_phone_numbers WHERE id = ?").get(existing.id);
+      const updatedToken = metaWhatsAppService.resolveLineAccessToken(updated);
 
       return res.status(200).json({
         success: true,
@@ -458,25 +463,29 @@ async function registerPhoneNumber(req, res) {
         data: {
           ...updated,
           access_token: undefined,
-          has_token: !!(updated.access_token && updated.access_token.trim()),
-          access_token_preview: updated.access_token ? updated.access_token.substring(0, 8) + "••••••••" + updated.access_token.slice(-6) : null
+          access_token_enc: undefined,
+          has_token: !!(updatedToken && updatedToken.trim()),
+          access_token_preview: updatedToken ? updatedToken.substring(0, 8) + "••••••••" + updatedToken.slice(-6) : null
         }
       });
     }
 
     // Insert new record
     const newId = crypto.randomUUID();
+    const initialTokenPlain = tokenToSave || activeToken || null;
+    const initialTokenEnc = initialTokenPlain ? cryptoUtil.encrypt(initialTokenPlain) : null;
     db.prepare(`
       INSERT INTO waba_phone_numbers (
         id, tenant_id, display_name, phone_number, phone_number_id, waba_id,
-        quality_rating, status, is_default, registered_by, access_token, token_type, last_verified_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PERMANENT', CURRENT_TIMESTAMP)
+        quality_rating, status, is_default, registered_by, access_token, access_token_enc, token_type, last_verified_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 'PERMANENT', CURRENT_TIMESTAMP)
     `).run(
       newId, targetTenantId, cleanDisplay, cleanPhone, cleanPhoneId, cleanWabaId,
-      qualityRating, metaStatus, shouldBeDefault ? 1 : 0, req.user ? req.user.id : null, tokenToSave || activeToken
+      qualityRating, metaStatus, shouldBeDefault ? 1 : 0, req.user ? req.user.id : null, initialTokenEnc
     );
 
     const saved = db.prepare("SELECT * FROM waba_phone_numbers WHERE id = ?").get(newId);
+    const savedToken = metaWhatsAppService.resolveLineAccessToken(saved);
 
     return res.status(201).json({
       success: true,
@@ -484,8 +493,9 @@ async function registerPhoneNumber(req, res) {
       data: {
         ...saved,
         access_token: undefined,
-        has_token: !!(saved.access_token && saved.access_token.trim()),
-        access_token_preview: saved.access_token ? saved.access_token.substring(0, 8) + "••••••••" + saved.access_token.slice(-6) : null
+        access_token_enc: undefined,
+        has_token: !!(savedToken && savedToken.trim()),
+        access_token_preview: savedToken ? savedToken.substring(0, 8) + "••••••••" + savedToken.slice(-6) : null
       }
     });
   } catch (error) {
@@ -577,7 +587,7 @@ async function testPhoneNumber(req, res) {
       return res.status(403).json({ success: false, message: "Forbidden: Phone line belongs to another workspace." });
     }
 
-    const activeToken = (customToken && String(customToken).trim()) || phone.access_token || (targetTenantId === 1 ? (getSetting("WHATSAPP_API_TOKEN") || config.WHATSAPP_API_TOKEN) : null);
+    const activeToken = metaWhatsAppService.resolveLineAccessToken(phone, { tenantId: targetTenantId, customToken });
     if (!activeToken) {
       return res.status(400).json({ success: false, message: "No WhatsApp Cloud API token configured or provided." });
     }
@@ -620,8 +630,9 @@ async function testPhoneNumber(req, res) {
       data: {
         ...updated,
         access_token: undefined,
-        has_token: !!(updated.access_token && updated.access_token.trim()),
-        access_token_preview: updated.access_token ? updated.access_token.substring(0, 8) + "••••••••" + updated.access_token.slice(-6) : null
+        access_token_enc: undefined,
+        has_token: Boolean(metaWhatsAppService.resolveLineAccessToken(updated, { tenantId: targetTenantId })),
+        access_token_preview: activeToken ? activeToken.substring(0, 8) + "••••••••" + activeToken.slice(-6) : null
       },
       meta: data
     });
@@ -670,9 +681,11 @@ async function updatePhoneNumberToken(req, res) {
     const verifiedName = data.verified_name || phone.display_name;
     const displayPhone = data.display_phone_number || phone.phone_number;
 
+    const { encrypt } = require("../utils/cryptoUtil");
     db.prepare(`
       UPDATE waba_phone_numbers
-      SET access_token = ?,
+      SET access_token = NULL,
+          access_token_enc = ?,
           token_type = ?,
           quality_rating = ?,
           status = ?,
@@ -681,7 +694,7 @@ async function updatePhoneNumberToken(req, res) {
           last_verified_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(cleanToken, tokenType, qualityRating, status, verifiedName, displayPhone, phone.id);
+    `).run(encrypt(cleanToken), tokenType, qualityRating, status, verifiedName, displayPhone, phone.id);
 
     // If this Tenant 1 line is designated default, update global WHATSAPP_API_TOKEN as well
     if (phone.is_default === 1 && targetTenantId === 1) {
@@ -964,13 +977,12 @@ async function getWebhookConfig(req, res) {
   try {
     const urls = webhookService.resolveWebhookUrls(req);
     const verifyToken = webhookService.getVerifyToken();
-    const envSecretRaw = config.META_APP_SECRET || process.env.META_APP_SECRET || "";
-    const dbSecretRaw = getSetting("META_APP_SECRET") || "";
-    const envSecret = envSecretRaw && !envSecretRaw.startsWith("enc:aes-256-gcm:") ? envSecretRaw.trim() : "";
-    const dbSecret = dbSecretRaw && !dbSecretRaw.startsWith("enc:aes-256-gcm:") ? dbSecretRaw.trim() : "";
-    const appSecret = envSecret || dbSecret;
-    const appSecretSource = envSecret ? "env" : (dbSecret ? "db" : "none");
-    const appSecretConflict = Boolean(envSecret && dbSecret && envSecret !== dbSecret);
+    const {
+      appSecret,
+      source: rawSource,
+      conflict: appSecretConflict
+    } = metaWhatsAppService.resolveMetaAppSecret();
+    const appSecretSource = rawSource === "db_settings" ? "db" : (rawSource === "none" ? "none" : "env");
 
     // Get telemetry stats (customer_replies is the live canonical table)
     let totalReplies = 0;

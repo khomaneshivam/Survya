@@ -96,10 +96,6 @@ describe('Task 6: Master Production QA & End-to-End Regression Suite', () => {
   });
 
   after(async () => {
-    if (server) {
-      await new Promise((resolve) => server.close(resolve));
-    }
-
     // Clean up test records
     if (adminUserId) {
       db.prepare('DELETE FROM tenant_user_memberships WHERE user_id = ?').run(adminUserId);
@@ -120,6 +116,9 @@ describe('Task 6: Master Production QA & End-to-End Regression Suite', () => {
     db.prepare('DELETE FROM contact_marketing_cooldowns WHERE phone_e164 IN (?, ?)').run(testPhoneA, testPhoneB);
     db.prepare('DELETE FROM whatsapp_messages WHERE meta_message_id = ?').run(testMsgId);
     db.prepare('DELETE FROM whatsapp_usage_ledger WHERE meta_message_id = ?').run(testMsgId);
+
+    const { closeTestResources } = require('./helpers/testFixtures');
+    await closeTestResources(server);
   });
 
   // =========================================================================

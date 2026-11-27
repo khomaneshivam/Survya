@@ -35,6 +35,7 @@ import FlowSimulatorPanel from '../components/flow-studio/FlowSimulatorPanel';
 import IndustryBlueprintsModal from '../components/catalog/IndustryBlueprintsModal';
 import BusinessProfileSetupDrawer from '../components/flow-studio/BusinessProfileSetupDrawer';
 import { automationApi } from '../features/automation/api/automationApi';
+import { useAuth } from '../context/AuthContext';
 
 export function formatIstTimestamp(utcStr) {
   if (!utcStr) return '—';
@@ -56,6 +57,7 @@ export function formatIstTimestamp(utcStr) {
 }
 
 export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = null }) {
+  const { token } = useAuth();
   const [activeTab, setActiveTab] = useState(initialTab); // 'flows' | 'canvas' | 'sessions'
   const [flows, setFlows] = useState([]);
   const [loadingFlows, setLoadingFlows] = useState(false);
@@ -1710,6 +1712,7 @@ export default function FlowBuilderPage({ initialTab = 'flows', initialFlowId = 
                 flow={selectedFlow || flows.find(f => f.id === selectedFlowId)}
                 currentNodes={canvasNodes}
                 currentTransitions={canvasTransitions}
+                token={token}
               />
             </div>
           </div>
