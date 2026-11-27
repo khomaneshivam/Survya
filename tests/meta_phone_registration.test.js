@@ -6,6 +6,8 @@ const jwt = require("jsonwebtoken");
 const config = require("../src/config/env");
 const { db, getSetting, setSetting } = require("../src/config/database");
 const apiRoutes = require("../src/routes/apiRoutes");
+const cryptoUtil = require("../src/utils/cryptoUtil");
+const { closeAsyncPool } = require("../src/config/asyncDb");
 
 describe("Meta Graph Phone Registration API Test Suite", () => {
   let server = null;
@@ -61,7 +63,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
     });
   });
 
-  after(() => {
+  after(async () => {
     global.fetch = originalFetch;
     if (server) {
       server.close();
@@ -75,6 +77,7 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
     if (savedGlobalPhoneId) {
       setSetting("WHATSAPP_PHONE_NUMBER_ID", savedGlobalPhoneId);
     }
+    await closeAsyncPool();
   });
 
   // =========================================================================
@@ -501,9 +504,10 @@ describe("Meta Graph Phone Registration API Test Suite", () => {
       assert.strictEqual(data.data.quality_rating, "GREEN");
       assert.strictEqual(data.data.status, "VERIFIED");
 
-      // Verify token was saved in waba_phone_numbers table
-      const lineRow = db.prepare("SELECT access_token FROM waba_phone_numbers WHERE phone_number_id = ?").get(upsertPhoneId);
-      assert.strictEqual(lineRow?.access_token, upsertToken);
+      // Verify token was encrypted at rest in waba_phone_numbers without plaintext storage
+      const lineRow = db.prepare("SELECT access_token, access_token_enc FROM waba_phone_numbers WHERE phone_number_id = ?").get(upsertPhoneId);
+      assert.strictEqual(lineRow?.access_token, null);
+      assert.strictEqual(cryptoUtil.decrypt(lineRow?.access_token_enc), upsertToken);
     });
 
     test("Updates existing sender line (UPSERT) instead of returning 409 Conflict", async () => {

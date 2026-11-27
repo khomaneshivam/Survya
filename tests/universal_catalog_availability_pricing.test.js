@@ -636,17 +636,34 @@ describe("Universal Catalog, 4-Mode Availability, Dynamic Pricing & Atomic Holds
     assert.ok(checkBody.success);
     assert.equal(typeof checkBody.availability.available, "boolean");
 
-    // 4. Public Commerce Search: GET /api/commerce/catalog/search
-    const searchRes = await fetch(`${baseUrl}/api/commerce/catalog/search?search=Oceanfront`);
+    // 4. Tenant-Isolated Commerce Search: GET /api/commerce/catalog/search (fail-closed without auth)
+    const unauthSearchRes = await fetch(`${baseUrl}/api/commerce/catalog/search?search=Oceanfront`);
+    assert.equal(unauthSearchRes.status, 401);
+
+    const searchRes = await fetch(`${baseUrl}/api/commerce/catalog/search?search=Oceanfront`, {
+      headers: { Authorization: `Bearer ${authToken}` }
+    });
     assert.equal(searchRes.status, 200);
     const searchBody = await searchRes.json();
     assert.ok(searchBody.success);
     assert.ok(Array.isArray(searchBody.items));
 
-    // 5. Public Commerce Quote: POST /api/commerce/quote
-    const pubQuoteRes = await fetch(`${baseUrl}/api/commerce/quote`, {
+    // 5. Tenant-Isolated Commerce Quote: POST /api/commerce/quote (fail-closed without auth)
+    const unauthQuoteRes = await fetch(`${baseUrl}/api/commerce/quote`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: [{ itemId: sampleItem.id, quantity: 1 }]
+      })
+    });
+    assert.equal(unauthQuoteRes.status, 401);
+
+    const pubQuoteRes = await fetch(`${baseUrl}/api/commerce/quote`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`
+      },
       body: JSON.stringify({
         items: [{ itemId: sampleItem.id, quantity: 1 }]
       })

@@ -170,7 +170,7 @@ describe("Layer 5: Atomic Inventory Locking, Double-Booking Prevention & Financi
     `).run(testTenantId, entityId, `ORD-L5-${Date.now()}`);
   });
 
-  after(() => {
+  after(async () => {
     try {
       db.prepare("DELETE FROM merchant_payout_ledger WHERE tenant_id = ?").run(testTenantId);
       db.prepare("DELETE FROM merchant_payout_beneficiaries WHERE entity_id = ?").run(entityId);
@@ -189,6 +189,8 @@ describe("Layer 5: Atomic Inventory Locking, Double-Booking Prevention & Financi
       db.prepare("DELETE FROM properties WHERE tenant_id = ?").run(testTenantId);
       db.prepare("DELETE FROM tenants WHERE id = ?").run(testTenantId);
     } catch (_) {}
+    const { closeAsyncPool } = require("../src/config/asyncDb");
+    await closeAsyncPool();
   });
 
   test("1. room_inventory_daily enforces UNIQUE(room_type_id, inventory_date) across repeated bulk upserts", () => {
@@ -279,7 +281,7 @@ describe("Layer 5: Atomic Inventory Locking, Double-Booking Prevention & Financi
     assert.equal(txnRow.balance_due, 0);
   });
 
-  test("5. 6-way parallel triggerInstantPayout allows strictly 1 settlement for available ₹5000 balance", async () => {
+  test("5. 6-way parallel triggerInstantPayout rejects all calls with 410 MERCHANT_DIRECT_MODE and leaves zero pooled ledger rows", async () => {
     const results = await runBarrierWorkers(6, "TRIGGER_PAYOUT", {
       tenantId: testTenantId,
       entityId,
@@ -288,10 +290,11 @@ describe("Layer 5: Atomic Inventory Locking, Double-Booking Prevention & Financi
 
     const settled = results.filter((r) => r.ok);
     const rejected = results.filter((r) => !r.ok);
-    assert.equal(settled.length, 1, `Expected 1 winning payout, got ${settled.length}: ${JSON.stringify(results)}`);
-    assert.equal(rejected.length, 5);
+    assert.equal(settled.length, 0, `Expected 0 pooled payouts in Merchant-Direct Mode, got ${settled.length}: ${JSON.stringify(results)}`);
+    assert.equal(rejected.length, 6);
+    assert.ok(rejected.every((r) => r.statusCode === 410 && r.code === "MERCHANT_DIRECT_MODE"));
 
     const ledgerTotal = db.prepare("SELECT COALESCE(SUM(gross_amount), 0) as total FROM merchant_payout_ledger WHERE entity_id = ?").get(entityId);
-    assert.equal(ledgerTotal.total, 5000);
+    assert.equal(ledgerTotal.total, 0);
   });
 });

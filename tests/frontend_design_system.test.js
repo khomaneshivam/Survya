@@ -102,8 +102,6 @@ describe('SARVYA Master UI/UX Design System Verification', () => {
       'pages/EnquiriesPage.jsx',
       'pages/AiAssistantPage.jsx',
       'pages/FlowBuilderPage.jsx',
-      'pages/FlowsPage.jsx',
-      'pages/AutomationPage.jsx',
       'pages/InventoryCalendarPage.jsx',
       'pages/SettingsPage.jsx',
       'pages/SystemAdminPanel.jsx',

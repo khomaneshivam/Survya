@@ -35,13 +35,10 @@ import {
   PlusCircle,
   Check,
   Edit3,
-  Lock,
   Code,
-  SlidersHorizontal,
   History,
   Mic,
   Languages,
-  Wand2,
   Bell,
   BellRing,
   Receipt

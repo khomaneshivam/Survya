@@ -24,8 +24,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Maximize2,
-  Eye,
-  Star
+  Eye
 } from 'lucide-react';
 import { formatIndianTime } from '../utils/indianTime';
 

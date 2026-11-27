@@ -1,17 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle,
-  Calendar,
   Check,
-  CheckCircle2,
   Code,
   Copy,
   Download,
   ExternalLink,
   Layers,
   Link2,
-  ListPlus,
-  MessageCircle,
   MessageSquare,
   Pause,
   Phone,
@@ -23,9 +18,7 @@ import {
   Share2,
   Sliders,
   Sparkles,
-  Trash2,
-  Users,
-  X
+  Trash2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {

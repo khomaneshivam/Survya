@@ -5,17 +5,11 @@ import {
   Landmark,
   Building,
   CheckCircle2,
-  Clock,
-  ArrowUpRight,
   ShieldCheck,
   AlertCircle,
   Plus,
   RefreshCw,
-  Wallet,
-  Receipt,
-  ExternalLink,
-  X,
-  CreditCard
+  X
 } from 'lucide-react';
 
 export default function PayoutsPage() {

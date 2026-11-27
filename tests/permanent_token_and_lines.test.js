@@ -7,6 +7,8 @@ const config = require("../src/config/env");
 const { db, getSetting, setSetting } = require("../src/config/database");
 const apiRoutes = require("../src/routes/apiRoutes");
 const metaWhatsAppService = require("../src/services/metaWhatsAppService");
+const cryptoUtil = require("../src/utils/cryptoUtil");
+const { closeAsyncPool } = require("../src/config/asyncDb");
 
 describe("Permanent Meta Token Storage & Line Management Test Suite", () => {
   let server = null;
@@ -56,7 +58,7 @@ describe("Permanent Meta Token Storage & Line Management Test Suite", () => {
     });
   });
 
-  after(() => {
+  after(async () => {
     global.fetch = originalFetch;
     if (server) server.close();
     try {
@@ -64,6 +66,7 @@ describe("Permanent Meta Token Storage & Line Management Test Suite", () => {
     } catch (e) {}
     if (savedGlobalApiToken) setSetting("WHATSAPP_API_TOKEN", savedGlobalApiToken);
     if (savedGlobalPhoneId) setSetting("WHATSAPP_PHONE_NUMBER_ID", savedGlobalPhoneId);
+    await closeAsyncPool();
   });
 
   test("1. resolveCredentials resolves line-specific permanent token from waba_phone_numbers", () => {
@@ -133,9 +136,10 @@ describe("Permanent Meta Token Storage & Line Management Test Suite", () => {
     assert.strictEqual(data.success, true);
     assert.strictEqual(data.data.has_token, true);
 
-    // Verify DB updated with new permanent token
-    const row = db.prepare("SELECT access_token, token_type FROM waba_phone_numbers WHERE phone_number_id = ?").get(testPhoneId);
-    assert.strictEqual(row.access_token, updatedToken);
+    // Verify DB updated with AES-GCM encrypted permanent token (no plaintext leak)
+    const row = db.prepare("SELECT access_token, access_token_enc, token_type FROM waba_phone_numbers WHERE phone_number_id = ?").get(testPhoneId);
+    assert.strictEqual(row.access_token, null);
+    assert.strictEqual(cryptoUtil.decrypt(row.access_token_enc), updatedToken);
     assert.strictEqual(row.token_type, "PERMANENT");
   });
 
